@@ -47,6 +47,15 @@ const state = {
   livePolling: null,
 };
 
+const PROJECT_MANAGEMENT_ROUTES = new Set([
+  '#/clients',
+  '#/projects',
+  '#/assignments',
+  '#/my-projects',
+  '#/my-team',
+  '#/supervisor-compare',
+]);
+
 function isManager() {
   return state.account && state.account.role === 'manager';
 }
@@ -136,8 +145,14 @@ function render() {
   let pageSubtitle = '';
   const manager = isManager();
 
+  // Project Management routes are rendered by src/types/index.js after the
+  // application shell exists. This prevents false redirects and 404 states.
+  if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
+    pageTitle = 'Project Management';
+    pageSubtitle = 'Memuat data project dan klien';
+    pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
   // Employee role: scoped routes only
-  if (!manager) {
+  } else if (!manager) {
     if (route === '#/myday') {
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
       pageContent = renderMyDay();
@@ -242,6 +257,10 @@ function render() {
       </div>
     </div>
   `;
+
+  if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
+    window.PM?.renderRoute?.();
+  }
 
   attachPageHandlers();
   if (route === '#/tracking') initMap();
@@ -2266,17 +2285,20 @@ window.FT.prefillStockQty = function(outletId) {
 window.FT.saveVisitStock = function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
+  const projectId = fd.get('projectId') || null;
   const productId = fd.get('productId');
   const quantity = parseInt(fd.get('quantity'));
   const minStock = parseInt(fd.get('minStock'));
   const empId = myEmployeeId();
 
   // Update existing or create new
-  const existing = getStocksByOutlet(outletId).find(s => s.productId === productId);
+  const existing = getStocksByOutlet(outletId).find(
+    s => s.productId === productId && (s.projectId || null) === projectId
+  );
   if (existing) {
-    updateStock(existing.id, { quantity, minStock, updatedBy: empId });
+    updateStock(existing.id, { quantity, minStock, updatedBy: empId, projectId });
   } else {
-    createStock({ outletId, productId, quantity, minStock, updatedBy: empId });
+    createStock({ outletId, productId, quantity, minStock, updatedBy: empId, projectId });
   }
   closeModal();
   showToast('Stok berhasil diupdate', 'success');
@@ -2331,6 +2353,7 @@ window.FT.saveVisitPrice = function(e, visitId, outletId) {
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
   createPriceObservation({
+    projectId: fd.get('projectId') || null,
     visitId,
     outletId,
     productId: fd.get('productId'),
@@ -2405,6 +2428,7 @@ window.FT.saveStandalonePrice = function(e) {
   const recentVisit = getVisits().filter(v => v.employeeId === empId && v.outletId === outletId)
     .sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
   createPriceObservation({
+    projectId: fd.get('projectId') || null,
     visitId: recentVisit?.id || null,
     outletId,
     productId: fd.get('productId'),
@@ -3099,6 +3123,7 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
     promoType = '';
   }
   createCompetitorIntel({
+    projectId: fd.get('projectId') || null,
     visitId: vId,
     outletId: outId,
     productId: fd.get('productId'),
@@ -3353,6 +3378,7 @@ window.FT.saveFieldPhoto = function(e, visitId, outletId) {
   }
   const type = fd.get('type') || 'location';
   createFieldPhoto({
+    projectId: fd.get('projectId') || null,
     visitId: visitId || null,
     outletId,
     type,

@@ -47,7 +47,6 @@ function migrateProducts(products) {
     sku: p.sku || '',
     status: p.status || 'active',
     ...p,
-    brand: p.brand || 'Umum',
   }));
 }
 
