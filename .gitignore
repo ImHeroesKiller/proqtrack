@@ -1,0 +1,27 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs & env
+*.log
+.env
+.env.*
+!.env.example
+
+# Dependencies / build
+node_modules/
+dist/
+build/
+.cache/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local / temp
+*.local
+tmp/
+temp/
+.proqtrack-backup/
