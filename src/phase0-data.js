@@ -1,3 +1,10 @@
+import {
+  seedEmployees, seedOutlets, seedVisits, seedAttendance, seedAccounts,
+  seedProducts, seedLeaveTypes, seedLeaves, seedStocks, seedPriceObservations,
+  seedCompetitors, seedCompetitorProducts, seedCompetitorIntel,
+  seedPromoTypes, seedFieldPhotos,
+} from './data/seed.js';
+
 const DB_KEY = 'proqtrack_db_v6';
 const CLIENTS = [
   ['CL001','Nusantara Consumer Goods','NCG','#EF5000'],
@@ -43,8 +50,28 @@ function employeePhoto(name, index) {
   const initials = name.split(' ').map(x => x[0]).slice(0,2).join('');
   return svgData(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#f8fafc"/><stop offset="1" stop-color="#e2e8f0"/></linearGradient></defs><rect width="160" height="160" rx="80" fill="url(#g)"/><circle cx="80" cy="63" r="34" fill="${skin}"/><path d="M45 62c3-31 67-42 72 1-15-17-55-18-72-1Z" fill="#263238"/><path d="M28 160c3-41 24-61 52-61s50 20 52 61Z" fill="${shirt}"/><circle cx="68" cy="64" r="3" fill="#263238"/><circle cx="92" cy="64" r="3" fill="#263238"/><path d="M70 81c7 6 14 6 21 0" fill="none" stroke="#8d4f3a" stroke-width="3" stroke-linecap="round"/><circle cx="126" cy="128" r="24" fill="#fff" opacity=".94"/><text x="126" y="135" text-anchor="middle" font-family="Arial,sans-serif" font-size="18" font-weight="800" fill="${shirt}">${esc(initials)}</text></svg>`);
 }
+function initialDB() {
+  return {
+    _version: 6,
+    employees: structuredClone(seedEmployees),
+    outlets: structuredClone(seedOutlets),
+    visits: structuredClone(seedVisits),
+    attendance: structuredClone(seedAttendance),
+    accounts: structuredClone(seedAccounts),
+    products: structuredClone(seedProducts),
+    leaveTypes: structuredClone(seedLeaveTypes),
+    leaves: structuredClone(seedLeaves),
+    stocks: structuredClone(seedStocks),
+    priceObservations: structuredClone(seedPriceObservations),
+    competitors: structuredClone(seedCompetitors),
+    competitorProducts: structuredClone(seedCompetitorProducts),
+    competitorIntel: structuredClone(seedCompetitorIntel),
+    promoTypes: structuredClone(seedPromoTypes),
+    fieldPhotos: structuredClone(seedFieldPhotos),
+  };
+}
 function readDB() {
-  try { return JSON.parse(localStorage.getItem(DB_KEY) || 'null'); } catch { return null; }
+  try { return JSON.parse(localStorage.getItem(DB_KEY) || 'null') || initialDB(); } catch { return initialDB(); }
 }
 function saveDB(db) {
   try { localStorage.setItem(DB_KEY, JSON.stringify(db)); } catch (error) { console.warn('Phase 0 dummy enrichment skipped:', error); }
@@ -86,7 +113,6 @@ function buildEmployees(existing) {
 }
 function enrich() {
   const db = readDB();
-  if (!db || !Array.isArray(db.employees)) return;
   db.clients = CLIENTS.map(([id,name,initials,color]) => ({ id,name,initials,color,status:'active',logo:clientLogo(name,initials,color) }));
   db.projects = PROJECTS.map(([id,name,clientId,area], index) => ({
     id,name,clientId,area,status:index === 8 ? 'planning' : 'active',
