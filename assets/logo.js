@@ -2,7 +2,6 @@
 export const LOGO_DARK = './assets/logo-dark.svg';
 export const LOGO_LIGHT = './assets/logo-light.svg';
 export const PWA_ICON = './assets/icon-proqtrack.svg';
-// Backward-compatible export used by the current shell.
 export const CANVA_LOGO_EMBED = LOGO_DARK;
 
 function ensureLink(rel, href, attrs = {}) {
@@ -15,6 +14,7 @@ function ensureLink(rel, href, attrs = {}) {
 }
 
 ensureLink('stylesheet', './assets/phase0.css');
+ensureLink('stylesheet', './assets/phase0-v2.css');
 ensureLink('manifest', './manifest.webmanifest');
 ensureLink('icon', PWA_ICON, { type: 'image/svg+xml' });
 ensureLink('apple-touch-icon', PWA_ICON);
@@ -24,4 +24,5 @@ theme.name = 'theme-color';
 theme.content = '#ef5000';
 document.head.appendChild(theme);
 
-import('../src/phase0-ui.js');
+await import('../src/phase0-data.js');
+await import('../src/phase0-ui.js');
