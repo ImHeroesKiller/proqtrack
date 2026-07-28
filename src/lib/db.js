@@ -66,7 +66,6 @@ function migrateDB(parsed) {
   const base = defaultDB();
   const out = { ...base, ...parsed, _version: DB_VERSION };
 
-  // Keep existing collections if present; seed missing ones
   for (const key of Object.keys(base)) {
     if (key === '_version') continue;
     if (!out[key] || !Array.isArray(out[key])) {
@@ -77,7 +76,6 @@ function migrateDB(parsed) {
   out.products = migrateProducts(out.products);
   out.competitorIntel = migrateCompetitorIntel(out.competitorIntel);
 
-  // If competitor collections empty (upgraded from old DB), seed them
   if (!out.competitors.length) {
     out.competitors = JSON.parse(JSON.stringify(seedCompetitors));
   }
@@ -120,7 +118,6 @@ export function getDB() {
     try {
       const parsed = JSON.parse(found.raw);
       _cache = migrateDB(parsed);
-      // Persist under new key if migrated from legacy or version bump
       if (found.key !== DB_KEY || parsed._version !== DB_VERSION) {
         saveDB();
         if (found.key !== DB_KEY) {
@@ -141,8 +138,17 @@ export function saveDB() {
   if (!_cache) return;
   try {
     localStorage.setItem(DB_KEY, JSON.stringify(_cache));
+    return true;
   } catch (e) {
     console.error('Failed to save DB', e);
+    const quota = e && (e.name === 'QuotaExceededError' || e.code === 22 || e.code === 1014);
+    if (quota) {
+      const err = new Error('STORAGE_QUOTA_EXCEEDED');
+      err.code = 'STORAGE_QUOTA_EXCEEDED';
+      err.cause = e;
+      throw err;
+    }
+    return false;
   }
 }
 
@@ -155,7 +161,6 @@ export function resetDB() {
   return _cache;
 }
 
-// ========== ACCOUNTS ==========
 export function getAccounts() {
   return getDB().accounts;
 }
@@ -166,7 +171,6 @@ export function authenticate(email, password) {
   return acc;
 }
 
-// ========== EMPLOYEES ==========
 export function getEmployees() {
   return getDB().employees;
 }
@@ -197,7 +201,6 @@ export function deleteEmployee(id) {
   saveDB();
 }
 
-// ========== OUTLETS ==========
 export function getOutlets() {
   return getDB().outlets;
 }
@@ -228,7 +231,6 @@ export function deleteOutlet(id) {
   saveDB();
 }
 
-// ========== VISITS ==========
 export function getVisits() {
   return getDB().visits;
 }
@@ -267,7 +269,6 @@ export function deleteVisit(id) {
   saveDB();
 }
 
-// ========== ATTENDANCE ==========
 export function getAttendance() {
   return getDB().attendance;
 }
@@ -296,10 +297,9 @@ export function updateAttendance(id, data) {
   return db.attendance[idx];
 }
 
-// ========== ANALYTICS ==========
 export function getDashboardStats() {
   const db = getDB();
-  const today = '2024-07-27';
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD WIB
   const todayVisits = db.visits.filter(v => v.date === today);
   const completedVisits = todayVisits.filter(v => v.status === 'completed');
   const activeVisits = todayVisits.filter(v => v.status === 'checked-in');
@@ -342,7 +342,6 @@ export function getDashboardStats() {
   };
 }
 
-// ========== PRODUCTS ==========
 export function getProducts() {
   return getDB().products;
 }
@@ -391,7 +390,6 @@ export function deleteProduct(id) {
   saveDB();
 }
 
-// ========== LEAVES ==========
 export function getLeaves() {
   return getDB().leaves;
 }
@@ -426,7 +424,6 @@ export function deleteLeave(id) {
   saveDB();
 }
 
-// ========== STOCKS ==========
 export function getStocks() {
   return getDB().stocks;
 }
@@ -461,7 +458,6 @@ export function deleteStock(id) {
   saveDB();
 }
 
-// ========== PRICE OBSERVATIONS ==========
 export function getPriceObservations() {
   return getDB().priceObservations || [];
 }
@@ -508,7 +504,6 @@ export function deletePriceObservation(id) {
   saveDB();
 }
 
-// ========== COMPETITORS ==========
 export function getCompetitors() {
   return getDB().competitors || [];
 }
@@ -547,7 +542,6 @@ export function deleteCompetitor(id) {
   saveDB();
 }
 
-// ========== COMPETITOR PRODUCTS ==========
 export function getCompetitorProducts() {
   return getDB().competitorProducts || [];
 }
@@ -588,7 +582,6 @@ export function deleteCompetitorProduct(id) {
   saveDB();
 }
 
-// ========== COMPETITOR INTEL (field) ==========
 export function getCompetitorIntel() {
   return getDB().competitorIntel || [];
 }
@@ -650,7 +643,6 @@ export function updateCompetitorIntel(id, data) {
   return db.competitorIntel[idx];
 }
 
-// ========== PROMO TYPES ==========
 export function getPromoTypes() {
   const list = getDB().promoTypes;
   if (!list || !list.length) return JSON.parse(JSON.stringify(seedPromoTypes));
@@ -665,7 +657,6 @@ export function getPromoTypeLabel(code, customNote = '') {
   return t.label;
 }
 
-// ========== FIELD PHOTOS ==========
 export const FIELD_PHOTO_TYPES = [
   { code: 'location',   label: 'Lokasi (tampak toko)' },
   { code: 'product',    label: 'Produk' },
@@ -689,7 +680,6 @@ export function getFieldPhotosByVisit(visitId) {
   return getFieldPhotos().filter(p => p.visitId === visitId);
 }
 
-/** Manager: all photos; employee: own photos only */
 export function getAccessibleFieldPhotos(empId, isManagerRole) {
   if (isManagerRole) return getFieldPhotos();
   if (!empId) return [];
@@ -737,12 +727,10 @@ export function deleteCompetitorIntel(id) {
   saveDB();
 }
 
-/** Aggregate competitor analysis for manager dashboard */
 export function getCompetitorAnalysisSummary() {
   const competitors = getCompetitors();
   const products = getCompetitorProducts();
   const intel = getCompetitorIntel();
-  const ourProducts = getProducts();
 
   return competitors.map(c => {
     const cpdIds = products.filter(p => p.competitorId === c.id).map(p => p.id);
@@ -765,10 +753,10 @@ export function getCompetitorAnalysisSummary() {
     let gapSum = 0;
     let shareSum = 0;
     let promoCount = 0;
-    let cheaperCount = 0; // competitor cheaper than us
+    let cheaperCount = 0;
     let moreExpensiveCount = 0;
     rows.forEach(r => {
-      const gap = r.ourPrice - r.competitorPrice; // positive = we more expensive
+      const gap = r.ourPrice - r.competitorPrice;
       gapSum += gap;
       shareSum += r.shelfShare || 0;
       if (r.hasPromo) promoCount++;
@@ -791,13 +779,11 @@ export function getCompetitorAnalysisSummary() {
   });
 }
 
-// Helper: get outlets visited by an employee
 export function getVisitedOutletIds(empId) {
   const visits = getDB().visits.filter(v => v.employeeId === empId);
   return [...new Set(visits.map(v => v.outletId))];
 }
 
-/** Products linked to outlets the employee has visited (stocks, price obs, intel) */
 export function getProductsForVisitedOutlets(empId) {
   const visited = getVisitedOutletIds(empId);
   if (!visited.length) return [];
@@ -807,8 +793,18 @@ export function getProductsForVisitedOutlets(empId) {
   getPriceObservations().filter(p => visited.includes(p.outletId)).forEach(p => productIds.add(p.productId));
   getCompetitorIntel().filter(i => visited.includes(i.outletId)).forEach(i => productIds.add(i.productId));
   if (productIds.size === 0) {
-    // Fallback: catalog aktif agar sales bisa catat intel saat visit pertama
     return getProducts().filter(p => p.status === 'active');
   }
   return getProducts().filter(p => productIds.has(p.id));
+}
+
+/** Best-effort storage usage for UI warnings */
+export function getStorageEstimate() {
+  try {
+    const raw = localStorage.getItem(DB_KEY) || '';
+    const bytes = new Blob([raw]).size;
+    return { usedBytes: bytes, usedMB: (bytes / (1024 * 1024)).toFixed(2) };
+  } catch (_) {
+    return { usedBytes: 0, usedMB: '0' };
+  }
 }
