@@ -25,3 +25,8 @@ build/
 tmp/
 temp/
 .proqtrack-backup/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
