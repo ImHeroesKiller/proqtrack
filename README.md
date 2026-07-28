@@ -2,7 +2,7 @@
 
 Sistem monitoring lapangan untuk **tim field sales / supervisor** di Indonesia.
 
-Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, dan dashboard manager — prototype client-side (localStorage).
+Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project management, dan dashboard manager — prototype client-side berbasis localStorage.
 
 ## Fitur
 
@@ -12,6 +12,14 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, dan dashbo
 - Kompetitor + intel lapangan + jenis promo strategis
 - Foto lapangan (lokasi, produk, rak, kompetitor) — dikompres otomatis
 - Absensi & ijin/cuti
+- **Project Management v7**:
+  - master klien + PIC utama/tambahan
+  - project + kode unik + SoW + periode + target + nilai kontrak
+  - assignment supervisor/sales/viewer
+  - hierarchy supervisor → sales
+  - module flags per project
+  - menu Project Saya, Tim Saya, dan Komparasi Supervisor
+  - tagging `projectId` untuk visit, intel, foto, harga, dan stok baru
 - Role: Manager | Supervisor | Field Sales
 
 ## Demo login
@@ -28,11 +36,40 @@ Akun lain: `siti.nurhaliza@`, `ahmad.wijaya@`, `dewi.lestari@`, `maya.sari@`, `i
 
 ```bash
 cd proqtrack
+git pull origin main
 python3 -m http.server 8080
-# http://localhost:8080
+# buka http://localhost:8080
 ```
 
-Butuh static server (ES modules tidak nyaman dari `file://`).
+Butuh static server karena aplikasi memakai ES modules.
+
+## Cara uji Project Management
+
+### Manager
+
+1. Login `manager@proqtrack.id`.
+2. Buka **Project → Klien** untuk tambah/edit klien dan PIC.
+3. Buka **Project → Project** untuk tambah/edit project, SoW, periode, target, dan nilai kontrak.
+4. Buka detail project untuk:
+   - assign/unassign employee
+   - memilih role project
+   - mengatur supervisor pelaporan
+   - mengaktifkan/nonaktifkan modul field
+5. Buka **Project → Assignment** untuk overview seluruh assignment.
+
+### Supervisor
+
+1. Login `rizki.pratama@proqtrack.id`.
+2. Buka **Project Saya** untuk project read-only.
+3. Buka **Tim Saya** untuk sales dengan `supervisorId` yang sesuai.
+4. Buka **Komparasi Supervisor** untuk metrik agregat pada project yang sama.
+
+### Sales
+
+1. Login `budi.santoso@proqtrack.id`.
+2. Buka **Project Saya**.
+3. Menu field mengikuti module flags project aktif yang di-assign.
+4. Saat membuat visit/intel/foto/harga/stok, pilih project bila assignment aktif lebih dari satu.
 
 ## Reset data demo
 
@@ -40,39 +77,43 @@ Di console browser:
 
 ```js
 FT.resetDB();
+localStorage.removeItem('proqtrack_db_v7');
 location.reload();
 ```
 
 ## Catatan teknis
 
-- **DB key:** `proqtrack_db_v6` (migrasi otomatis dari v1–v5)
-- **Stack:** Vanilla JS (ES modules), CSS mobile-first, Leaflet CDN
-- **Penyimpanan:** seluruh data di `localStorage` browser (termasuk foto base64)
-- Jika muncul error **penyimpanan penuh** saat upload foto: hapus foto lama atau `FT.resetDB()`
-- Password demo **plain text** — hanya untuk prototype, jangan dipakai production
-- Tanggal dashboard memakai **hari ini (WIB)**, bukan tanggal seed
+- **DB internal:** version 7
+- **Backward compatibility:** aplikasi inti tetap memakai `proqtrack_db_v6`; modul v7 memigrasikan dan mencerminkan data ke `proqtrack_db_v7`
+- **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
+- **Penyimpanan:** seluruh data berada di localStorage browser, termasuk foto base64
+- Record lama memperoleh `projectId: null` dan tetap terlihat manager
+- Password demo plain text — hanya untuk prototype
+- Jika penyimpanan penuh saat upload foto, hapus foto lama atau reset data demo
 
 ## Struktur
 
-```
+```text
 proqtrack/
-├── index.html          # Shell + CSS
+├── index.html
 ├── README.md
-├── .gitignore
+├── assets/             # branding, PWA, visual phase 0
 └── src/
-    ├── app.js          # Router + UI
-    ├── CHANGE.log
+    ├── app.js          # router + UI field existing
+    ├── phase0-data.js
+    ├── phase0-ui.js
     ├── data/seed.js
-    ├── lib/db.js       # localStorage DB + migrasi
+    ├── lib/db.js
     ├── lib/utils.js
-    └── types/index.js
+    └── types/index.js  # domain + UI Project Management v7
 ```
 
 ## Batasan prototype
 
-- Tidak ada backend / sync multi-device
+- Belum ada backend / sync multi-device
 - Kapasitas foto terbatas kuota localStorage browser
 - Belum ada CI/test otomatis
+- Enforcement role masih client-side dan bukan pengganti authorization server
 
 ---
-ProQTrack — Field Team Monitoring (prototype)
+ProQTrack — Field Team Monitoring prototype
