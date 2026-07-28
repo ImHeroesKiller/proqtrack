@@ -395,13 +395,23 @@ function migrateV7() {
     }, {});
   db.projectAssignments = db.projectAssignments.map((assignment) => {
     const project = db.projects.find((p) => p.id === assignment.projectId);
+    const assignedEmployee = db.employees.find(
+      (employee) => employee.id === assignment.employeeId,
+    );
+    const assignedAccount = db.accounts.find(
+      (user) => user.employeeId === assignment.employeeId,
+    );
+    const eligible =
+      assignedEmployee?.status === "active" &&
+      assignedAccount &&
+      assignedAccount.status !== "inactive";
     const projectSupervisor = db.projectAssignments.find(
       (candidate) =>
         candidate.projectId === assignment.projectId &&
         candidate.roleOnProject === "supervisor" &&
         candidate.status === "active",
     );
-    return {
+    const normalized = {
       startDate: project?.startDate || "",
       endDate: project?.endDate || "",
       allocationPercent: Math.floor(
@@ -414,6 +424,12 @@ function migrateV7() {
       notes: "Migrasi assignment lama",
       ...assignment,
     };
+    if (!eligible && normalized.status === "active") {
+      normalized.status = "removed";
+      normalized.removedAt = stamp;
+      normalized.removalReason = "Karyawan atau akun login tidak aktif";
+    }
+    return normalized;
   });
   db.projects.forEach((p) => {
     if (!db.projectSettings.some((s) => s.projectId === p.id))
