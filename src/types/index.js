@@ -97,6 +97,7 @@ function writeDB(db) {
   try {
     localStorage.setItem(DB_KEY, text);
     localStorage.setItem(DB_V7_KEY, text);
+    window.dispatchEvent(new CustomEvent("proqtrack:db-updated"));
   } catch (error) {
     alert("Penyimpanan browser penuh. Hapus foto lama atau reset data demo.");
     throw error;
@@ -386,6 +387,34 @@ function migrateV7() {
     add("PRJ004", "EMP003", "sales");
     db.projectAssignments = rows;
   }
+  const assignmentCounts = db.projectAssignments
+    .filter((a) => a.status === "active")
+    .reduce((counts, a) => {
+      counts[a.employeeId] = (counts[a.employeeId] || 0) + 1;
+      return counts;
+    }, {});
+  db.projectAssignments = db.projectAssignments.map((assignment) => {
+    const project = db.projects.find((p) => p.id === assignment.projectId);
+    const projectSupervisor = db.projectAssignments.find(
+      (candidate) =>
+        candidate.projectId === assignment.projectId &&
+        candidate.roleOnProject === "supervisor" &&
+        candidate.status === "active",
+    );
+    return {
+      startDate: project?.startDate || "",
+      endDate: project?.endDate || "",
+      allocationPercent: Math.floor(
+        100 / (assignmentCounts[assignment.employeeId] || 1),
+      ),
+      supervisorId:
+        assignment.roleOnProject === "supervisor"
+          ? null
+          : projectSupervisor?.employeeId || null,
+      notes: "Migrasi assignment lama",
+      ...assignment,
+    };
+  });
   db.projects.forEach((p) => {
     if (!db.projectSettings.some((s) => s.projectId === p.id))
       db.projectSettings.push({
@@ -1038,18 +1067,25 @@ window.PM = {
         (a) => a.projectId === projectId && a.status === "active",
       );
     if (!p) return;
+    const eligible = db.employees.filter(
+      (employee) =>
+        employee.status === "active" &&
+        db.accounts.some(
+          (user) =>
+            user.employeeId === employee.id && user.status !== "inactive",
+        ),
+    );
+    const supervisors = active
+      .filter((a) => a.roleOnProject === "supervisor")
+      .map((a) => db.employees.find((employee) => employee.id === a.employeeId))
+      .filter(Boolean);
     modal(
       `Assignment — ${p?.name || projectId}`,
-      `<form class="pm-form" onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan</label><select class="select" name="employeeId">${db.employees.map((e) => `<option value="${e.id}">${esc(e.name)} — ${esc(e.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject"><option>supervisor</option><option>sales</option><option>viewer</option></select></div><div><label class="label">Supervisor Pelaporan</label><select class="select" name="supervisorId"><option value="">Tidak diubah</option>${db.employees
-        .filter((e) => String(e.role).toLowerCase().includes("supervisor"))
-        .map((e) => `<option value="${e.id}">${esc(e.name)}</option>`)
-        .join(
-          "",
-        )}</select></div><div class="full"><button class="btn btn-primary btn-block">Assign Karyawan</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
+      `<form class="pm-form" onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required>${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject"><option>supervisor</option><option>sales</option><option>viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId"><option value="">Pilih untuk sales/viewer</option>${supervisors.map((employee) => `<option value="${employee.id}">${esc(employee.name)}</option>`).join("")}</select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
         active
           .map((a) => {
             const e = db.employees.find((x) => x.id === a.employeeId);
-            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(a.roleOnProject)}</small></span><button class="btn btn-secondary btn-sm" onclick="PM.toggleAssignment('${a.id}');PM.openAssign('${projectId}')">Unassign</button></div>`;
+            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(a.roleOnProject)} · ${a.allocationPercent || 0}% · ${dateLabel(a.startDate)}–${dateLabel(a.endDate)}</small></span><button class="btn btn-secondary btn-sm" onclick="PM.toggleAssignment('${a.id}');PM.openAssign('${projectId}')">Unassign</button></div>`;
           })
           .join("") ||
         '<div style="padding:34px;text-align:center;color:#94a3b8">Belum ada assignment.</div>'
@@ -1080,27 +1116,91 @@ window.PM = {
       alert("Karyawan nonaktif tidak dapat di-assign.");
       return;
     }
+    const user = db.accounts.find((a) => a.employeeId === employeeId);
+    if (!user || user.status === "inactive") {
+      alert("Karyawan harus memiliki akun login aktif sebelum di-assign.");
+      return;
+    }
+    if (!["active", "draft"].includes(project.status)) {
+      alert("Assignment hanya dapat dibuat untuk project draft atau aktif.");
+      return;
+    }
+    const startDate = formValue(fd, "startDate");
+    const endDate = formValue(fd, "endDate");
+    const allocationPercent = Number(fd.get("allocationPercent"));
+    if (
+      startDate < project.startDate ||
+      endDate > project.endDate ||
+      endDate < startDate
+    ) {
+      alert("Periode assignment harus berada di dalam periode project.");
+      return;
+    }
+    if (
+      !Number.isFinite(allocationPercent) ||
+      allocationPercent < 1 ||
+      allocationPercent > 100
+    ) {
+      alert("Alokasi kapasitas harus 1–100%.");
+      return;
+    }
+    const allocated = db.projectAssignments
+      .filter(
+        (a) =>
+          a.employeeId === employeeId &&
+          a.status === "active" &&
+          a.id !== existing?.id &&
+          a.startDate <= endDate &&
+          a.endDate >= startDate,
+      )
+      .reduce((sum, a) => sum + Number(a.allocationPercent || 100), 0);
+    if (allocated + allocationPercent > 100) {
+      alert(`Kapasitas bentrok. Periode tersebut sudah teralokasi ${allocated}%.`);
+      return;
+    }
     const sp = formValue(fd, "supervisorId");
     if (sp === employeeId) {
       alert("Karyawan tidak dapat menjadi supervisor untuk dirinya sendiri.");
       return;
     }
+    if (
+      roleOnProject !== "supervisor" &&
+      !db.projectAssignments.some(
+        (a) =>
+          a.projectId === projectId &&
+          a.employeeId === sp &&
+          a.roleOnProject === "supervisor" &&
+          a.status === "active" &&
+          a.startDate <= endDate &&
+          a.endDate >= startDate,
+      )
+    ) {
+      alert(
+        "Sales/viewer wajib memiliki supervisor aktif pada project dan periode yang sama.",
+      );
+      return;
+    }
+    const assignmentData = {
+      roleOnProject,
+      supervisorId: roleOnProject === "supervisor" ? null : sp,
+      startDate,
+      endDate,
+      allocationPercent,
+      notes: formValue(fd, "notes"),
+      status: "active",
+      assignedAt: now(),
+      assignedBy: account()?.id,
+      updatedAt: now(),
+    };
     if (existing) {
-      existing.roleOnProject = roleOnProject;
-      existing.status = "active";
-      existing.assignedAt = now();
-      existing.assignedBy = account()?.id;
+      Object.assign(existing, assignmentData);
     } else
       db.projectAssignments.push({
         id: uid("ASN"),
         projectId,
         employeeId,
-        roleOnProject,
-        assignedAt: now(),
-        assignedBy: account()?.id,
-        status: "active",
+        ...assignmentData,
       });
-    if (sp && emp) emp.supervisorId = sp;
     if (emp && roleOnProject === "supervisor") emp.role = "Supervisor";
     writeDB(db);
     this.openAssign(projectId);
@@ -1111,6 +1211,11 @@ window.PM = {
       a = db.projectAssignments.find((x) => x.id === id);
     if (!a) return;
     a.status = a.status === "active" ? "removed" : "active";
+    a.updatedAt = now();
+    if (a.status === "removed") {
+      a.removedAt = now();
+      a.removedBy = account()?.id;
+    }
     writeDB(db);
     if (location.hash === "#/assignments") renderAssignments();
   },

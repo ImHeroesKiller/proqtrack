@@ -11,7 +11,44 @@ import { uid } from './utils.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 6;
+const DB_VERSION = 8;
+
+const normalizeEmail = value => String(value || '').trim().toLowerCase();
+const accountRoleForEmployee = employee =>
+  String(employee?.role || '').toLowerCase().includes('supervisor') ? 'supervisor' : 'employee';
+
+function assertUniqueEmail(db, email, employeeId = null) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) throw new Error('Email wajib diisi.');
+  const employeeConflict = db.employees.some(e =>
+    normalizeEmail(e.email) === normalized && e.id !== employeeId
+  );
+  const accountConflict = db.accounts.some(a =>
+    normalizeEmail(a.email) === normalized && a.employeeId !== employeeId
+  );
+  if (employeeConflict || accountConflict) throw new Error('Email sudah digunakan oleh user lain.');
+  return normalized;
+}
+
+function syncEmployeeAccount(db, employee, password) {
+  let account = db.accounts.find(a => a.employeeId === employee.id);
+  if (!account) {
+    if (!password || String(password).length < 8) {
+      throw new Error('Password login minimal 8 karakter.');
+    }
+    account = { id: uid('ACC'), employeeId: employee.id };
+    db.accounts.push(account);
+  }
+  account.email = employee.email;
+  account.name = employee.name;
+  account.role = accountRoleForEmployee(employee);
+  account.status = employee.status === 'active' ? 'active' : 'inactive';
+  if (password) {
+    if (String(password).length < 8) throw new Error('Password login minimal 8 karakter.');
+    account.password = String(password);
+  }
+  return account;
+}
 
 function defaultDB() {
   return {
@@ -74,6 +111,41 @@ function migrateDB(parsed) {
 
   out.products = migrateProducts(out.products);
   out.competitorIntel = migrateCompetitorIntel(out.competitorIntel);
+  out.employees = out.employees.map(employee => ({
+    photo: '',
+    ...employee,
+    email: normalizeEmail(employee.email),
+  }));
+  out.accounts = out.accounts.map(account => ({
+    status: 'active',
+    ...account,
+    email: normalizeEmail(account.email),
+  }));
+  out.employees.forEach(employee => {
+    const account = out.accounts.find(a => a.employeeId === employee.id);
+    if (account) {
+      account.email = employee.email;
+      account.name = employee.name;
+      account.role = accountRoleForEmployee(employee);
+      account.status = employee.status === 'active' ? 'active' : 'inactive';
+    }
+  });
+  out.outlets = out.outlets.map(outlet => ({
+    clientId: null,
+    projectIds: [],
+    ...outlet,
+    projectIds: Array.isArray(outlet.projectIds)
+      ? [...new Set(outlet.projectIds.filter(Boolean))]
+      : (outlet.projectId ? [outlet.projectId] : []),
+  }));
+  out.products = out.products.map(product => ({
+    clientId: null,
+    projectIds: [],
+    ...product,
+    projectIds: Array.isArray(product.projectIds)
+      ? [...new Set(product.projectIds.filter(Boolean))]
+      : (product.projectId ? [product.projectId] : []),
+  }));
 
   if (!out.competitors.length) {
     out.competitors = JSON.parse(JSON.stringify(seedCompetitors));
@@ -95,6 +167,9 @@ function migrateDB(parsed) {
 }
 
 let _cache = null;
+if (typeof window !== 'undefined') {
+  window.addEventListener('proqtrack:db-updated', () => { _cache = null; });
+}
 
 function readRawFromStorage() {
   try {
@@ -166,7 +241,11 @@ export function getAccounts() {
 
 export function authenticate(email, password) {
   const acc = getDB().accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
-  if (!acc || acc.password !== password) return null;
+  if (!acc || acc.status === 'inactive' || acc.password !== password) return null;
+  if (acc.employeeId) {
+    const employee = getEmployee(acc.employeeId);
+    if (!employee || employee.status !== 'active') return null;
+  }
   return acc;
 }
 
@@ -179,8 +258,20 @@ export function getEmployee(id) {
 }
 
 export function createEmployee(data) {
-  const emp = { id: uid('EMP'), totalVisits: 0, todayVisits: 0, status: 'active', ...data };
-  getDB().employees.push(emp);
+  const db = getDB();
+  const email = assertUniqueEmail(db, data.email);
+  const emp = {
+    id: uid('EMP'), totalVisits: 0, todayVisits: 0, status: 'active', photo: '',
+    ...data, email,
+  };
+  delete emp.password;
+  db.employees.push(emp);
+  try {
+    syncEmployeeAccount(db, emp, data.password);
+  } catch (error) {
+    db.employees.pop();
+    throw error;
+  }
   saveDB();
   return emp;
 }
@@ -189,15 +280,40 @@ export function updateEmployee(id, data) {
   const db = getDB();
   const idx = db.employees.findIndex(e => e.id === id);
   if (idx === -1) return null;
-  db.employees[idx] = { ...db.employees[idx], ...data };
+  const email = assertUniqueEmail(db, data.email || db.employees[idx].email, id);
+  const next = { ...db.employees[idx], ...data, email };
+  delete next.password;
+  syncEmployeeAccount(db, next, data.password);
+  db.employees[idx] = next;
+  if (next.status !== 'active') {
+    (db.projectAssignments || []).forEach(a => {
+      if (a.employeeId === id && a.status === 'active') {
+        a.status = 'removed';
+        a.removedAt = new Date().toISOString();
+        a.removalReason = 'Karyawan dinonaktifkan';
+      }
+    });
+  }
   saveDB();
   return db.employees[idx];
 }
 
 export function deleteEmployee(id) {
   const db = getDB();
+  const referenced = [
+    db.visits, db.attendance, db.leaves, db.projectAssignments,
+    db.fieldPhotos, db.competitorIntel,
+  ].some(rows => (rows || []).some(row =>
+    row.employeeId === id || row.recordedBy === id || row.updatedBy === id
+  ));
+  if (referenced) {
+    updateEmployee(id, { status: 'inactive' });
+    return { deactivated: true };
+  }
   db.employees = db.employees.filter(e => e.id !== id);
+  db.accounts = db.accounts.filter(a => a.employeeId !== id);
   saveDB();
+  return { deleted: true };
 }
 
 export function getOutlets() {
@@ -208,9 +324,58 @@ export function getOutlet(id) {
   return getDB().outlets.find(o => o.id === id);
 }
 
+function normalizeEntityScope(db, data) {
+  const projectIds = [...new Set(
+    (Object.prototype.hasOwnProperty.call(data, 'projectId')
+      ? [data.projectId]
+      : (Array.isArray(data.projectIds) ? data.projectIds : []))
+      .filter(Boolean)
+  )];
+  const projects = projectIds.map(id => db.projects?.find(p => p.id === id));
+  if (projectIds.length && projects.some(project => !project)) {
+    throw new Error('Project yang dipilih tidak valid.');
+  }
+  const clientIds = [...new Set(projects.map(project => project.clientId).filter(Boolean))];
+  const clientId = data.clientId || clientIds[0] || null;
+  if (clientIds.length > 1 || (clientId && clientIds.some(id => id !== clientId))) {
+    throw new Error('Semua project harus berasal dari klien yang sama.');
+  }
+  if (clientId && db.clients?.length && !db.clients.some(client => client.id === clientId)) {
+    throw new Error('Klien yang dipilih tidak valid.');
+  }
+  return { clientId, projectIds };
+}
+
+function assertOperationalContext(db, data, { product = false } = {}) {
+  if (!data.projectId) return;
+  const project = db.projects?.find(p => p.id === data.projectId);
+  if (!project || project.status !== 'active') throw new Error('Aktivitas memerlukan project aktif.');
+  const employeeId = data.employeeId || data.recordedBy || data.updatedBy;
+  if (employeeId && !db.projectAssignments?.some(a =>
+    a.projectId === data.projectId &&
+    a.employeeId === employeeId &&
+    a.status === 'active'
+  )) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  if (data.outletId) {
+    const outlet = db.outlets.find(o => o.id === data.outletId);
+    if (!outlet?.projectIds?.includes(data.projectId)) {
+      throw new Error('Outlet tidak terdaftar pada project ini.');
+    }
+  }
+  if (product && data.productId) {
+    const item = db.products.find(p => p.id === data.productId);
+    if (!item?.projectIds?.includes(data.projectId)) {
+      throw new Error('Produk tidak terdaftar pada project ini.');
+    }
+  }
+}
+
 export function createOutlet(data) {
-  const outlet = { id: uid('OUT'), status: 'active', ...data };
-  getDB().outlets.push(outlet);
+  const db = getDB();
+  const scope = normalizeEntityScope(db, data);
+  const outlet = { id: uid('OUT'), status: 'active', ...data, ...scope };
+  delete outlet.projectId;
+  db.outlets.push(outlet);
   saveDB();
   return outlet;
 }
@@ -219,7 +384,9 @@ export function updateOutlet(id, data) {
   const db = getDB();
   const idx = db.outlets.findIndex(o => o.id === id);
   if (idx === -1) return null;
-  db.outlets[idx] = { ...db.outlets[idx], ...data };
+  const scope = normalizeEntityScope(db, { ...db.outlets[idx], ...data });
+  db.outlets[idx] = { ...db.outlets[idx], ...data, ...scope };
+  delete db.outlets[idx].projectId;
   saveDB();
   return db.outlets[idx];
 }
@@ -247,6 +414,7 @@ export function getVisitsByDate(date) {
 }
 
 export function createVisit(data) {
+  assertOperationalContext(getDB(), data);
   const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...data };
   getDB().visits.push(visit);
   saveDB();
@@ -350,6 +518,8 @@ export function getProduct(id) {
 }
 
 export function createProduct(data) {
+  const db = getDB();
+  const scope = normalizeEntityScope(db, data);
   const product = {
     id: uid('PRD'),
     status: 'active',
@@ -357,13 +527,15 @@ export function createProduct(data) {
     cost: null,
     margin: null,
     ...data,
+    ...scope,
   };
+  delete product.projectId;
   if (product.price != null) product.price = Number(product.price);
   if (product.cost === '' || product.cost == null) product.cost = null;
   else product.cost = Number(product.cost);
   if (product.margin === '' || product.margin == null) product.margin = null;
   else product.margin = Number(product.margin);
-  getDB().products.push(product);
+  db.products.push(product);
   saveDB();
   return product;
 }
@@ -372,7 +544,12 @@ export function updateProduct(id, data) {
   const db = getDB();
   const idx = db.products.findIndex(p => p.id === id);
   if (idx === -1) return null;
-  const next = { ...db.products[idx], ...data };
+  const next = {
+    ...db.products[idx],
+    ...data,
+    ...normalizeEntityScope(db, { ...db.products[idx], ...data }),
+  };
+  delete next.projectId;
   if (next.price != null) next.price = Number(next.price);
   if (next.cost === '' || next.cost == null) next.cost = null;
   else next.cost = Number(next.cost);
@@ -436,6 +613,7 @@ export function getStocksByProduct(productId) {
 }
 
 export function createStock(data) {
+  assertOperationalContext(getDB(), data, { product: true });
   const stock = { id: uid('STK'), lastUpdated: new Date().toISOString().slice(0,10), ...data };
   getDB().stocks.push(stock);
   saveDB();
@@ -474,6 +652,7 @@ export function getPriceObservationsByEmployee(empId) {
 }
 
 export function createPriceObservation(data) {
+  assertOperationalContext(getDB(), data, { product: true });
   const obs = {
     id: uid('PRC'),
     observedPrice: 0,
@@ -598,6 +777,7 @@ export function getCompetitorIntelByEmployee(empId) {
 }
 
 export function createCompetitorIntel(data) {
+  assertOperationalContext(getDB(), data, { product: true });
   const intel = {
     id: uid('INT'),
     ourPrice: 0,
@@ -686,6 +866,7 @@ export function getAccessibleFieldPhotos(empId, isManagerRole) {
 }
 
 export function createFieldPhoto(data) {
+  assertOperationalContext(getDB(), data, { product: !!data.productId });
   const photo = {
     id: uid('PHO'),
     visitId: null,

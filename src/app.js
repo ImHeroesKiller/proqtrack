@@ -64,6 +64,25 @@ function myEmployeeId() {
   return state.account ? state.account.employeeId : null;
 }
 
+function entityScopeFields(entity = {}) {
+  const db = getDB();
+  const projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
+  if (!projects.length) return '';
+  const selectedProject = entity.projectIds?.[0] || '';
+  return `
+    <div class="form-group">
+      <label class="label">Project / Klien</label>
+      <select class="select" name="projectId" required>
+        <option value="">Pilih project</option>
+        ${projects.map(project => {
+          const client = (db.clients || []).find(c => c.id === project.clientId);
+          return `<option value="${project.id}" ${selectedProject === project.id ? 'selected' : ''}>${client?.name || 'Tanpa klien'} — ${project.code} / ${project.name}</option>`;
+        }).join('')}
+      </select>
+      <div style="font-size:11px;color:var(--gray-400);margin-top:5px">Outlet/produk hanya tersedia untuk aktivitas pada project ini.</div>
+    </div>`;
+}
+
 const NAV_ITEMS = [
   { section: 'Menu Utama', items: [
     { id: 'dashboard', label: 'Beranda',         icon: '▣', route: '#/' },
@@ -885,7 +904,7 @@ function renderEmployees() {
                 <tr>
                   <td>
                     <div style="display:flex; align-items:center; gap:10px;">
-                      <div class="avatar" style="background:${colors[cIdx]};">${getInitials(e.name)}</div>
+                      <div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div>
                       <div>
                         <div style="font-weight:600; color:var(--gray-800);">${e.name}</div>
                         <div style="font-size:12px; color:var(--gray-400);">${e.email}</div>
@@ -933,6 +952,10 @@ window.FT.openEmployeeModal = function() {
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" placeholder="08xx-xxxx-xxxx" required></div>
       </div>
       <div class="form-row">
+        <div class="form-group"><label class="label">Password Login</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required></div>
+        <div class="form-group"><label class="label">URL Foto</label><input class="input" type="url" name="photo" placeholder="https://..."></div>
+      </div>
+      <div class="form-row">
         <div class="form-group">
           <label class="label">Role</label>
           <select class="select" name="role"><option>Field Sales</option><option>Supervisor</option><option>Admin</option></select>
@@ -959,14 +982,17 @@ window.FT.createEmployee = function(e) {
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
   data.targetVisits = parseInt(data.targetVisits);
   data.joinDate = new Date().toISOString().slice(0,10);
-  createEmployee(data);
-  closeModal(); showToast('Karyawan berhasil ditambahkan', 'success'); render();
+  try {
+    createEmployee(data);
+    closeModal(); showToast('Karyawan dan akun login berhasil dibuat', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 window.FT.deleteEmployee = function(id) {
   if (!confirm('Hapus karyawan ini?')) return;
-  deleteEmployee(id);
-  showToast('Karyawan dihapus', 'success'); render();
+  const result = deleteEmployee(id);
+  showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
+  render();
 };
 
 // ===== Employee Detail =====
@@ -983,7 +1009,7 @@ function renderEmployeeDetail(id) {
     <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px;">
       <div class="card" style="flex:0 0 320px;">
         <div style="text-align:center; padding:12px 0 20px;">
-          <div class="avatar avatar-lg" style="background:${colors[cIdx]}; margin:0 auto 12px;">${getInitials(emp.name)}</div>
+          <div class="avatar avatar-lg" style="background:${colors[cIdx]}; margin:0 auto 12px;${emp.photo ? `background-image:url('${emp.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(emp.name)}</div>
           <div style="font-size:20px; font-weight:800; color:var(--gray-900);">${emp.name}</div>
           <div style="margin-top:4px;">${roleBadge(emp.role)}</div>
           <div style="margin-top:8px;">${statusBadge(emp.status)}</div>
@@ -1042,6 +1068,10 @@ window.FT.editEmployee = function(id) {
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${emp.phone}" required></div>
       </div>
       <div class="form-row">
+        <div class="form-group"><label class="label">Password Baru</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></div>
+        <div class="form-group"><label class="label">URL Foto</label><input class="input" type="url" name="photo" value="${emp.photo || ''}" placeholder="https://..."></div>
+      </div>
+      <div class="form-row">
         <div class="form-group"><label class="label">Role</label><select class="select" name="role"><option ${emp.role==='Field Sales'?'selected':''}>Field Sales</option><option ${emp.role==='Supervisor'?'selected':''}>Supervisor</option></select></div>
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${emp.area}" required></div>
       </div>
@@ -1067,8 +1097,11 @@ window.FT.updateEmployee = function(e, id) {
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
   data.targetVisits = parseInt(data.targetVisits);
-  updateEmployee(id, data);
-  closeModal(); showToast('Data karyawan diperbarui', 'success'); render();
+  if (!data.password) delete data.password;
+  try {
+    updateEmployee(id, data);
+    closeModal(); showToast('Karyawan dan akun login diperbarui', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 // ===== Outlets Page =====
@@ -1131,6 +1164,7 @@ window.FT.openOutletModal = function() {
   openModal('Tambah Outlet', `
     <form onsubmit="FT.createOutlet(event)">
       <div class="form-group"><label class="label">Nama Outlet</label><input class="input" name="name" required></div>
+      ${entityScopeFields()}
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" required></div>
       <div class="form-row">
         <div class="form-group">
@@ -1174,8 +1208,10 @@ window.FT.createOutlet = function(e) {
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
-  createOutlet(data);
-  closeModal(); showToast('Outlet berhasil ditambahkan', 'success'); render();
+  try {
+    createOutlet(data);
+    closeModal(); showToast('Outlet berhasil ditambahkan ke project', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 window.FT.deleteOutlet = function(id) {
@@ -1245,6 +1281,7 @@ window.FT.editOutlet = function(id) {
   openModal('Edit Outlet', `
     <form onsubmit="FT.updateOutlet(event, '${id}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${o.name}" required></div>
+      ${entityScopeFields(o)}
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${o.address}" required></div>
       <div class="form-row">
         <div class="form-group">
@@ -1278,8 +1315,10 @@ window.FT.updateOutlet = function(e, id) {
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
-  updateOutlet(id, data);
-  closeModal(); showToast('Data outlet diperbarui', 'success'); render();
+  try {
+    updateOutlet(id, data);
+    closeModal(); showToast('Data outlet dan relasi project diperbarui', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 // ===== Employee: My Day Dashboard =====
@@ -1427,6 +1466,7 @@ function renderMyVisits() {
 function productFormFields(p = null) {
   return `
     <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${p?.name || ''}" required></div>
+    ${entityScopeFields(p || {})}
     <div class="form-row">
       <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${p?.brand || ''}" placeholder="Nestlé, Unilever..." required></div>
       <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p?.sku || ''}" placeholder="NST-XXX-001" required></div>
@@ -1562,8 +1602,10 @@ window.FT.createProduct = function(e) {
   e.preventDefault();
   if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   const data = Object.fromEntries(new FormData(e.target));
-  createProduct(data);
-  closeModal(); showToast('Produk berhasil ditambahkan', 'success'); render();
+  try {
+    createProduct(data);
+    closeModal(); showToast('Produk berhasil ditambahkan ke project', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 window.FT.editProduct = function(id) {
@@ -1585,8 +1627,10 @@ window.FT.updateProduct = function(e, id) {
   e.preventDefault();
   if (!isManager()) return;
   const data = Object.fromEntries(new FormData(e.target));
-  updateProduct(id, data);
-  closeModal(); showToast('Produk diperbarui', 'success'); render();
+  try {
+    updateProduct(id, data);
+    closeModal(); showToast('Produk dan relasi project diperbarui', 'success'); render();
+  } catch (error) { showToast(error.message, 'error'); }
 };
 
 window.FT.deleteProductConfirm = function(id) {
