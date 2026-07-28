@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "proqtrack",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-07-29",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    }
+  },
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "proqtrack-mvp"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "proqtrack-mvp-files"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "mvp",
+    "MVP_DATA_API_ENABLED": "false",
+    "MVP_MAX_FILE_BYTES": "2097152",
+    "MVP_MAX_STORAGE_BYTES": "524288000"
+  }
+}

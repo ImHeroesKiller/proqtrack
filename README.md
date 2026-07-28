@@ -81,6 +81,17 @@ localStorage.removeItem('proqtrack_db_v7');
 location.reload();
 ```
 
+## Cloudflare MVP foundation
+
+- Static application + API Worker dideploy melalui GitHub Actions.
+- D1 binding `DB` menyimpan snapshot aplikasi dan metadata file.
+- R2 binding `FILES` disiapkan untuk foto/lampiran.
+- Upload dibatasi maksimal 2 MB per file dan total 500 MB pada level aplikasi.
+- Endpoint data dikunci secara default melalui `MVP_DATA_API_ENABLED=false`
+  sampai autentikasi backend diaktifkan.
+- Endpoint operasional: `/api/health` dan `/api/usage`.
+- Cloudflare Budget Alert tetap harus dibuat manual karena alert bukan spending cap.
+
 ## Catatan teknis
 
 - **DB internal:** version 7
