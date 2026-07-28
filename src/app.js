@@ -32,40 +32,34 @@ function myEmployeeId() {
 
 const NAV_ITEMS = [
   { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda',       icon: '🏠', route: '#/' },
-    { id: 'tracking',   label: 'Live Tracking', icon: '📍', route: '#/tracking' },
-    { id: 'visits',     label: 'Lacak Kunjungan', icon: '📋', route: '#/visits' },
+    { id: 'dashboard', label: 'Beranda',       icon: '▣', route: '#/' },
+    { id: 'tracking',   label: 'Live Tracking', icon: '◎', route: '#/tracking' },
+    { id: 'visits',     label: 'Lacak Kunjungan', icon: '☰', route: '#/visits' },
   ]},
   { section: 'Manajemen', items: [
-    { id: 'employees', label: 'Karyawan', icon: '👥', route: '#/employees' },
-    { id: 'outlets',   label: 'Outlet',    icon: '🏪', route: '#/outlets' },
-    { id: 'products',  label: 'Produk',    icon: '📦', route: '#/products' },
-    { id: 'stocks',    label: 'Stok Outlet', icon: '📊', route: '#/stocks' },
+    { id: 'employees', label: 'Karyawan', icon: '◉', route: '#/employees' },
+    { id: 'outlets',   label: 'Outlet',    icon: '⬡', route: '#/outlets' },
+    { id: 'products',  label: 'Produk',    icon: '▦', route: '#/products' },
+    { id: 'stocks',    label: 'Stok Outlet', icon: '▥', route: '#/stocks' },
   ]},
   { section: 'SDM', items: [
-    { id: 'attendance', label: 'Absensi',     icon: '✅', route: '#/attendance' },
-    { id: 'leaves',     label: 'Ijin & Cuti', icon: '📄', route: '#/leaves' },
-  ]},
-  { section: 'Simulasi', items: [
-    { id: 'mobile',    label: 'Mobile View', icon: '📱', route: '#/mobile' },
+    { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
+    { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
   ]},
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
   { section: 'Menu', items: [
-    { id: 'myday',    label: 'Hari Saya',      icon: '🏠', route: '#/myday' },
-    { id: 'myvisits', label: 'Kunjungan Saya', icon: '📋', route: '#/myvisits' },
+    { id: 'myday',    label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
+    { id: 'myvisits', label: 'Kunjungan Saya', icon: '☰', route: '#/myvisits' },
   ]},
   { section: 'Data Lapangan', items: [
-    { id: 'mystocks',  label: 'Stok Outlet',    icon: '📊', route: '#/mystocks' },
-    { id: 'myprices',  label: 'Harga & Diskon', icon: '💰', route: '#/myprices' },
+    { id: 'mystocks',  label: 'Stok Outlet',    icon: '▥', route: '#/mystocks' },
+    { id: 'myprices',  label: 'Harga & Diskon', icon: '◈', route: '#/myprices' },
   ]},
   { section: 'SDM', items: [
-    { id: 'myattendance', label: 'Absensi Saya',   icon: '✅', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Ijin & Cuti',   icon: '📄', route: '#/myleaves' },
-  ]},
-  { section: 'Simulasi', items: [
-    { id: 'mobile',   label: 'Mobile View',   icon: '📱', route: '#/mobile' },
+    { id: 'myattendance', label: 'Absensi Saya',   icon: '✓', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Ijin & Cuti',   icon: '▤', route: '#/myleaves' },
   ]},
 ];
 
@@ -129,10 +123,6 @@ function render() {
     } else if (route === '#/myleaves') {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
-    } else if (route === '#/mobile') {
-      app.innerHTML = renderMobileSim();
-      attachMobileHandlers();
-      return;
     } else {
       // redirect any other route to the employee home
       if (route !== '#/myday') { location.hash = '#/myday'; return; }
@@ -173,21 +163,17 @@ function render() {
   } else if (route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
-    pageTitle = 'Detail Outlet'; pageSubtitle = '';
-  } else if (route === '#/mobile') {
-    app.innerHTML = renderMobileSim();
-    attachMobileHandlers();
-    return;
-  } else {
+    pageTitle = 'Detail Outlet'; pageSubtitle = ''; else {
     pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${route}</p></div>`;
   }
 
   app.innerHTML = `
     <div class="app-layout">
       ${renderSidebar()}
+      <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
         <div class="topbar">
-          <button class="mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+          <button class="mobile-menu-btn" onclick="FT.toggleSidebar()">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div>
@@ -237,7 +223,7 @@ function renderSidebar() {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
-      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}">
+      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" onclick="FT.closeSidebar()">
         <span class="nav-icon">${item.icon}</span>
         <span>${item.label}</span>
         ${badge}
@@ -760,6 +746,24 @@ window.FT.viewVisit = function(id) {
       <button class="btn btn-danger" onclick="FT.deleteVisit('${v.id}')">Hapus</button>
     </div>
   `);
+};
+
+
+window.FT.toggleSidebar = function() {
+  const sb = document.querySelector('.sidebar');
+  const bd = document.querySelector('.sidebar-backdrop');
+  if (!sb) return;
+  const open = sb.classList.toggle('open');
+  if (bd) {
+    if (open) { bd.classList.add('show'); bd.style.display = 'block'; }
+    else { bd.classList.remove('show'); setTimeout(() => { if (!sb.classList.contains('open')) bd.style.display = 'none'; }, 250); }
+  }
+};
+window.FT.closeSidebar = function() {
+  const sb = document.querySelector('.sidebar');
+  const bd = document.querySelector('.sidebar-backdrop');
+  if (sb) sb.classList.remove('open');
+  if (bd) { bd.classList.remove('show'); setTimeout(() => { bd.style.display = 'none'; }, 250); }
 };
 
 window.FT.checkInVisit = function(id) {
