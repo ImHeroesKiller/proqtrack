@@ -1,12 +1,12 @@
 // ProQTrack — Local Database Layer (localStorage-backed)
 // Simulates SQLite with full CRUD operations
 
-import { seedEmployees, seedOutlets, seedVisits, seedAttendance, seedAccounts, seedProducts, seedLeaveTypes, seedLeaves, seedStocks } from '../data/seed.js';
+import { seedEmployees, seedOutlets, seedVisits, seedAttendance, seedAccounts, seedProducts, seedLeaveTypes, seedLeaves, seedStocks, seedPriceObservations } from '../data/seed.js';
 import { uid } from './utils.js';
 
-const DB_KEY = 'proqtrack_db_v3';
+const DB_KEY = 'proqtrack_db_v4';
 
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function defaultDB() {
   return {
@@ -20,6 +20,7 @@ function defaultDB() {
     leaveTypes: JSON.parse(JSON.stringify(seedLeaveTypes)),
     leaves:     JSON.parse(JSON.stringify(seedLeaves)),
     stocks:     JSON.parse(JSON.stringify(seedStocks)),
+    priceObservations: JSON.parse(JSON.stringify(seedPriceObservations)),
   };
 }
 
@@ -37,6 +38,7 @@ export function getDB() {
       if (!parsed.leaveTypes) parsed.leaveTypes = JSON.parse(JSON.stringify(seedLeaveTypes));
       if (!parsed.leaves) parsed.leaves = JSON.parse(JSON.stringify(seedLeaves));
       if (!parsed.stocks) parsed.stocks = JSON.parse(JSON.stringify(seedStocks));
+      if (!parsed.priceObservations) parsed.priceObservations = JSON.parse(JSON.stringify(seedPriceObservations));
       _cache = parsed;
       return _cache;
     }
@@ -345,4 +347,57 @@ export function deleteStock(id) {
   const db = getDB();
   db.stocks = db.stocks.filter(s => s.id !== id);
   saveDB();
+}
+
+// ========== PRICE OBSERVATIONS (Harga & Diskon Lapangan) ==========
+export function getPriceObservations() {
+  return getDB().priceObservations || [];
+}
+
+export function getPriceObservationsByOutlet(outletId) {
+  return getPriceObservations().filter(p => p.outletId === outletId);
+}
+
+export function getPriceObservationsByVisit(visitId) {
+  return getPriceObservations().filter(p => p.visitId === visitId);
+}
+
+export function getPriceObservationsByEmployee(empId) {
+  return getPriceObservations().filter(p => p.recordedBy === empId);
+}
+
+export function createPriceObservation(data) {
+  const obs = {
+    id: uid('PRC'),
+    observedPrice: 0,
+    discountPercent: 0,
+    discountAmount: 0,
+    notes: '',
+    recordedAt: new Date().toISOString().slice(0,10),
+    ...data
+  };
+  getDB().priceObservations.push(obs);
+  saveDB();
+  return obs;
+}
+
+export function updatePriceObservation(id, data) {
+  const db = getDB();
+  const idx = db.priceObservations.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  db.priceObservations[idx] = { ...db.priceObservations[idx], ...data };
+  saveDB();
+  return db.priceObservations[idx];
+}
+
+export function deletePriceObservation(id) {
+  const db = getDB();
+  db.priceObservations = db.priceObservations.filter(p => p.id !== id);
+  saveDB();
+}
+
+// Helper: get outlets visited by an employee
+export function getVisitedOutletIds(empId) {
+  const visits = getDB().visits.filter(v => v.employeeId === empId);
+  return [...new Set(visits.map(v => v.outletId))];
 }
