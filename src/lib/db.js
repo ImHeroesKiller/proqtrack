@@ -401,3 +401,4 @@ export function getVisitedOutletIds(empId) {
   const visits = getDB().visits.filter(v => v.employeeId === empId);
   return [...new Set(visits.map(v => v.outletId))];
 }
+

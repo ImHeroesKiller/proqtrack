@@ -1,7 +1,7 @@
 // ProQTrack — Main Application Module
 // Simple hash-based router + global state + page renderers
 
-import { getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee, resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee, createOutlet, updateOutlet, deleteEmployee, deleteOutlet, deleteVisit, getDB, getAccounts, getProducts, createProduct, updateProduct, deleteProduct, getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave, getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock } from './lib/db.js';
+import { getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee, resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee, createOutlet, updateOutlet, deleteEmployee, deleteOutlet, deleteVisit, getDB, getAccounts, getProducts, createProduct, updateProduct, deleteProduct, getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave, getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock, getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit, getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation, getVisitedOutletIds } from './lib/db.js';
 import { formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon, calculateDistance, formatDuration, uid, formatCurrency } from './lib/utils.js';
 
 // Make utils available globally for inline handlers
@@ -55,6 +55,10 @@ const NAV_ITEMS_EMPLOYEE = [
   { section: 'Menu', items: [
     { id: 'myday',    label: 'Hari Saya',      icon: '🏠', route: '#/myday' },
     { id: 'myvisits', label: 'Kunjungan Saya', icon: '📋', route: '#/myvisits' },
+  ]},
+  { section: 'Data Lapangan', items: [
+    { id: 'mystocks',  label: 'Stok Outlet',    icon: '📊', route: '#/mystocks' },
+    { id: 'myprices',  label: 'Harga & Diskon', icon: '💰', route: '#/myprices' },
   ]},
   { section: 'SDM', items: [
     { id: 'myattendance', label: 'Absensi Saya',   icon: '✅', route: '#/myattendance' },
@@ -113,6 +117,12 @@ function render() {
     } else if (route === '#/myvisits') {
       pageTitle = 'Kunjungan Saya'; pageSubtitle = 'Riwayat semua kunjungan Anda';
       pageContent = renderMyVisits();
+    } else if (route === '#/mystocks') {
+      pageTitle = 'Stok Outlet'; pageSubtitle = 'Stok produk di outlet yang Anda kunjungi';
+      pageContent = renderMyStocks();
+    } else if (route === '#/myprices') {
+      pageTitle = 'Harga & Diskon'; pageSubtitle = 'Pantau harga dan diskon di outlet yang Anda kunjungi';
+      pageContent = renderMyPrices();
     } else if (route === '#/myattendance') {
       pageTitle = 'Absensi Saya'; pageSubtitle = 'Riwayat kehadiran Anda';
       pageContent = renderMyAttendance();
@@ -1285,7 +1295,11 @@ function renderMyDay() {
                 <div style="text-align:right;">
                   ${statusBadge(v.status)}
                   ${v.status === 'planned' ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckIn('${v.id}')">Check In</button>` : ''}
-                  ${v.status === 'checked-in' ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>` : ''}
+                  ${v.status === 'checked-in' ? `
+                    <br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
+                    <br><button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">📊 Stok</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">💰 Harga</button>
+                  ` : ''}
                 </div>
               </div>
             `;
@@ -1879,6 +1893,419 @@ window.FT.filterTable = function(tableId, searchId) {
     row.style.display = (!search || row.textContent.toLowerCase().includes(search)) ? '' : 'none';
   });
 };
+
+
+// ===== Employee: My Stocks (only visited outlets) =====
+function renderMyStocks() {
+  const empId = myEmployeeId();
+  const visitedIds = getVisitedOutletIds(empId);
+  const outlets = getOutlets().filter(o => visitedIds.includes(o.id));
+  const allStocks = getStocks().filter(s => visitedIds.includes(s.outletId));
+  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const outletMap = Object.fromEntries(outlets.map(o => [o.id, o]));
+  const lowStocks = allStocks.filter(s => s.quantity <= s.minStock);
+
+  // Also get active (checked-in) visits for quick stock input
+  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+
+  return `
+    ${activeVisits.length > 0 ? `
+      <div class="card" style="margin-bottom:20px; border-color:var(--blue-300); background:var(--blue-50);">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <div style="font-size:28px;">📍</div>
+          <div>
+            <div style="font-size:15px; font-weight:700; color:var(--blue-700);">Sedang di Outlet</div>
+            <div style="font-size:13px; color:var(--blue-500);">Update stok langsung dari kunjungan aktif</div>
+          </div>
+        </div>
+        ${activeVisits.map(v => {
+          const o = outletMap[v.outletId] || getOutlets().find(x => x.id === v.outletId);
+          return `
+            <div style="display:flex; align-items:center; gap:12px; padding:12px; background:white; border-radius:10px; margin-bottom:8px;">
+              <div style="font-size:24px;">${o ? outletIcon(o.type) : '🏪'}</div>
+              <div style="flex:1;">
+                <div style="font-weight:600;">${o?.name || v.outletId}</div>
+                <div style="font-size:12px; color:var(--gray-400);">Check in: ${v.checkInTime}</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Update Stok</button>
+              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Catat Harga</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    ${lowStocks.length > 0 ? `
+      <div class="card" style="margin-bottom:20px; border-color:var(--red-500); background:var(--red-50);">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="font-size:28px;">⚠️</div>
+          <div>
+            <div style="font-size:15px; font-weight:700; color:var(--red-700);">${lowStocks.length} Produk Stok Menipis</div>
+            <div style="font-size:13px; color:var(--red-500);">Di outlet yang pernah Anda kunjungi</div>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+
+    <div class="card">
+      <div class="card-title">Stok Outlet yang Dikunjungi</div>
+      <div class="card-subtitle">${outlets.length} outlet · ${allStocks.length} record stok</div>
+      ${allStocks.length === 0 ? `<div class="empty-state"><div class="empty-icon">📊</div><h3>Belum ada data stok</h3><p>Update stok saat check-in di outlet</p></div>` : `
+      <div class="visits-table-wrapper">
+        <table class="table">
+          <thead><tr><th>Outlet</th><th>Produk</th><th>Qty</th><th>Min</th><th>Status</th><th>Update</th><th></th></tr></thead>
+          <tbody>
+            ${allStocks.map(s => {
+              const p = productMap[s.productId];
+              const o = outletMap[s.outletId];
+              if (!p || !o) return '';
+              const isLow = s.quantity <= s.minStock;
+              return `
+                <tr>
+                  <td>${outletIcon(o.type)} ${o.name}</td>
+                  <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
+                  <td style="font-weight:700;color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
+                  <td style="color:var(--gray-400);">${s.minStock}</td>
+                  <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
+                  <td style="font-size:12px;color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
+                  <td><button class="btn btn-secondary btn-sm" onclick="FT.editStock('${s.id}')">Edit</button></td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+}
+
+// ===== Employee: My Prices (Harga & Diskon) =====
+function renderMyPrices() {
+  const empId = myEmployeeId();
+  const visitedIds = getVisitedOutletIds(empId);
+  const observations = getPriceObservations().filter(p => visitedIds.includes(p.outletId));
+  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+
+  // Active visits for quick input
+  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+
+  // Group by outlet for summary
+  const byOutlet = {};
+  observations.forEach(obs => {
+    if (!byOutlet[obs.outletId]) byOutlet[obs.outletId] = [];
+    byOutlet[obs.outletId].push(obs);
+  });
+
+  return `
+    ${activeVisits.length > 0 ? `
+      <div class="card" style="margin-bottom:20px; border-color:var(--amber-300); background:#fffbeb;">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+          <div style="font-size:28px;">💰</div>
+          <div>
+            <div style="font-size:15px; font-weight:700; color:var(--amber-700);">Catat Harga Saat Ini</div>
+            <div style="font-size:13px; color:var(--amber-600);">Anda sedang di outlet — catat harga & diskon yang teramati</div>
+          </div>
+        </div>
+        ${activeVisits.map(v => {
+          const o = outletMap[v.outletId];
+          return `
+            <div style="display:flex; align-items:center; gap:12px; padding:12px; background:white; border-radius:10px; margin-bottom:8px;">
+              <div style="font-size:24px;">${o ? outletIcon(o.type) : '🏪'}</div>
+              <div style="flex:1;">
+                <div style="font-weight:600;">${o?.name || v.outletId}</div>
+                <div style="font-size:12px; color:var(--gray-400);">Check in: ${v.checkInTime}</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">+ Catat Harga/Diskon</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">💰</div>
+        <div class="stat-label">Total Observasi</div>
+        <div class="stat-value">${observations.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber-500);">🏷️</div>
+        <div class="stat-label">Ada Diskon</div>
+        <div class="stat-value">${observations.filter(o => o.discountPercent > 0 || o.discountAmount > 0).length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">🏪</div>
+        <div class="stat-label">Outlet</div>
+        <div class="stat-value">${Object.keys(byOutlet).length}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-row">
+        <div class="card-title" style="margin:0;">Riwayat Harga & Diskon</div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" onclick="FT.openPriceObsModal()">+ Catat Observasi</button>
+      </div>
+      <div class="card-subtitle" style="margin-top:8px;">Data dari outlet yang pernah Anda kunjungi</div>
+      ${observations.length === 0 ? `<div class="empty-state"><div class="empty-icon">💰</div><h3>Belum ada data harga</h3><p>Catat harga saat kunjungan ke outlet</p></div>` : `
+      <div class="visits-table-wrapper" style="margin-top:12px;">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Tanggal</th>
+              <th>Outlet</th>
+              <th>Produk</th>
+              <th>Harga Teramati</th>
+              <th>Diskon</th>
+              <th>Harga Resmi</th>
+              <th>Selisih</th>
+              <th>Catatan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${observations.sort((a,b) => (b.recordedAt||'').localeCompare(a.recordedAt||'')).map(obs => {
+              const p = productMap[obs.productId];
+              const o = outletMap[obs.outletId];
+              if (!p || !o) return '';
+              const official = p.price;
+              const diff = obs.observedPrice - official;
+              const diffStr = diff === 0 ? '-' : (diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(diff));
+              const diffColor = diff > 0 ? 'var(--red-500)' : diff < 0 ? 'var(--green-600)' : 'var(--gray-400)';
+              const discStr = obs.discountPercent > 0
+                ? `${obs.discountPercent}%${obs.discountAmount ? ' (Rp '+obs.discountAmount.toLocaleString('id-ID')+')' : ''}`
+                : (obs.discountAmount > 0 ? 'Rp '+obs.discountAmount.toLocaleString('id-ID') : '-');
+              return `
+                <tr>
+                  <td style="font-size:13px;">${formatDateShort(obs.recordedAt)}</td>
+                  <td>${outletIcon(o.type)} ${o.name}</td>
+                  <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
+                  <td style="font-weight:700;">${formatCurrency(obs.observedPrice)}</td>
+                  <td>${discStr !== '-' ? '<span style="color:var(--amber-600);font-weight:600;">'+discStr+'</span>' : '-'}</td>
+                  <td style="color:var(--gray-400);">${formatCurrency(official)}</td>
+                  <td style="font-weight:600;color:${diffColor};">${diffStr}</td>
+                  <td style="font-size:12px;color:var(--gray-500);max-width:160px;">${obs.notes || '-'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+}
+
+// ===== Stock input during visit =====
+window.FT.openVisitStockInput = function(visitId, outletId) {
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const stocks = getStocksByOutlet(outletId);
+  const products = getProducts().filter(p => p.status === 'active');
+  const productMap = Object.fromEntries(products.map(p => [p.id, p]));
+
+  openModal('Update Stok — ' + (outlet?.name || outletId), `
+    <div style="margin-bottom:16px; padding:12px; background:var(--blue-50); border-radius:10px; font-size:13px; color:var(--blue-700);">
+      📍 Update stok produk di outlet ini berdasarkan pengamatan lapangan
+    </div>
+    <form onsubmit="FT.saveVisitStock(event, '${visitId}', '${outletId}')">
+      <div class="form-group">
+        <label class="label">Produk</label>
+        <select class="select" name="productId" id="stockProductSelect" required onchange="FT.prefillStockQty('${outletId}')">
+          <option value="">— Pilih produk —</option>
+          ${products.map(p => {
+            const existing = stocks.find(s => s.productId === p.id);
+            return `<option value="${p.id}" data-qty="${existing ? existing.quantity : ''}" data-min="${existing ? existing.minStock : 5}">${p.name} (${p.sku})${existing ? ' — stok: '+existing.quantity : ''}</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Quantity Saat Ini</label>
+          <input class="input" type="number" name="quantity" id="stockQtyInput" required min="0">
+        </div>
+        <div class="form-group">
+          <label class="label">Min. Stok</label>
+          <input class="input" type="number" name="minStock" id="stockMinInput" value="5" required min="0">
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:0; margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Stok</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.prefillStockQty = function(outletId) {
+  const sel = document.getElementById('stockProductSelect');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.qty !== undefined && opt.dataset.qty !== '') {
+    document.getElementById('stockQtyInput').value = opt.dataset.qty;
+    document.getElementById('stockMinInput').value = opt.dataset.min || 5;
+  } else {
+    document.getElementById('stockQtyInput').value = '';
+    document.getElementById('stockMinInput').value = 5;
+  }
+};
+
+window.FT.saveVisitStock = function(e, visitId, outletId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const productId = fd.get('productId');
+  const quantity = parseInt(fd.get('quantity'));
+  const minStock = parseInt(fd.get('minStock'));
+  const empId = myEmployeeId();
+
+  // Update existing or create new
+  const existing = getStocksByOutlet(outletId).find(s => s.productId === productId);
+  if (existing) {
+    updateStock(existing.id, { quantity, minStock, updatedBy: empId });
+  } else {
+    createStock({ outletId, productId, quantity, minStock, updatedBy: empId });
+  }
+  closeModal();
+  showToast('Stok berhasil diupdate', 'success');
+  render();
+};
+
+// ===== Price/Discount input during visit =====
+window.FT.openVisitPriceInput = function(visitId, outletId) {
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const products = getProducts().filter(p => p.status === 'active');
+
+  openModal('Catat Harga & Diskon — ' + (outlet?.name || outletId), `
+    <div style="margin-bottom:16px; padding:12px; background:#fffbeb; border-radius:10px; font-size:13px; color:var(--amber-700);">
+      💰 Catat harga jual dan diskon yang teramati di outlet ini
+    </div>
+    <form onsubmit="FT.saveVisitPrice(event, '${visitId}', '${outletId}')">
+      <div class="form-group">
+        <label class="label">Produk</label>
+        <select class="select" name="productId" required>
+          <option value="">— Pilih produk —</option>
+          ${products.map(p => `<option value="${p.id}">${p.name} (${p.sku}) — resmi: ${formatCurrency(p.price)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Harga Teramati (Rp)</label>
+        <input class="input" type="number" name="observedPrice" required min="0" placeholder="Harga yang terlihat di toko">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Diskon (%)</label>
+          <input class="input" type="number" name="discountPercent" value="0" min="0" max="100" step="0.5">
+        </div>
+        <div class="form-group">
+          <label class="label">Diskon Nominal (Rp)</label>
+          <input class="input" type="number" name="discountAmount" value="0" min="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="label">Catatan</label>
+        <textarea class="textarea" name="notes" placeholder="Promo, kompetitor, perubahan harga, dll..."></textarea>
+      </div>
+      <div class="modal-footer" style="padding:0; margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Observasi</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.saveVisitPrice = function(e, visitId, outletId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const empId = myEmployeeId();
+  createPriceObservation({
+    visitId,
+    outletId,
+    productId: fd.get('productId'),
+    observedPrice: parseInt(fd.get('observedPrice')),
+    discountPercent: parseFloat(fd.get('discountPercent')) || 0,
+    discountAmount: parseInt(fd.get('discountAmount')) || 0,
+    notes: fd.get('notes') || '',
+    recordedBy: empId,
+  });
+  closeModal();
+  showToast('Observasi harga berhasil dicatat', 'success');
+  render();
+};
+
+// ===== Standalone price observation modal (from My Prices page) =====
+window.FT.openPriceObsModal = function() {
+  const empId = myEmployeeId();
+  const visitedIds = getVisitedOutletIds(empId);
+  const outlets = getOutlets().filter(o => visitedIds.includes(o.id));
+  const products = getProducts().filter(p => p.status === 'active');
+  // Get latest visit per outlet for linking
+  const myVisits = getVisits().filter(v => v.employeeId === empId);
+
+  openModal('Catat Observasi Harga', `
+    <form onsubmit="FT.saveStandalonePrice(event)">
+      <div class="form-group">
+        <label class="label">Outlet (yang pernah dikunjungi)</label>
+        <select class="select" name="outletId" required>
+          <option value="">— Pilih outlet —</option>
+          ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${o.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Produk</label>
+        <select class="select" name="productId" required>
+          <option value="">— Pilih produk —</option>
+          ${products.map(p => `<option value="${p.id}">${p.name} — resmi: ${formatCurrency(p.price)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Harga Teramati (Rp)</label>
+        <input class="input" type="number" name="observedPrice" required min="0">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Diskon (%)</label>
+          <input class="input" type="number" name="discountPercent" value="0" min="0" max="100">
+        </div>
+        <div class="form-group">
+          <label class="label">Diskon (Rp)</label>
+          <input class="input" type="number" name="discountAmount" value="0" min="0">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="label">Catatan</label>
+        <textarea class="textarea" name="notes" placeholder="Keterangan tambahan..."></textarea>
+      </div>
+      <div class="modal-footer" style="padding:0; margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.saveStandalonePrice = function(e) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const empId = myEmployeeId();
+  const outletId = fd.get('outletId');
+  // Link to most recent visit at this outlet if available
+  const recentVisit = getVisits().filter(v => v.employeeId === empId && v.outletId === outletId)
+    .sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+  createPriceObservation({
+    visitId: recentVisit?.id || null,
+    outletId,
+    productId: fd.get('productId'),
+    observedPrice: parseInt(fd.get('observedPrice')),
+    discountPercent: parseFloat(fd.get('discountPercent')) || 0,
+    discountAmount: parseInt(fd.get('discountAmount')) || 0,
+    notes: fd.get('notes') || '',
+    recordedBy: empId,
+  });
+  closeModal();
+  showToast('Observasi harga berhasil dicatat', 'success');
+  render();
+};
+
 
 // ===== Mobile Simulation =====
 function renderMobileSim() {

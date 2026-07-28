@@ -147,3 +147,15 @@ export const seedStocks = [
   { id: 'STK017', outletId: 'OUT018', productId: 'PRD002', quantity: 4,   minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP004' },
   { id: 'STK018', outletId: 'OUT009', productId: 'PRD006', quantity: 22,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
 ];
+
+// Price & Discount observations during field visits
+export const seedPriceObservations = [
+  { id: 'PRC001', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD001', observedPrice: 3000, discountPercent: 0, discountAmount: 0, notes: 'Harga eceran normal', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
+  { id: 'PRC002', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD003', observedPrice: 3000, discountPercent: 5, discountAmount: 150, notes: 'Promo 5% untuk pembelian >10 dus', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
+  { id: 'PRC003', visitId: 'VIS005', outletId: 'OUT004', productId: 'PRD013', observedPrice: 10000, discountPercent: 0, discountAmount: 0, notes: 'Harga naik dari minggu lalu', recordedBy: 'EMP002', recordedAt: '2024-07-27' },
+  { id: 'PRC004', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD012', observedPrice: 62000, discountPercent: 0, discountAmount: 0, notes: 'Semen naik Rp4.000', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
+  { id: 'PRC005', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD011', observedPrice: 480000, discountPercent: 10, discountAmount: 48000, notes: 'Diskon 10% untuk order 5 galon', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
+  { id: 'PRC006', visitId: 'VIS016', outletId: 'OUT008', productId: 'PRD014', observedPrice: 16000, discountPercent: 0, discountAmount: 0, notes: 'Harga roti tawar naik', recordedBy: 'EMP006', recordedAt: '2024-07-27' },
+  { id: 'PRC007', visitId: 'VIS017', outletId: 'OUT010', productId: 'PRD001', observedPrice: 2800, discountPercent: 0, discountAmount: 0, notes: 'Harga kompetitif', recordedBy: 'EMP006', recordedAt: '2024-07-27' },
+  { id: 'PRC008', visitId: 'VIS021', outletId: 'OUT014', productId: 'PRD012', observedPrice: 59000, discountPercent: 0, discountAmount: 0, notes: '', recordedBy: 'EMP008', recordedAt: '2024-07-27' },
+];
