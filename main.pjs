@@ -1,0 +1,8 @@
+$meta
+  title = ProQTrack — Field Team Monitoring
+  description = Sistem monitoring tim lapangan real-time. Lacak kunjungan outlet, absensi, dan lokasi karyawan dengan dashboard interaktif.
+  tags = monitoring, field-team, tracking, dashboard, indonesia
+
+footer = {import:simple-gen-footer}
+
+

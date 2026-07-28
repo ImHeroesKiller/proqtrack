@@ -1,0 +1,545 @@
+================================================================================
+  ProQTrack — Field Team Real-time Monitoring System
+  CHANGE LOG — Development History
+================================================================================
+
+Format: [YYYY-MM-DD HH:MM] #TAG — Deskripsi
+Tags: INIT, FEAT, FIX, BUG, REFACTOR, STYLE, DOCS
+
+
+--------------------------------------------------------------------------------
+# FASE 1 — BOOTSTRAP AWAL (Menyambungkan src/ ke Perchance)
+--------------------------------------------------------------------------------
+
+[2026-07-27 01:00] #INIT — Initial Project State
+
+  Status awal:
+  - Folder src/ sudah berisi aplikasi lengkap (ProQTrack monitoring system):
+    - src/app.js          — Router, state, page renderers (~1350 baris)
+    - src/lib/db.js       — Database layer (localStorage-backed CRUD)
+    - src/lib/utils.js    — Helper functions (format, badges, distance, uid)
+    - src/data/seed.js    — Data dummy: 8 karyawan, 18 outlet, 28 kunjungan, 8 absensi
+    - src/types/index.js  — JSDoc type definitions
+  - main.pjs MASIH template default Perchance (list animal/adjective, tidak load app)
+  - index.html MASIH template default (h1 + tombol randomize, tidak load src/)
+
+  Problem:
+  - Aplikasi di src/ tidak ter-load sama sekali di live preview
+  - Tidak ada CSS, tidak ada entry point untuk ES module
+
+
+[2026-07-27 01:15] #FEAT — Rewrite main.pjs sebagai config generator
+
+  Perubahan:
+  - Hapus semua list default (animal, adjective, verb, location, output, title)
+  - Tambah $meta (title, description, tags) untuk SEO & listing
+  - Import simple-gen-footer
+  - main.pjs sekarang berperan sebagai config file high-level
+
+
+[2026-07-27 01:20] #FEAT — Rewrite index.html sebagai app shell
+
+  Perubahan:
+  - Tambah <style> lengkap: design system (CSS variables, layout, komponen)
+    - Login page, sidebar, topbar, cards, tables, forms, buttons
+    - Modal, toast, progress bar, avatar, badges
+    - Map container (Leaflet)
+    - Mobile phone mockup simulation
+    - Responsive breakpoints (1024px, 768px)
+  - Tambah <div id="app">, <div id="modalRoot">, <div id="toastRoot">
+  - Load Leaflet CSS + JS dari unpkg CDN
+  - Load src/app.js sebagai ES module (<script type="module">)
+
+
+[2026-07-27 01:25] #BUG — Missing CSS classes untuk statusBadge/roleBadge
+
+  Ditemukan:
+  - src/lib/utils.js menghasilkan class Tailwind-style:
+    "bg-emerald-100 text-emerald-700 border-emerald-200"
+    "bg-blue-50 text-blue-700"
+    "bg-purple-50 text-purple-700"
+    dll.
+  - Class-class ini tidak ada di stylesheet → badge tidak ter-style
+
+  Fix:
+  - Tambah utility classes: .bg-emerald-100, .text-emerald-700,
+    .border-emerald-200, .bg-amber-100, .bg-red-100, .bg-blue-50, .bg-purple-50, dll
+  - Tambah CSS variables: --emerald-100, --emerald-700, --amber-100,
+    --amber-700, --red-100, --red-700
+
+
+[2026-07-27 01:30] #BUG — Missing modalRoot div
+
+  Ditemukan:
+  - src/app.js openModal() menulis ke document.getElementById('modalRoot')
+  - Tapi div #modalRoot tidak ada di index.html → modal tidak pernah muncul
+
+  Fix:
+  - Tambah <div id="modalRoot"></div> ke index.html
+
+
+[2026-07-27 01:35] #BUG — Missing modal CSS classes
+
+  Ditemukan:
+  - openModal() menggunakan class: .modal-header, .modal-close, .modal-body
+  - CSS hanya punya .modal, .modal-overlay, .modal-title, .modal-footer
+
+  Fix:
+  - Tambah .modal-header (flex, justify-between)
+  - Tambah .modal-header h2 styling
+  - Tambah .modal-close (button X)
+  - Tambah .modal-body (scrollable, max-height 65vh)
+
+
+[2026-07-27 01:40] #BUG — Missing mobile simulation CSS classes
+
+  Ditemukan:
+  - renderMobileSim() menggunakan class: .mobile-sim-frame, .mobile-sim-screen,
+    .mobile-sim-header, .mobile-sim-body, .mobile-section-title, .mobile-info-row,
+    .mobile-bottom-nav, .mobile-nav-item, .mobile-nav-icon
+  - CSS hanya punya .phone-frame, .phone-screen (class name berbeda)
+
+  Fix:
+  - Tambah semua class mobile simulation yang sesuai dengan nama yang dipakai app.js
+  - .mobile-sim-frame (phone body, 390x780, rounded 44px)
+  - .mobile-sim-screen (inner screen, rounded 32px)
+  - .mobile-sim-header (gradient blue header)
+  - .mobile-sim-body (scrollable content)
+  - .mobile-section-title, .mobile-info-row
+  - .mobile-bottom-nav, .mobile-nav-item, .mobile-nav-icon
+
+
+[2026-07-27 01:45] #FEAT — Verifikasi aplikasi berjalan
+
+  Hasil test (browser_eval):
+  - Login page: "ProQTrack" muncul, input & button ada ✓
+  - Login → Dashboard: 4 stat cards, 8 karyawan, topbar "Beranda" ✓
+  - Tracking: Leaflet map ter-init (_leaflet_id=3), markers visible ✓
+  - Visits: 28 rows ✓
+  - Employees: 8 rows ✓
+  - Outlets: 18 rows ✓
+  - Mobile view: phone mockup visible ✓
+  - Modal tambah kunjungan: terbuka & tertutup ✓
+  - Toast notification: muncul ✓
+  - No errors on clean reload ✓
+
+
+--------------------------------------------------------------------------------
+# FASE 2 — USER ACCOUNTS & ROLE-BASED ACCESS
+--------------------------------------------------------------------------------
+
+[2026-07-27 02:00] #FEAT — Tambah daftar akun login (seedAccounts)
+
+  Perubahan di src/data/seed.js:
+  - Tambah export seedAccounts: 9 akun total
+    - 1 akun manager (manager@proqtrack.id / demo123)
+    - 8 akun karyawan (email@proqtrack.id / password123)
+  - Setiap akun karyawan ter-link ke employeeId masing-masing
+  - Password karyawan: <namadepan>123 (budi123, siti123, dst)
+
+
+[2026-07-27 02:05] #FEAT — Tambah authenticate() di db.js
+
+  Perubahan di src/lib/db.js:
+  - Import seedAccounts dari seed.js
+  - Naikkan DB_KEY: proqtrack_db_v1 → proqtrack_db_v2
+  - Naikkan DB_VERSION: 1 → 2
+  - Tambah array "accounts" ke defaultDB()
+  - Tambah migrasi otomatis: jika DB lama (v1) tidak punya "accounts",
+    inject seedAccounts → user lama tidak kehilangan data
+  - Tambah fungsi:
+    - getAccounts() — return semua akun
+    - authenticate(email, password) — return akun jika valid, null jika salah
+
+
+[2026-07-27 02:10] #FEAT — Login asli (bukan demo) di app.js
+
+  Perubahan:
+  - Import authenticate dari db.js
+  - State: tambah field "account" (null default)
+  - Helper: isManager() → cek state.account.role === 'manager'
+  - Helper: myEmployeeId() → return state.account.employeeId
+  - renderLogin():
+    - Hapus pre-filled values (sebelumnya value="manager@proqtrack.id")
+    - Field email & password kosong (user harus input sendiri)
+    - Tampilkan list akun tersedia sebagai hint
+  - handleLogin():
+    - BUKAN lagi langsung state.loggedIn = true
+    - Panggil authenticate(email, password)
+    - Jika null → showToast('Email atau password salah', 'error'), return
+    - Jika valid → set state.account, state.user, route berdasarkan role
+    - Manager → route '#/' (Beranda)
+    - Employee → route '#/myday' (Hari Saya)
+
+
+[2026-07-27 02:15] #FEAT — Role-based navigation (sidebar)
+
+  Perubahan:
+  - Tambah NAV_ITEMS_EMPLOYEE (2 section: Menu, Simulasi)
+    - Hari Saya (#/myday), Kunjungan Saya (#/myvisits), Mobile View (#/mobile)
+  - NAV_ITEMS (manager) tetap: Beranda, Tracking, Kunjungan, Karyawan, Outlet, Mobile
+  - renderSidebar():
+    - Pilih navSource berdasarkan isManager()
+    - Badge "active employees" hanya untuk manager
+    - Active state untuk #/myday juga handle route '#'
+
+
+[2026-07-27 02:20] #FEAT — Role-based routing di render()
+
+  Perubahan di render():
+  - Tambah const manager = isManager()
+  - Jika !manager (karyawan):
+    - #/myday     → renderMyDay()
+    - #/myvisits  → renderMyVisits()
+    - #/mobile    → renderMobileSim()
+    - Route lain  → redirect ke #/myday (karyawan tidak bisa akses admin)
+  - Jika manager: semua route lama tetap (dashboard, tracking, visits, dll)
+
+
+[2026-07-27 02:25] #FEAT — renderMyDay() — Dashboard pribadi karyawan
+
+  Fitur:
+  - 3 stat cards: Kunjungan Hari Ini (x/target + progress bar), Selesai, Aktif & Direncanakan
+  - Card Status Absensi: tampilkan hadir/terlambat/tidak hadir + check-in time & lokasi
+  - Card Profil Saya: avatar, nama, role badge, area, telepon, total kunjungan
+  - Card Kunjungan Hari Ini: list semua kunjungan dengan outlet icon, nama, alamat,
+    waktu check-in/out, durasi, status badge
+  - Tombol Check In / Check Out inline untuk kunjungan planned & checked-in
+
+
+[2026-07-27 02:30] #FEAT — renderMyVisits() — Riwayat kunjungan karyawan
+
+  Fitur:
+  - Tabel semua kunjungan milik karyawan yang login (semua tanggal)
+  - Kolom: Tanggal, Outlet, Check In, Check Out, Durasi, Status, Rating
+  - Sort by date desc, lalu check-in time desc
+
+
+[2026-07-27 02:35] #FEAT — Mobile View default ke karyawan yang login
+
+  Perubahan di renderMobileSim():
+  - Jika !isManager() dan ada myEmployeeId():
+    - Force state.selectedMobileEmp = myEmployeeId()
+    - Karyawan hanya lihat mobile view mereka sendiri (tidak bisa switch ke karyawan lain)
+  - Manager tetap bisa pilih karyawan mana pun (untuk preview/simulasi)
+
+
+[2026-07-27 02:40] #FEAT — Verifikasi role-based access
+
+  Hasil test login sebagai Budi (budi.santoso@proqtrack.id / budi123):
+  - Topbar: "Hari Saya" ✓
+  - Nav: ["Hari Saya", "Kunjungan Saya", "Mobile View"] ✓ (tidak ada menu admin)
+  - Stat: 4/8 kunjungan, 2 selesai, 2 aktif/direncanakan ✓
+  - Absensi: tampil ✓
+  - Kunjungan hari ini: 4 items + tombol check-in ✓
+  - Kunjungan Saya: 5 rows ✓
+  - Akses #/employees → redirect ke "Hari Saya" ✓
+  - Akses #/tracking → redirect ke "Hari Saya" ✓
+
+  Hasil test login sebagai Manager (manager@proqtrack.id / demo123):
+  - Topbar: "Beranda" ✓
+  - Nav: 6 menu admin ✓
+  - 4 stat cards ✓
+
+  Hasil test login gagal (password salah):
+  - Toast: "Email atau password salah" ✓
+  - Tetap di halaman login ✓ (tidak masuk dashboard)
+
+  Hasil test clean reload:
+  - No errors ✓
+  - Login page visible ✓
+
+
+--------------------------------------------------------------------------------
+# DAFTAR AKUN LOGIN
+--------------------------------------------------------------------------------
+
+  Manager:
+    Email:    manager@proqtrack.id
+    Password: demo123
+
+  Karyawan:
+    Email:    budi.santoso@proqtrack.id      Password: budi123
+    Email:    siti.nurhaliza@proqtrack.id     Password: siti123
+    Email:    ahmad.wijaya@proqtrack.id       Password: ahmad123
+    Email:    dewi.lestari@proqtrack.id       Password: dewi123
+    Email:    rizki.pratama@proqtrack.id      Password: rizki123
+    Email:    maya.sari@proqtrack.id          Password: maya123
+    Email:    fajar.nugroho@proqtrack.id      Password: fajar123
+    Email:    indah.permata@proqtrack.id      Password: indah123
+
+
+--------------------------------------------------------------------------------
+# BUGS YANG DITEMUKAN & DIPERBAIKI
+--------------------------------------------------------------------------------
+
+  #BUG-001  Missing CSS utility classes (Tailwind-style)
+    Status:   FIXED (Fase 1)
+    Detail:   statusBadge() & roleBadge() di utils.js generate class seperti
+              "bg-emerald-100 text-emerald-700 border-emerald-200" yang tidak
+              ada di stylesheet → badge tampil tanpa styling
+    Fix:      Tambah utility classes + CSS variables di index.html <style>
+
+  #BUG-002  Missing #modalRoot div
+    Status:   FIXED (Fase 1)
+    Detail:   openModal() menulis ke getElementById('modalRoot') tapi div
+              tersebut tidak ada di index.html → modal tidak pernah muncul
+    Fix:      Tambah <div id="modalRoot"></div> ke index.html
+
+  #BUG-003  Missing modal CSS classes (.modal-header, .modal-close, .modal-body)
+    Status:   FIXED (Fase 1)
+    Detail:   openModal() pakai class yang tidak didefinisikan di CSS
+    Fix:      Tambah styling untuk .modal-header, .modal-close, .modal-body
+
+  #BUG-004  Missing mobile simulation CSS classes
+    Status:   FIXED (Fase 1)
+    Detail:   renderMobileSim() pakai .mobile-sim-frame, .mobile-sim-screen,
+              dll yang tidak ada di CSS (CSS punya .phone-frame, .phone-screen —
+              nama berbeda)
+    Fix:      Tambah semua class mobile simulation dengan nama yang benar
+
+  #BUG-005  Login demo tidak validasi kredensial
+    Status:   FIXED (Fase 2)
+    Detail:   handleLogin() langsung set loggedIn=true tanpa cek email/password
+              → siapa saja bisa masuk dengan apa saja
+    Fix:      Tambah authenticate() di db.js, handleLogin() sekarang validate
+
+  #BUG-006  Karyawan bisa akses route admin
+    Status:   FIXED (Fase 2)
+    Detail:   Semua route (tracking, employees, outlets) bisa diakses karyawan
+              melalui URL hash langsung → karyawan melihat data semua tim
+    Fix:      Role-based routing: route admin di-redirect ke #/myday untuk
+              karyawan
+
+
+--------------------------------------------------------------------------------
+# FASE 3 — ABSENSI, IJIN/CUTI, PRODUCT & STOCK MANAGEMENT
+--------------------------------------------------------------------------------
+
+[2026-07-27 03:00] #FEAT — Tambah 4 modul baru: Absensi, Ijin/Cuti, Produk, Stok
+
+  Tujuan:
+  - Setiap level (manager & karyawan) memiliki PoV dan otoritas berbeda
+  - Manager: lihat & kelola SEMUA data (CRUD penuh + approval)
+  - Karyawan: lihat data SENDIRI, ajukan ijin/cuti (tidak bisa approve)
+
+  Modul baru:
+  1. Absensi (Attendance)
+     - Manager  → rekap kehadiran SEMUA karyawan, filter by status
+     - Karyawan → lihat riwayat absensi SENDIRI + summary (hadir/terlambat/tidak hadir)
+
+  2. Ijin & Cuti (Leave Management)
+     - Manager  → lihat semua pengajuan, APPROVE/REJECT, filter by status
+     - Karyawan → ajukan ijin/cuti baru, lihat status pengajuan sendiri
+     - 5 tipe: Cuti Tahunan, Sakit, Ijin Pribadi, Ijin Dinas, Cuti Melahirkan
+     - Auto-calculate durasi hari dari range tanggal
+
+  3. Product Management
+     - Manager only → CRUD produk (nama, SKU, kategori, satuan, harga, status)
+     - 15 produk seed (Minuman, Sembako, Makanan, Bangunan, Obat, Bakery, dll)
+     - Karyawan tidak bisa akses
+
+  4. Stock Management
+     - Manager only → CRUD stok per outlet, alert stok menipis
+     - 18 record stok seed, 5 diantaranya stok menipis (quantity <= minStock)
+     - Dashboard badge merah di sidebar untuk stok menipis
+     - Karyawan tidak bisa akses
+
+
+[2026-07-27 03:05] #FEAT — Seed data baru di seed.js
+
+  Tambah export:
+  - seedProducts (15 produk: Aqua, Indomie, Beras, Semen, Cat, dll)
+  - seedLeaveTypes (5 tipe: Cuti Tahunan, Sakit, Ijin Pribadi, Ijin Dinas, Cuti Melahirkan)
+  - seedLeaves (7 pengajuan: mix pending/approved/rejected)
+  - seedStocks (18 record stok outlet, 5 stok menipis)
+
+
+[2026-07-27 03:10] #FEAT — DB layer update di db.js
+
+  Perubahan:
+  - DB_KEY: proqtrack_db_v2 → proqtrack_db_v3 (auto-migrate)
+  - Tambah array: products, leaveTypes, leaves, stocks ke defaultDB()
+  - Migrasi: inject seed data baru jika DB lama tidak punya
+  - Tambah CRUD functions:
+    - Products: getProducts, getProduct, createProduct, updateProduct, deleteProduct
+    - Leaves:   getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave
+    - Stocks:   getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock
+  - Expand getDashboardStats: totalProducts, activeProducts, totalStocks,
+    lowStocks, pendingLeaves, approvedLeaves, rejectedLeaves
+
+
+[2026-07-27 03:15] #FEAT — Navigation update di app.js
+
+  Manager nav (10 items, 4 section):
+  - Menu Utama: Beranda, Live Tracking, Lacak Kunjungan
+  - Manajemen: Karyawan, Outlet, Produk, Stok Outlet
+  - SDM: Absensi, Ijin & Cuti
+  - Simulasi: Mobile View
+
+  Karyawan nav (5 items, 3 section):
+  - Menu: Hari Saya, Kunjungan Saya
+  - SDM: Absensi Saya, Ijin & Cuti
+  - Simulasi: Mobile View
+
+  Badge di sidebar:
+  - Tracking: jumlah karyawan active (biru)
+  - Ijin & Cuti: jumlah pending (kuning) — manager only
+  - Stok Outlet: jumlah stok menipis (merah) — manager only
+
+
+[2026-07-27 03:20] #FEAT — Routing update di render()
+
+  Manager routes baru:
+  - #/products   → renderProducts()
+  - #/stocks    → renderStocks()
+  - #/attendance → renderAttendanceManager()
+  - #/leaves    → renderLeavesManager()
+
+  Karyawan routes baru:
+  - #/myattendance → renderMyAttendance()
+  - #/myleaves     → renderMyLeaves()
+  - Route admin lain → redirect ke #/myday
+
+
+[2026-07-27 03:25] #FEAT — renderProducts() — Product Management (Manager)
+
+  Fitur:
+  - Tabel produk: SKU, Nama, Kategori, Satuan, Harga, Status
+  - Filter: search + kategori
+  - CRUD: tambah, edit, hapus produk
+  - Harga format Rupiah (formatCurrency)
+
+
+[2026-07-27 03:30] #FEAT — renderStocks() — Stock Management (Manager)
+
+  Fitur:
+  - Alert banner merah jika ada stok menipis
+  - Tabel: Outlet, Produk, Qty, Min Stok, Status (Menipis/Aman), Tanggal Update
+  - Filter: search + outlet + status stok
+  - CRUD: tambah, edit, hapus stok
+  - Stok menipis = quantity <= minStock (highlight merah)
+
+
+[2026-07-27 03:35] #FEAT — renderAttendanceManager() — Absensi (Manager)
+
+  Fitur:
+  - Tabel rekap: Karyawan (avatar+nama), Tanggal, Check In, Lokasi, Status
+  - Filter: search + status (hadir/terlambat/tidak hadir)
+
+
+[2026-07-27 03:40] #FEAT — renderLeavesManager() — Ijin & Cuti (Manager)
+
+  Fitur:
+  - 3 stat cards: Menunggu, Disetujui, Ditolak
+  - Tabel: Karyawan, Tipe, Mulai, Sampai, Hari, Alasan, Status, Approver, Aksi
+  - Approval: tombol "✓ Setujui" (hijau) & "✕ Tolak" (merah) untuk pending
+  - View detail pengajuan (modal)
+  - Approver dicatat (state.account.id)
+
+
+[2026--07-27 03:45] #FEAT — renderMyAttendance() — Absensi Saya (Karyawan)
+
+  Fitur:
+  - 3 stat cards: Hadir, Terlambat, Tidak Hadir
+  - Tabel riwayat: Tanggal, Check In, Lokasi, Status
+
+
+[2026-07-27 03:50] #FEAT — renderMyLeaves() — Ijin & Cuti Saya (Karyawan)
+
+  Fitur:
+  - 3 stat cards: Menunggu, Disetujui, Total Pengajuan
+  - Tombol "+ Ajukan Ijin/Cuti"
+  - Tabel: Tipe, Mulai, Sampai, Hari, Alasan, Status, Diajukan
+  - Modal pengajuan: pilih tipe, range tanggal, auto-calc durasi, alasan
+
+
+[2026-07-27 03:55] #FEAT — formatCurrency() di utils.js
+
+  Tambah fungsi:
+  - formatCurrency(n) → "Rp 28.000" (locale id-ID)
+  - Dipakai di product table & stock display
+  - Ditambahkan ke window.FT untuk akses global
+
+
+[2026-07-27 04:00] #FEAT — Dashboard manager update
+
+  Perubahan:
+  - 4 stat cards baru: Total Karyawan, Kunjungan Hari Ini, Stok Menipis, Ijin/Cuti Pending
+  - Sebelumnya: Total Karyawan, Total Outlet, Kunjungan, Kunjungan Selesai
+
+
+[2026-07-27 04:05] #FEAT — Verifikasi semua modul
+
+  Hasil test login manager (manager@proqtrack.id / demo123):
+  - Dashboard: 4 stat cards (Total Karyawan, Kunjungan Hari Ini, Stok Menipis, Ijin/Cuti Pending) ✓
+  - Nav: 10 items (Beranda, Live Tracking, Lacak Kunjungan, Karyawan, Outlet, Produk, Stok Outlet, Absensi, Ijin & Cuti, Mobile View) ✓
+  - Produk: 15 rows ✓
+  - Stok: 18 rows, 5 stok menipis (alert merah) ✓
+  - Absensi: 8 rows ✓
+  - Ijin & Cuti: 7 rows, 4 pending, approval works (4→3) ✓
+
+  Hasil test login karyawan (budi.santoso@proqtrack.id / budi123):
+  - Nav: 5 items (Hari Saya, Kunjungan Saya, Absensi Saya, Ijin & Cuti, Mobile View) ✓
+  - Absensi Saya: 1 record (hadir), stats [1, 0, 0] ✓
+  - Ijin & Cuti Saya: 2 pengajuan (1 pending), tombol ajukan ✓
+  - Modal pengajuan: 5 tipe cuti, auto-calc hari (10-14 Aug = 5 hari) ✓
+  - Akses #/products → redirect ke "Hari Saya" ✓
+  - Akses #/stocks → redirect ke "Hari Saya" ✓
+  - Akses #/leaves → redirect ke "Hari Saya" ✓
+
+  Hasil test clean reload:
+  - No errors ✓
+  - Login page visible ✓
+
+
+--------------------------------------------------------------------------------
+# ROLE-BASED ACCESS CONTROL MATRIX
+--------------------------------------------------------------------------------
+
+  Fitur               | Manager                    | Karyawan
+  --------------------+----------------------------+---------------------------
+  Dashboard           | Lihat semua (tim)          | Lihat sendiri (Hari Saya)
+  Live Tracking       | Peta semua karyawan        | ❌ (redirect)
+  Lacak Kunjungan     | Semua kunjungan            | Kunjungan sendiri
+  Karyawan            | CRUD semua karyawan        | ❌ (redirect)
+  Outlet              | CRUD semua outlet          | ❌ (redirect)
+  Produk              | CRUD semua produk          | ❌ (redirect)
+  Stok Outlet         | CRUD semua stok             | ❌ (redirect)
+  Absensi             | Rekap semua karyawan        | Riwayat sendiri
+  Ijin & Cuti         | Approve/Reject semua       | Ajukan & lihat sendiri
+  Mobile View          | Pilih karyawan mana pun    | Hanya diri sendiri
+
+
+--------------------------------------------------------------------------------
+# ARSITEKTUR FILE
+--------------------------------------------------------------------------------
+
+  main.pjs                    Config file (metadata, import footer)
+  index.html                  App shell (CSS, HTML container, script loader)
+  src/app.js                  Main module (router, state, renderers, handlers)
+  src/lib/db.js               Database layer (localStorage, CRUD, auth, v3)
+  src/lib/utils.js            Utilities (format, badges, distance, uid, currency)
+  src/data/seed.js            Seed data (employees, outlets, visits, attendance,
+                              accounts, products, leaveTypes, leaves, stocks)
+  src/types/index.js          JSDoc type definitions
+  CHANGE.log                  This file
+
+
+--------------------------------------------------------------------------------
+# CATATAN TEKNIS
+--------------------------------------------------------------------------------
+
+  - Database: localStorage key "proqtrack_db_v3" (auto-migrate dari v1→v2→v3)
+  - Auth: email case-insensitive, password plain text (demo only — tidak untuk production)
+  - Map: Leaflet 1.9.4 dari unpkg CDN, tile OpenStreetMap
+  - Simulasi live movement: marker di-nudge setiap 5 detik (random offset)
+  - Mobile view: phone mockup 390x780px, 4 tab (Beranda, Kunjungan, Rute, Profil)
+  - Responsive: breakpoint 1024px (grid collapse), 768px (sidebar slide-in)
+  - Stock alert: quantity <= minStock → highlight merah + sidebar badge
+  - Leave approval: manager approve/reject, approverId & approvedAt tercatat
+  - Leave auto-calc: durasi hari dihitung dari range tanggal (onchange)
+
+================================================================================
+  End of CHANGE.log
+================================================================================
