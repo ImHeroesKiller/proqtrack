@@ -1,12 +1,17 @@
 // ProQTrack — Local Database Layer (localStorage-backed)
 // Simulates SQLite with full CRUD operations
 
-import { seedEmployees, seedOutlets, seedVisits, seedAttendance, seedAccounts, seedProducts, seedLeaveTypes, seedLeaves, seedStocks, seedPriceObservations } from '../data/seed.js';
+import {
+  seedEmployees, seedOutlets, seedVisits, seedAttendance, seedAccounts,
+  seedProducts, seedLeaveTypes, seedLeaves, seedStocks, seedPriceObservations,
+  seedCompetitors, seedCompetitorProducts, seedCompetitorIntel,
+  seedPromoTypes, seedFieldPhotos,
+} from '../data/seed.js';
 import { uid } from './utils.js';
 
-const DB_KEY = 'proqtrack_db_v4';
-
-const DB_VERSION = 4;
+const DB_KEY = 'proqtrack_db_v6';
+const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
+const DB_VERSION = 6;
 
 function defaultDB() {
   return {
@@ -21,29 +26,111 @@ function defaultDB() {
     leaves:     JSON.parse(JSON.stringify(seedLeaves)),
     stocks:     JSON.parse(JSON.stringify(seedStocks)),
     priceObservations: JSON.parse(JSON.stringify(seedPriceObservations)),
+    competitors: JSON.parse(JSON.stringify(seedCompetitors)),
+    competitorProducts: JSON.parse(JSON.stringify(seedCompetitorProducts)),
+    competitorIntel: JSON.parse(JSON.stringify(seedCompetitorIntel)),
+    promoTypes: JSON.parse(JSON.stringify(seedPromoTypes)),
+    fieldPhotos: JSON.parse(JSON.stringify(seedFieldPhotos)),
   };
+}
+
+/** Ensure product rows have brand/cost/margin fields without wiping user data */
+function migrateProducts(products) {
+  if (!Array.isArray(products)) return JSON.parse(JSON.stringify(seedProducts));
+  return products.map(p => ({
+    brand: p.brand || 'Umum',
+    cost: p.cost != null ? p.cost : null,
+    margin: p.margin != null ? p.margin : null,
+    category: p.category || 'Lainnya',
+    unit: p.unit || 'pcs',
+    price: p.price != null ? p.price : 0,
+    sku: p.sku || '',
+    status: p.status || 'active',
+    ...p,
+    brand: p.brand || 'Umum',
+  }));
+}
+
+function migrateCompetitorIntel(rows) {
+  if (!Array.isArray(rows)) return JSON.parse(JSON.stringify(seedCompetitorIntel));
+  return rows.map(i => ({
+    ...i,
+    hasPromo: !!(i.hasPromo || i.promo),
+    promoType: i.promoType || '',
+    promoNotes: i.promoNotes != null ? i.promoNotes : (i.promoNote || ''),
+    notes: i.notes || '',
+  }));
+}
+
+function migrateDB(parsed) {
+  const base = defaultDB();
+  const out = { ...base, ...parsed, _version: DB_VERSION };
+
+  // Keep existing collections if present; seed missing ones
+  for (const key of Object.keys(base)) {
+    if (key === '_version') continue;
+    if (!out[key] || !Array.isArray(out[key])) {
+      out[key] = JSON.parse(JSON.stringify(base[key]));
+    }
+  }
+
+  out.products = migrateProducts(out.products);
+  out.competitorIntel = migrateCompetitorIntel(out.competitorIntel);
+
+  // If competitor collections empty (upgraded from old DB), seed them
+  if (!out.competitors.length) {
+    out.competitors = JSON.parse(JSON.stringify(seedCompetitors));
+  }
+  if (!out.competitorProducts.length) {
+    out.competitorProducts = JSON.parse(JSON.stringify(seedCompetitorProducts));
+  }
+  if (!out.competitorIntel.length) {
+    out.competitorIntel = JSON.parse(JSON.stringify(seedCompetitorIntel));
+  }
+  if (!out.promoTypes.length) {
+    out.promoTypes = JSON.parse(JSON.stringify(seedPromoTypes));
+  }
+  if (!out.fieldPhotos.length) {
+    out.fieldPhotos = JSON.parse(JSON.stringify(seedFieldPhotos));
+  }
+
+  return out;
 }
 
 let _cache = null;
 
-export function getDB() {
-  if (_cache) return _cache;
+function readRawFromStorage() {
   try {
     const raw = localStorage.getItem(DB_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // migrate old DB versions
-      if (!parsed.accounts) parsed.accounts = JSON.parse(JSON.stringify(seedAccounts));
-      if (!parsed.products) parsed.products = JSON.parse(JSON.stringify(seedProducts));
-      if (!parsed.leaveTypes) parsed.leaveTypes = JSON.parse(JSON.stringify(seedLeaveTypes));
-      if (!parsed.leaves) parsed.leaves = JSON.parse(JSON.stringify(seedLeaves));
-      if (!parsed.stocks) parsed.stocks = JSON.parse(JSON.stringify(seedStocks));
-      if (!parsed.priceObservations) parsed.priceObservations = JSON.parse(JSON.stringify(seedPriceObservations));
-      _cache = parsed;
-      return _cache;
+    if (raw) return { raw, key: DB_KEY };
+    for (const k of LEGACY_KEYS) {
+      const legacy = localStorage.getItem(k);
+      if (legacy) return { raw: legacy, key: k };
     }
   } catch (e) {
     console.error('Failed to read DB', e);
+  }
+  return null;
+}
+
+export function getDB() {
+  if (_cache) return _cache;
+  const found = readRawFromStorage();
+  if (found) {
+    try {
+      const parsed = JSON.parse(found.raw);
+      _cache = migrateDB(parsed);
+      // Persist under new key if migrated from legacy or version bump
+      if (found.key !== DB_KEY || parsed._version !== DB_VERSION) {
+        saveDB();
+        if (found.key !== DB_KEY) {
+          try { localStorage.removeItem(found.key); } catch (_) { /* ignore */ }
+        }
+      }
+      return _cache;
+    } catch (e) {
+      console.error('Failed to parse DB', e);
+    }
   }
   _cache = defaultDB();
   saveDB();
@@ -62,6 +149,9 @@ export function saveDB() {
 export function resetDB() {
   _cache = defaultDB();
   saveDB();
+  for (const k of LEGACY_KEYS) {
+    try { localStorage.removeItem(k); } catch (_) { /* ignore */ }
+  }
   return _cache;
 }
 
@@ -219,6 +309,7 @@ export function getDashboardStats() {
   const hadir = todayAttendance.filter(a => a.status === 'hadir');
   const terlambat = todayAttendance.filter(a => a.status === 'terlambat');
   const tidakHadir = todayAttendance.filter(a => a.status === 'tidak hadir');
+  const intel = db.competitorIntel || [];
 
   return {
     totalEmployees: db.employees.length,
@@ -245,6 +336,9 @@ export function getDashboardStats() {
     pendingLeaves: db.leaves.filter(l => l.status === 'pending').length,
     approvedLeaves: db.leaves.filter(l => l.status === 'approved').length,
     rejectedLeaves: db.leaves.filter(l => l.status === 'rejected').length,
+    totalCompetitors: (db.competitors || []).length,
+    totalCompetitorIntel: intel.length,
+    intelWithPromo: intel.filter(i => i.hasPromo).length,
   };
 }
 
@@ -258,7 +352,19 @@ export function getProduct(id) {
 }
 
 export function createProduct(data) {
-  const product = { id: uid('PRD'), status: 'active', ...data };
+  const product = {
+    id: uid('PRD'),
+    status: 'active',
+    brand: '',
+    cost: null,
+    margin: null,
+    ...data,
+  };
+  if (product.price != null) product.price = Number(product.price);
+  if (product.cost === '' || product.cost == null) product.cost = null;
+  else product.cost = Number(product.cost);
+  if (product.margin === '' || product.margin == null) product.margin = null;
+  else product.margin = Number(product.margin);
   getDB().products.push(product);
   saveDB();
   return product;
@@ -268,7 +374,13 @@ export function updateProduct(id, data) {
   const db = getDB();
   const idx = db.products.findIndex(p => p.id === id);
   if (idx === -1) return null;
-  db.products[idx] = { ...db.products[idx], ...data };
+  const next = { ...db.products[idx], ...data };
+  if (next.price != null) next.price = Number(next.price);
+  if (next.cost === '' || next.cost == null) next.cost = null;
+  else next.cost = Number(next.cost);
+  if (next.margin === '' || next.margin == null) next.margin = null;
+  else next.margin = Number(next.margin);
+  db.products[idx] = next;
   saveDB();
   return db.products[idx];
 }
@@ -279,7 +391,7 @@ export function deleteProduct(id) {
   saveDB();
 }
 
-// ========== LEAVES (Ijin & Cuti) ==========
+// ========== LEAVES ==========
 export function getLeaves() {
   return getDB().leaves;
 }
@@ -349,7 +461,7 @@ export function deleteStock(id) {
   saveDB();
 }
 
-// ========== PRICE OBSERVATIONS (Harga & Diskon Lapangan) ==========
+// ========== PRICE OBSERVATIONS ==========
 export function getPriceObservations() {
   return getDB().priceObservations || [];
 }
@@ -396,9 +508,307 @@ export function deletePriceObservation(id) {
   saveDB();
 }
 
+// ========== COMPETITORS ==========
+export function getCompetitors() {
+  return getDB().competitors || [];
+}
+
+export function getCompetitor(id) {
+  return getCompetitors().find(c => c.id === id);
+}
+
+export function createCompetitor(data) {
+  const c = {
+    id: uid('CMP'),
+    status: 'active',
+    color: '#64748b',
+    category: '',
+    notes: '',
+    ...data,
+  };
+  getDB().competitors.push(c);
+  saveDB();
+  return c;
+}
+
+export function updateCompetitor(id, data) {
+  const db = getDB();
+  const idx = db.competitors.findIndex(c => c.id === id);
+  if (idx === -1) return null;
+  db.competitors[idx] = { ...db.competitors[idx], ...data };
+  saveDB();
+  return db.competitors[idx];
+}
+
+export function deleteCompetitor(id) {
+  const db = getDB();
+  db.competitors = db.competitors.filter(c => c.id !== id);
+  db.competitorProducts = (db.competitorProducts || []).filter(p => p.competitorId !== id);
+  saveDB();
+}
+
+// ========== COMPETITOR PRODUCTS ==========
+export function getCompetitorProducts() {
+  return getDB().competitorProducts || [];
+}
+
+export function getCompetitorProductsByCompetitor(competitorId) {
+  return getCompetitorProducts().filter(p => p.competitorId === competitorId);
+}
+
+export function createCompetitorProduct(data) {
+  const p = {
+    id: uid('CPD'),
+    status: 'active',
+    unit: 'pcs',
+    typicalPrice: 0,
+    sku: '',
+    ...data,
+  };
+  if (p.typicalPrice != null) p.typicalPrice = Number(p.typicalPrice);
+  getDB().competitorProducts.push(p);
+  saveDB();
+  return p;
+}
+
+export function updateCompetitorProduct(id, data) {
+  const db = getDB();
+  const idx = db.competitorProducts.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  const next = { ...db.competitorProducts[idx], ...data };
+  if (next.typicalPrice != null) next.typicalPrice = Number(next.typicalPrice);
+  db.competitorProducts[idx] = next;
+  saveDB();
+  return db.competitorProducts[idx];
+}
+
+export function deleteCompetitorProduct(id) {
+  const db = getDB();
+  db.competitorProducts = db.competitorProducts.filter(p => p.id !== id);
+  saveDB();
+}
+
+// ========== COMPETITOR INTEL (field) ==========
+export function getCompetitorIntel() {
+  return getDB().competitorIntel || [];
+}
+
+export function getCompetitorIntelByOutlet(outletId) {
+  return getCompetitorIntel().filter(i => i.outletId === outletId);
+}
+
+export function getCompetitorIntelByVisit(visitId) {
+  return getCompetitorIntel().filter(i => i.visitId === visitId);
+}
+
+export function getCompetitorIntelByEmployee(empId) {
+  return getCompetitorIntel().filter(i => i.recordedBy === empId);
+}
+
+export function createCompetitorIntel(data) {
+  const intel = {
+    id: uid('INT'),
+    ourPrice: 0,
+    competitorPrice: 0,
+    shelfShare: 0,
+    visibility: 'medium',
+    hasPromo: false,
+    promoType: '',
+    promoNotes: '',
+    notes: '',
+    recordedAt: new Date().toISOString().slice(0, 10),
+    ...data,
+  };
+  intel.ourPrice = Number(intel.ourPrice) || 0;
+  intel.competitorPrice = Number(intel.competitorPrice) || 0;
+  intel.shelfShare = Number(intel.shelfShare) || 0;
+  intel.hasPromo = !!(intel.hasPromo || intel.promo) && intel.hasPromo !== 'false';
+  if (!intel.hasPromo) {
+    intel.promoType = '';
+  } else {
+    intel.promoType = intel.promoType || '';
+  }
+  intel.promoNotes = intel.promoNotes != null ? intel.promoNotes : (intel.promoNote || '');
+  getDB().competitorIntel.push(intel);
+  saveDB();
+  return intel;
+}
+
+export function updateCompetitorIntel(id, data) {
+  const db = getDB();
+  const idx = db.competitorIntel.findIndex(i => i.id === id);
+  if (idx === -1) return null;
+  const next = { ...db.competitorIntel[idx], ...data };
+  if (next.ourPrice != null) next.ourPrice = Number(next.ourPrice);
+  if (next.competitorPrice != null) next.competitorPrice = Number(next.competitorPrice);
+  if (next.shelfShare != null) next.shelfShare = Number(next.shelfShare);
+  if (next.hasPromo != null) next.hasPromo = !!next.hasPromo && next.hasPromo !== 'false';
+  if (next.promo != null) next.hasPromo = !!next.promo;
+  if (!next.hasPromo) next.promoType = next.promoType || '';
+  db.competitorIntel[idx] = next;
+  saveDB();
+  return db.competitorIntel[idx];
+}
+
+// ========== PROMO TYPES ==========
+export function getPromoTypes() {
+  const list = getDB().promoTypes;
+  if (!list || !list.length) return JSON.parse(JSON.stringify(seedPromoTypes));
+  return list;
+}
+
+export function getPromoTypeLabel(code, customNote = '') {
+  if (!code) return '';
+  const t = getPromoTypes().find(p => p.code === code);
+  if (!t) return code;
+  if (code === 'custom' && customNote) return customNote;
+  return t.label;
+}
+
+// ========== FIELD PHOTOS ==========
+export const FIELD_PHOTO_TYPES = [
+  { code: 'location',   label: 'Lokasi (tampak toko)' },
+  { code: 'product',    label: 'Produk' },
+  { code: 'shelf',      label: 'Rak / Display' },
+  { code: 'competitor', label: 'Kompetitor' },
+];
+
+export function getFieldPhotos() {
+  return getDB().fieldPhotos || [];
+}
+
+export function getFieldPhotosByEmployee(empId) {
+  return getFieldPhotos().filter(p => p.recordedBy === empId);
+}
+
+export function getFieldPhotosByOutlet(outletId) {
+  return getFieldPhotos().filter(p => p.outletId === outletId);
+}
+
+export function getFieldPhotosByVisit(visitId) {
+  return getFieldPhotos().filter(p => p.visitId === visitId);
+}
+
+/** Manager: all photos; employee: own photos only */
+export function getAccessibleFieldPhotos(empId, isManagerRole) {
+  if (isManagerRole) return getFieldPhotos();
+  if (!empId) return [];
+  return getFieldPhotosByEmployee(empId);
+}
+
+export function createFieldPhoto(data) {
+  const photo = {
+    id: uid('PHO'),
+    visitId: null,
+    outletId: '',
+    type: 'location',
+    caption: '',
+    productId: null,
+    competitorId: null,
+    dataUrl: null,
+    recordedAt: new Date().toISOString(),
+    ...data,
+  };
+  if (!photo.productId) photo.productId = null;
+  if (!photo.competitorId) photo.competitorId = null;
+  getDB().fieldPhotos.push(photo);
+  saveDB();
+  return photo;
+}
+
+export function updateFieldPhoto(id, data) {
+  const db = getDB();
+  const idx = db.fieldPhotos.findIndex(p => p.id === id);
+  if (idx === -1) return null;
+  db.fieldPhotos[idx] = { ...db.fieldPhotos[idx], ...data };
+  saveDB();
+  return db.fieldPhotos[idx];
+}
+
+export function deleteFieldPhoto(id) {
+  const db = getDB();
+  db.fieldPhotos = db.fieldPhotos.filter(p => p.id !== id);
+  saveDB();
+}
+
+export function deleteCompetitorIntel(id) {
+  const db = getDB();
+  db.competitorIntel = db.competitorIntel.filter(i => i.id !== id);
+  saveDB();
+}
+
+/** Aggregate competitor analysis for manager dashboard */
+export function getCompetitorAnalysisSummary() {
+  const competitors = getCompetitors();
+  const products = getCompetitorProducts();
+  const intel = getCompetitorIntel();
+  const ourProducts = getProducts();
+
+  return competitors.map(c => {
+    const cpdIds = products.filter(p => p.competitorId === c.id).map(p => p.id);
+    const rows = intel.filter(i => cpdIds.includes(i.competitorProductId));
+    if (rows.length === 0) {
+      return {
+        competitorId: c.id,
+        name: c.name,
+        color: c.color,
+        category: c.category,
+        status: c.status,
+        intelCount: 0,
+        avgPriceGap: 0,
+        avgShelfShare: 0,
+        promoCount: 0,
+        cheaperCount: 0,
+        moreExpensiveCount: 0,
+      };
+    }
+    let gapSum = 0;
+    let shareSum = 0;
+    let promoCount = 0;
+    let cheaperCount = 0; // competitor cheaper than us
+    let moreExpensiveCount = 0;
+    rows.forEach(r => {
+      const gap = r.ourPrice - r.competitorPrice; // positive = we more expensive
+      gapSum += gap;
+      shareSum += r.shelfShare || 0;
+      if (r.hasPromo) promoCount++;
+      if (r.competitorPrice < r.ourPrice) cheaperCount++;
+      if (r.competitorPrice > r.ourPrice) moreExpensiveCount++;
+    });
+    return {
+      competitorId: c.id,
+      name: c.name,
+      color: c.color,
+      category: c.category,
+      status: c.status,
+      intelCount: rows.length,
+      avgPriceGap: Math.round(gapSum / rows.length),
+      avgShelfShare: Math.round(shareSum / rows.length),
+      promoCount,
+      cheaperCount,
+      moreExpensiveCount,
+    };
+  });
+}
+
 // Helper: get outlets visited by an employee
 export function getVisitedOutletIds(empId) {
   const visits = getDB().visits.filter(v => v.employeeId === empId);
   return [...new Set(visits.map(v => v.outletId))];
 }
 
+/** Products linked to outlets the employee has visited (stocks, price obs, intel) */
+export function getProductsForVisitedOutlets(empId) {
+  const visited = getVisitedOutletIds(empId);
+  if (!visited.length) return [];
+  const productIds = new Set(
+    getDB().stocks.filter(s => visited.includes(s.outletId)).map(s => s.productId)
+  );
+  getPriceObservations().filter(p => visited.includes(p.outletId)).forEach(p => productIds.add(p.productId));
+  getCompetitorIntel().filter(i => visited.includes(i.outletId)).forEach(i => productIds.add(i.productId));
+  if (productIds.size === 0) {
+    // Fallback: catalog aktif agar sales bisa catat intel saat visit pertama
+    return getProducts().filter(p => p.status === 'active');
+  }
+  return getProducts().filter(p => productIds.has(p.id));
+}

@@ -1,12 +1,37 @@
 // ProQTrack — Main Application Module
 // Simple hash-based router + global state + page renderers
 
-import { getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee, resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee, createOutlet, updateOutlet, deleteEmployee, deleteOutlet, deleteVisit, getDB, getAccounts, getProducts, createProduct, updateProduct, deleteProduct, getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave, getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock, getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit, getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation, getVisitedOutletIds } from './lib/db.js';
-import { formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon, calculateDistance, formatDuration, uid, formatCurrency } from './lib/utils.js';
+import {
+  getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee,
+  resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee,
+  createOutlet, updateOutlet, deleteEmployee, deleteOutlet, deleteVisit, getDB, getAccounts,
+  getProducts, createProduct, updateProduct, deleteProduct,
+  getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
+  getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock,
+  getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit,
+  getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation,
+  getVisitedOutletIds, getProductsForVisitedOutlets,
+  getCompetitors, createCompetitor, updateCompetitor, deleteCompetitor,
+  getCompetitorProducts, getCompetitorProductsByCompetitor, createCompetitorProduct,
+  updateCompetitorProduct, deleteCompetitorProduct,
+  getCompetitorIntel, createCompetitorIntel, updateCompetitorIntel, deleteCompetitorIntel,
+  getCompetitorAnalysisSummary,
+  getPromoTypes, getPromoTypeLabel,
+  getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
+  createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES,
+} from './lib/db.js';
+import {
+  formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
+  calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
+  compressImage, photoTypeLabel,
+} from './lib/utils.js';
 
 // Make utils available globally for inline handlers
-window.FT = { formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon, calculateDistance, formatDuration, uid, formatCurrency, resetDB,
-  get state() { return state; }, get navigate() { return navigate; }
+window.FT = {
+  formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
+  calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge, resetDB,
+  compressImage, photoTypeLabel, getPromoTypeLabel,
+  get state() { return state; }, get navigate() { return navigate; },
 };
 
 // ===== Global State =====
@@ -32,15 +57,22 @@ function myEmployeeId() {
 
 const NAV_ITEMS = [
   { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda',       icon: '▣', route: '#/' },
-    { id: 'tracking',   label: 'Live Tracking', icon: '◎', route: '#/tracking' },
-    { id: 'visits',     label: 'Lacak Kunjungan', icon: '☰', route: '#/visits' },
+    { id: 'dashboard', label: 'Beranda',         icon: '▣', route: '#/' },
+    { id: 'tracking',  label: 'Live Tracking',   icon: '◎', route: '#/tracking' },
+    { id: 'visits',    label: 'Lacak Kunjungan', icon: '☰', route: '#/visits' },
   ]},
   { section: 'Manajemen', items: [
-    { id: 'employees', label: 'Karyawan', icon: '◉', route: '#/employees' },
-    { id: 'outlets',   label: 'Outlet',    icon: '⬡', route: '#/outlets' },
-    { id: 'products',  label: 'Produk',    icon: '▦', route: '#/products' },
-    { id: 'stocks',    label: 'Stok Outlet', icon: '▥', route: '#/stocks' },
+    { id: 'employees', label: 'Karyawan',     icon: '◉', route: '#/employees' },
+    { id: 'outlets',   label: 'Outlet',       icon: '⬡', route: '#/outlets' },
+    { id: 'products',  label: 'Produk',       icon: '▦', route: '#/products' },
+    { id: 'stocks',    label: 'Stok Outlet',  icon: '▥', route: '#/stocks' },
+  ]},
+  { section: 'Kompetitor', items: [
+    { id: 'competitors',        label: 'Kompetitor',         icon: '◇', route: '#/competitors' },
+    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: '◈', route: '#/competitor-analysis' },
+  ]},
+  { section: 'Lapangan', items: [
+    { id: 'field-photos', label: 'Foto Lapangan', icon: '▣', route: '#/field-photos' },
   ]},
   { section: 'SDM', items: [
     { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
@@ -54,15 +86,16 @@ const NAV_ITEMS_EMPLOYEE = [
     { id: 'myvisits', label: 'Kunjungan Saya', icon: '☰', route: '#/myvisits' },
   ]},
   { section: 'Data Lapangan', items: [
-    { id: 'mystocks',  label: 'Stok Outlet',    icon: '▥', route: '#/mystocks' },
-    { id: 'myprices',  label: 'Harga & Diskon', icon: '◈', route: '#/myprices' },
+    { id: 'mystocks',  label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
+    { id: 'myprices',  label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
+    { id: 'myintel',   label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
+    { id: 'myphotos',  label: 'Foto Lapangan',    icon: '▣', route: '#/myphotos' },
   ]},
   { section: 'SDM', items: [
-    { id: 'myattendance', label: 'Absensi Saya',   icon: '✓', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Ijin & Cuti',   icon: '▤', route: '#/myleaves' },
+    { id: 'myattendance', label: 'Absensi Saya', icon: '✓', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Ijin & Cuti',  icon: '▤', route: '#/myleaves' },
   ]},
 ];
-
 // ===== Router =====
 function getRoute() {
   return location.hash || '#/';
@@ -103,7 +136,7 @@ function render() {
   let pageSubtitle = '';
   const manager = isManager();
 
-  // Employee role: only allow their own dashboard + their own visits + mobile view
+  // Employee role: scoped routes only
   if (!manager) {
     if (route === '#/myday') {
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
@@ -117,6 +150,12 @@ function render() {
     } else if (route === '#/myprices') {
       pageTitle = 'Harga & Diskon'; pageSubtitle = 'Pantau harga dan diskon di outlet yang Anda kunjungi';
       pageContent = renderMyPrices();
+    } else if (route === '#/myintel') {
+      pageTitle = 'Intel Kompetitor'; pageSubtitle = 'Catat dan pantau intel kompetitor di outlet yang dikunjungi';
+      pageContent = renderMyIntel();
+    } else if (route === '#/myphotos') {
+      pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit Anda';
+      pageContent = renderFieldPhotosGallery({ managerView: false });
     } else if (route === '#/myattendance') {
       pageTitle = 'Absensi Saya'; pageSubtitle = 'Riwayat kehadiran Anda';
       pageContent = renderMyAttendance();
@@ -124,7 +163,6 @@ function render() {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
     } else {
-      // redirect any other route to the employee home
       if (route !== '#/myday') { location.hash = '#/myday'; return; }
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
       pageContent = renderMyDay();
@@ -145,11 +183,20 @@ function render() {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
   } else if (route === '#/products') {
-    pageTitle = 'Produk'; pageSubtitle = 'Kelola katalog produk distribusi';
+    pageTitle = 'Produk'; pageSubtitle = 'Katalog produk distribusi FMCG & bangunan';
     pageContent = renderProducts();
   } else if (route === '#/stocks') {
     pageTitle = 'Stok Outlet'; pageSubtitle = 'Pantau stok produk di setiap outlet';
     pageContent = renderStocks();
+  } else if (route === '#/competitors') {
+    pageTitle = 'Kompetitor'; pageSubtitle = 'Master merek kompetitor & katalog produknya';
+    pageContent = renderCompetitors();
+  } else if (route === '#/competitor-analysis') {
+    pageTitle = 'Analisa Kompetitor'; pageSubtitle = 'Ringkasan intel lapangan dari seluruh sales';
+    pageContent = renderCompetitorAnalysis();
+  } else if (route === '#/field-photos') {
+    pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit seluruh tim lapangan';
+    pageContent = renderFieldPhotosGallery({ managerView: true });
   } else if (route === '#/attendance') {
     pageTitle = 'Absensi'; pageSubtitle = 'Rekap kehadiran tim lapangan';
     pageContent = renderAttendanceManager();
@@ -163,7 +210,8 @@ function render() {
   } else if (route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
-    pageTitle = 'Detail Outlet'; pageSubtitle = ''; else {
+    pageTitle = 'Detail Outlet'; pageSubtitle = '';
+  } else {
     pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${route}</p></div>`;
   }
 
@@ -1301,8 +1349,10 @@ function renderMyDay() {
                   ${v.status === 'planned' ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckIn('${v.id}')">Check In</button>` : ''}
                   ${v.status === 'checked-in' ? `
                     <br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
-                    <br><button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">📊 Stok</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">💰 Harga</button>
+                    <br><button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Stok</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Harga</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitIntelInput('${v.id}', '${v.outletId}')">Intel</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPhotoInput('${v.id}', '${v.outletId}')">Foto</button>
                   ` : ''}
                 </div>
               </div>
@@ -1354,36 +1404,103 @@ function renderMyVisits() {
   `;
 }
 
-// ===== Products Page (Manager) =====
+// ===== Products Page (Manager full CRUD) =====
+function productFormFields(p = null) {
+  return `
+    <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${p?.name || ''}" required></div>
+    <div class="form-row">
+      <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${p?.brand || ''}" placeholder="Nestlé, Unilever..." required></div>
+      <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p?.sku || ''}" placeholder="NST-XXX-001" required></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${p?.category || ''}" placeholder="Minuman, Snack..." required list="catList"></div>
+      <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${p?.unit || ''}" placeholder="pcs, dus, sak" required></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="label">Harga Jual (Rp)</label><input class="input" type="number" name="price" value="${p?.price ?? ''}" required min="0"></div>
+      <div class="form-group"><label class="label">Cost / HPP (opsional)</label><input class="input" type="number" name="cost" value="${p?.cost ?? ''}" min="0" placeholder="Opsional"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="label">Margin % (opsional)</label><input class="input" type="number" name="margin" value="${p?.margin ?? ''}" min="0" max="100" step="0.1" placeholder="Opsional"></div>
+      <div class="form-group"><label class="label">Status</label>
+        <select class="select" name="status">
+          <option value="active" ${!p || p.status==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${p?.status==='inactive'?'selected':''}>Inactive</option>
+        </select>
+      </div>
+    </div>
+  `;
+}
+
 function renderProducts() {
   const products = getProducts();
+  const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
+  const cats = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
+  const activeCount = products.filter(p => p.status === 'active').length;
+
   return `
+    <div class="grid-3" style="margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">▦</div>
+        <div class="stat-label">Total Produk</div>
+        <div class="stat-value">${products.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">✓</div>
+        <div class="stat-label">Aktif</div>
+        <div class="stat-value">${activeCount}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--purple-50);color:var(--purple);">◇</div>
+        <div class="stat-label">Brand</div>
+        <div class="stat-value">${brands.length}</div>
+      </div>
+    </div>
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="productSearch" placeholder="🔍 Cari produk..." oninput="FT.filterTable('productTable','productSearch')">
-        <select class="select" id="productCatFilter" style="width:160px;" onchange="FT.filterProducts()">
+        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand..." oninput="FT.filterProducts()">
+        <select class="select" id="productCatFilter" style="width:140px;" onchange="FT.filterProducts()">
           <option value="">Semua Kategori</option>
-          ${[...new Set(products.map(p=>p.category))].map(c=>`<option>${c}</option>`).join('')}
+          ${cats.map(c => `<option value="${c}">${c}</option>`).join('')}
+        </select>
+        <select class="select" id="productBrandFilter" style="width:140px;" onchange="FT.filterProducts()">
+          <option value="">Semua Brand</option>
+          ${brands.map(b => `<option value="${b}">${b}</option>`).join('')}
+        </select>
+        <select class="select" id="productStatusFilter" style="width:120px;" onchange="FT.filterProducts()">
+          <option value="">Semua Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
         </select>
         <div class="spacer"></div>
         <button class="btn btn-primary" onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
+      <datalist id="catList">${cats.map(c => `<option value="${c}">`).join('')}</datalist>
       <div class="visits-table-wrapper">
         <table class="table" id="productTable">
-          <thead><tr><th>SKU</th><th>Nama Produk</th><th>Kategori</th><th>Satuan</th><th>Harga</th><th>Status</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>SKU</th><th>Produk</th><th>Brand</th><th>Kategori</th>
+              <th>Unit</th><th>Harga</th><th>Margin</th><th>Status</th><th></th>
+            </tr>
+          </thead>
           <tbody>
-            ${products.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📦</div><h3>Belum ada produk</h3></div></td></tr>` :
+            ${products.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📦</div><h3>Belum ada produk</h3></div></td></tr>` :
             products.map(p => `
-              <tr>
-                <td><span style="font-family:monospace; font-size:12px; color:var(--gray-500);">${p.sku}</span></td>
-                <td><span style="font-weight:600; color:var(--gray-800);">${p.name}</span></td>
-                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${p.category}</span></td>
+              <tr data-cat="${p.category||''}" data-brand="${p.brand||''}" data-status="${p.status||''}">
+                <td><span style="font-family:ui-monospace,monospace; font-size:11px; color:var(--gray-500);">${p.sku}</span></td>
+                <td><span style="font-weight:600; color:var(--gray-800);">${p.name}</span>
+                  ${p.cost != null ? `<br><span style="font-size:11px;color:var(--gray-400);">HPP ${formatCurrency(p.cost)}</span>` : ''}
+                </td>
+                <td><span style="font-size:12px; font-weight:600; color:var(--brand-dark);">${p.brand || '—'}</span></td>
+                <td><span style="font-size:11px; background:var(--gray-100); padding:3px 8px; border-radius:99px;">${p.category}</span></td>
                 <td>${p.unit}</td>
-                <td style="font-weight:600;">${formatCurrency(p.price)}</td>
+                <td style="font-weight:700;">${formatCurrency(p.price)}</td>
+                <td style="font-size:12px;color:var(--gray-500);">${p.margin != null ? p.margin + '%' : '—'}</td>
                 <td>${statusBadge(p.status)}</td>
-                <td>
+                <td style="white-space:nowrap;">
                   <button class="btn btn-secondary btn-sm" onclick="FT.editProduct('${p.id}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteProduct('${p.id}')">Hapus</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteProductConfirm('${p.id}')">Hapus</button>
                 </td>
               </tr>
             `).join('')}
@@ -1395,12 +1512,17 @@ function renderProducts() {
 }
 
 window.FT.filterProducts = function() {
-  const search = document.getElementById('productSearch').value.toLowerCase();
-  const cat = document.getElementById('productCatFilter').value;
+  const search = (document.getElementById('productSearch')?.value || '').toLowerCase();
+  const cat = document.getElementById('productCatFilter')?.value || '';
+  const brand = document.getElementById('productBrandFilter')?.value || '';
+  const status = document.getElementById('productStatusFilter')?.value || '';
   document.querySelectorAll('#productTable tbody tr').forEach(row => {
+    if (!row.dataset.status && row.querySelector('.empty-state')) return;
     let show = true;
     if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (cat && !row.textContent.includes(cat)) show = false;
+    if (cat && row.dataset.cat !== cat) show = false;
+    if (brand && row.dataset.brand !== brand) show = false;
+    if (status && row.dataset.status !== status) show = false;
     row.style.display = show ? '' : 'none';
   });
 };
@@ -1408,15 +1530,7 @@ window.FT.filterProducts = function() {
 window.FT.openProductModal = function() {
   openModal('Tambah Produk', `
     <form onsubmit="FT.createProduct(event)">
-      <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" required></div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" placeholder="ABC-001" required></div>
-        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" placeholder="Minuman, Sembako..." required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" placeholder="dus, pcs, kardus" required></div>
-        <div class="form-group"><label class="label">Harga (Rp)</label><input class="input" type="number" name="price" required></div>
-      </div>
+      ${productFormFields()}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -1427,27 +1541,19 @@ window.FT.openProductModal = function() {
 
 window.FT.createProduct = function(e) {
   e.preventDefault();
+  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   const data = Object.fromEntries(new FormData(e.target));
-  data.price = parseInt(data.price);
   createProduct(data);
   closeModal(); showToast('Produk berhasil ditambahkan', 'success'); render();
 };
 
 window.FT.editProduct = function(id) {
+  if (!isManager()) return;
   const p = getProducts().find(x => x.id === id);
   if (!p) return;
   openModal('Edit Produk', `
     <form onsubmit="FT.updateProduct(event,'${id}')">
-      <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${p.name}" required></div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p.sku}" required></div>
-        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${p.category}" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${p.unit}" required></div>
-        <div class="form-group"><label class="label">Harga (Rp)</label><input class="input" type="number" name="price" value="${p.price}" required></div>
-      </div>
-      <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${p.status==='active'?'selected':''}>Active</option><option value="inactive" ${p.status==='inactive'?'selected':''}>Inactive</option></select></div>
+      ${productFormFields(p)}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -1458,13 +1564,14 @@ window.FT.editProduct = function(id) {
 
 window.FT.updateProduct = function(e, id) {
   e.preventDefault();
+  if (!isManager()) return;
   const data = Object.fromEntries(new FormData(e.target));
-  data.price = parseInt(data.price);
   updateProduct(id, data);
   closeModal(); showToast('Produk diperbarui', 'success'); render();
 };
 
-window.FT.deleteProduct = function(id) {
+window.FT.deleteProductConfirm = function(id) {
+  if (!isManager()) return;
   if (!confirm('Hapus produk ini?')) return;
   deleteProduct(id);
   showToast('Produk dihapus', 'success'); render();
@@ -1933,6 +2040,8 @@ function renderMyStocks() {
               </div>
               <button class="btn btn-primary btn-sm" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Update Stok</button>
               <button class="btn btn-secondary btn-sm" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Catat Harga</button>
+              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitIntelInput('${v.id}', '${v.outletId}')">Intel</button>
+              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitPhotoInput('${v.id}', '${v.outletId}')">Foto</button>
             </div>
           `;
         }).join('')}
@@ -2311,7 +2420,970 @@ window.FT.saveStandalonePrice = function(e) {
 };
 
 
-// ===== Mobile Simulation =====
+// ===== COMPETITORS (Manager) =====
+function renderCompetitors() {
+  const competitors = getCompetitors();
+  const cpd = getCompetitorProducts();
+  const byComp = {};
+  cpd.forEach(p => { if (!byComp[p.competitorId]) byComp[p.competitorId] = []; byComp[p.competitorId].push(p); });
+
+  return `
+    <div class="grid-2" style="margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--purple-50);color:var(--purple);">◇</div>
+        <div class="stat-label">Merek Kompetitor</div>
+        <div class="stat-value">${competitors.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber);">▦</div>
+        <div class="stat-label">Produk Kompetitor</div>
+        <div class="stat-value">${cpd.length}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-row">
+        <div class="card-title" style="margin:0;">Master Kompetitor</div>
+        <div class="spacer"></div>
+        <button class="btn btn-secondary" onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
+        <button class="btn btn-primary" onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
+      </div>
+      <div class="card-subtitle">Kelola merek pesaing & katalog produknya</div>
+
+      ${competitors.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada kompetitor</h3></div>` : `
+      <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
+        ${competitors.map(c => {
+          const prods = byComp[c.id] || [];
+          return `
+            <div style="border:1px solid var(--gray-200); border-radius:var(--radius); padding:14px; background:var(--gray-50);">
+              <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                <div style="width:14px;height:14px;border-radius:4px;background:${c.color||'#64748b'};margin-top:4px;flex-shrink:0;"></div>
+                <div style="flex:1;min-width:140px;">
+                  <div style="font-weight:700;font-size:15px;color:var(--gray-900);">${c.name} ${statusBadge(c.status)}</div>
+                  <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${c.category || '—'} · ${prods.length} produk</div>
+                  ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${c.notes}</div>` : ''}
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <button class="btn btn-secondary btn-sm" onclick="FT.openCompetitorProductModal('${c.id}')">+ Produk</button>
+                  <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitor('${c.id}')">Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm('${c.id}')">Hapus</button>
+                </div>
+              </div>
+              ${prods.length ? `
+                <div class="visits-table-wrapper" style="margin-top:12px;">
+                  <table class="table" style="min-width:400px;background:white;border-radius:8px;">
+                    <thead><tr><th>SKU</th><th>Nama</th><th>Harga Tipikal</th><th>Unit</th><th>Status</th><th></th></tr></thead>
+                    <tbody>
+                      ${prods.map(p => `
+                        <tr>
+                          <td style="font-family:monospace;font-size:11px;color:var(--gray-500);">${p.sku||'—'}</td>
+                          <td style="font-weight:600;">${p.name}</td>
+                          <td>${formatCurrency(p.typicalPrice)}</td>
+                          <td>${p.unit}</td>
+                          <td>${statusBadge(p.status)}</td>
+                          <td>
+                            <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct('${p.id}')">Edit</button>
+                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm('${p.id}')">Hapus</button>
+                          </td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              ` : `<div style="margin-top:10px;font-size:12px;color:var(--gray-400);">Belum ada produk kompetitor</div>`}
+            </div>
+          `;
+        }).join('')}
+      </div>
+      `}
+    </div>
+  `;
+}
+
+window.FT.openCompetitorModal = function() {
+  if (!isManager()) return;
+  openModal('Tambah Merek Kompetitor', `
+    <form onsubmit="FT.saveCompetitor(event)">
+      <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" required placeholder="Danone, P&G..."></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" placeholder="Susu, Kebersihan..."></div>
+        <div class="form-group"><label class="label">Warna</label><input class="input" type="color" name="color" value="#64748b" style="height:44px;padding:4px;"></div>
+      </div>
+      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes" placeholder="Posisi pasar, brand strength..."></textarea></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.saveCompetitor = function(e) {
+  e.preventDefault();
+  if (!isManager()) return;
+  const data = Object.fromEntries(new FormData(e.target));
+  createCompetitor(data);
+  closeModal(); showToast('Kompetitor ditambahkan', 'success'); render();
+};
+
+window.FT.editCompetitor = function(id) {
+  if (!isManager()) return;
+  const c = getCompetitors().find(x => x.id === id);
+  if (!c) return;
+  openModal('Edit Kompetitor', `
+    <form onsubmit="FT.updateCompetitorForm(event,'${id}')">
+      <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" value="${c.name}" required></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${c.category||''}"></div>
+        <div class="form-group"><label class="label">Warna</label><input class="input" type="color" name="color" value="${c.color||'#64748b'}" style="height:44px;padding:4px;"></div>
+      </div>
+      <div class="form-group"><label class="label">Status</label>
+        <select class="select" name="status">
+          <option value="active" ${c.status==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${c.status==='inactive'?'selected':''}>Inactive</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${c.notes||''}</textarea></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.updateCompetitorForm = function(e, id) {
+  e.preventDefault();
+  if (!isManager()) return;
+  updateCompetitor(id, Object.fromEntries(new FormData(e.target)));
+  closeModal(); showToast('Kompetitor diperbarui', 'success'); render();
+};
+
+window.FT.deleteCompetitorConfirm = function(id) {
+  if (!isManager()) return;
+  if (!confirm('Hapus kompetitor dan semua produknya?')) return;
+  deleteCompetitor(id);
+  showToast('Kompetitor dihapus', 'success'); render();
+};
+
+window.FT.openCompetitorProductModal = function(competitorId) {
+  if (!isManager()) return;
+  const competitors = getCompetitors().filter(c => c.status === 'active');
+  openModal('Tambah Produk Kompetitor', `
+    <form onsubmit="FT.saveCompetitorProduct(event)">
+      <div class="form-group"><label class="label">Merek Kompetitor</label>
+        <select class="select" name="competitorId" required>
+          <option value="">— Pilih —</option>
+          ${competitors.map(c => `<option value="${c.id}" ${c.id===competitorId?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" required></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" placeholder="CPD-001"></div>
+        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="pcs" required></div>
+      </div>
+      <div class="form-group"><label class="label">Harga Tipikal (Rp)</label><input class="input" type="number" name="typicalPrice" required min="0"></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.saveCompetitorProduct = function(e) {
+  e.preventDefault();
+  if (!isManager()) return;
+  const data = Object.fromEntries(new FormData(e.target));
+  createCompetitorProduct(data);
+  closeModal(); showToast('Produk kompetitor ditambahkan', 'success'); render();
+};
+
+window.FT.editCompetitorProduct = function(id) {
+  if (!isManager()) return;
+  const p = getCompetitorProducts().find(x => x.id === id);
+  if (!p) return;
+  const competitors = getCompetitors();
+  openModal('Edit Produk Kompetitor', `
+    <form onsubmit="FT.updateCompetitorProductForm(event,'${id}')">
+      <div class="form-group"><label class="label">Merek</label>
+        <select class="select" name="competitorId" required>
+          ${competitors.map(c => `<option value="${c.id}" ${c.id===p.competitorId?'selected':''}>${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${p.name}" required></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p.sku||''}"></div>
+        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="${p.unit}" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Harga Tipikal</label><input class="input" type="number" name="typicalPrice" value="${p.typicalPrice}" required></div>
+        <div class="form-group"><label class="label">Status</label>
+          <select class="select" name="status">
+            <option value="active" ${p.status==='active'?'selected':''}>Active</option>
+            <option value="inactive" ${p.status==='inactive'?'selected':''}>Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `);
+};
+
+window.FT.updateCompetitorProductForm = function(e, id) {
+  e.preventDefault();
+  if (!isManager()) return;
+  updateCompetitorProduct(id, Object.fromEntries(new FormData(e.target)));
+  closeModal(); showToast('Produk kompetitor diperbarui', 'success'); render();
+};
+
+window.FT.deleteCompetitorProductConfirm = function(id) {
+  if (!isManager()) return;
+  if (!confirm('Hapus produk kompetitor ini?')) return;
+  deleteCompetitorProduct(id);
+  showToast('Dihapus', 'success'); render();
+};
+
+// ===== Competitor Analysis (Manager) =====
+function renderCompetitorAnalysis() {
+  const summary = getCompetitorAnalysisSummary();
+  const intel = [...getCompetitorIntel()].sort((a, b) => (b.recordedAt||'').localeCompare(a.recordedAt||''));
+  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const cpdMap = Object.fromEntries(getCompetitorProducts().map(p => [p.id, p]));
+  const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
+  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+
+  const totalIntel = intel.length;
+  const avgShare = totalIntel ? Math.round(intel.reduce((s, i) => s + (i.shelfShare || 0), 0) / totalIntel) : 0;
+  const promoCount = intel.filter(i => i.hasPromo).length;
+  const weLosePrice = intel.filter(i => i.ourPrice > i.competitorPrice).length;
+
+  return `
+    <div class="grid-4" style="margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">◇</div>
+        <div class="stat-label">Total Intel</div>
+        <div class="stat-value">${totalIntel}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">▥</div>
+        <div class="stat-label">Avg Shelf Share Kita</div>
+        <div class="stat-value">${avgShare}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber);">▣</div>
+        <div class="stat-label">Intel Ada Promo</div>
+        <div class="stat-value">${promoCount}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--red-50);color:var(--red);">↓</div>
+        <div class="stat-label">Kita Lebih Mahal</div>
+        <div class="stat-value">${weLosePrice}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Ringkasan per Merek</div>
+      <div class="card-subtitle">Avg price gap = harga kita − harga kompetitor (positif = kita lebih mahal)</div>
+      <div class="visits-table-wrapper">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Merek</th><th>Kategori</th><th>Intel</th>
+              <th>Avg Price Gap</th><th>Avg Shelf Share</th>
+              <th>Promo</th><th>Lebih Murah</th><th>Lebih Mahal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${summary.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><h3>Belum ada data</h3></div></td></tr>` :
+            summary.map(s => {
+              const gapColor = s.avgPriceGap > 0 ? 'var(--red)' : s.avgPriceGap < 0 ? 'var(--green)' : 'var(--gray-500)';
+              const gapLabel = s.intelCount
+                ? (s.avgPriceGap > 0 ? `+${formatCurrency(s.avgPriceGap)}` : formatCurrency(s.avgPriceGap))
+                : '—';
+              return `
+                <tr>
+                  <td>
+                    <span style="display:inline-flex;align-items:center;gap:8px;font-weight:700;">
+                      <span style="width:10px;height:10px;border-radius:3px;background:${s.color||'#94a3b8'};"></span>
+                      ${s.name}
+                    </span>
+                  </td>
+                  <td style="font-size:12px;color:var(--gray-500);">${s.category||'—'}</td>
+                  <td style="font-weight:700;">${s.intelCount}</td>
+                  <td style="font-weight:600;color:${gapColor};">${gapLabel}</td>
+                  <td>
+                    ${s.intelCount ? `
+                      <div style="display:flex;align-items:center;gap:8px;">
+                        <div class="progress-bar" style="width:64px;"><div class="progress-fill" style="width:${Math.min(100,s.avgShelfShare)}%;"></div></div>
+                        <span style="font-weight:600;">${s.avgShelfShare}%</span>
+                      </div>
+                    ` : '—'}
+                  </td>
+                  <td>${s.promoCount}</td>
+                  <td style="color:var(--red);font-weight:600;" title="Berapa kali harga kompetitor lebih murah">${s.cheaperCount}</td>
+                  <td style="color:var(--green);font-weight:600;">${s.moreExpensiveCount}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Riwayat Intel Lapangan</div>
+      <div class="card-subtitle">Semua observasi dari field sales & supervisor</div>
+      ${intel.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada intel</h3></div>` : `
+      <div class="visits-table-wrapper">
+        <table class="table" style="min-width:720px;">
+          <thead>
+            <tr>
+              <th>Tanggal</th><th>Sales</th><th>Outlet</th>
+              <th>Produk Kita</th><th>Kompetitor</th>
+              <th>Harga Kita</th><th>Harga Kompetitor</th>
+              <th>Gap</th><th>Shelf %</th><th>Vis</th><th>Promo</th><th>Catatan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${intel.map(i => {
+              const our = productMap[i.productId];
+              const cp = cpdMap[i.competitorProductId];
+              const comp = cp ? compMap[cp.competitorId] : null;
+              const o = outletMap[i.outletId];
+              const emp = empMap[i.recordedBy];
+              const gap = (i.ourPrice || 0) - (i.competitorPrice || 0);
+              const gapColor = gap > 0 ? 'var(--red)' : gap < 0 ? 'var(--green)' : 'var(--gray-400)';
+              return `
+                <tr>
+                  <td style="font-size:12px;">${formatDateShort(i.recordedAt)}</td>
+                  <td style="font-size:12px;">${emp?.name?.split(' ')[0] || i.recordedBy}</td>
+                  <td>${o ? outletIcon(o.type)+' '+o.name : i.outletId}</td>
+                  <td><span style="font-weight:600;">${our?.name || '—'}</span><br><span style="font-size:11px;color:var(--gray-400);">${our?.brand||''}</span></td>
+                  <td>
+                    <span style="font-weight:600;">${cp?.name || '—'}</span>
+                    <br><span style="font-size:11px;color:${comp?.color||'var(--gray-400)'};">${comp?.name||''}</span>
+                  </td>
+                  <td style="font-weight:600;">${formatCurrency(i.ourPrice)}</td>
+                  <td style="font-weight:600;">${formatCurrency(i.competitorPrice)}</td>
+                  <td style="font-weight:700;color:${gapColor};">${gap===0?'—':(gap>0?'+':'')+formatCurrency(gap).replace('Rp ','Rp ')}</td>
+                  <td style="font-weight:600;">${i.shelfShare}%</td>
+                  <td>${visibilityBadge(i.visibility)}</td>
+                  <td>${promoBadgeHTML(i)}</td>
+                  <td style="font-size:11px;color:var(--gray-500);max-width:140px;">${i.promoNotes || i.notes || '—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+}
+
+function promoBadgeHTML(intel) {
+  if (!intel.hasPromo) return '—';
+  const label = getPromoTypeLabel(intel.promoType, intel.promoType === 'custom' ? intel.promoNotes : '')
+    || intel.promoNotes
+    || 'Promo';
+  const pt = getPromoTypes().find(p => p.code === intel.promoType);
+  const strategic = pt?.strategic;
+  return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:${strategic ? '#fef3c7' : '#fff7ed'};color:${strategic ? '#b45309' : 'var(--amber)'};max-width:140px;line-height:1.3;" title="${(intel.promoNotes || '').replace(/"/g, '&quot;')}">${label}${strategic ? ' ★' : ''}</span>`;
+}
+
+// ===== Employee: Intel Kompetitor =====
+function renderMyIntel() {
+  const empId = myEmployeeId();
+  const visitedIds = getVisitedOutletIds(empId);
+  const intel = getCompetitorIntel().filter(i => visitedIds.includes(i.outletId));
+  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const cpdMap = Object.fromEntries(getCompetitorProducts().map(p => [p.id, p]));
+  const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
+  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+
+  return `
+    ${activeVisits.length > 0 ? `
+      <div class="card" style="margin-bottom:16px; border-color:#c4b5fd; background:var(--purple-light);">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+          <div style="width:36px;height:36px;border-radius:10px;background:var(--purple);color:white;display:flex;align-items:center;justify-content:center;font-weight:700;">◇</div>
+          <div>
+            <div style="font-size:15px;font-weight:700;color:var(--purple);">Catat Intel Saat Ini</div>
+            <div style="font-size:12px;color:var(--gray-500);">Anda checked-in — bandingkan produk kita vs kompetitor</div>
+          </div>
+        </div>
+        ${activeVisits.map(v => {
+          const o = outletMap[v.outletId] || getOutlets().find(x => x.id === v.outletId);
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:white;border-radius:10px;margin-bottom:8px;">
+              <div style="font-size:22px;">${o ? outletIcon(o.type) : '🏪'}</div>
+              <div style="flex:1;">
+                <div style="font-weight:600;">${o?.name || v.outletId}</div>
+                <div style="font-size:12px;color:var(--gray-400);">Check in: ${v.checkInTime}</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="FT.openVisitIntelInput('${v.id}','${v.outletId}')">+ Catat Intel</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    <div class="grid-3" style="margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--purple-50);color:var(--purple);">◇</div>
+        <div class="stat-label">Total Intel</div>
+        <div class="stat-value">${intel.length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber);">▣</div>
+        <div class="stat-label">Ada Promo</div>
+        <div class="stat-value">${intel.filter(i => i.hasPromo).length}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">⬡</div>
+        <div class="stat-label">Outlet</div>
+        <div class="stat-value">${new Set(intel.map(i => i.outletId)).size}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="filter-row">
+        <div class="card-title" style="margin:0;">Riwayat Intel Saya</div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" onclick="FT.openStandaloneIntelModal()">+ Catat Intel</button>
+      </div>
+      <div class="card-subtitle">Hanya outlet yang pernah Anda kunjungi</div>
+      ${intel.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada intel</h3><p>Catat saat check-in di outlet</p></div>` : `
+      <div class="visits-table-wrapper" style="margin-top:12px;">
+        <table class="table" style="min-width:640px;">
+          <thead>
+            <tr>
+              <th>Tanggal</th><th>Outlet</th><th>Produk Kita</th><th>vs Kompetitor</th>
+              <th>Harga</th><th>Shelf</th><th>Vis</th><th>Promo</th><th>Catatan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${intel.sort((a,b)=>(b.recordedAt||'').localeCompare(a.recordedAt||'')).map(i => {
+              const our = productMap[i.productId];
+              const cp = cpdMap[i.competitorProductId];
+              const comp = cp ? compMap[cp.competitorId] : null;
+              const o = outletMap[i.outletId];
+              const gap = (i.ourPrice||0) - (i.competitorPrice||0);
+              return `
+                <tr>
+                  <td style="font-size:12px;">${formatDateShort(i.recordedAt)}</td>
+                  <td>${o ? outletIcon(o.type)+' '+o.name : '—'}</td>
+                  <td style="font-weight:600;">${our?.name||'—'}</td>
+                  <td>
+                    <span style="font-weight:600;">${cp?.name||'—'}</span>
+                    <br><span style="font-size:11px;color:${comp?.color||'#94a3b8'};">${comp?.name||''}</span>
+                  </td>
+                  <td style="font-size:12px;">
+                    <div>Kita: <b>${formatCurrency(i.ourPrice)}</b></div>
+                    <div>Komp: <b>${formatCurrency(i.competitorPrice)}</b></div>
+                    <div style="color:${gap>0?'var(--red)':gap<0?'var(--green)':'var(--gray-400)'};font-weight:600;">
+                      Gap ${gap===0?'0':(gap>0?'+':'')+formatCurrency(gap)}
+                    </div>
+                  </td>
+                  <td style="font-weight:700;">${i.shelfShare}%</td>
+                  <td>${visibilityBadge(i.visibility)}</td>
+                  <td>${promoBadgeHTML(i)}</td>
+                  <td style="font-size:11px;color:var(--gray-500);max-width:120px;">${i.promoNotes||i.notes||'—'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      `}
+    </div>
+  `;
+}
+
+function intelFormHTML(visitId, outletId, opts = {}) {
+  const products = opts.products || getProducts().filter(p => p.status === 'active');
+  const competitors = getCompetitors().filter(c => c.status === 'active');
+  const cpd = getCompetitorProducts().filter(p => p.status === 'active');
+  const outlets = opts.outlets;
+  const promoTypes = getPromoTypes();
+
+  return `
+    <form onsubmit="FT.saveCompetitorIntel(event, ${visitId ? `'${visitId}'` : 'null'}, ${outletId ? `'${outletId}'` : 'null'})">
+      ${!outletId && outlets ? `
+        <div class="form-group">
+          <label class="label">Outlet (pernah dikunjungi)</label>
+          <select class="select" name="outletId" required>
+            <option value="">— Pilih outlet —</option>
+            ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${o.name}</option>`).join('')}
+          </select>
+        </div>
+      ` : `<input type="hidden" name="outletId" value="${outletId||''}">`}
+      <div class="form-group">
+        <label class="label">Produk Kita</label>
+        <select class="select" name="productId" id="intelOurProduct" required onchange="FT.prefillOurPrice()">
+          <option value="">— Pilih produk —</option>
+          ${products.map(p => `<option value="${p.id}" data-price="${p.price}">${p.brand ? p.brand+' · ' : ''}${p.name} (${formatCurrency(p.price)})</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Produk Kompetitor</label>
+        <select class="select" name="competitorProductId" id="intelCompProduct" required onchange="FT.prefillCompPrice()">
+          <option value="">— Pilih —</option>
+          ${cpd.map(p => {
+            const c = competitors.find(x => x.id === p.competitorId);
+            return `<option value="${p.id}" data-price="${p.typicalPrice}">${c?.name||'?'} · ${p.name} (tipikal ${formatCurrency(p.typicalPrice)})</option>`;
+          }).join('')}
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Harga Kita (Rp)</label>
+          <input class="input" type="number" name="ourPrice" id="intelOurPrice" required min="0">
+        </div>
+        <div class="form-group">
+          <label class="label">Harga Kompetitor (Rp)</label>
+          <input class="input" type="number" name="competitorPrice" id="intelCompPrice" required min="0">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="label">Shelf Share Kita (%)</label>
+          <input class="input" type="number" name="shelfShare" min="0" max="100" value="50" required>
+        </div>
+        <div class="form-group">
+          <label class="label">Visibility</label>
+          <select class="select" name="visibility">
+            <option value="high">High</option>
+            <option value="medium" selected>Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="label" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" name="hasPromo" value="true" id="intelHasPromo" onchange="FT.toggleIntelPromoFields(this.checked)">
+          Ada promo kompetitor / di rak
+        </label>
+      </div>
+      <div id="intelPromoFields" style="display:none;">
+        <div class="form-group">
+          <label class="label">Jenis Promo <span style="color:var(--red);">*</span></label>
+          <select class="select" name="promoType" id="intelPromoType" onchange="FT.toggleIntelPromoCustom(this.value)">
+            <option value="">— Pilih jenis promo —</option>
+            ${promoTypes.map(t => `
+              <option value="${t.code}">${t.label}${t.strategic ? ' ★ strategis' : ''}</option>
+            `).join('')}
+          </select>
+          <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">★ = promo strategis (trade, display, bundle, event, loyalty)</div>
+        </div>
+        <div class="form-group" id="intelPromoCustomWrap" style="display:none;">
+          <label class="label">Jenis custom <span style="color:var(--red);">*</span></label>
+          <input class="input" type="text" name="promoTypeCustom" id="intelPromoTypeCustom" placeholder="Sebutkan jenis promo yang tidak terdaftar">
+        </div>
+        <div class="form-group">
+          <label class="label">Detail Promo</label>
+          <textarea class="textarea" name="promoNotes" placeholder="Contoh: diskon 15%, beli 2 gratis 1, free display 1 gondola..."></textarea>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="label">Catatan Lapangan</label>
+        <textarea class="textarea" name="notes" placeholder="Posisi rak, reaksi owner, dsb..."></textarea>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Intel</button>
+      </div>
+    </form>
+  `;
+}
+
+window.FT.prefillOurPrice = function() {
+  const sel = document.getElementById('intelOurProduct');
+  const opt = sel?.options[sel.selectedIndex];
+  if (opt?.dataset.price) document.getElementById('intelOurPrice').value = opt.dataset.price;
+};
+
+window.FT.prefillCompPrice = function() {
+  const sel = document.getElementById('intelCompProduct');
+  const opt = sel?.options[sel.selectedIndex];
+  if (opt?.dataset.price) document.getElementById('intelCompPrice').value = opt.dataset.price;
+};
+
+window.FT.toggleIntelPromoFields = function(checked) {
+  const box = document.getElementById('intelPromoFields');
+  if (box) box.style.display = checked ? 'block' : 'none';
+  if (!checked) {
+    const typeSel = document.getElementById('intelPromoType');
+    if (typeSel) typeSel.value = '';
+    window.FT.toggleIntelPromoCustom('');
+  }
+};
+
+window.FT.toggleIntelPromoCustom = function(code) {
+  const wrap = document.getElementById('intelPromoCustomWrap');
+  if (wrap) wrap.style.display = code === 'custom' ? 'block' : 'none';
+};
+
+window.FT.openVisitIntelInput = function(visitId, outletId) {
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const stockProductIds = new Set(getStocksByOutlet(outletId).map(s => s.productId));
+  let products = getProducts().filter(p => p.status === 'active' && (stockProductIds.size === 0 || stockProductIds.has(p.id)));
+  if (!products.length) products = getProducts().filter(p => p.status === 'active');
+  openModal('Intel Kompetitor — ' + (outlet?.name || outletId), `
+    <div style="margin-bottom:14px;padding:12px;background:var(--purple-light);border-radius:10px;font-size:13px;color:var(--purple);">
+      Bandingkan harga, shelf share, dan visibility produk kita vs kompetitor di outlet ini
+    </div>
+    ${intelFormHTML(visitId, outletId, { products })}
+  `);
+};
+
+window.FT.openStandaloneIntelModal = function() {
+  const empId = myEmployeeId();
+  const visitedIds = getVisitedOutletIds(empId);
+  const outlets = getOutlets().filter(o => visitedIds.includes(o.id));
+  if (!outlets.length) {
+    showToast('Belum ada outlet yang dikunjungi', 'error');
+    return;
+  }
+  const products = getProductsForVisitedOutlets(empId);
+  openModal('Catat Intel Kompetitor', intelFormHTML(null, null, { outlets, products: products.length ? products : getProducts().filter(p => p.status==='active') }));
+};
+
+window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const empId = myEmployeeId();
+  if (!empId && !isManager()) {
+    showToast('Akses ditolak', 'error');
+    return;
+  }
+  let outId = outletId || fd.get('outletId');
+  if (!isManager()) {
+    const visited = getVisitedOutletIds(empId);
+    if (!visited.includes(outId)) {
+      showToast('Outlet tidak diizinkan (belum dikunjungi)', 'error');
+      return;
+    }
+  }
+  // Link visit if standalone
+  let vId = visitId;
+  if (!vId && empId) {
+    const recent = getVisits().filter(v => v.employeeId === empId && v.outletId === outId)
+      .sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
+    vId = recent?.id || null;
+  }
+  const hasPromo = fd.get('hasPromo') === 'true' || fd.get('hasPromo') === 'on';
+  let promoType = fd.get('promoType') || '';
+  let promoNotes = fd.get('promoNotes') || '';
+  if (hasPromo) {
+    if (!promoType) {
+      showToast('Pilih jenis promo', 'error');
+      return;
+    }
+    if (promoType === 'custom') {
+      const custom = (fd.get('promoTypeCustom') || '').trim();
+      if (!custom) {
+        showToast('Isi jenis promo custom', 'error');
+        return;
+      }
+      // Simpan label custom di promoNotes jika detail kosong, atau gabungkan
+      if (!promoNotes) promoNotes = custom;
+      else promoNotes = `[${custom}] ${promoNotes}`;
+    }
+  } else {
+    promoType = '';
+  }
+  createCompetitorIntel({
+    visitId: vId,
+    outletId: outId,
+    productId: fd.get('productId'),
+    competitorProductId: fd.get('competitorProductId'),
+    ourPrice: parseInt(fd.get('ourPrice'), 10),
+    competitorPrice: parseInt(fd.get('competitorPrice'), 10),
+    shelfShare: parseInt(fd.get('shelfShare'), 10),
+    visibility: fd.get('visibility') || 'medium',
+    hasPromo,
+    promoType: hasPromo ? promoType : '',
+    promoNotes,
+    notes: fd.get('notes') || '',
+    recordedBy: empId || state.account?.id || 'manager',
+  });
+  closeModal();
+  showToast('Intel kompetitor tersimpan', 'success');
+  render();
+};
+
+// ===== Field Photos =====
+function renderFieldPhotosGallery({ managerView }) {
+  const empId = myEmployeeId();
+  let photos = managerView
+    ? [...getFieldPhotos()]
+    : [...getFieldPhotosByEmployee(empId)];
+  photos.sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
+
+  const filterType = state._photoFilterType || '';
+  if (filterType) photos = photos.filter(p => p.type === filterType);
+
+  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
+  const activeVisits = !managerView && empId
+    ? getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in')
+    : [];
+
+  const byType = FIELD_PHOTO_TYPES.map(t => ({
+    ...t,
+    count: (managerView ? getFieldPhotos() : getFieldPhotosByEmployee(empId)).filter(p => p.type === t.code).length,
+  }));
+
+  return `
+    ${!managerView && activeVisits.length > 0 ? `
+      <div class="card" style="margin-bottom:16px;border-color:#93c5fd;background:var(--blue-50);">
+        <div style="font-size:15px;font-weight:700;color:var(--blue-600);margin-bottom:8px;">Ambil foto saat visit aktif</div>
+        ${activeVisits.map(v => {
+          const o = outletMap[v.outletId];
+          return `
+            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:white;border-radius:10px;margin-bottom:8px;">
+              <div style="font-size:22px;">${o ? outletIcon(o.type) : '🏪'}</div>
+              <div style="flex:1;">
+                <div style="font-weight:600;">${o?.name || v.outletId}</div>
+                <div style="font-size:12px;color:var(--gray-400);">Check in: ${v.checkInTime || '—'}</div>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="FT.openVisitPhotoInput('${v.id}','${v.outletId}')">+ Foto</button>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    <div class="grid-4" style="margin-bottom:14px;">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">▣</div>
+        <div class="stat-label">Total Foto</div>
+        <div class="stat-value">${managerView ? getFieldPhotos().length : getFieldPhotosByEmployee(empId).length}</div>
+      </div>
+      ${byType.slice(0, 3).map(t => `
+        <div class="stat-card">
+          <div class="stat-label">${t.label}</div>
+          <div class="stat-value" style="font-size:22px;">${t.count}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card">
+      <div class="filter-row">
+        <div class="card-title" style="margin:0;">${managerView ? 'Galeri Tim' : 'Galeri Saya'}</div>
+        <div class="spacer"></div>
+        <select class="select" style="width:auto;min-width:140px;" onchange="FT.setPhotoFilter(this.value)">
+          <option value="">Semua jenis</option>
+          ${FIELD_PHOTO_TYPES.map(t => `
+            <option value="${t.code}" ${filterType === t.code ? 'selected' : ''}>${t.label}</option>
+          `).join('')}
+        </select>
+      </div>
+      <div class="card-subtitle">${managerView ? 'Semua foto field sales & supervisor' : 'Hanya foto yang Anda ambil'}</div>
+
+      ${photos.length === 0 ? `
+        <div class="empty-state">
+          <div class="empty-icon">▣</div>
+          <h3>Belum ada foto</h3>
+          <p>${managerView ? 'Tim belum mengunggah foto lapangan' : 'Ambil foto saat check-in di outlet'}</p>
+        </div>
+      ` : `
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:14px;">
+          ${photos.map(p => {
+            const o = outletMap[p.outletId];
+            const emp = empMap[p.recordedBy];
+            const prod = p.productId ? productMap[p.productId] : null;
+            const comp = p.competitorId ? compMap[p.competitorId] : null;
+            const thumb = p.dataUrl
+              ? `<img src="${p.dataUrl}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
+              : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.type)}</div>`;
+            return `
+              <div style="border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:white;">
+                ${thumb}
+                <div style="padding:10px;">
+                  <div style="font-size:11px;font-weight:700;color:var(--blue-600);margin-bottom:2px;">${photoTypeLabel(p.type)}</div>
+                  <div style="font-size:12px;font-weight:600;color:var(--gray-800);line-height:1.3;min-height:32px;">${p.caption || 'Tanpa caption'}</div>
+                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">${o ? outletIcon(o.type) + ' ' + o.name : p.outletId}</div>
+                  ${managerView ? `<div style="font-size:11px;color:var(--gray-400);">${emp?.name || p.recordedBy}</div>` : ''}
+                  ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${prod.name}</div>` : ''}
+                  ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${comp.name}</div>` : ''}
+                  <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || '').slice(0, 10))}</div>
+                  ${(!managerView || isManager()) ? `
+                    <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
+                  ` : ''}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `}
+    </div>
+  `;
+}
+
+window.FT.setPhotoFilter = function(type) {
+  state._photoFilterType = type || '';
+  render();
+};
+
+window.FT.openVisitPhotoInput = function(visitId, outletId) {
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const empId = myEmployeeId();
+  if (!empId && !isManager()) {
+    showToast('Akses ditolak', 'error');
+    return;
+  }
+  if (empId && !isManager()) {
+    const visited = getVisitedOutletIds(empId);
+    if (!visited.includes(outletId)) {
+      showToast('Outlet belum pernah dikunjungi', 'error');
+      return;
+    }
+  }
+  const products = getProducts().filter(p => p.status === 'active');
+  const competitors = getCompetitors().filter(c => c.status === 'active');
+  openModal('Foto Lapangan — ' + (outlet?.name || outletId), `
+    <div style="margin-bottom:12px;padding:12px;background:var(--blue-50);border-radius:10px;font-size:13px;color:var(--blue-600);">
+      Ambil dari kamera atau pilih galeri. Gambar dikompres otomatis (~800px JPEG).
+    </div>
+    <form id="fieldPhotoForm" onsubmit="FT.saveFieldPhoto(event, '${visitId}', '${outletId}')">
+      <div class="form-group">
+        <label class="label">Jenis Foto</label>
+        <select class="select" name="type" id="photoType" required onchange="FT.onPhotoTypeChange(this.value)">
+          ${FIELD_PHOTO_TYPES.map(t => `<option value="${t.code}">${t.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Foto (kamera / galeri)</label>
+        <input class="input" type="file" name="photoFile" id="photoFileInput" accept="image/*" capture="environment" required
+          onchange="FT.onPhotoFileSelected(event)">
+        <div id="photoPreview" style="margin-top:10px;display:none;">
+          <img id="photoPreviewImg" alt="Preview" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid var(--gray-200);">
+          <div id="photoPreviewMeta" style="font-size:11px;color:var(--gray-400);margin-top:4px;"></div>
+        </div>
+        <input type="hidden" name="dataUrl" id="photoDataUrl">
+      </div>
+      <div class="form-group">
+        <label class="label">Caption</label>
+        <input class="input" type="text" name="caption" placeholder="Keterangan singkat...">
+      </div>
+      <div class="form-group" id="photoProductWrap" style="display:none;">
+        <label class="label">Produk (opsional)</label>
+        <select class="select" name="productId">
+          <option value="">— Tidak dilink —</option>
+          ${products.map(p => `<option value="${p.id}">${p.brand ? p.brand + ' · ' : ''}${p.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group" id="photoCompetitorWrap" style="display:none;">
+        <label class="label">Kompetitor (opsional)</label>
+        <select class="select" name="competitorId">
+          <option value="">— Tidak dilink —</option>
+          ${competitors.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+        </select>
+      </div>
+      <div class="modal-footer" style="padding:0;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary" id="photoSaveBtn">Simpan Foto</button>
+      </div>
+    </form>
+  `);
+  window.FT.onPhotoTypeChange('location');
+};
+
+window.FT.onPhotoTypeChange = function(type) {
+  const prod = document.getElementById('photoProductWrap');
+  const comp = document.getElementById('photoCompetitorWrap');
+  if (prod) prod.style.display = (type === 'product' || type === 'shelf') ? 'block' : 'none';
+  if (comp) comp.style.display = type === 'competitor' ? 'block' : 'none';
+};
+
+window.FT.onPhotoFileSelected = async function(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  const btn = document.getElementById('photoSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Kompres...'; }
+  try {
+    const dataUrl = await compressImage(file, { maxPx: 800, quality: 0.7 });
+    const hidden = document.getElementById('photoDataUrl');
+    if (hidden) hidden.value = dataUrl;
+    const wrap = document.getElementById('photoPreview');
+    const img = document.getElementById('photoPreviewImg');
+    const meta = document.getElementById('photoPreviewMeta');
+    if (img) img.src = dataUrl;
+    if (wrap) wrap.style.display = 'block';
+    if (meta) {
+      const kb = Math.round((dataUrl.length * 0.75) / 1024);
+      meta.textContent = `Terkirim JPEG ~${kb} KB (dikompres)`;
+    }
+  } catch (err) {
+    showToast(err.message || 'Gagal kompres gambar', 'error');
+    e.target.value = '';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Simpan Foto'; }
+  }
+};
+
+window.FT.saveFieldPhoto = function(e, visitId, outletId) {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const empId = myEmployeeId();
+  if (!empId && !isManager()) {
+    showToast('Akses ditolak', 'error');
+    return;
+  }
+  if (empId && !isManager()) {
+    const visited = getVisitedOutletIds(empId);
+    if (!visited.includes(outletId)) {
+      showToast('Outlet tidak diizinkan', 'error');
+      return;
+    }
+  }
+  const dataUrl = fd.get('dataUrl') || document.getElementById('photoDataUrl')?.value || null;
+  if (!dataUrl) {
+    showToast('Pilih atau ambil foto dulu', 'error');
+    return;
+  }
+  const type = fd.get('type') || 'location';
+  createFieldPhoto({
+    visitId: visitId || null,
+    outletId,
+    type,
+    caption: fd.get('caption') || '',
+    productId: fd.get('productId') || null,
+    competitorId: type === 'competitor' ? (fd.get('competitorId') || null) : (fd.get('competitorId') || null),
+    dataUrl,
+    recordedBy: empId || state.account?.id || 'manager',
+    recordedAt: new Date().toISOString(),
+  });
+  closeModal();
+  showToast('Foto lapangan tersimpan', 'success');
+  render();
+};
+
+window.FT.deleteFieldPhotoConfirm = function(id) {
+  const photos = getFieldPhotos();
+  const p = photos.find(x => x.id === id);
+  if (!p) return;
+  const empId = myEmployeeId();
+  if (!isManager() && p.recordedBy !== empId) {
+    showToast('Hanya bisa hapus foto sendiri', 'error');
+    return;
+  }
+  if (!confirm('Hapus foto ini?')) return;
+  deleteFieldPhoto(id);
+  showToast('Foto dihapus', 'success');
+  render();
+};
+
+// ===== Mobile Simulation (legacy, not linked in nav) =====
 function renderMobileSim() {
   const employees = getEmployees().filter(e => e.role === 'Field Sales');
   const myId = myEmployeeId();
@@ -2527,10 +3599,11 @@ function openModal(title, content) {
   const root = document.getElementById('modalRoot');
   root.innerHTML = `
     <div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()">
-      <div class="modal">
+      <div class="modal animate-up">
+        <div class="modal-handle" aria-hidden="true"></div>
         <div class="modal-header">
-          <h2>${title}</h2>
-          <button class="modal-close" onclick="FT.closeModal()">✕</button>
+          <h3>${title}</h3>
+          <button class="modal-close" onclick="FT.closeModal()" aria-label="Tutup">✕</button>
         </div>
         <div class="modal-body">${content}</div>
       </div>

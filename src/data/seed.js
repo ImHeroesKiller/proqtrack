@@ -1,4 +1,4 @@
-// Seed data for ProQTrack — realistic Indonesian field sales data
+// Seed data for ProQTrack — realistic Indonesian field sales (FMCG + bangunan)
 
 export const seedEmployees = [
   { id: 'EMP001', name: 'Budi Santoso',      email: 'budi.santoso@proqtrack.id',     phone: '0812-3456-7801', role: 'Field Sales', area: 'Jakarta Pusat',  status: 'active', lat: -6.1944, lng: 106.8229, joinDate: '2023-01-15', todayVisits: 4, targetVisits: 8, totalVisits: 156 },
@@ -74,7 +74,6 @@ export const seedAttendance = [
   { id: 'ATT008', employeeId: 'EMP008', date: '2024-07-27', checkInTime: '07:50', checkInLocation: 'Kantor Cabang Jakarta Barat', status: 'hadir' },
 ];
 
-// Login accounts — manager + one per employee
 export const seedAccounts = [
   { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'demo123', role: 'manager',  employeeId: null,    name: 'Manager Demo' },
   { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'budi123',    role: 'employee', employeeId: 'EMP001', name: 'Budi Santoso' },
@@ -87,26 +86,28 @@ export const seedAccounts = [
   { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'indah123',   role: 'employee', employeeId: 'EMP008', name: 'Indah Permata' },
 ];
 
-// Products — katalog produk yang dijual/distribusi ke outlet
+// Our catalog — Nestlé, Unilever, Indofood, Mayora, Wings + Semen Tiga Roda / Dulux-style lines
 export const seedProducts = [
-  { id: 'PRD001', name: 'Aqua Botol 600ml',    category: 'Minuman',   unit: 'dus',   price: 28000, sku: 'AQA-600', status: 'active' },
-  { id: 'PRD002', name: 'Teh Botol Sosro 350ml', category: 'Minuman', unit: 'dus',   price: 32000, sku: 'TBS-350', status: 'active' },
-  { id: 'PRD003', name: 'Indomie Goreng',       category: 'Makanan',  unit: 'kardus', price: 95000, sku: 'IND-GRG', status: 'active' },
-  { id: 'PRD004', name: 'Beras Premium 5kg',    category: 'Sembako',  unit: 'karung', price: 68000, sku: 'BRP-5K',  status: 'active' },
-  { id: 'PRD005', name: 'Gula Pasir 1kg',       category: 'Sembako',  unit: 'sak',    price: 14000, sku: 'GLP-1K',  status: 'active' },
-  { id: 'PRD006', name: 'Minyak Goreng 2L',     category: 'Sembako',  unit: 'btl',    price: 36000, sku: 'MGR-2L',  status: 'active' },
-  { id: 'PRD007', name: 'Kopi Kapal Api 165g',  category: 'Minuman',  unit: 'pcs',    price: 18000, sku: 'KKP-165', status: 'active' },
-  { id: 'PRD008', name: 'Susu Ultra 250ml',     category: 'Minuman',  unit: 'dus',    price: 24000, sku: 'SUL-250', status: 'active' },
-  { id: 'PRD009', name: 'Sabun Lifebuoy',       category: 'Kebersihan', unit: 'dus',  price: 42000, sku: 'SLB-001', status: 'active' },
-  { id: 'PRD010', name: 'Rokok Surya 16',       category: 'Rokok',    unit: 'batang', price: 30000, sku: 'RSR-16',  status: 'active' },
-  { id: 'PRD011', name: 'Cat Tembok Avian 25kg', category: 'Bangunan', unit: 'galon', price: 450000, sku: 'CTA-25K', status: 'active' },
-  { id: 'PRD012', name: 'Semen Gresik 50kg',    category: 'Bangunan', unit: 'sak',    price: 58000, sku: 'SMG-50K', status: 'active' },
-  { id: 'PRD013', name: 'Paracetamol Box 10s',  category: 'Obat',     unit: 'box',    price: 8500,  sku: 'PCT-010', status: 'active' },
-  { id: 'PRD014', name: 'Roti Tawar Sari',      category: 'Bakery',   unit: 'pcs',    price: 15000, sku: 'RTS-001', status: 'active' },
-  { id: 'PRD015', name: 'Kopi Torabika 230g',   category: 'Minuman',  unit: 'pcs',    price: 22000, sku: 'KTB-230', status: 'inactive' },
+  { id: 'PRD001', name: 'Dancow Fortigro 800g',       brand: 'Nestlé',     category: 'Susu',       unit: 'pcs',    price: 98000,  cost: 78000,  margin: 20, sku: 'NST-DCW-800', status: 'active' },
+  { id: 'PRD002', name: 'Milo Activ-Go 1kg',          brand: 'Nestlé',     category: 'Minuman',    unit: 'pcs',    price: 72000,  cost: 56000,  margin: 22, sku: 'NST-MLO-1K',  status: 'active' },
+  { id: 'PRD003', name: 'Indomie Goreng',             brand: 'Indofood',   category: 'Makanan',    unit: 'kardus', price: 95000,  cost: 82000,  margin: 14, sku: 'IDF-IMG-GRG', status: 'active' },
+  { id: 'PRD004', name: 'Indomie Soto Mie',           brand: 'Indofood',   category: 'Makanan',    unit: 'kardus', price: 92000,  cost: 80000,  margin: 13, sku: 'IDF-IMG-STO', status: 'active' },
+  { id: 'PRD005', name: 'Lifebuoy Total 10 Sabun',    brand: 'Unilever',   category: 'Kebersihan', unit: 'dus',    price: 42000,  cost: 32000,  margin: 24, sku: 'ULV-LFB-010', status: 'active' },
+  { id: 'PRD006', name: 'Rinso Anti Noda 900g',       brand: 'Unilever',   category: 'Kebersihan', unit: 'pcs',    price: 28000,  cost: 21000,  margin: 25, sku: 'ULV-RNS-900', status: 'active' },
+  { id: 'PRD007', name: 'Pepsodent White 190g',       brand: 'Unilever',   category: 'Kebersihan', unit: 'pcs',    price: 16500,  cost: 12000,  margin: 27, sku: 'ULV-PSD-190', status: 'active' },
+  { id: 'PRD008', name: 'Kopiko 78c Coffee Candy',    brand: 'Mayora',     category: 'Snack',      unit: 'dus',    price: 48000,  cost: 38000,  margin: 21, sku: 'MYR-KPK-78',  status: 'active' },
+  { id: 'PRD009', name: 'Beng-Beng Share It 130g',    brand: 'Mayora',     category: 'Snack',      unit: 'pcs',    price: 12000,  cost: 9000,   margin: 25, sku: 'MYR-BBG-130', status: 'active' },
+  { id: 'PRD010', name: 'Energen Cokelat 10s',        brand: 'Mayora',     category: 'Minuman',    unit: 'box',    price: 18000,  cost: 14000,  margin: 22, sku: 'MYR-ENG-10',  status: 'active' },
+  { id: 'PRD011', name: 'So Klin Softener 800ml',     brand: 'Wings',      category: 'Kebersihan', unit: 'btl',    price: 22000,  cost: 16000,  margin: 27, sku: 'WNG-SKL-800', status: 'active' },
+  { id: 'PRD012', name: 'Giv White Sabun 80g',        brand: 'Wings',      category: 'Kebersihan', unit: 'pcs',    price: 4500,   cost: 3200,   margin: 29, sku: 'WNG-GIV-80',  status: 'active' },
+  { id: 'PRD013', name: 'Ale-Ale Jeruk 200ml',        brand: 'Wings',      category: 'Minuman',    unit: 'dus',    price: 36000,  cost: 28000,  margin: 22, sku: 'WNG-ALE-200', status: 'active' },
+  { id: 'PRD014', name: 'Semen Tiga Roda 50kg',       brand: 'Semen Indonesia', category: 'Bangunan', unit: 'sak', price: 58000,  cost: 51000,  margin: 12, sku: 'SMI-TGR-50',  status: 'active' },
+  { id: 'PRD015', name: 'Dulux EasyClean 2.5L',       brand: 'Dulux',      category: 'Bangunan',   unit: 'kaleng', price: 185000, cost: 148000, margin: 20, sku: 'DLX-EC-25',   status: 'active' },
+  { id: 'PRD016', name: 'Dulux WeatherShield 5L',     brand: 'Dulux',      category: 'Bangunan',   unit: 'kaleng', price: 420000, cost: 340000, margin: 19, sku: 'DLX-WS-5L',   status: 'active' },
+  { id: 'PRD017', name: 'Nestlé Pure Life 600ml',     brand: 'Nestlé',     category: 'Minuman',    unit: 'dus',    price: 32000,  cost: 25000,  margin: 22, sku: 'NST-NPL-600', status: 'active' },
+  { id: 'PRD018', name: 'Chitato Sapi Panggang 68g',  brand: 'Indofood',   category: 'Snack',      unit: 'pcs',    price: 9500,   cost: 7200,   margin: 24, sku: 'IDF-CHT-68',  status: 'inactive' },
 ];
 
-// Leave/Permit types
 export const seedLeaveTypes = [
   { id: 'LVT001', name: 'Cuti Tahunan',   quota: 12, color: '#ea580c', needsApproval: true },
   { id: 'LVT002', name: 'Sakit',          quota: 7,  color: '#ef4444', needsApproval: true },
@@ -115,7 +116,6 @@ export const seedLeaveTypes = [
   { id: 'LVT005', name: 'Cuti Melahirkan', quota: 90, color: '#7c3aed', needsApproval: true },
 ];
 
-// Leave/Permit requests — pengajuan ijin & cuti karyawan
 export const seedLeaves = [
   { id: 'LV001', employeeId: 'EMP001', type: 'Cuti Tahunan',  startDate: '2024-08-05', endDate: '2024-08-07', days: 3, reason: 'Liburan keluarga ke Bandung',          status: 'pending',    submittedAt: '2024-07-25', approverId: null,    approvedAt: null },
   { id: 'LV002', employeeId: 'EMP002', type: 'Sakit',         startDate: '2024-07-25', endDate: '2024-07-25', days: 1, reason: 'Demam tinggi, surat dokter terlampir', status: 'approved',   submittedAt: '2024-07-24', approverId: 'ACC000', approvedAt: '2024-07-24' },
@@ -126,36 +126,196 @@ export const seedLeaves = [
   { id: 'LV007', employeeId: 'EMP008', type: 'Cuti Tahunan',  startDate: '2024-09-01', endDate: '2024-09-05', days: 5, reason: 'Umroh',                               status: 'pending',    submittedAt: '2024-07-27', approverId: null,    approvedAt: null },
 ];
 
-// Outlet stock — stok produk per outlet (current on-hand)
 export const seedStocks = [
-  { id: 'STK001', outletId: 'OUT001', productId: 'PRD001', quantity: 24,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK002', outletId: 'OUT001', productId: 'PRD003', quantity: 8,   minStock: 12, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK003', outletId: 'OUT001', productId: 'PRD004', quantity: 15,  minStock: 8,  lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK004', outletId: 'OUT002', productId: 'PRD001', quantity: 48,  minStock: 20, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK005', outletId: 'OUT002', productId: 'PRD007', quantity: 6,   minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK006', outletId: 'OUT003', productId: 'PRD007', quantity: 30,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
-  { id: 'STK007', outletId: 'OUT004', productId: 'PRD013', quantity: 50,  minStock: 20, lastUpdated: '2024-07-27', updatedBy: 'EMP002' },
-  { id: 'STK008', outletId: 'OUT005', productId: 'PRD012', quantity: 40,  minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP003' },
-  { id: 'STK009', outletId: 'OUT005', productId: 'PRD011', quantity: 3,   minStock: 8,  lastUpdated: '2024-07-27', updatedBy: 'EMP003' },
+  { id: 'STK001', outletId: 'OUT001', productId: 'PRD003', quantity: 18,  minStock: 12, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK002', outletId: 'OUT001', productId: 'PRD005', quantity: 8,   minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK003', outletId: 'OUT001', productId: 'PRD017', quantity: 24,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK004', outletId: 'OUT002', productId: 'PRD001', quantity: 12,  minStock: 8,  lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK005', outletId: 'OUT002', productId: 'PRD006', quantity: 6,   minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK006', outletId: 'OUT003', productId: 'PRD002', quantity: 20,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK007', outletId: 'OUT004', productId: 'PRD007', quantity: 30,  minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP002' },
+  { id: 'STK008', outletId: 'OUT005', productId: 'PRD014', quantity: 40,  minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP003' },
+  { id: 'STK009', outletId: 'OUT005', productId: 'PRD015', quantity: 3,   minStock: 8,  lastUpdated: '2024-07-27', updatedBy: 'EMP003' },
   { id: 'STK010', outletId: 'OUT006', productId: 'PRD003', quantity: 20,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP002' },
-  { id: 'STK011', outletId: 'OUT008', productId: 'PRD014', quantity: 5,   minStock: 12, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
-  { id: 'STK012', outletId: 'OUT010', productId: 'PRD001', quantity: 36,  minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
-  { id: 'STK013', outletId: 'OUT010', productId: 'PRD010', quantity: 100, minStock: 50, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
+  { id: 'STK011', outletId: 'OUT008', productId: 'PRD009', quantity: 15,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
+  { id: 'STK012', outletId: 'OUT010', productId: 'PRD017', quantity: 36,  minStock: 15, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
+  { id: 'STK013', outletId: 'OUT010', productId: 'PRD011', quantity: 22,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP006' },
   { id: 'STK014', outletId: 'OUT011', productId: 'PRD004', quantity: 18,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP004' },
-  { id: 'STK015', outletId: 'OUT014', productId: 'PRD012', quantity: 25,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP008' },
-  { id: 'STK016', outletId: 'OUT014', productId: 'PRD011', quantity: 12,  minStock: 5,  lastUpdated: '2024-07-27', updatedBy: 'EMP008' },
-  { id: 'STK017', outletId: 'OUT018', productId: 'PRD002', quantity: 4,   minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP004' },
-  { id: 'STK018', outletId: 'OUT009', productId: 'PRD006', quantity: 22,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP001' },
+  { id: 'STK015', outletId: 'OUT014', productId: 'PRD014', quantity: 25,  minStock: 10, lastUpdated: '2024-07-27', updatedBy: 'EMP008' },
+  { id: 'STK016', outletId: 'OUT014', productId: 'PRD016', quantity: 6,   minStock: 4,  lastUpdated: '2024-07-27', updatedBy: 'EMP008' },
+  { id: 'STK017', outletId: 'OUT016', productId: 'PRD008', quantity: 14,  minStock: 8,  lastUpdated: '2024-07-26', updatedBy: 'EMP002' },
+  { id: 'STK018', outletId: 'OUT002', productId: 'PRD010', quantity: 9,   minStock: 12, lastUpdated: '2024-07-27', updatedBy: 'EMP005' },
 ];
 
-// Price & Discount observations during field visits
 export const seedPriceObservations = [
-  { id: 'PRC001', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD001', observedPrice: 3000, discountPercent: 0, discountAmount: 0, notes: 'Harga eceran normal', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
-  { id: 'PRC002', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD003', observedPrice: 3000, discountPercent: 5, discountAmount: 150, notes: 'Promo 5% untuk pembelian >10 dus', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
-  { id: 'PRC003', visitId: 'VIS005', outletId: 'OUT004', productId: 'PRD013', observedPrice: 10000, discountPercent: 0, discountAmount: 0, notes: 'Harga naik dari minggu lalu', recordedBy: 'EMP002', recordedAt: '2024-07-27' },
-  { id: 'PRC004', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD012', observedPrice: 62000, discountPercent: 0, discountAmount: 0, notes: 'Semen naik Rp4.000', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
-  { id: 'PRC005', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD011', observedPrice: 480000, discountPercent: 10, discountAmount: 48000, notes: 'Diskon 10% untuk order 5 galon', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
-  { id: 'PRC006', visitId: 'VIS016', outletId: 'OUT008', productId: 'PRD014', observedPrice: 16000, discountPercent: 0, discountAmount: 0, notes: 'Harga roti tawar naik', recordedBy: 'EMP006', recordedAt: '2024-07-27' },
-  { id: 'PRC007', visitId: 'VIS017', outletId: 'OUT010', productId: 'PRD001', observedPrice: 2800, discountPercent: 0, discountAmount: 0, notes: 'Harga kompetitif', recordedBy: 'EMP006', recordedAt: '2024-07-27' },
-  { id: 'PRC008', visitId: 'VIS021', outletId: 'OUT014', productId: 'PRD012', observedPrice: 59000, discountPercent: 0, discountAmount: 0, notes: '', recordedBy: 'EMP008', recordedAt: '2024-07-27' },
+  { id: 'PRC001', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD003', observedPrice: 3000, discountPercent: 0, discountAmount: 0, notes: 'Harga eceran normal per bungkus', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
+  { id: 'PRC002', visitId: 'VIS001', outletId: 'OUT001', productId: 'PRD005', observedPrice: 4500, discountPercent: 5, discountAmount: 225, notes: 'Promo 5% pembelian >1 dus', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
+  { id: 'PRC003', visitId: 'VIS002', outletId: 'OUT002', productId: 'PRD001', observedPrice: 99000, discountPercent: 0, discountAmount: 0, notes: 'Harga naik tipis', recordedBy: 'EMP001', recordedAt: '2024-07-27' },
+  { id: 'PRC004', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD014', observedPrice: 62000, discountPercent: 0, discountAmount: 0, notes: 'Semen naik Rp4.000', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
+  { id: 'PRC005', visitId: 'VIS008', outletId: 'OUT005', productId: 'PRD015', observedPrice: 190000, discountPercent: 10, discountAmount: 19000, notes: 'Diskon 10% order 5 kaleng', recordedBy: 'EMP003', recordedAt: '2024-07-27' },
+  { id: 'PRC006', visitId: 'VIS017', outletId: 'OUT010', productId: 'PRD017', observedPrice: 3200, discountPercent: 0, discountAmount: 0, notes: 'Harga kompetitif eceran', recordedBy: 'EMP006', recordedAt: '2024-07-27' },
+  { id: 'PRC007', visitId: 'VIS015', outletId: 'OUT002', productId: 'PRD006', observedPrice: 27500, discountPercent: 0, discountAmount: 0, notes: '', recordedBy: 'EMP005', recordedAt: '2024-07-27' },
+  { id: 'PRC008', visitId: 'VIS021', outletId: 'OUT014', productId: 'PRD014', observedPrice: 59000, discountPercent: 0, discountAmount: 0, notes: '', recordedBy: 'EMP008', recordedAt: '2024-07-27' },
+];
+
+// ===== COMPETITORS (master merek kompetitor) =====
+export const seedCompetitors = [
+  { id: 'CMP001', name: 'Danone',           category: 'Susu & Minuman',  color: '#0055A5', status: 'active', notes: 'Pesaing utama di segmen susu UHT & air mineral' },
+  { id: 'CMP002', name: 'Frisian Flag',     category: 'Susu',            color: '#E31C23', status: 'active', notes: 'Kuat di toko kelontong tradisional' },
+  { id: 'CMP003', name: 'P&G',              category: 'Kebersihan',      color: '#003DA5', status: 'active', notes: 'Ariel, Pantene, Head & Shoulders' },
+  { id: 'CMP004', name: 'ABC / Heinz',      category: 'Makanan',         color: '#C8102E', status: 'active', notes: 'Saus, kecap, mi instan alternatif' },
+  { id: 'CMP005', name: 'Semen Gresik',     category: 'Bangunan',        color: '#1B4F72', status: 'active', notes: 'Kompetitor semen di toko bangunan' },
+  { id: 'CMP006', name: 'Nippon Paint',     category: 'Bangunan',        color: '#E30613', status: 'active', notes: 'Cat tembok premium vs Dulux' },
+  { id: 'CMP007', name: 'GarudaFood',       category: 'Snack',           color: '#F7941D', status: 'active', notes: 'Kacang, wafer, snack lokal' },
+  { id: 'CMP008', name: 'Kapal Api Group',  category: 'Minuman',         color: '#8B4513', status: 'active', notes: 'Kopi sachet & white coffee' },
+];
+
+// ===== COMPETITOR PRODUCTS =====
+export const seedCompetitorProducts = [
+  { id: 'CPD001', competitorId: 'CMP001', name: 'Mizone 500ml',           sku: 'DAN-MZN-500', typicalPrice: 5500,  unit: 'btl', status: 'active' },
+  { id: 'CPD002', competitorId: 'CMP001', name: 'Aqua Botol 600ml',       sku: 'DAN-AQA-600', typicalPrice: 3500,  unit: 'btl', status: 'active' },
+  { id: 'CPD003', competitorId: 'CMP002', name: 'Frisian Flag Bendera 800g', sku: 'FF-BND-800', typicalPrice: 92000, unit: 'pcs', status: 'active' },
+  { id: 'CPD004', competitorId: 'CMP002', name: 'Frisian Flag Full Cream 1L', sku: 'FF-FC-1L', typicalPrice: 18500, unit: 'pcs', status: 'active' },
+  { id: 'CPD005', competitorId: 'CMP003', name: 'Ariel Matic 800g',       sku: 'PG-ARL-800',  typicalPrice: 29500, unit: 'pcs', status: 'active' },
+  { id: 'CPD006', competitorId: 'CMP003', name: 'Pantene Shampoo 170ml',  sku: 'PG-PTN-170',  typicalPrice: 28000, unit: 'btl', status: 'active' },
+  { id: 'CPD007', competitorId: 'CMP004', name: 'Mi ABC Selera Pedas',    sku: 'ABC-MI-SPD',  typicalPrice: 2800,  unit: 'pcs', status: 'active' },
+  { id: 'CPD008', competitorId: 'CMP004', name: 'Kecap ABC 620ml',        sku: 'ABC-KCP-620', typicalPrice: 16500, unit: 'btl', status: 'active' },
+  { id: 'CPD009', competitorId: 'CMP005', name: 'Semen Gresik 50kg',      sku: 'SMG-50K',     typicalPrice: 56000, unit: 'sak', status: 'active' },
+  { id: 'CPD010', competitorId: 'CMP005', name: 'Semen Dynamix 50kg',     sku: 'SMG-DYN-50',  typicalPrice: 57000, unit: 'sak', status: 'active' },
+  { id: 'CPD011', competitorId: 'CMP006', name: 'Nippon Weatherbond 5L',  sku: 'NPP-WB-5L',   typicalPrice: 395000, unit: 'kaleng', status: 'active' },
+  { id: 'CPD012', competitorId: 'CMP006', name: 'Nippon Vinilex 5kg',     sku: 'NPP-VNX-5',   typicalPrice: 175000, unit: 'kaleng', status: 'active' },
+  { id: 'CPD013', competitorId: 'CMP007', name: 'Kacang Garuda 200g',     sku: 'GFD-KCG-200', typicalPrice: 14500, unit: 'pcs', status: 'active' },
+  { id: 'CPD014', competitorId: 'CMP008', name: 'Kapal Api Special Mix',  sku: 'KAP-SM-20',   typicalPrice: 16000, unit: 'box', status: 'active' },
+];
+
+// Jenis promo/diskon strategis (dropdown Intel Kompetitor)
+// strategic = true → prioritas pantauan (trade, display, bundle, event, loyalty)
+export const seedPromoTypes = [
+  { code: 'disc_pct',       label: 'Diskon %',                      strategic: false },
+  { code: 'disc_nominal',   label: 'Diskon Nominal (Rp)',            strategic: false },
+  { code: 'bogo',           label: 'Beli X Gratis Y',                strategic: false },
+  { code: 'bundle',         label: 'Bundle / Paket',                 strategic: true },
+  { code: 'cashback',       label: 'Cashback',                       strategic: false },
+  { code: 'trade_promo',    label: 'Trade Promo (bonus ke toko)',    strategic: true },
+  { code: 'display',        label: 'Insentif Display / Extra Space', strategic: true },
+  { code: 'seasonal',       label: 'Promo Musiman / Event',          strategic: true },
+  { code: 'loyalty',        label: 'Loyalty / Member',               strategic: true },
+  { code: 'clearance',      label: 'Clearance / Obralkan',           strategic: false },
+  { code: 'sampling',       label: 'Sampling / Trial',               strategic: false },
+  { code: 'custom',         label: 'Lainnya (custom)',               strategic: false },
+];
+
+// Field intel during visits — our product vs competitor at outlet
+// shelfShare = % rak kita vs total category; visibility: high|medium|low
+// hasPromo + promoType (code) + promoNotes + notes
+export const seedCompetitorIntel = [
+  {
+    id: 'INT001', visitId: 'VIS001', outletId: 'OUT001', recordedBy: 'EMP001', recordedAt: '2024-07-27',
+    productId: 'PRD003', competitorProductId: 'CPD007',
+    ourPrice: 3000, competitorPrice: 2800,
+    shelfShare: 55, visibility: 'high',
+    hasPromo: true, promoType: 'bogo', promoNotes: 'Kompetitor ABC bundling 5+1 di rak depan',
+    notes: 'Indomie masih dominan tapi ABC lebih murah Rp200',
+  },
+  {
+    id: 'INT002', visitId: 'VIS001', outletId: 'OUT001', recordedBy: 'EMP001', recordedAt: '2024-07-27',
+    productId: 'PRD005', competitorProductId: 'CPD005',
+    ourPrice: 4500, competitorPrice: 4800,
+    shelfShare: 40, visibility: 'medium',
+    hasPromo: false, promoType: '', promoNotes: '',
+    notes: 'Lifebuoy eye-level; Ariel di rak bawah',
+  },
+  {
+    id: 'INT003', visitId: 'VIS002', outletId: 'OUT002', recordedBy: 'EMP001', recordedAt: '2024-07-27',
+    productId: 'PRD001', competitorProductId: 'CPD003',
+    ourPrice: 99000, competitorPrice: 92000,
+    shelfShare: 35, visibility: 'medium',
+    hasPromo: true, promoType: 'disc_nominal', promoNotes: 'Frisian Flag diskon Rp5.000 di kasir',
+    notes: 'Dancow kalah harga; perlu trade promo',
+  },
+  {
+    id: 'INT004', visitId: 'VIS008', outletId: 'OUT005', recordedBy: 'EMP003', recordedAt: '2024-07-27',
+    productId: 'PRD014', competitorProductId: 'CPD009',
+    ourPrice: 62000, competitorPrice: 56000,
+    shelfShare: 45, visibility: 'high',
+    hasPromo: false, promoType: '', promoNotes: '',
+    notes: 'Semen Gresik lebih murah signifikan; owner sensitif harga',
+  },
+  {
+    id: 'INT005', visitId: 'VIS008', outletId: 'OUT005', recordedBy: 'EMP003', recordedAt: '2024-07-27',
+    productId: 'PRD015', competitorProductId: 'CPD012',
+    ourPrice: 190000, competitorPrice: 175000,
+    shelfShare: 50, visibility: 'high',
+    hasPromo: true, promoType: 'trade_promo', promoNotes: 'Dulux EasyClean: free kuas untuk beli 2 kaleng',
+    notes: 'Visibility bagus; promo kuas membantu close order',
+  },
+  {
+    id: 'INT006', visitId: 'VIS015', outletId: 'OUT002', recordedBy: 'EMP005', recordedAt: '2024-07-27',
+    productId: 'PRD006', competitorProductId: 'CPD005',
+    ourPrice: 27500, competitorPrice: 29500,
+    shelfShare: 60, visibility: 'high',
+    hasPromo: false, promoType: '', promoNotes: '',
+    notes: 'Rinso unggul shelf share di minimarket ini',
+  },
+  {
+    id: 'INT007', visitId: 'VIS017', outletId: 'OUT010', recordedBy: 'EMP006', recordedAt: '2024-07-27',
+    productId: 'PRD017', competitorProductId: 'CPD002',
+    ourPrice: 3200, competitorPrice: 3500,
+    shelfShare: 30, visibility: 'low',
+    hasPromo: true, promoType: 'display', promoNotes: 'Aqua display full gondola depan pintu',
+    notes: 'Nestlé Pure Life kalah visibility vs Aqua Danone',
+  },
+  {
+    id: 'INT008', visitId: 'VIS021', outletId: 'OUT014', recordedBy: 'EMP008', recordedAt: '2024-07-27',
+    productId: 'PRD016', competitorProductId: 'CPD011',
+    ourPrice: 420000, competitorPrice: 395000,
+    shelfShare: 40, visibility: 'medium',
+    hasPromo: false, promoType: '', promoNotes: '',
+    notes: 'Nippon Weatherbond lebih agresif harga; cek bundle sealer',
+  },
+];
+
+// Foto lapangan (visit) — type: location | product | shelf | competitor
+// dataUrl null di seed (hemat storage); user capture menyimpan JPEG dataUrl
+export const seedFieldPhotos = [
+  {
+    id: 'PHO001', visitId: 'VIS001', outletId: 'OUT001', type: 'location',
+    caption: 'Tampak depan Toko Berkah Jaya', productId: null, competitorId: null,
+    dataUrl: null, recordedBy: 'EMP001', recordedAt: '2024-07-27T08:20:00',
+  },
+  {
+    id: 'PHO002', visitId: 'VIS001', outletId: 'OUT001', type: 'shelf',
+    caption: 'Rak mi instan eye-level', productId: 'PRD003', competitorId: null,
+    dataUrl: null, recordedBy: 'EMP001', recordedAt: '2024-07-27T08:25:00',
+  },
+  {
+    id: 'PHO003', visitId: 'VIS001', outletId: 'OUT001', type: 'competitor',
+    caption: 'Display ABC bundling 5+1', productId: null, competitorId: 'CMP004',
+    dataUrl: null, recordedBy: 'EMP001', recordedAt: '2024-07-27T08:30:00',
+  },
+  {
+    id: 'PHO004', visitId: 'VIS002', outletId: 'OUT002', type: 'product',
+    caption: 'Dancow Fortigro di rak susu', productId: 'PRD001', competitorId: null,
+    dataUrl: null, recordedBy: 'EMP001', recordedAt: '2024-07-27T09:15:00',
+  },
+  {
+    id: 'PHO005', visitId: 'VIS003', outletId: 'OUT003', type: 'location',
+    caption: 'Warung Kopi Nusantara — check-in', productId: null, competitorId: null,
+    dataUrl: null, recordedBy: 'EMP001', recordedAt: '2024-07-27T10:05:00',
+  },
+  {
+    id: 'PHO006', visitId: 'VIS008', outletId: 'OUT005', type: 'product',
+    caption: 'Semen Tiga Roda 50kg di gudang', productId: 'PRD014', competitorId: null,
+    dataUrl: null, recordedBy: 'EMP003', recordedAt: '2024-07-27T08:10:00',
+  },
+  {
+    id: 'PHO007', visitId: 'VIS008', outletId: 'OUT005', type: 'competitor',
+    caption: 'Stack Semen Gresik di depan toko', productId: null, competitorId: 'CMP005',
+    dataUrl: null, recordedBy: 'EMP003', recordedAt: '2024-07-27T08:18:00',
+  },
+  {
+    id: 'PHO008', visitId: 'VIS015', outletId: 'OUT002', type: 'shelf',
+    caption: 'Supervisi display Rinso vs Ariel', productId: 'PRD006', competitorId: 'CMP003',
+    dataUrl: null, recordedBy: 'EMP005', recordedAt: '2024-07-27T08:10:00',
+  },
 ];

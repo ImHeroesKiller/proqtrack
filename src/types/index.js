@@ -1,56 +1,76 @@
-// ProQTrack — TypeScript-style type definitions (JSDoc)
-
 /**
- * @typedef {Object} Employee
+ * @typedef {Object} Product
  * @property {string} id
  * @property {string} name
- * @property {string} email
- * @property {string} phone
- * @property {string} role - 'Field Sales' | 'Supervisor' | 'Admin'
- * @property {string} area
- * @property {string} status - 'active' | 'inactive'
- * @property {number} lat
- * @property {number} lng
- * @property {string} joinDate
- * @property {number} todayVisits
- * @property {number} targetVisits
- * @property {number} totalVisits
+ * @property {string} brand
+ * @property {string} sku
+ * @property {string} category
+ * @property {string} unit
+ * @property {number} price
+ * @property {number|null} [cost]
+ * @property {number|null} [margin]
+ * @property {'active'|'inactive'} status
  */
 
 /**
- * @typedef {Object} Outlet
+ * @typedef {Object} Competitor
  * @property {string} id
  * @property {string} name
- * @property {string} address
- * @property {string} type - 'Toko Kelontong' | 'Minimarket' | 'Restoran' | etc
- * @property {number} lat
- * @property {number} lng
- * @property {string} owner
- * @property {string} phone
- * @property {string} area
- * @property {string} visitFrequency - 'Mingguan' | 'Bulanan'
- * @property {string} status - 'active' | 'inactive'
+ * @property {string} category
+ * @property {string} color
+ * @property {'active'|'inactive'} status
+ * @property {string} [notes]
  */
 
 /**
- * @typedef {Object} Visit
+ * @typedef {Object} CompetitorProduct
  * @property {string} id
- * @property {string} employeeId
+ * @property {string} competitorId
+ * @property {string} name
+ * @property {string} [sku]
+ * @property {number} typicalPrice
+ * @property {string} unit
+ * @property {'active'|'inactive'} status
+ */
+
+/**
+ * @typedef {Object} PromoType
+ * @property {string} code
+ * @property {string} label
+ * @property {boolean} strategic
+ */
+
+/**
+ * @typedef {Object} CompetitorIntel
+ * @property {string} id
+ * @property {string|null} visitId
  * @property {string} outletId
- * @property {string} date - 'YYYY-MM-DD'
- * @property {string|null} checkInTime - 'HH:MM'
- * @property {string|null} checkOutTime - 'HH:MM'
- * @property {string} status - 'planned' | 'checked-in' | 'completed'
- * @property {string} notes
- * @property {number} rating - 0-5
+ * @property {string} productId
+ * @property {string} competitorProductId
+ * @property {number} ourPrice
+ * @property {number} competitorPrice
+ * @property {number} shelfShare
+ * @property {'high'|'medium'|'low'} visibility
+ * @property {boolean} hasPromo
+ * @property {string} [promoType] code from PromoType
+ * @property {string} [promoNotes]
+ * @property {string} [notes]
+ * @property {string} recordedBy
+ * @property {string} recordedAt
  */
 
 /**
- * @typedef {Object} Attendance
+ * @typedef {Object} FieldPhoto
  * @property {string} id
- * @property {string} employeeId
- * @property {string} date - 'YYYY-MM-DD'
- * @property {string|null} checkInTime - 'HH:MM'
- * @property {string|null} checkInLocation
- * @property {string} status - 'hadir' | 'terlambat' | 'tidak hadir'
+ * @property {string|null} visitId
+ * @property {string} outletId
+ * @property {'location'|'product'|'shelf'|'competitor'} type
+ * @property {string} [caption]
+ * @property {string|null} [productId]
+ * @property {string|null} [competitorId]
+ * @property {string|null} [dataUrl]
+ * @property {string} recordedBy
+ * @property {string} recordedAt
  */
+
+export {};

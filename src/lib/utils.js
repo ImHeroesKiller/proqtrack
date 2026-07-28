@@ -50,7 +50,19 @@ const STATUS_STYLES = {
   'tidak hadir': 'bg-red-100 text-red-700 border-red-200',
   online:        'bg-emerald-100 text-emerald-700 border-emerald-200',
   offline:       'bg-gray-100 text-gray-500 border-gray-200',
+  high:          'bg-emerald-100 text-emerald-700 border-emerald-200',
+  medium:        'bg-amber-100 text-amber-700 border-amber-200',
+  low:           'bg-red-100 text-red-700 border-red-200',
+  pending:       'bg-amber-100 text-amber-700 border-amber-200',
+  approved:      'bg-emerald-100 text-emerald-700 border-emerald-200',
+  rejected:      'bg-red-100 text-red-700 border-red-200',
 };
+
+export function visibilityBadge(level) {
+  const labels = { high: 'High', medium: 'Medium', low: 'Low' };
+  const cls = STATUS_STYLES[level] || STATUS_STYLES.medium;
+  return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${cls}">${labels[level] || level}</span>`;
+}
 
 export function statusBadge(status) {
   const cls = STATUS_STYLES[status] || 'bg-gray-100 text-gray-600 border-gray-200';
@@ -102,4 +114,62 @@ export function uid(prefix = 'ID') {
 export function formatCurrency(n) {
   if (n == null) return '-';
   return 'Rp ' + n.toLocaleString('id-ID');
+}
+
+/**
+ * Compress image file to JPEG dataUrl (max edge ~800px, quality ~0.7)
+ * @param {File|Blob} file
+ * @param {{ maxPx?: number, quality?: number }} [opts]
+ * @returns {Promise<string>} data:image/jpeg;base64,...
+ */
+export function compressImage(file, opts = {}) {
+  const maxPx = opts.maxPx ?? 800;
+  const quality = opts.quality ?? 0.7;
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type || !file.type.startsWith('image/')) {
+      reject(new Error('File bukan gambar'));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Gagal membaca file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Gagal memuat gambar'));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxPx || height > maxPx) {
+          if (width >= height) {
+            height = Math.round(height * (maxPx / width));
+            width = maxPx;
+          } else {
+            width = Math.round(width * (maxPx / height));
+            height = maxPx;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        try {
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export const PHOTO_TYPE_LABELS = {
+  location: 'Lokasi',
+  product: 'Produk',
+  shelf: 'Rak / Display',
+  competitor: 'Kompetitor',
+};
+
+export function photoTypeLabel(type) {
+  return PHOTO_TYPE_LABELS[type] || type || '—';
 }
