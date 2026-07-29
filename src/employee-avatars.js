@@ -1,0 +1,2 @@
+const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
+const PORTRAITS={"male1":"data:image/webp;base64,UklGRrwIAABXRUJQVlA4ILAI...TRUNCATED...","male2":"data:image/webp;base64,UklGRiQJAABXRUJQVlA4IBgJ...TRUNCATED...","female1":"data:image/webp;base64,UklGRoYIAABXRUJQVlA4IHoI...TRUNCATED...","female2":"data:image/webp;base64,UklGRqAH...TRUNCATED...","female3":"data:image/webp;base64,UklGRqYKAABXRUJQVlA4IJoK...TRUNCATED..."};
