@@ -25,6 +25,7 @@ theme.content = '#ef5000';
 document.head.appendChild(theme);
 
 await import('../src/phase0-data.js');
+await import('../src/data/uat-seed-v1.js');
 await import('../src/phase0-ui.js');
 await import('../src/types/index.js');
 await import('../src/reports/index-v2.js');
