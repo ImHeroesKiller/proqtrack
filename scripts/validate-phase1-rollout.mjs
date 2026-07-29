@@ -9,7 +9,9 @@ const add = (name, pass, detail) => checks.push({ name, pass: Boolean(pass), det
 const configText = read('wrangler.jsonc');
 const config = JSON.parse(configText.replace(/^\s*\/\/.*$/gm, ''));
 const frontend = read('src/phase1-frontend-read.js');
-const worker = read('worker/app.js');
+const workerApp = read('worker/app.js');
+const identityRead = read('worker/identity-read.js');
+const worker = `${workerApp}\n${identityRead}`;
 const migration = read('migrations/0003_identity_organization.sql');
 
 add('Worker entrypoint', config.main === 'worker/app.js', `main=${config.main}`);
@@ -21,8 +23,8 @@ add('SPA API worker routing', Array.isArray(config.assets?.run_worker_first) && 
 add('Frontend is read-only', !/method\s*:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/i.test(frontend), 'no write HTTP methods in phase 1 frontend');
 add('No global MutationObserver', !/MutationObserver/.test(frontend), 'explicit router hooks only');
 add('Bounded API requests', /AbortController/.test(frontend), 'request timeout guard present');
-add('Identity API routes present', /\/api\/identity\/employees/.test(worker) && /\/api\/identity\/accounts/.test(worker), 'employee and account endpoints');
-add('Write methods blocked', /READ_ONLY_ENDPOINT/.test(worker) && /405/.test(worker), 'read-only endpoint guard');
+add('Identity API routes present', /['"]\/api\/identity\/employees['"]/.test(identityRead) && /['"]\/api\/identity\/accounts['"]/.test(identityRead), 'employee and account endpoints');
+add('Write methods blocked', /request\.method\s*!==\s*['"]GET['"]/.test(identityRead) && /READ_ONLY_ENDPOINT/.test(identityRead) && /405/.test(identityRead), 'read-only endpoint guard');
 add('Identity migration present', /CREATE TABLE IF NOT EXISTS employees/i.test(migration) && /CREATE TABLE IF NOT EXISTS accounts/i.test(migration), 'employees/accounts schema');
 
 const failed = checks.filter(check => !check.pass);
