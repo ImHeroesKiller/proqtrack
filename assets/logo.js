@@ -38,3 +38,4 @@ await import('../src/report-nav-stability.js');
 await import('../src/dashboard-deep-links.js');
 await import('../src/client-logo-auto.js');
 await import('../src/project-client-logos.js');
+await import('../src/employee-avatars.js');
