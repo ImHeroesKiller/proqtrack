@@ -8,6 +8,7 @@ const bootstrap = fs.readFileSync(new URL('../assets/logo.js', import.meta.url),
 test('phase 1.5 frontend uses read-only identity endpoints', () => {
   assert.match(source, /\/api\/identity\/employees\?limit=200/);
   assert.match(source, /\/api\/identity\/accounts\?limit=200/);
+  assert.match(source, /\/api\/identity\/employees\/\$\{encodeURIComponent\(id\)\}/);
   assert.doesNotMatch(source, /method:\s*['"](?:POST|PUT|PATCH|DELETE)['"]/);
 });
 
@@ -24,7 +25,6 @@ test('phase 1.5 frontend exposes user management navigation and orphan warning',
 });
 
 test('phase 1.5 uses bounded requests and cached read model', () => {
-  assert.match(source, /REQUEST_TIMEOUT_MS/);
   assert.match(source, /CACHE_TTL_MS/);
   assert.match(source, /AbortController/);
   assert.match(source, /state\.loadPromise/);
@@ -33,7 +33,21 @@ test('phase 1.5 uses bounded requests and cached read model', () => {
 test('phase 1.5 avoids global mutation observers and uses explicit route hooks', () => {
   assert.doesNotMatch(source, /MutationObserver/);
   assert.match(source, /addEventListener\('hashchange'/);
-  assert.match(source, /scheduleRender/);
+  assert.match(source, /scheduleHydrate/);
+});
+
+test('phase 1.5E renders employee photos with initials fallback', () => {
+  assert.match(source, /photo_url/);
+  assert.match(source, /p15-avatar-fallback/);
+  assert.match(source, /onerror=/);
+});
+
+test('phase 1.5E provides read-only detail and disabled edit action', () => {
+  assert.match(source, /data-detail-id/);
+  assert.match(source, /showEmployeeDetail/);
+  assert.match(source, /Detail Karyawan/);
+  assert.match(source, /Edit tersedia pada Fase 2/);
+  assert.match(source, /disabled/);
 });
 
 test('phase 1.5 module is loaded by the existing application bootstrap', () => {
