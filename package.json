@@ -13,7 +13,9 @@
     "db:phase1:validate:local": "wrangler d1 execute DB --local --file scripts/validate-phase1.sql",
     "db:phase1:generate-import": "node scripts/generate-phase1-import.mjs",
     "db:phase1:import:local": "wrangler d1 execute DB --local --file tmp/phase1-import.sql",
-    "db:phase1:validate-data:local": "wrangler d1 execute DB --local --file scripts/validate-phase1-data.sql"
+    "db:phase1:validate-data:local": "wrangler d1 execute DB --local --file scripts/validate-phase1-data.sql",
+    "db:phase1:analyze-quality": "node scripts/analyze-phase1-quality.mjs",
+    "db:phase1:validate-hierarchy:local": "wrangler d1 execute DB --local --file scripts/validate-phase1-hierarchy.sql"
   },
   "devDependencies": {
     "wrangler": "^4.114.0"
