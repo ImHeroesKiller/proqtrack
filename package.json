@@ -10,7 +10,10 @@
     "deploy": "npm run build && wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
-    "db:phase1:validate:local": "wrangler d1 execute DB --local --file scripts/validate-phase1.sql"
+    "db:phase1:validate:local": "wrangler d1 execute DB --local --file scripts/validate-phase1.sql",
+    "db:phase1:generate-import": "node scripts/generate-phase1-import.mjs",
+    "db:phase1:import:local": "wrangler d1 execute DB --local --file tmp/phase1-import.sql",
+    "db:phase1:validate-data:local": "wrangler d1 execute DB --local --file scripts/validate-phase1-data.sql"
   },
   "devDependencies": {
     "wrangler": "^4.114.0"
