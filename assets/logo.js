@@ -39,4 +39,3 @@ await import('../src/dashboard-deep-links.js');
 await import('../src/client-logo-auto.js');
 await import('../src/project-client-logos.js');
 await import('../src/employee-avatars.js');
-await import('../src/phase1-frontend-read.js');
