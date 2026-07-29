@@ -1,152 +1,45 @@
-const json = (data, status = 200, headers = {}) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      ...headers,
-    },
-  });
+const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer',...headers}});
+const safeKey=value=>String(value||'').replace(/[^a-zA-Z0-9._/-]/g,'-').replace(/\.{2,}/g,'.').replace(/^\/+/, '').slice(0,240);
+const encoder=new TextEncoder();
+const decoder=new TextDecoder();
+const b64urlDecode=value=>{const normalized=String(value||'').replace(/-/g,'+').replace(/_/g,'/');const padded=normalized+'='.repeat((4-normalized.length%4)%4);return Uint8Array.from(atob(padded),c=>c.charCodeAt(0));};
+const b64urlEncode=bytes=>btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const timingSafeEqual=(a,b)=>{if(a.length!==b.length)return false;let diff=0;for(let i=0;i<a.length;i++)diff|=a[i]^b[i];return diff===0;};
 
-const safeKey = (value) =>
-  String(value || "")
-    .replace(/[^a-zA-Z0-9._/-]/g, "-")
-    .replace(/\.{2,}/g, ".")
-    .slice(0, 240);
+export async function signClaims(claims,secret){const payload=b64urlEncode(encoder.encode(JSON.stringify(claims)));const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);const signature=await crypto.subtle.sign('HMAC',key,encoder.encode(payload));return `${payload}.${b64urlEncode(signature)}`;}
+export async function verifyToken(token,secret,nowSeconds=Math.floor(Date.now()/1000)){if(!token||!secret)throw new Error('AUTH_REQUIRED');const [payloadPart,signaturePart,...rest]=String(token).split('.');if(!payloadPart||!signaturePart||rest.length)throw new Error('INVALID_TOKEN');const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);const expected=await crypto.subtle.sign('HMAC',key,encoder.encode(payloadPart));if(!timingSafeEqual(new Uint8Array(expected),b64urlDecode(signaturePart)))throw new Error('INVALID_TOKEN');let claims;try{claims=JSON.parse(decoder.decode(b64urlDecode(payloadPart)));}catch{throw new Error('INVALID_TOKEN');}if(!claims.sub||!claims.role)throw new Error('INVALID_TOKEN');if(claims.exp&&Number(claims.exp)<nowSeconds)throw new Error('TOKEN_EXPIRED');if(claims.nbf&&Number(claims.nbf)>nowSeconds)throw new Error('TOKEN_NOT_ACTIVE');return claims;}
 
-async function usage(env) {
-  const row = await env.DB.prepare(
-    "SELECT COALESCE(SUM(size_bytes), 0) AS bytes, COUNT(*) AS files FROM file_metadata",
-  ).first();
-  const used = Number(row?.bytes || 0);
-  const limit = Number(env.MVP_MAX_STORAGE_BYTES);
-  const percent = limit ? Math.round((used / limit) * 10000) / 100 : 0;
-  return {
-    storage: { usedBytes: used, limitBytes: limit, percent },
-    files: Number(row?.files || 0),
-    warning:
-      percent >= 95 ? "critical" : percent >= 85 ? "high" : percent >= 70 ? "medium" : null,
-    billingGuard: "Application storage is capped; Cloudflare budget alerts remain notification-only.",
-  };
+const bearer=request=>{const value=request.headers.get('authorization')||'';return value.startsWith('Bearer ')?value.slice(7).trim():'';};
+const roleAllowed=(claims,roles)=>roles.includes(String(claims.role||'').toLowerCase());
+const projectAllowed=(claims,projectId)=>{if(!projectId)return roleAllowed(claims,['manager','admin']);if(roleAllowed(claims,['manager','admin']))return true;return Array.isArray(claims.projectIds)&&claims.projectIds.includes(projectId);};
+const clientAllowed=(claims,clientId)=>{if(!clientId)return true;if(roleAllowed(claims,['manager','admin']))return true;return Array.isArray(claims.clientIds)&&claims.clientIds.includes(clientId);};
+const requestId=request=>request.headers.get('cf-ray')||crypto.randomUUID();
+const rateBuckets=new Map();
+function rateLimit(request,env,claims){const max=Number(env.API_RATE_LIMIT_PER_MINUTE||120);const key=`${claims?.sub||request.headers.get('cf-connecting-ip')||'anonymous'}:${Math.floor(Date.now()/60000)}`;const count=(rateBuckets.get(key)||0)+1;rateBuckets.set(key,count);if(rateBuckets.size>2000){const current=Math.floor(Date.now()/60000);for(const k of rateBuckets.keys())if(!k.endsWith(`:${current}`))rateBuckets.delete(k);}return count<=max;}
+
+async function audit(env,{requestId,actor,action,resourceType,resourceId='',projectId='',clientId='',outcome='success',detail=''}){try{await env.DB.prepare(`INSERT INTO security_audit_logs (request_id,actor_id,actor_role,action,resource_type,resource_id,project_id,client_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`).bind(requestId,actor?.sub||null,actor?.role||null,action,resourceType,resourceId||null,projectId||null,clientId||null,outcome,String(detail||'').slice(0,1000)).run();}catch(error){console.warn('audit_write_failed',error?.message||error);}}
+async function usage(env){const row=await env.DB.prepare('SELECT COALESCE(SUM(size_bytes),0) AS bytes, COUNT(*) AS files FROM file_metadata').first();const used=Number(row?.bytes||0),limit=Number(env.MVP_MAX_STORAGE_BYTES||0),percent=limit?Math.round((used/limit)*10000)/100:0;return{storage:{usedBytes:used,limitBytes:limit,percent},files:Number(row?.files||0),warning:percent>=95?'critical':percent>=85?'high':percent>=70?'medium':null,billingGuard:'Application storage is capped; Cloudflare budget alerts remain notification-only.'};}
+async function authenticate(request,env){if(env.API_AUTH_REQUIRED!=='true')return{sub:'development',role:'admin',projectIds:[],clientIds:[]};return verifyToken(bearer(request),env.API_AUTH_SECRET);}
+const authError=(error,id)=>{const code=String(error?.message||error);const status=code==='AUTH_REQUIRED'?401:code.startsWith('TOKEN_')||code==='INVALID_TOKEN'?401:403;return json({error:code,requestId:id},status,{'www-authenticate':'Bearer'});};
+
+async function handleApi(request,env,url){const id=requestId(request);
+  if(url.pathname==='/api/health'&&request.method==='GET'){const db=await env.DB.prepare('SELECT 1 AS ok').first();return json({ok:db?.ok===1,service:'ProQTrack',environment:env.ENVIRONMENT,requestId:id});}
+  let claims;try{claims=await authenticate(request,env);}catch(error){await audit(env,{requestId:id,action:'authenticate',resourceType:'api',outcome:'denied',detail:error?.message});return authError(error,id);}
+  if(!rateLimit(request,env,claims))return json({error:'RATE_LIMITED',requestId:id},429,{'retry-after':'60'});
+  if(env.MVP_DATA_API_ENABLED!=='true')return json({error:'DATA_API_LOCKED',message:'Cloud data API remains locked until production activation is explicitly enabled.',requestId:id},503);
+
+  if(url.pathname==='/api/usage'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);return json({...await usage(env),requestId:id});}
+  if(url.pathname==='/api/state'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const row=await env.DB.prepare("SELECT payload,version,updated_at FROM app_snapshots WHERE id='primary'").first();await audit(env,{requestId:id,actor:claims,action:'read',resourceType:'state'});return json(row?{data:JSON.parse(row.payload),version:row.version,updatedAt:row.updated_at,requestId:id}:{data:null,version:0,updatedAt:null,requestId:id});}
+  if(url.pathname==='/api/state'&&request.method==='PUT'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const body=await request.json();const serialized=JSON.stringify(body.data);if(serialized.length>4_000_000)return json({error:'MVP_STATE_LIMIT_EXCEEDED',requestId:id},413);const current=await env.DB.prepare("SELECT version FROM app_snapshots WHERE id='primary'").first();const expected=Number(body.version||0);if(current&&Number(current.version)!==expected)return json({error:'VERSION_CONFLICT',version:current.version,requestId:id},409);const nextVersion=Number(current?.version||0)+1;await env.DB.prepare(`INSERT INTO app_snapshots(id,payload,version,updated_at) VALUES('primary',?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,version=excluded.version,updated_at=CURRENT_TIMESTAMP`).bind(serialized,nextVersion).run();await audit(env,{requestId:id,actor:claims,action:'update',resourceType:'state',resourceId:'primary'});return json({ok:true,version:nextVersion,requestId:id});}
+
+  if(url.pathname==='/api/files'&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin','supervisor']))return json({error:'FORBIDDEN',requestId:id},403);const projectId=safeKey(url.searchParams.get('projectId')),clientId=safeKey(url.searchParams.get('clientId'));if(!projectAllowed(claims,projectId)||!clientAllowed(claims,clientId)){await audit(env,{requestId:id,actor:claims,action:'upload',resourceType:'file',projectId,clientId,outcome:'denied'});return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);}const contentType=request.headers.get('content-type')||'application/octet-stream';const allowed=String(env.ALLOWED_UPLOAD_TYPES||'application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp').split(',');if(!allowed.includes(contentType))return json({error:'FILE_TYPE_NOT_ALLOWED',requestId:id},415);const length=Number(request.headers.get('content-length')||0),maxFile=Number(env.MVP_MAX_FILE_BYTES);if(!length||length>maxFile)return json({error:'FILE_SIZE_LIMIT',maxBytes:maxFile,requestId:id},413);const current=await usage(env);if(current.storage.usedBytes+length>current.storage.limitBytes)return json({error:'MVP_STORAGE_CAP_REACHED',usage:current,requestId:id},507);const name=safeKey(url.searchParams.get('name')||'file'),category=safeKey(url.searchParams.get('category')||'attachment'),key=`${projectId||'general'}/${crypto.randomUUID()}-${name}`;await env.FILES.put(key,request.body,{httpMetadata:{contentType},customMetadata:{projectId,clientId,ownerId:claims.sub,category}});await env.DB.prepare(`INSERT INTO file_metadata(object_key,owner_id,project_id,category,content_type,size_bytes) VALUES(?,?,?,?,?,?)`).bind(key,claims.sub,projectId||null,category,contentType,length).run();await audit(env,{requestId:id,actor:claims,action:'upload',resourceType:'file',resourceId:key,projectId,clientId});return json({ok:true,key,usage:await usage(env),requestId:id},201);}
+  if(url.pathname.startsWith('/api/files/')&&request.method==='GET'){const key=decodeURIComponent(url.pathname.slice('/api/files/'.length));const meta=await env.DB.prepare('SELECT object_key,owner_id,project_id FROM file_metadata WHERE object_key=?').bind(key).first();if(!meta)return json({error:'FILE_NOT_FOUND',requestId:id},404);if(!projectAllowed(claims,meta.project_id)&&meta.owner_id!==claims.sub){await audit(env,{requestId:id,actor:claims,action:'download',resourceType:'file',resourceId:key,projectId:meta.project_id,outcome:'denied'});return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);}const object=await env.FILES.get(key);if(!object)return json({error:'FILE_NOT_FOUND',requestId:id},404);await audit(env,{requestId:id,actor:claims,action:'download',resourceType:'file',resourceId:key,projectId:meta.project_id});return new Response(object.body,{headers:{'content-type':object.httpMetadata?.contentType||'application/octet-stream','cache-control':'private, max-age=60','content-disposition':`attachment; filename="${safeKey(key.split('/').pop())}"`,'x-request-id':id}});}
+
+  if(url.pathname==='/api/report-jobs'&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin','supervisor']))return json({error:'FORBIDDEN',requestId:id},403);const body=await request.json(),projectId=safeKey(body.projectId);if(!projectAllowed(claims,projectId))return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);const jobId=crypto.randomUUID();await env.DB.prepare(`INSERT INTO report_generation_jobs(id,report_type,format,project_id,requested_by,status,payload,attempts,max_attempts,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,0,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(jobId,safeKey(body.reportType),safeKey(body.format),projectId||null,claims.sub,JSON.stringify(body.payload||{})).run();await audit(env,{requestId:id,actor:claims,action:'create',resourceType:'report_job',resourceId:jobId,projectId});return json({ok:true,id:jobId,status:'queued',requestId:id},202);}
+  if(url.pathname==='/api/report-jobs'&&request.method==='GET'){const rows=await env.DB.prepare(roleAllowed(claims,['manager','admin'])?'SELECT * FROM report_generation_jobs ORDER BY created_at DESC LIMIT 100':'SELECT * FROM report_generation_jobs WHERE requested_by=? ORDER BY created_at DESC LIMIT 100').bind(...(roleAllowed(claims,['manager','admin'])?[]:[claims.sub])).all();return json({jobs:rows.results||[],requestId:id});}
+  const jobMatch=url.pathname.match(/^\/api\/report-jobs\/([^/]+)\/retry$/);if(jobMatch&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const job=await env.DB.prepare('SELECT * FROM report_generation_jobs WHERE id=?').bind(jobMatch[1]).first();if(!job)return json({error:'JOB_NOT_FOUND',requestId:id},404);if(job.status!=='failed'||Number(job.attempts)>=Number(job.max_attempts))return json({error:'JOB_NOT_RETRYABLE',requestId:id},409);await env.DB.prepare("UPDATE report_generation_jobs SET status='queued',last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(job.id).run();await audit(env,{requestId:id,actor:claims,action:'retry',resourceType:'report_job',resourceId:job.id,projectId:job.project_id});return json({ok:true,id:job.id,status:'queued',requestId:id});}
+  if(url.pathname==='/api/monitoring/report-generation'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const summary=await env.DB.prepare(`SELECT status,COUNT(*) AS count FROM report_generation_jobs WHERE created_at>=datetime('now','-24 hours') GROUP BY status`).all();const recentFailures=await env.DB.prepare(`SELECT id,report_type,format,project_id,attempts,last_error,updated_at FROM report_generation_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 20`).all();return json({window:'24h',summary:summary.results||[],recentFailures:recentFailures.results||[],requestId:id});}
+  return json({error:'NOT_FOUND',requestId:id},404);
 }
 
-async function handleApi(request, env, url) {
-  if (url.pathname === "/api/health" && request.method === "GET") {
-    const db = await env.DB.prepare("SELECT 1 AS ok").first();
-    return json({
-      ok: db?.ok === 1,
-      service: "ProQTrack MVP",
-      environment: env.ENVIRONMENT,
-      storage: await usage(env),
-    });
-  }
-
-  if (url.pathname === "/api/usage" && request.method === "GET") {
-    return json(await usage(env));
-  }
-
-  if (env.MVP_DATA_API_ENABLED !== "true") {
-    return json(
-      {
-        error: "DATA_API_LOCKED",
-        message: "MVP cloud storage is provisioned but remains locked until server authentication is enabled.",
-      },
-      503,
-    );
-  }
-
-  if (url.pathname === "/api/state" && request.method === "GET") {
-    const row = await env.DB.prepare(
-      "SELECT payload, version, updated_at FROM app_snapshots WHERE id = 'primary'",
-    ).first();
-    return json(
-      row
-        ? { data: JSON.parse(row.payload), version: row.version, updatedAt: row.updated_at }
-        : { data: null, version: 0, updatedAt: null },
-    );
-  }
-
-  if (url.pathname === "/api/state" && request.method === "PUT") {
-    const body = await request.json();
-    const serialized = JSON.stringify(body.data);
-    if (serialized.length > 4_000_000) {
-      return json({ error: "MVP_STATE_LIMIT_EXCEEDED" }, 413);
-    }
-    const current = await env.DB.prepare(
-      "SELECT version FROM app_snapshots WHERE id = 'primary'",
-    ).first();
-    const expected = Number(body.version || 0);
-    if (current && Number(current.version) !== expected) {
-      return json({ error: "VERSION_CONFLICT", version: current.version }, 409);
-    }
-    const nextVersion = Number(current?.version || 0) + 1;
-    await env.DB.prepare(
-      `INSERT INTO app_snapshots (id, payload, version, updated_at)
-       VALUES ('primary', ?, ?, CURRENT_TIMESTAMP)
-       ON CONFLICT(id) DO UPDATE SET
-         payload = excluded.payload,
-         version = excluded.version,
-         updated_at = CURRENT_TIMESTAMP`,
-    )
-      .bind(serialized, nextVersion)
-      .run();
-    return json({ ok: true, version: nextVersion });
-  }
-
-  if (url.pathname === "/api/files" && request.method === "POST") {
-    const contentType = request.headers.get("content-type") || "application/octet-stream";
-    const length = Number(request.headers.get("content-length") || 0);
-    const maxFile = Number(env.MVP_MAX_FILE_BYTES);
-    if (!length || length > maxFile) {
-      return json({ error: "FILE_SIZE_LIMIT", maxBytes: maxFile }, 413);
-    }
-    const current = await usage(env);
-    if (current.storage.usedBytes + length > current.storage.limitBytes) {
-      return json({ error: "MVP_STORAGE_CAP_REACHED", usage: current }, 507);
-    }
-    const name = safeKey(url.searchParams.get("name") || "file");
-    const projectId = safeKey(url.searchParams.get("projectId"));
-    const ownerId = safeKey(url.searchParams.get("ownerId"));
-    const category = safeKey(url.searchParams.get("category") || "attachment");
-    const key = `${projectId || "general"}/${crypto.randomUUID()}-${name}`;
-    await env.FILES.put(key, request.body, {
-      httpMetadata: { contentType },
-      customMetadata: { projectId, ownerId, category },
-    });
-    await env.DB.prepare(
-      `INSERT INTO file_metadata
-       (object_key, owner_id, project_id, category, content_type, size_bytes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(key, ownerId || null, projectId || null, category, contentType, length)
-      .run();
-    return json({ ok: true, key, usage: await usage(env) }, 201);
-  }
-
-  if (url.pathname.startsWith("/api/files/") && request.method === "GET") {
-    const key = decodeURIComponent(url.pathname.slice("/api/files/".length));
-    const object = await env.FILES.get(key);
-    if (!object) return json({ error: "FILE_NOT_FOUND" }, 404);
-    return new Response(object.body, {
-      headers: {
-        "content-type": object.httpMetadata?.contentType || "application/octet-stream",
-        "cache-control": "private, max-age=300",
-      },
-    });
-  }
-
-  return json({ error: "NOT_FOUND" }, 404);
-}
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-    try {
-      if (url.pathname.startsWith("/api/")) return await handleApi(request, env, url);
-      return env.ASSETS.fetch(request);
-    } catch (error) {
-      console.error("Request failed", error);
-      return json({ error: "INTERNAL_ERROR" }, 500);
-    }
-  },
-};
+export default{async fetch(request,env){const url=new URL(request.url);try{if(url.pathname.startsWith('/api/'))return await handleApi(request,env,url);return env.ASSETS.fetch(request);}catch(error){const id=requestId(request);console.error('request_failed',{requestId:id,path:url.pathname,error:error?.stack||error});return json({error:'INTERNAL_ERROR',requestId:id},500);}},async scheduled(_event,env){try{await env.DB.prepare("UPDATE report_generation_jobs SET status='failed',last_error='JOB_TIMEOUT',updated_at=CURRENT_TIMESTAMP WHERE status='processing' AND updated_at<datetime('now','-15 minutes')").run();}catch(error){console.error('scheduled_hardening_failed',error);}}};
