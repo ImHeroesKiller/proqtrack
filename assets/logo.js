@@ -27,3 +27,4 @@ document.head.appendChild(theme);
 await import('../src/phase0-data.js');
 await import('../src/phase0-ui.js');
 await import('../src/types/index.js');
+await import('../src/reports/index.js');
