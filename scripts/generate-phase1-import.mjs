@@ -143,7 +143,7 @@ for (let i = 0; i < accounts.length; i++) {
   const importedStatus = String(a.status) === 'inactive' ? 'inactive' : 'invited';
   lines.push(`INSERT INTO accounts (id,email,password_hash,employee_id,status,must_change_password,failed_login_attempts,last_login_at,created_at,updated_at) VALUES (${q(id)},${q(email)},${q(`legacy-disabled:${fingerprint}`)},${q(employeeId)},${q(importedStatus)},1,0,${q(a.lastLoginAt || null)},${q(timestamp(a.createdAt))},${q(timestamp(a.updatedAt))}) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,employee_id=excluded.employee_id,status=excluded.status,must_change_password=1,failed_login_attempts=0,last_login_at=excluded.last_login_at,updated_at=excluded.updated_at;`);
   const code = importedRoleCode(a, employeeId, email);
-  lines.push(`UPDATE account_roles SET status='ended', end_at=datetime('now'), updated_at=datetime('now') WHERE account_id=${q(id)} AND status='active';`);
+  lines.push(`UPDATE account_roles SET status='ended', end_at=CASE WHEN start_at IS NULL OR start_at <= datetime('now') THEN datetime('now') ELSE start_at END, updated_at=datetime('now') WHERE account_id=${q(id)} AND status='active';`);
   lines.push(`INSERT INTO account_roles (id,account_id,role_id,scope_type,scope_id,status,start_at) VALUES (${q(`AR_${id}_${code}`)},${q(id)},${q(`ROLE_${code.toUpperCase()}`)},${q(code === 'super_admin' ? 'global' : employeeId ? 'self' : 'global')},NULL,'active',${q(timestamp(a.createdAt))}) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,role_id=excluded.role_id,scope_type=excluded.scope_type,scope_id=NULL,status='active',start_at=excluded.start_at,end_at=NULL,updated_at=datetime('now');`);
   importedAccounts += 1;
 }
