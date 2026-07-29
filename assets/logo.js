@@ -36,3 +36,4 @@ await import('../src/uat-fixes.js');
 await import('../src/operational-mapping.js');
 await import('../src/report-nav-stability.js');
 await import('../src/dashboard-deep-links.js');
+await import('../src/client-logo-auto.js');
