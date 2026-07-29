@@ -33,3 +33,6 @@ await import('../src/types/reports-export.js');
 await import('../src/reports/phase4-fixed.js');
 await import('../src/reports/phase4-preview.js');
 await import('../src/uat-fixes.js');
+await import('../src/operational-mapping.js');
+await import('../src/report-nav-stability.js');
+await import('../src/dashboard-deep-links.js');
