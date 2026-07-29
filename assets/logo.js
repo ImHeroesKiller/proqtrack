@@ -30,3 +30,4 @@ await import('../src/types/index.js');
 await import('../src/reports/index-v2.js');
 await import('../src/types/reports-export.js');
 await import('../src/reports/phase4.js');
+await import('../src/reports/phase4-preview.js');
