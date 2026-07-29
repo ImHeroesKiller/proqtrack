@@ -2,7 +2,7 @@
 export const LOGO_DARK = './assets/logo-dark.svg';
 export const LOGO_LIGHT = './assets/logo-light.svg';
 export const PWA_ICON = './assets/icon-proqtrack.svg';
-export const CANVA_LOGO_EMBED = LOGO_DARK;
+export const CANVA_LOGO_EMBED = LOGO_LIGHT;
 
 function ensureLink(rel, href, attrs = {}) {
   if (document.querySelector(`link[rel="${rel}"][href="${href}"]`)) return;
