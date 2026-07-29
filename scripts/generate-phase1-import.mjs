@@ -38,6 +38,14 @@ const roleCode = (value) => {
   if (role.includes('viewer')) return 'viewer';
   return 'employee';
 };
+const importedRoleCode = (account, employeeId, email) => {
+  const code = roleCode(account.role);
+  const isPrivilegedOperationalRole = ['manager', 'supervisor', 'team_leader'].includes(code);
+  const isKnownSystemAccount = String(account.id || '') === 'ACC-UAT-000'
+    || email === 'manager@proqtrack.id'
+    || String(account.accountType || '').toLowerCase() === 'system';
+  return !employeeId && isPrivilegedOperationalRole && isKnownSystemAccount ? 'super_admin' : code;
+};
 const workerType = (employee) => {
   const value = `${employee.workerType || ''} ${employee.role || ''} ${employee.jobRole || ''}`.toLowerCase();
   if (value.includes('manager')) return 'manager';
@@ -134,8 +142,9 @@ for (let i = 0; i < accounts.length; i++) {
   const fingerprint = crypto.createHash('sha256').update(`${email}:${a.password || 'missing'}`).digest('hex');
   const importedStatus = String(a.status) === 'inactive' ? 'inactive' : 'invited';
   lines.push(`INSERT INTO accounts (id,email,password_hash,employee_id,status,must_change_password,failed_login_attempts,last_login_at,created_at,updated_at) VALUES (${q(id)},${q(email)},${q(`legacy-disabled:${fingerprint}`)},${q(employeeId)},${q(importedStatus)},1,0,${q(a.lastLoginAt || null)},${q(timestamp(a.createdAt))},${q(timestamp(a.updatedAt))}) ON CONFLICT(id) DO UPDATE SET email=excluded.email,password_hash=excluded.password_hash,employee_id=excluded.employee_id,status=excluded.status,must_change_password=1,failed_login_attempts=0,last_login_at=excluded.last_login_at,updated_at=excluded.updated_at;`);
-  const code = roleCode(a.role);
-  lines.push(`INSERT INTO account_roles (id,account_id,role_id,scope_type,scope_id,status,start_at) VALUES (${q(`AR_${id}_${code}`)},${q(id)},${q(`ROLE_${code.toUpperCase()}`)},${q(code === 'super_admin' ? 'global' : employeeId ? 'self' : 'global')},NULL,'active',${q(timestamp(a.createdAt))}) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,role_id=excluded.role_id,scope_type=excluded.scope_type,scope_id=NULL,status='active',start_at=excluded.start_at;`);
+  const code = importedRoleCode(a, employeeId, email);
+  lines.push(`UPDATE account_roles SET status='ended', end_at=datetime('now'), updated_at=datetime('now') WHERE account_id=${q(id)} AND status='active';`);
+  lines.push(`INSERT INTO account_roles (id,account_id,role_id,scope_type,scope_id,status,start_at) VALUES (${q(`AR_${id}_${code}`)},${q(id)},${q(`ROLE_${code.toUpperCase()}`)},${q(code === 'super_admin' ? 'global' : employeeId ? 'self' : 'global')},NULL,'active',${q(timestamp(a.createdAt))}) ON CONFLICT(id) DO UPDATE SET account_id=excluded.account_id,role_id=excluded.role_id,scope_type=excluded.scope_type,scope_id=NULL,status='active',start_at=excluded.start_at,end_at=NULL,updated_at=datetime('now');`);
   importedAccounts += 1;
 }
 lines.push(`INSERT INTO identity_audit_logs (action,entity_type,entity_id,after_json,request_id) VALUES ('phase1.import','migration','localstorage',${q(JSON.stringify({ employees: normalizedEmployees.length, accounts: importedAccounts, positions: positions.size, areas: areas.length }))},'phase1-local-import');`);
@@ -143,4 +152,4 @@ lines.push('COMMIT;');
 
 fs.mkdirSync(path.dirname(output), { recursive: true });
 fs.writeFileSync(output, `${lines.join('\n')}\n`);
-console.log(JSON.stringify({ input, output, employees: normalizedEmployees.length, accounts: importedAccounts, positions: positions.size, areas: areas.length, note: 'Akun diimpor sebagai invited dengan password legacy-disabled; password lama tidak diaktifkan.' }, null, 2));
+console.log(JSON.stringify({ input, output, employees: normalizedEmployees.length, accounts: importedAccounts, positions: positions.size, areas: areas.length, note: 'Akun diimpor sebagai invited dengan password legacy-disabled; akun sistem tanpa employee dipetakan ke super_admin.' }, null, 2));
