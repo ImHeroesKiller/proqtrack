@@ -1,0 +1,335 @@
+import {
+  getAccounts, getEmployees, getAppSettings, updateAppSettings,
+  createAccount, updateAccount, changePassword, updateOwnProfile,
+} from './lib/db.js';
+import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl } from './lib/utils.js';
+
+function account() {
+  return window.FT?.state?.account || null;
+}
+
+function toast(msg, type = 'success') {
+  window.showToast?.(msg, type);
+}
+
+function roleLabel(role) {
+  return { manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
+}
+
+function statusLabel(status) {
+  return { active: 'Aktif', inactive: 'Nonaktif', suspended: 'Ditangguhkan' }[status] || status || '—';
+}
+
+function linkedEmployee(acc) {
+  if (!acc?.employeeId) return null;
+  return getEmployees().find(e => e.id === acc.employeeId) || null;
+}
+
+function storageKb() {
+  try {
+    const raw = localStorage.getItem('proqtrack_db_v6') || '';
+    return Math.round(raw.length / 1024);
+  } catch {
+    return 0;
+  }
+}
+
+export function renderSettings() {
+  const acc = account();
+  if (!acc) return '<div class="card"><p>Sesi tidak ditemukan. Silakan masuk ulang.</p></div>';
+  const emp = linkedEmployee(acc);
+  const settings = getAppSettings();
+  const isManager = acc.role === 'manager';
+  const photo = safePhotoUrl(emp?.photo);
+
+  return `
+    <div class="am-grid">
+      <section class="card">
+        <div class="card-title">Profil saya</div>
+        <div class="card-subtitle">Nama dan kontak yang tampil di aplikasi</div>
+        <div class="am-profile">
+          <div class="am-avatar" style="${photo ? `background-image:url('${photo}');background-size:cover` : ''}">${photo ? '' : esc(getInitials(acc.name))}</div>
+          <div>
+            <strong>${esc(acc.name)}</strong>
+            <div class="am-muted">${esc(acc.email)} · ${esc(roleLabel(acc.role))}</div>
+            <div class="am-muted">Login terakhir: ${acc.lastLoginAt ? formatDate(acc.lastLoginAt) : 'Baru saja'}</div>
+          </div>
+        </div>
+        <form class="am-form" onsubmit="AM.saveProfile(event)">
+          <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" required></div>
+          <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(acc.email)}" required></div>
+          ${emp ? `
+            <div class="form-row">
+              <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}"></div>
+              <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}"></div>
+            </div>
+          ` : ''}
+          <button class="btn btn-primary" type="submit">Simpan profil</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-title">Keamanan</div>
+        <div class="card-subtitle">Ganti password akun ini. Minimal 8 karakter.</div>
+        <form class="am-form" onsubmit="AM.savePassword(event)">
+          <div class="form-group"><label class="label">Password saat ini</label><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></div>
+          <div class="form-group"><label class="label">Password baru</label><input class="input" type="password" name="nextPassword" minlength="8" autocomplete="new-password" required></div>
+          <div class="form-group"><label class="label">Ulangi password baru</label><input class="input" type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></div>
+          <button class="btn btn-primary" type="submit">Perbarui password</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card-title">Preferensi tampilan</div>
+        <form class="am-form" onsubmit="AM.savePrefs(event)">
+          <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
+          <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
+          <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock ? 'checked' : ''}> Tampilkan badge stok menipis</label>
+          <p class="am-muted">Zona waktu laporan: ${esc(settings.timezone || 'Asia/Jakarta')}</p>
+          <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
+        </form>
+      </section>
+
+      ${isManager ? `
+      <section class="card">
+        <div class="card-title">Organisasi</div>
+        <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
+        <form class="am-form" onsubmit="AM.saveOrg(event)">
+          <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
+          <div class="form-group"><label class="label">Logo (path atau URL)</label><input class="input" name="companyLogo" value="${esc(settings.companyLogo || '')}"></div>
+          <button class="btn btn-primary" type="submit">Simpan organisasi</button>
+        </form>
+      </section>
+      ` : ''}
+
+      <section class="card">
+        <div class="card-title">Sesi & data lokal</div>
+        <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
+        ${isManager ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
+        <div class="am-actions">
+          <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
+        </div>
+      </section>
+    </div>
+  `;
+}
+
+export function renderAccounts() {
+  const acc = account();
+  if (acc?.role !== 'manager') {
+    return '<div class="card"><p>Hanya manager yang dapat mengelola akun.</p></div>';
+  }
+  const q = (window.FT.state._accountQuery || '').toLowerCase();
+  const roleFilter = window.FT.state._accountRole || '';
+  const statusFilter = window.FT.state._accountStatus || '';
+  const employees = getEmployees();
+  let rows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
+  if (q) rows = rows.filter(a => `${a.name} ${a.email} ${a.role}`.toLowerCase().includes(q));
+  if (roleFilter) rows = rows.filter(a => a.role === roleFilter);
+  if (statusFilter) rows = rows.filter(a => a.status === statusFilter);
+
+  return `
+    <div class="card">
+      <div class="filter-row">
+        <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" oninput="AM.filterAccounts(this.value)">
+        <select class="select" style="width:auto" onchange="AM.filterRole(this.value)">
+          <option value="">Semua role</option>
+          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
+          <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
+          <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
+        </select>
+        <select class="select" style="width:auto" onchange="AM.filterStatus(this.value)">
+          <option value="">Semua status</option>
+          <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Aktif</option>
+          <option value="suspended" ${statusFilter === 'suspended' ? 'selected' : ''}>Ditangguhkan</option>
+          <option value="inactive" ${statusFilter === 'inactive' ? 'selected' : ''}>Nonaktif</option>
+        </select>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" onclick="AM.openAccount()">+ Tambah Akun</button>
+      </div>
+      <div class="visits-table-wrapper">
+        <table class="table">
+          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Login terakhir</th><th></th></tr></thead>
+          <tbody>
+            ${rows.length ? rows.map(a => {
+              const emp = employees.find(e => e.id === a.employeeId);
+              return `<tr>
+                <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
+                <td>${esc(roleLabel(a.role))}</td>
+                <td>${emp ? esc(emp.name) : '—'}</td>
+                <td>${statusBadge(a.status)}</td>
+                <td>${a.lastLoginAt ? formatDateShort(a.lastLoginAt) : '—'}</td>
+                <td>
+                  <button class="btn btn-secondary btn-sm" onclick="AM.openAccount('${a.id}')">Edit</button>
+                  ${a.status === 'active'
+                    ? `<button class="btn btn-danger btn-sm" onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
+                    : `<button class="btn btn-secondary btn-sm" onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
+                </td>
+              </tr>`;
+            }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Tidak ada akun</h3></div></td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function accountForm(existing) {
+  const employees = getEmployees().filter(e => e.status === 'active');
+  const used = new Set(getAccounts().filter(a => a.id !== existing?.id && a.employeeId).map(a => a.employeeId));
+  const options = employees.filter(e => !used.has(e.id) || e.id === existing?.employeeId);
+  return `
+    <form onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
+      <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" required></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Role</label>
+          <select class="select" name="role">
+            ${['manager', 'supervisor', 'employee'].map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="label">Status</label>
+          <select class="select" name="status">
+            ${['active', 'suspended', 'inactive'].map(s => `<option value="${s}" ${existing?.status === s ? 'selected' : ''}>${esc(statusLabel(s))}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="form-group"><label class="label">Tautkan karyawan</label>
+        <select class="select" name="employeeId">
+          <option value="">Tidak ditautkan</option>
+          ${options.map(e => `<option value="${e.id}" ${existing?.employeeId === e.id ? 'selected' : ''}>${esc(e.name)} — ${esc(e.role)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="label">${existing ? 'Password baru (opsional)' : 'Password'}</label>
+        <input class="input" type="password" name="password" minlength="8" autocomplete="new-password" ${existing ? '' : 'required'} placeholder="${existing ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter'}">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
+      </div>
+    </form>
+  `;
+}
+
+function formData(event) {
+  event.preventDefault();
+  return Object.fromEntries(new FormData(event.target).entries());
+}
+
+window.AM = {
+  saveProfile(event) {
+    try {
+      const data = formData(event);
+      const next = updateOwnProfile(account().id, data);
+      window.FT.state.account = getAccounts().find(a => a.id === next.id);
+      window.FT.state.user = { name: next.name, role: window.FT.state.user.role, email: next.email };
+      toast('Profil disimpan');
+      window.FT.navigate ? location.hash = '#/settings' : null;
+      location.hash = '#/settings';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  savePassword(event) {
+    try {
+      const data = formData(event);
+      if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
+      changePassword(account().id, data.currentPassword, data.nextPassword);
+      toast('Password diperbarui');
+      event.target.reset();
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  savePrefs(event) {
+    event.preventDefault();
+    const form = event.target;
+    updateAppSettings({
+      compactTables: form.compactTables.checked,
+      notifyLeave: form.notifyLeave.checked,
+      notifyLowStock: form.notifyLowStock.checked,
+    });
+    document.body.classList.toggle('am-compact', form.compactTables.checked);
+    toast('Preferensi disimpan');
+  },
+  saveOrg(event) {
+    try {
+      const data = formData(event);
+      updateAppSettings({ companyName: data.companyName, companyLogo: data.companyLogo });
+      toast('Identitas organisasi disimpan');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  filterAccounts(value) {
+    window.FT.state._accountQuery = value;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  filterRole(value) {
+    window.FT.state._accountRole = value;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  filterStatus(value) {
+    window.FT.state._accountStatus = value;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  openAccount(id = '') {
+    const existing = id ? getAccounts().find(a => a.id === id) : null;
+    window.FT.closeModal?.();
+    const root = document.getElementById('modalRoot');
+    if (!root) return;
+    root.innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
+  },
+  saveAccount(event, id) {
+    try {
+      const data = formData(event);
+      if (!data.password) delete data.password;
+      if (id) updateAccount(id, data);
+      else createAccount(data);
+      window.FT.closeModal?.();
+      toast(id ? 'Akun diperbarui' : 'Akun dibuat');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  toggleStatus(id, status) {
+    try {
+      updateAccount(id, { status });
+      toast(status === 'active' ? 'Akun diaktifkan' : 'Akun ditangguhkan');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+};
+
+function installStyles() {
+  if (document.getElementById('account-settings-css')) return;
+  const style = document.createElement('style');
+  style.id = 'account-settings-css';
+  style.textContent = `
+    .am-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .am-profile{display:flex;gap:14px;align-items:center;margin-bottom:16px}
+    .am-avatar{width:56px;height:56px;border-radius:16px;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:800}
+    .am-muted{font-size:12px;color:var(--gray-400);margin-top:3px}
+    .am-form .form-group{margin-bottom:12px}
+    .am-check{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:13px}
+    .am-actions{display:flex;gap:8px;margin-top:12px}
+    body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
+    @media(max-width:800px){.am-grid{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+}
+
+function applyPrefs() {
+  try {
+    document.body.classList.toggle('am-compact', !!getAppSettings().compactTables);
+  } catch { /* ignore */ }
+}
+
+installStyles();
+applyPrefs();
+export {};

@@ -54,6 +54,7 @@ const STATUS_STYLES = {
   medium:        'bg-amber-100 text-amber-700 border-amber-200',
   low:           'bg-red-100 text-red-700 border-red-200',
   pending:       'bg-amber-100 text-amber-700 border-amber-200',
+  suspended:     'bg-amber-100 text-amber-700 border-amber-200',
   approved:      'bg-emerald-100 text-emerald-700 border-emerald-200',
   rejected:      'bg-red-100 text-red-700 border-red-200',
 };

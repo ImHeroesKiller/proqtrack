@@ -69,6 +69,19 @@ function defaultDB() {
     competitorIntel: JSON.parse(JSON.stringify(seedCompetitorIntel)),
     promoTypes: JSON.parse(JSON.stringify(seedPromoTypes)),
     fieldPhotos: JSON.parse(JSON.stringify(seedFieldPhotos)),
+    appSettings: defaultAppSettings(),
+  };
+}
+
+export function defaultAppSettings() {
+  return {
+    companyName: 'ProQTrack',
+    companyLogo: './assets/logo-light.svg',
+    timezone: 'Asia/Jakarta',
+    compactTables: false,
+    notifyLeave: true,
+    notifyLowStock: true,
+    updatedAt: null,
   };
 }
 
@@ -212,6 +225,15 @@ function migrateDB(parsed) {
     status: normalizeAttendanceStatus(row.status || row.attendanceStatus) || row.status,
   }));
 
+  out.accounts = out.accounts.map(account => ({
+    status: 'active',
+    lastLoginAt: null,
+    mustChangePassword: false,
+    ...account,
+    email: normalizeEmail(account.email),
+  }));
+  out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
+
   return out;
 }
 
@@ -289,13 +311,175 @@ export function getAccounts() {
 }
 
 export function authenticate(email, password) {
-  const acc = getDB().accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
-  if (!acc || acc.status === 'inactive' || acc.password !== password) return null;
+  const db = getDB();
+  const acc = db.accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
+  if (!acc || acc.status === 'inactive' || acc.status === 'suspended' || acc.password !== password) return null;
   if (acc.employeeId) {
     const employee = getEmployee(acc.employeeId);
     if (!employee || employee.status !== 'active') return null;
   }
+  acc.lastLoginAt = new Date().toISOString();
+  saveDB();
   return acc;
+}
+
+function countActiveManagers(db, exceptId = null) {
+  return db.accounts.filter(a =>
+    a.role === 'manager' && a.status === 'active' && a.id !== exceptId
+  ).length;
+}
+
+function assertAccountEmail(db, email, accountId = null) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) throw new Error('Email wajib diisi.');
+  const taken = db.accounts.some(a => normalizeEmail(a.email) === normalized && a.id !== accountId);
+  const empTaken = db.employees.some(e =>
+    normalizeEmail(e.email) === normalized &&
+    !db.accounts.some(a => a.id === accountId && a.employeeId === e.id)
+  );
+  if (taken || empTaken) throw new Error('Email sudah digunakan oleh user lain.');
+  return normalized;
+}
+
+export function getAppSettings() {
+  const db = getDB();
+  if (!db.appSettings) db.appSettings = defaultAppSettings();
+  return db.appSettings;
+}
+
+export function updateAppSettings(partial) {
+  const db = getDB();
+  db.appSettings = {
+    ...defaultAppSettings(),
+    ...db.appSettings,
+    ...partial,
+    companyName: sanitizePlainText(partial.companyName ?? db.appSettings?.companyName ?? 'ProQTrack'),
+    updatedAt: new Date().toISOString(),
+  };
+  if (db.reportSettings) {
+    db.reportSettings.companyName = db.appSettings.companyName;
+    db.reportSettings.companyLogo = db.appSettings.companyLogo;
+  }
+  saveDB();
+  return db.appSettings;
+}
+
+export function createAccount(data) {
+  const db = getDB();
+  const email = assertAccountEmail(db, data.email);
+  if (!data.password || String(data.password).length < 8) {
+    throw new Error('Password login minimal 8 karakter.');
+  }
+  const role = ['manager', 'supervisor', 'employee'].includes(data.role) ? data.role : 'employee';
+  let employeeId = data.employeeId || null;
+  if (employeeId) {
+    const employee = db.employees.find(e => e.id === employeeId);
+    if (!employee) throw new Error('Karyawan tidak ditemukan.');
+    if (db.accounts.some(a => a.employeeId === employeeId)) {
+      throw new Error('Karyawan ini sudah memiliki akun login.');
+    }
+  }
+  const account = {
+    id: uid('ACC'),
+    email,
+    name: sanitizePlainText(data.name) || email,
+    password: String(data.password),
+    role,
+    employeeId,
+    status: data.status === 'inactive' ? 'inactive' : 'active',
+    mustChangePassword: !!data.mustChangePassword,
+    lastLoginAt: null,
+    createdAt: new Date().toISOString(),
+  };
+  db.accounts.push(account);
+  if (employeeId) {
+    const employee = db.employees.find(e => e.id === employeeId);
+    employee.email = email;
+    if (account.name) employee.name = account.name;
+  }
+  saveDB();
+  return account;
+}
+
+export function updateAccount(id, data) {
+  const db = getDB();
+  const idx = db.accounts.findIndex(a => a.id === id);
+  if (idx === -1) throw new Error('Akun tidak ditemukan.');
+  const current = db.accounts[idx];
+  const nextRole = data.role || current.role;
+  const nextStatus = data.status || current.status;
+  if (current.role === 'manager' && (nextRole !== 'manager' || nextStatus !== 'active')) {
+    if (countActiveManagers(db, id) < 1) {
+      throw new Error('Tidak bisa menonaktifkan atau menurunkan manager terakhir.');
+    }
+  }
+  const email = data.email ? assertAccountEmail(db, data.email, id) : current.email;
+  if (data.password) {
+    if (String(data.password).length < 8) throw new Error('Password login minimal 8 karakter.');
+  }
+  let employeeId = data.employeeId === undefined ? current.employeeId : (data.employeeId || null);
+  if (employeeId) {
+    const employee = db.employees.find(e => e.id === employeeId);
+    if (!employee) throw new Error('Karyawan tidak ditemukan.');
+    if (db.accounts.some(a => a.employeeId === employeeId && a.id !== id)) {
+      throw new Error('Karyawan ini sudah memiliki akun login.');
+    }
+  }
+  db.accounts[idx] = {
+    ...current,
+    email,
+    name: sanitizePlainText(data.name ?? current.name),
+    role: ['manager', 'supervisor', 'employee'].includes(nextRole) ? nextRole : current.role,
+    status: ['active', 'inactive', 'suspended'].includes(nextStatus) ? nextStatus : current.status,
+    employeeId,
+    mustChangePassword: data.mustChangePassword ?? current.mustChangePassword,
+    updatedAt: new Date().toISOString(),
+  };
+  if (data.password) db.accounts[idx].password = String(data.password);
+  if (employeeId) {
+    const employee = db.employees.find(e => e.id === employeeId);
+    employee.email = email;
+    employee.name = db.accounts[idx].name;
+  }
+  saveDB();
+  return db.accounts[idx];
+}
+
+export function changePassword(accountId, currentPassword, nextPassword) {
+  const db = getDB();
+  const account = db.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('Akun tidak ditemukan.');
+  if (account.password !== currentPassword) throw new Error('Password saat ini salah.');
+  if (!nextPassword || String(nextPassword).length < 8) {
+    throw new Error('Password baru minimal 8 karakter.');
+  }
+  if (nextPassword === currentPassword) throw new Error('Password baru harus berbeda.');
+  account.password = String(nextPassword);
+  account.mustChangePassword = false;
+  account.passwordChangedAt = new Date().toISOString();
+  saveDB();
+  return true;
+}
+
+export function updateOwnProfile(accountId, data) {
+  const db = getDB();
+  const account = db.accounts.find(a => a.id === accountId);
+  if (!account) throw new Error('Akun tidak ditemukan.');
+  const email = data.email ? assertAccountEmail(db, data.email, accountId) : account.email;
+  account.email = email;
+  account.name = sanitizePlainText(data.name ?? account.name);
+  account.updatedAt = new Date().toISOString();
+  if (account.employeeId) {
+    const employee = db.employees.find(e => e.id === account.employeeId);
+    if (employee) {
+      employee.email = email;
+      employee.name = account.name;
+      if (data.phone != null) employee.phone = sanitizePlainText(data.phone);
+      if (data.area != null) employee.area = sanitizePlainText(data.area);
+    }
+  }
+  saveDB();
+  return account;
 }
 
 export function getEmployees() {

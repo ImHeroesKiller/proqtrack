@@ -18,8 +18,9 @@ import {
   getCompetitorAnalysisSummary,
   getPromoTypes, getPromoTypeLabel,
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
-  createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES,
+  createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
 } from './lib/db.js';
+import { renderSettings, renderAccounts } from './account-settings.js';
 import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
@@ -144,6 +145,10 @@ const NAV_ITEMS = [
     { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
     { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
   ]},
+  { section: 'Sistem', items: [
+    { id: 'accounts', label: 'Manajemen Akun', icon: '◐', route: '#/accounts' },
+    { id: 'settings', label: 'Pengaturan',     icon: '⚙', route: '#/settings' },
+  ]},
 ];
 
 const NAV_ITEMS_SUPERVISOR = [
@@ -162,6 +167,9 @@ const NAV_ITEMS_SUPERVISOR = [
     { id: 'attendance', label: 'Absensi Tim', icon: '✓', route: '#/attendance' },
     { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
   ]},
+  { section: 'Sistem', items: [
+    { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
+  ]},
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
@@ -178,6 +186,9 @@ const NAV_ITEMS_EMPLOYEE = [
   { section: 'SDM', items: [
     { id: 'myattendance', label: 'Absensi Saya', icon: '✓', route: '#/myattendance' },
     { id: 'myleaves',     label: 'Ijin & Cuti',  icon: '▤', route: '#/myleaves' },
+  ]},
+  { section: 'Sistem', items: [
+    { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
   ]},
 ];
 // ===== Router =====
@@ -306,6 +317,12 @@ function render() {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
     pageTitle = 'Detail Outlet'; pageSubtitle = '';
+  } else if (route === '#/settings') {
+    pageTitle = 'Pengaturan'; pageSubtitle = 'Akun, keamanan, dan preferensi aplikasi';
+    pageContent = renderSettings();
+  } else if (isManager() && route === '#/accounts') {
+    pageTitle = 'Manajemen Akun'; pageSubtitle = 'Login, role, status, dan tautan karyawan';
+    pageContent = renderAccounts();
   } else if (!isManager()) {
     location.hash = '#/myday';
     return;
@@ -365,11 +382,11 @@ function renderSidebar() {
         const activeEmps = getEmployees().filter(e => e.status === 'active').length;
         badge = `<span class="nav-badge">${activeEmps}</span>`;
       }
-      if (canViewTeamOps() && item.id === 'leaves') {
+      if (canViewTeamOps() && item.id === 'leaves' && getAppSettings().notifyLeave !== false) {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
         if (pending > 0) badge = `<span class="nav-badge" style="background:var(--amber-500);">${pending}</span>`;
       }
-      if (isManager() && item.id === 'stocks') {
+      if (isManager() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
@@ -389,7 +406,7 @@ function renderSidebar() {
       </div>
       <nav class="sidebar-nav">${navHTML}</nav>
       <div class="sidebar-footer">
-        <div class="sidebar-user">
+        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
           <div class="sidebar-avatar">${getInitials(state.user.name)}</div>
           <div class="sidebar-user-info">
             <div class="name">${esc(state.user.name)}</div>
