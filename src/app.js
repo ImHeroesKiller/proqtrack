@@ -47,6 +47,7 @@ const state = {
   user: { name: 'Manager Demo', role: 'Manager', email: 'manager@proqtrack.id' },
   route: '#/',
   sidebarOpen: false,
+  sidebarCollapsed: (() => { try { return localStorage.getItem('proqtrack_sidebar_collapsed') === '1'; } catch { return false; } })(),
   selectedEmployee: null,
   selectedMobileEmp: 'EMP001',
   mobileTab: 'home',
@@ -408,7 +409,7 @@ function render() {
   }
 
   app.innerHTML = `
-    <div class="app-layout">
+    <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''}">
       ${renderSidebar()}
       <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
@@ -468,19 +469,22 @@ function renderSidebar() {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
-      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${item.route}')">
+      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" title="${esc(item.label)}" onclick="return FT.goNav(event,'${item.route}')">
         <span class="nav-icon" data-vector="1">${appIcon(item.icon)}</span>
-        <span>${item.label}</span>
+        <span class="nav-label">${item.label}</span>
         ${badge}
       </a>`;
     }
   }
 
   return `
-    <aside class="sidebar ${state.sidebarOpen ? 'open' : ''}">
+    <aside class="sidebar ${state.sidebarOpen ? 'open' : ''} ${state.sidebarCollapsed ? 'collapsed' : ''}">
       <div class="sidebar-header">
         <div class="sidebar-logo">PQ</div>
         <div class="sidebar-logo-text">ProQTrack<small>Monitoring System</small></div>
+        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
+        </button>
       </div>
       ${orgSwitcherHtml()}
       <nav class="sidebar-nav">${navHTML}</nav>
@@ -976,6 +980,24 @@ window.FT.viewVisit = function(id) {
   `);
 };
 
+
+window.FT.toggleCollapse = function() {
+  state.sidebarCollapsed = !state.sidebarCollapsed;
+  try { localStorage.setItem('proqtrack_sidebar_collapsed', state.sidebarCollapsed ? '1' : '0'); } catch { /* ignore */ }
+  const sb = document.querySelector('.sidebar');
+  const layout = document.querySelector('.app-layout');
+  if (sb) {
+    sb.classList.toggle('collapsed', state.sidebarCollapsed);
+    const btn = sb.querySelector('.sidebar-toggle');
+    if (btn) {
+      btn.setAttribute('aria-expanded', state.sidebarCollapsed ? 'false' : 'true');
+      btn.title = state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu';
+      const path = btn.querySelector('path');
+      if (path) path.setAttribute('d', state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6');
+    }
+  }
+  layout?.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+};
 
 window.FT.toggleSidebar = function() {
   const sb = document.querySelector('.sidebar');
