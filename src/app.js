@@ -187,7 +187,6 @@ const NAV_ITEMS_SUPERVISOR = [
   { section: 'Menu Utama', items: [
     { id: 'dashboard', label: 'Beranda Tim',    icon: 'home', route: '#/' },
     { id: 'myday',     label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
-    { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
     { id: 'tracking',  label: 'Last Location Tim',  icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Kunjungan Tim',  icon: 'visits', route: '#/visits' },
   ]},
@@ -303,6 +302,10 @@ function render() {
   const teamOps = canViewTeamOps();
   if (route === '#/photos') {
     location.hash = '#/field-photos';
+    return;
+  }
+  if (isSupervisor() && route === '#/last-location') {
+    location.hash = '#/tracking';
     return;
   }
 
@@ -436,8 +439,10 @@ function render() {
     pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${esc(route)}</p></div>`;
   }
 
+  const fieldRole = !isOrgAdmin();
+  const roleSkin = fieldRole ? `role-field ${isSupervisor() ? 'role-supervisor' : 'role-sales'}` : 'role-desk';
   app.innerHTML = `
-    <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''}">
+    <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${roleSkin}">
       ${renderSidebar()}
       <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
@@ -457,6 +462,7 @@ function render() {
         <div class="content">
           ${pageContent}
         </div>
+        ${fieldRole ? renderFieldDock(route) : ''}
       </div>
     </div>
   `;
@@ -530,6 +536,37 @@ function renderSidebar() {
         </div>
       </div>
     </aside>
+  `;
+}
+
+function renderFieldDock(route) {
+  const tabs = isSupervisor()
+    ? [
+        { route: '#/', label: 'Beranda', icon: 'home' },
+        { route: '#/myday', label: 'Hari Saya', icon: 'calendar' },
+        { route: '#/tracking', label: 'Lokasi Tim', icon: 'pin' },
+        { route: '#/visits', label: 'Kunjungan', icon: 'visits' },
+      ]
+    : [
+        { route: '#/myday', label: 'Hari Ini', icon: 'calendar' },
+        { route: '#/last-location', label: 'Lokasi', icon: 'pin' },
+        { route: '#/myvisits', label: 'Kunjungan', icon: 'visits' },
+        { route: '#/mystocks', label: 'Stok', icon: 'stocks' },
+      ];
+  return `
+    <nav class="field-dock" aria-label="Menu cepat">
+      ${tabs.map(t => {
+        const active = route === t.route || (t.route === '#/' && (route === '#' || route === '#/'));
+        return `<a href="${t.route}" class="field-dock-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${t.route}')">
+          <span class="field-dock-icon">${iconSvg(t.icon)}</span>
+          <span>${t.label}</span>
+        </a>`;
+      }).join('')}
+      <button type="button" class="field-dock-item" onclick="FT.toggleSidebar()">
+        <span class="field-dock-icon">${iconSvg('projects')}</span>
+        <span>Menu</span>
+      </button>
+    </nav>
   `;
 }
 
