@@ -386,38 +386,14 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script type="module">
-  import { CANVA_LOGO_EMBED } from './assets/logo.js';
-
-  function paintLogo(el, size) {
-    if (!el || el.dataset.logoPainted === '1') return;
-    el.dataset.logoPainted = '1';
-    el.textContent = '';
-    el.style.background = 'transparent';
-    el.style.boxShadow = 'none';
-    el.style.borderRadius = '0';
-    el.style.fontSize = '0';
-    el.style.color = 'transparent';
-    el.style.overflow = 'hidden';
-    el.style.display = 'block';
-    if (size === 'login') {
-      el.style.width = 'min(240px, 80vw)';
-      el.style.height = '72px';
-      el.style.margin = '0 auto 16px';
-    } else {
-      el.style.width = '140px';
-      el.style.height = '36px';
-      el.style.flexShrink = '0';
-    }
-    const img = document.createElement('img');
-    img.src = CANVA_LOGO_EMBED;
-    img.alt = 'ProQTrack';
-    img.style.cssText = 'display:block;width:100%;height:100%;object-fit:contain;';
-    el.appendChild(img);
-  }
+  import './assets/logo.js';
 
   function applyBrand() {
-    paintLogo(document.querySelector('.login-logo'), 'login');
-    paintLogo(document.querySelector('.sidebar-logo'), 'sidebar');
+    document.querySelectorAll('.login-logo,.sidebar-logo').forEach(el => {
+      el.querySelectorAll('img,iframe').forEach(node => node.remove());
+      if (el.textContent.trim()) el.textContent = '';
+      el.setAttribute('aria-label', 'ProQTrack');
+    });
     document.querySelectorAll('.login-card h1').forEach(h => {
       h.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;';
     });
