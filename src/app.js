@@ -20,9 +20,9 @@ import {
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
-  getVisitsOnDate, visitDay, getAttendancePoints,
+  getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
 } from './lib/db.js';
-import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm } from './field-sales.js';
+import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
@@ -116,6 +116,15 @@ function avatarStyle(person) {
 
 function myEmployeeId() {
   return state.account ? state.account.employeeId : null;
+}
+
+function teamFieldView() {
+  return isSupervisor() || isOrgAdmin();
+}
+
+function visitedOutletIdsForView() {
+  if (teamFieldView()) return [...new Set(getVisits().map(v => v.outletId))];
+  return getVisitedOutletIds(myEmployeeId());
 }
 
 function entityScopeFields(entity = {}) {
@@ -324,13 +333,16 @@ function render() {
       pageTitle = 'Kunjungan Saya'; pageSubtitle = 'Riwayat semua kunjungan Anda';
       pageContent = renderMyVisits();
     } else if (route === '#/mystocks') {
-      pageTitle = 'Stok Outlet'; pageSubtitle = 'Stok produk di outlet yang Anda kunjungi';
+      pageTitle = 'Stok Outlet';
+      pageSubtitle = isSupervisor() ? 'Stok di toko yang dikunjungi tim Anda' : 'Stok produk di outlet yang Anda kunjungi';
       pageContent = renderMyStocks();
     } else if (route === '#/myprices') {
-      pageTitle = 'Harga & Diskon'; pageSubtitle = 'Pantau harga dan diskon di outlet yang Anda kunjungi';
+      pageTitle = 'Harga & Diskon';
+      pageSubtitle = isSupervisor() ? 'Observasi harga dari kunjungan tim Anda' : 'Pantau harga dan diskon di outlet yang Anda kunjungi';
       pageContent = renderMyPrices();
     } else if (route === '#/myintel') {
-      pageTitle = 'Intel Kompetitor'; pageSubtitle = 'Catat dan pantau intel kompetitor di outlet yang dikunjungi';
+      pageTitle = 'Intel Kompetitor';
+      pageSubtitle = isSupervisor() ? 'Intel kompetitor yang dicatat tim Anda' : 'Catat dan pantau intel kompetitor di outlet yang dikunjungi';
       pageContent = renderMyIntel();
     } else if (route === '#/myphotos') {
       pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit Anda';
@@ -360,7 +372,7 @@ function render() {
     pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
     pageContent = renderEmployees();
   } else if ((isOrgAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
-    pageTitle = 'Persetujuan Toko'; pageSubtitle = 'Setujui atau tolak pengajuan toko dari sales';
+    pageTitle = 'Persetujuan Toko'; pageSubtitle = 'Antrian pengajuan toko baru dari sales. Perlu persetujuan supervisor dan manager.';
     pageContent = renderOutletProposalForm();
   } else if (isOrgAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
@@ -381,7 +393,7 @@ function render() {
     pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit seluruh tim lapangan';
     pageContent = renderFieldPhotosGallery({ managerView: true });
   } else if (teamOps && route === '#/attendance') {
-    pageTitle = 'Absensi'; pageSubtitle = 'Rekap kehadiran tim lapangan';
+    pageTitle = 'Absensi'; pageSubtitle = isSupervisor() ? 'Rekap kehadiran Anda dan tim lapangan' : 'Rekap kehadiran tim lapangan';
     pageContent = renderAttendanceManager();
   } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Kelola pengajuan ijin dan cuti karyawan';
@@ -603,7 +615,8 @@ function renderManagerDashboard() {
         </div>
         <div class="spacer"></div>
         ${isSuperadmin() ? dashLink('#/organizations','Ganti organisasi') : ''}
-        ${dashLink('#/tracking','Live map')}
+        ${dashLink('#/tracking','Last Location')}
+        ${dashLink('#/outlet-approvals','Persetujuan toko')}
         ${dashLink('#/reports','Laporan')}
       </div>
     </div>
@@ -640,6 +653,7 @@ function renderSupervisorDashboard() {
   const teamIds = new Set(team.map(e => e.id));
   const visits = getVisits().filter(v => teamIds.has(v.employeeId) && v.date === todayISO());
   const pending = getLeaves().filter(l => teamIds.has(l.employeeId) && l.status === 'pending');
+  const pendingStores = getOutletProposals().filter(p => p.status === 'pending');
   const active = visits.filter(v => v.status === 'checked-in');
   return `
     <div class="grid-4">
@@ -652,8 +666,10 @@ function renderSupervisorDashboard() {
       </div>
       <div class="card">
         <div class="card-title">Perlu tindakan</div>
-        ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : '<p class="am-muted">Tidak ada pengajuan pending.</p>'}
-        <div class="am-actions" style="margin-top:12px">${dashLink('#/myday','Hari saya')} ${dashLink('#/my-projects','Project')}</div>
+        ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : ''}
+        ${pendingStores.length ? pendingStores.map(p => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || '')}</div></div>`).join('') : ''}
+        ${!pending.length && !pendingStores.length ? '<p class="am-muted">Tidak ada pengajuan pending.</p>' : ''}
+        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/visits','Kunjungan tim')} ${dashLink('#/myday','Hari saya')}</div>
       </div>
     </div>
   `;
@@ -973,32 +989,25 @@ window.FT.createVisit = function(e) {
 
 window.FT.viewVisit = function(id) {
   const v = getVisits().find(x => x.id === id);
-  if (!v) return;
+  if (!v) {
+    showToast('Kunjungan tidak ditemukan atau di luar cakupan tim.', 'error');
+    return;
+  }
   const emp = getEmployees().find(e => e.id === v.employeeId);
-  const out = getOutlets().find(o => o.id === v.outletId);
-  const stars = v.rating > 0 ? `${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}` : 'Belum dinilai';
+  const mine = myEmployeeId();
+  const canAct = !mine || v.employeeId === mine || isOrgAdmin();
   openModal('Detail Kunjungan', `
-    <div class="detail-grid">
-      <div class="detail-label">Karyawan</div><div class="detail-value">${emp ? emp.name : '-'}</div>
-      <div class="detail-label">Outlet</div><div class="detail-value">${out ? outletIcon(out.type)+' '+out.name : '-'}</div>
-      <div class="detail-label">Tanggal</div><div class="detail-value">${formatDate(v.date)}</div>
-      <div class="detail-label">Check In</div><div class="detail-value">${v.checkInTime || '-'}</div>
-      <div class="detail-label">Check Out</div><div class="detail-value">${v.checkOutTime || '-'}</div>
-      <div class="detail-label">Durasi</div><div class="detail-value">${formatDuration(v.checkInTime, v.checkOutTime)}</div>
-      <div class="detail-label">Status</div><div class="detail-value">${statusBadge(v.status)}</div>
-      <div class="detail-label">Rating</div><div class="detail-value" style="color:#fbbf24;">${stars}</div>
-      <div class="detail-label">Catatan</div><div class="detail-value full">${v.notes || '-'}</div>
+    <div class="detail-grid" style="margin-bottom:8px">
+      <div class="detail-label">Sales</div><div class="detail-value">${esc(emp?.name || '-')}</div>
+      <div class="detail-label">Area</div><div class="detail-value">${esc(emp?.area || '-')}</div>
     </div>
-    ${v.status !== 'completed' ? `
-      <div style="margin-top:16px; display:flex; gap:8px;">
+    ${renderVisitDetailHtml(id)}
+    ${canAct && v.status !== 'completed' ? `
+      <div style="margin-top:8px; display:flex; gap:8px;">
         ${v.status === 'planned' ? `<button class="btn btn-primary btn-sm" onclick="FT.checkInVisit('${v.id}')">Check In</button>` : ''}
         ${v.status === 'checked-in' ? `<button class="btn btn-primary btn-sm" onclick="FT.checkOutVisit('${v.id}')">Check Out</button>` : ''}
       </div>
     ` : ''}
-    <div class="modal-footer" style="padding:24px 0 0;">
-      <button class="btn btn-secondary" onclick="FT.closeModal()">Tutup</button>
-      <button class="btn btn-danger" onclick="FT.deleteVisit('${v.id}')">Hapus</button>
-    </div>
   `);
 };
 
@@ -2272,15 +2281,16 @@ window.FT.filterTable = function(tableId, searchId) {
 // ===== Employee: My Stocks (only visited outlets) =====
 function renderMyStocks() {
   const empId = myEmployeeId();
-  const visitedIds = getVisitedOutletIds(empId);
+  const teamView = isSupervisor();
+  const visitedIds = visitedOutletIdsForView();
   const outlets = getOutlets().filter(o => visitedIds.includes(o.id));
   const allStocks = getStocks().filter(s => visitedIds.includes(s.outletId));
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const outletMap = Object.fromEntries(outlets.map(o => [o.id, o]));
+  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const lowStocks = allStocks.filter(s => s.quantity <= s.minStock);
 
-  // Also get active (checked-in) visits for quick stock input
-  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+  const activeVisits = getVisits().filter(v => v.status === 'checked-in' && (!teamView || true) && (teamView || v.employeeId === empId));
 
   return `
     ${activeVisits.length > 0 ? `
@@ -2317,34 +2327,38 @@ function renderMyStocks() {
           <div style="font-size:28px;">⚠️</div>
           <div>
             <div style="font-size:15px; font-weight:700; color:var(--red-700);">${lowStocks.length} Produk Stok Menipis</div>
-            <div style="font-size:13px; color:var(--red-500);">Di outlet yang pernah Anda kunjungi</div>
+            <div style="font-size:13px; color:var(--red-500);">${teamView ? 'Di toko yang dikunjungi tim' : 'Di outlet yang pernah Anda kunjungi'}</div>
           </div>
         </div>
       </div>
     ` : ''}
 
     <div class="card">
-      <div class="card-title">Stok Outlet yang Dikunjungi</div>
-      <div class="card-subtitle">${outlets.length} outlet · ${allStocks.length} record stok</div>
+      <div class="card-title">${teamView ? 'Stok toko tim' : 'Stok Outlet yang Dikunjungi'}</div>
+      <div class="card-subtitle">${outlets.length} outlet · ${allStocks.length} record stok${teamView ? ' · mengikuti kunjungan tim' : ''}</div>
       ${allStocks.length === 0 ? `<div class="empty-state"><div class="empty-icon">📊</div><h3>Belum ada data stok</h3><p>Update stok saat check-in di outlet</p></div>` : `
       <div class="visits-table-wrapper">
         <table class="table">
-          <thead><tr><th>Outlet</th><th>Produk</th><th>Qty</th><th>Min</th><th>Status</th><th>Update</th><th></th></tr></thead>
+          <thead><tr><th>Outlet</th><th>Produk</th>${teamView ? '<th>Sales terakhir</th>' : ''}<th>Qty</th><th>Min</th><th>Status</th><th>Update</th>${teamView ? '' : '<th></th>'}</tr></thead>
           <tbody>
             ${allStocks.map(s => {
               const p = productMap[s.productId];
               const o = outletMap[s.outletId];
               if (!p || !o) return '';
               const isLow = s.quantity <= s.minStock;
+              const lastVisit = getVisits().filter(v => v.outletId === s.outletId && v.checkInTime)
+                .sort((a, b) => `${visitDay(b)} ${b.checkInTime}`.localeCompare(`${visitDay(a)} ${a.checkInTime}`))[0];
+              const salesName = lastVisit ? (empMap[lastVisit.employeeId]?.name || lastVisit.employeeId) : '—';
               return `
                 <tr>
                   <td>${outletIcon(o.type)} ${esc(o.name)}</td>
                   <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
+                  ${teamView ? `<td>${esc(salesName)}</td>` : ''}
                   <td style="font-weight:700;color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
                   <td style="color:var(--gray-400);">${s.minStock}</td>
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px;color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
-                  <td><button class="btn btn-secondary btn-sm" onclick="FT.editStock('${s.id}')">Edit</button></td>
+                  ${teamView ? '' : `<td><button class="btn btn-secondary btn-sm" onclick="FT.editStock('${s.id}')">Edit</button></td>`}
                 </tr>
               `;
             }).join('')}
@@ -2359,14 +2373,17 @@ function renderMyStocks() {
 // ===== Employee: My Prices (Harga & Diskon) =====
 function renderMyPrices() {
   const empId = myEmployeeId();
-  const visitedIds = getVisitedOutletIds(empId);
-  const observations = getPriceObservations().filter(p => p.recordedBy === empId || visitedIds.includes(p.outletId));
+  const teamView = isSupervisor();
+  const teamIds = new Set(getEmployees().map(e => e.id));
+  const visitedIds = visitedOutletIdsForView();
+  const observations = getPriceObservations().filter(p => teamView
+    ? visitedIds.includes(p.outletId) || teamIds.has(p.recordedBy)
+    : (p.recordedBy === empId || visitedIds.includes(p.outletId)));
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
 
-  // Active visits for quick input
-  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+  const activeVisits = getVisits().filter(v => v.status === 'checked-in' && (teamView || v.employeeId === empId));
 
   // Group by outlet for summary
   const byOutlet = {};
@@ -2425,13 +2442,14 @@ function renderMyPrices() {
         <div class="spacer"></div>
         <button class="btn btn-primary" onclick="FT.openPriceObsModal()">+ Catat Observasi</button>
       </div>
-      <div class="card-subtitle" style="margin-top:8px;">Data dari outlet yang pernah Anda kunjungi</div>
+      <div class="card-subtitle" style="margin-top:8px;">${teamView ? 'Data dari kunjungan tim Anda' : 'Data dari outlet yang pernah Anda kunjungi'}</div>
       ${observations.length === 0 ? `<div class="empty-state"><div class="empty-icon">💰</div><h3>Belum ada data harga</h3><p>Catat harga saat kunjungan ke outlet</p></div>` : `
       <div class="visits-table-wrapper" style="margin-top:12px;">
         <table class="table">
           <thead>
             <tr>
               <th>Tanggal</th>
+              ${teamView ? '<th>Sales</th>' : ''}
               <th>Outlet</th>
               <th>Produk</th>
               <th>Harga Teramati</th>
@@ -2456,6 +2474,7 @@ function renderMyPrices() {
               return `
                 <tr>
                   <td style="font-size:13px;">${formatDateShort(obs.recordedAt)}</td>
+                  ${teamView ? `<td>${esc(empMap[obs.recordedBy]?.name || obs.recordedBy || '—')}</td>` : ''}
                   <td>${o ? outletIcon(o.type)+' '+esc(o.name) : esc(obs.outletId || '—')}</td>
                   <td><span style="font-weight:600;">${esc(p?.name || obs.productId || '—')}</span><br><span style="font-size:11px;color:var(--gray-400);">${esc(p?.sku || '')}</span></td>
                   <td style="font-weight:700;">${formatCurrency(obs.observedPrice)}</td>
@@ -3031,13 +3050,18 @@ function promoBadgeHTML(intel) {
 // ===== Employee: Intel Kompetitor =====
 function renderMyIntel() {
   const empId = myEmployeeId();
-  const visitedIds = getVisitedOutletIds(empId);
-  const intel = getCompetitorIntel().filter(i => i.recordedBy === empId || visitedIds.includes(i.outletId));
+  const teamView = isSupervisor();
+  const teamIds = new Set(getEmployees().map(e => e.id));
+  const visitedIds = visitedOutletIdsForView();
+  const intel = getCompetitorIntel().filter(i => teamView
+    ? visitedIds.includes(i.outletId) || teamIds.has(i.recordedBy) || teamIds.has(i.employeeId)
+    : (i.recordedBy === empId || visitedIds.includes(i.outletId)));
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const cpdMap = Object.fromEntries(getCompetitorProducts().map(p => [p.id, p]));
   const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const activeVisits = getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in');
+  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const activeVisits = getVisits().filter(v => v.status === 'checked-in' && (teamView || v.employeeId === empId));
 
   return `
     ${activeVisits.length > 0 ? `
@@ -3085,17 +3109,17 @@ function renderMyIntel() {
 
     <div class="card">
       <div class="filter-row">
-        <div class="card-title" style="margin:0;">Riwayat Intel Saya</div>
+        <div class="card-title" style="margin:0;">${teamView ? 'Intel tim' : 'Riwayat Intel Saya'}</div>
         <div class="spacer"></div>
         <button class="btn btn-primary" onclick="FT.openStandaloneIntelModal()">+ Catat Intel</button>
       </div>
-      <div class="card-subtitle">Hanya outlet yang pernah Anda kunjungi</div>
+      <div class="card-subtitle">${teamView ? 'Mengikuti aktivitas kunjungan tim' : 'Hanya outlet yang pernah Anda kunjungi'}</div>
       ${intel.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada intel</h3><p>Catat saat check-in di outlet</p></div>` : `
       <div class="visits-table-wrapper" style="margin-top:12px;">
         <table class="table" style="min-width:640px;">
           <thead>
             <tr>
-              <th>Tanggal</th><th>Outlet</th><th>Produk Kita</th><th>vs Kompetitor</th>
+              <th>Tanggal</th>${teamView ? '<th>Sales</th>' : ''}<th>Outlet</th><th>Produk Kita</th><th>vs Kompetitor</th>
               <th>Harga</th><th>Shelf</th><th>Vis</th><th>Promo</th><th>Catatan</th>
             </tr>
           </thead>
@@ -3109,6 +3133,7 @@ function renderMyIntel() {
               return `
                 <tr>
                   <td style="font-size:12px;">${formatDateShort(i.recordedAt)}</td>
+                  ${teamView ? `<td>${esc(empMap[i.recordedBy]?.name || empMap[i.employeeId]?.name || '—')}</td>` : ''}
                   <td>${o ? outletIcon(o.type)+' '+o.name : '—'}</td>
                   <td style="font-weight:600;">${our?.name||'—'}</td>
                   <td>

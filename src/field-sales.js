@@ -303,6 +303,7 @@ export function renderOutletProposalForm() {
     </div>` : ''}
     <div class="card" style="margin-top:16px">
       <div class="card-title">${role === 'employee' ? 'Status pengajuan saya' : 'Antrian persetujuan toko baru'}</div>
+      ${role !== 'employee' ? '<div class="card-subtitle">Sales mengajukan dari menu Toko Baru. Supervisor dan manager masing-masing harus menyetujui sebelum toko masuk master.</div>' : ''}
       <div class="visits-table-wrapper">
         <table class="table">
           <thead><tr><th>Toko</th><th>Area</th><th>Diajukan</th><th>Status</th>${role !== 'employee' ? '<th></th>' : ''}</tr></thead>
