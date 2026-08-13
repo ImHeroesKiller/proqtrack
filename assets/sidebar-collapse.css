@@ -48,6 +48,17 @@
     font-size: 0 !important;
     overflow: hidden;
   }
+  .sidebar.collapsed .sidebar-logo.has-org-logo {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  .sidebar.collapsed .sidebar-logo.has-org-logo img,
+  .sidebar-logo.has-org-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
   .sidebar.collapsed .sidebar-logo::before,
   .sidebar.collapsed .sidebar-logo::after {
     display: none !important;
