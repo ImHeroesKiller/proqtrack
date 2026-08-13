@@ -515,7 +515,7 @@ function employee() {
 function role() {
   const a = account(),
     e = employee();
-  if (a?.role === "manager") return "manager";
+  if (a?.role === "superadmin" || a?.role === "manager") return "manager";
   if (
     a?.role === "supervisor" ||
     String(e?.role || "")

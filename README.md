@@ -20,13 +20,14 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
   - module flags per project
   - menu Project Saya, Tim Saya, dan Komparasi Supervisor
   - tagging `projectId` untuk visit, intel, foto, harga, dan stok baru
-- Role: Manager | Supervisor | Field Sales
+- Role: Superadmin | Manager (1 organisasi) | Supervisor | Field Sales
 
 ## Demo login
 
 | Role | Email | Password |
 |------|-------|----------|
-| Manager | `manager@proqtrack.id` | `demo123` |
+| Superadmin | `superadmin@proqtrack.id` | `demo123` |
+| Manager (1 org) | `manager@proqtrack.id` | `demo123` |
 | Supervisor | `rizky.supervisor@proqtrack.id` | `demo123` |
 | Field Sales | `budi.employee@proqtrack.id` | `demo123` |
 

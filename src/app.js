@@ -61,8 +61,16 @@ const PROJECT_MANAGEMENT_ROUTES = new Set([
   '#/supervisor-compare',
 ]);
 
+function isSuperadmin() {
+  return state.account && state.account.role === 'superadmin';
+}
+
 function isManager() {
   return state.account && state.account.role === 'manager';
+}
+
+function isOrgAdmin() {
+  return isManager() || isSuperadmin();
 }
 
 function isSupervisor() {
@@ -70,17 +78,18 @@ function isSupervisor() {
 }
 
 function canViewTeamOps() {
-  return isManager() || isSupervisor();
+  return isOrgAdmin() || isSupervisor();
 }
 
 function displayRole(account) {
+  if (account?.role === 'superadmin') return 'Superadmin';
   if (account?.role === 'manager') return 'Manager';
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 }
 
 function defaultRouteFor(account) {
-  if (account?.role === 'manager' || account?.role === 'supervisor') return '#/';
+  if (account?.role === 'superadmin' || account?.role === 'manager' || account?.role === 'supervisor') return '#/';
   return '#/myday';
 }
 
@@ -272,7 +281,7 @@ function render() {
   let pageContent = '';
   let pageTitle = '';
   let pageSubtitle = '';
-  const manager = isManager();
+  const manager = isOrgAdmin();
   const teamOps = canViewTeamOps();
   if (route === '#/photos') {
     location.hash = '#/field-photos';
@@ -283,7 +292,7 @@ function render() {
   // application shell exists. This prevents false redirects and 404 states.
   if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
     const managerOnlyPm = route === '#/clients' || route === '#/projects' || route === '#/assignments';
-    if (managerOnlyPm && !isManager()) {
+    if (managerOnlyPm && !isOrgAdmin()) {
       location.hash = defaultRouteFor(state.account);
       return;
     }
@@ -321,30 +330,30 @@ function render() {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
     }
-  } else if ((isManager() || isSupervisor()) && (route === '#/' || route === '#')) {
+  } else if ((isOrgAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
-    pageTitle = isManager() ? 'Beranda Organisasi' : 'Beranda Tim';
+    pageTitle = isOrgAdmin() ? 'Beranda Organisasi' : 'Beranda Tim';
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Ringkasan operasional';
-    pageContent = isManager() ? renderManagerDashboard() : renderSupervisorDashboard();
+    pageContent = isOrgAdmin() ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
     pageTitle = 'Live Tracking'; pageSubtitle = 'Pantau lokasi tim lapangan secara real-time';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
     pageTitle = 'Lacak Kunjungan'; pageSubtitle = 'Daftar kunjungan outlet oleh tim lapangan';
     pageContent = renderVisits();
-  } else if (isManager() && route === '#/employees') {
+  } else if (isOrgAdmin() && route === '#/employees') {
     pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
     pageContent = renderEmployees();
-  } else if (isManager() && route === '#/outlets') {
+  } else if (isOrgAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
-  } else if (isManager() && route === '#/products') {
+  } else if (isOrgAdmin() && route === '#/products') {
     pageTitle = 'Produk'; pageSubtitle = 'Katalog produk distribusi FMCG & bangunan';
     pageContent = renderProducts();
-  } else if (isManager() && route === '#/stocks') {
+  } else if (isOrgAdmin() && route === '#/stocks') {
     pageTitle = 'Stok Outlet'; pageSubtitle = 'Pantau stok produk di setiap outlet';
     pageContent = renderStocks();
-  } else if (isManager() && route === '#/competitors') {
+  } else if (isOrgAdmin() && route === '#/competitors') {
     pageTitle = 'Kompetitor'; pageSubtitle = 'Master merek kompetitor & katalog produknya';
     pageContent = renderCompetitors();
   } else if (teamOps && route === '#/competitor-analysis') {
@@ -359,32 +368,38 @@ function render() {
   } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Kelola pengajuan ijin dan cuti karyawan';
     pageContent = renderLeavesManager();
-  } else if (isManager() && route.startsWith('#/employee/')) {
+  } else if (isOrgAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
     pageTitle = 'Detail Karyawan'; pageSubtitle = '';
-  } else if (isManager() && route.startsWith('#/outlet/')) {
+  } else if (isOrgAdmin() && route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
     pageTitle = 'Detail Outlet'; pageSubtitle = '';
-  } else if (isManager() && route === '#/organizations') {
-    pageTitle = 'Organisasi'; pageSubtitle = 'Tenant / workspace terpisah per klien bisnis Anda';
-    pageContent = renderOrganizations();
-  } else if (isManager() && route.startsWith('#/organizations/')) {
-    const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
-    pageTitle = 'Workspace Organisasi'; pageSubtitle = 'Modul data milik organisasi ini';
-    pageContent = renderOrganizationHub(orgId);
+  } else if (route === '#/organizations' || route.startsWith('#/organizations/')) {
+    if (!isSuperadmin()) {
+      location.hash = defaultRouteFor(state.account);
+      return;
+    }
+    if (route === '#/organizations') {
+      pageTitle = 'Organisasi'; pageSubtitle = 'Tenant / workspace terpisah per klien bisnis Anda';
+      pageContent = renderOrganizations();
+    } else {
+      const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
+      pageTitle = 'Workspace Organisasi'; pageSubtitle = 'Modul data milik organisasi ini';
+      pageContent = renderOrganizationHub(orgId);
+    }
   } else if (route === '#/settings') {
     pageTitle = 'Pengaturan'; pageSubtitle = 'Akun, keamanan, dan preferensi aplikasi';
     pageContent = renderSettings();
-  } else if (isManager() && (route === '#/reports' || route.startsWith('#/reports/'))) {
+  } else if (isOrgAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
     pageTitle = 'Laporan';
     pageSubtitle = 'Analitik dan segmentasi data operasional';
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
-  } else if (isManager() && route === '#/accounts') {
+  } else if (isOrgAdmin() && route === '#/accounts') {
     pageTitle = 'Manajemen Akun'; pageSubtitle = 'Login, role, status, dan tautan karyawan';
     pageContent = renderAccounts();
-  } else if (!isManager()) {
+  } else if (!isOrgAdmin()) {
     location.hash = '#/myday';
     return;
   } else {
@@ -430,11 +445,12 @@ function render() {
 // ===== Sidebar =====
 function renderSidebar() {
   const currentRoute = state.route;
-  const navSource = isManager() ? NAV_ITEMS : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
+  const navSource = isOrgAdmin() ? NAV_ITEMS : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
   let navHTML = '';
   for (const section of navSource) {
     navHTML += `<div class="nav-section-label">${section.section}</div>`;
     for (const item of section.items) {
+      if (item.id === 'organizations' && !isSuperadmin()) continue;
       const active = currentRoute === item.route
         || (item.id === 'dashboard' && (currentRoute === '#/' || currentRoute === '#'))
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
@@ -447,7 +463,7 @@ function renderSidebar() {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
         if (pending > 0) badge = `<span class="nav-badge" style="background:var(--amber-500);">${pending}</span>`;
       }
-      if (isManager() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
+      if (isOrgAdmin() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
@@ -564,7 +580,7 @@ function renderManagerDashboard() {
           <div class="card-subtitle">Workspace ${esc(org?.code || '-')} · ${employees.filter(e=>e.status==='active').length} tenaga aktif</div>
         </div>
         <div class="spacer"></div>
-        ${dashLink('#/organizations','Ganti organisasi')}
+        ${isSuperadmin() ? dashLink('#/organizations','Ganti organisasi') : ''}
         ${dashLink('#/tracking','Live map')}
         ${dashLink('#/reports','Laporan')}
       </div>
@@ -1108,7 +1124,7 @@ window.FT.openEmployeeModal = function() {
 
 window.FT.createEmployee = function(e) {
   e.preventDefault();
-  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
@@ -1121,7 +1137,7 @@ window.FT.createEmployee = function(e) {
 };
 
 window.FT.deleteEmployee = function(id) {
-  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus karyawan ini?')) return;
   const result = deleteEmployee(id);
   showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
@@ -1339,7 +1355,7 @@ window.FT.openOutletModal = function() {
 
 window.FT.createOutlet = function(e) {
   e.preventDefault();
-  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
@@ -1350,7 +1366,7 @@ window.FT.createOutlet = function(e) {
 };
 
 window.FT.deleteOutlet = function(id) {
-  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus outlet ini?')) return;
   deleteOutlet(id);
   showToast('Outlet dihapus', 'success'); render();
@@ -1736,7 +1752,7 @@ window.FT.openProductModal = function() {
 
 window.FT.createProduct = function(e) {
   e.preventDefault();
-  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const data = Object.fromEntries(new FormData(e.target));
   try {
     createProduct(data);
@@ -1745,7 +1761,7 @@ window.FT.createProduct = function(e) {
 };
 
 window.FT.editProduct = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const p = getProducts().find(x => x.id === id);
   if (!p) return;
   openModal('Edit Produk', `
@@ -1761,7 +1777,7 @@ window.FT.editProduct = function(id) {
 
 window.FT.updateProduct = function(e, id) {
   e.preventDefault();
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   try {
     updateProduct(id, data);
@@ -1770,7 +1786,7 @@ window.FT.updateProduct = function(e, id) {
 };
 
 window.FT.deleteProductConfirm = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   if (!confirm('Hapus produk ini?')) return;
   deleteProduct(id);
   showToast('Produk dihapus', 'success'); render();
@@ -2705,7 +2721,7 @@ function renderCompetitors() {
 }
 
 window.FT.openCompetitorModal = function() {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   openModal('Tambah Merek Kompetitor', `
     <form onsubmit="FT.saveCompetitor(event)">
       <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" required placeholder="Danone, P&G..."></div>
@@ -2724,14 +2740,14 @@ window.FT.openCompetitorModal = function() {
 
 window.FT.saveCompetitor = function(e) {
   e.preventDefault();
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   createCompetitor(data);
   closeModal(); showToast('Kompetitor ditambahkan', 'success'); render();
 };
 
 window.FT.editCompetitor = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const c = getCompetitors().find(x => x.id === id);
   if (!c) return;
   openModal('Edit Kompetitor', `
@@ -2758,20 +2774,20 @@ window.FT.editCompetitor = function(id) {
 
 window.FT.updateCompetitorForm = function(e, id) {
   e.preventDefault();
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   updateCompetitor(id, Object.fromEntries(new FormData(e.target)));
   closeModal(); showToast('Kompetitor diperbarui', 'success'); render();
 };
 
 window.FT.deleteCompetitorConfirm = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   if (!confirm('Hapus kompetitor dan semua produknya?')) return;
   deleteCompetitor(id);
   showToast('Kompetitor dihapus', 'success'); render();
 };
 
 window.FT.openCompetitorProductModal = function(competitorId) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const competitors = getCompetitors().filter(c => c.status === 'active');
   openModal('Tambah Produk Kompetitor', `
     <form onsubmit="FT.saveCompetitorProduct(event)">
@@ -2797,14 +2813,14 @@ window.FT.openCompetitorProductModal = function(competitorId) {
 
 window.FT.saveCompetitorProduct = function(e) {
   e.preventDefault();
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   createCompetitorProduct(data);
   closeModal(); showToast('Produk kompetitor ditambahkan', 'success'); render();
 };
 
 window.FT.editCompetitorProduct = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   const p = getCompetitorProducts().find(x => x.id === id);
   if (!p) return;
   const competitors = getCompetitors();
@@ -2839,13 +2855,13 @@ window.FT.editCompetitorProduct = function(id) {
 
 window.FT.updateCompetitorProductForm = function(e, id) {
   e.preventDefault();
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   updateCompetitorProduct(id, Object.fromEntries(new FormData(e.target)));
   closeModal(); showToast('Produk kompetitor diperbarui', 'success'); render();
 };
 
 window.FT.deleteCompetitorProductConfirm = function(id) {
-  if (!isManager()) return;
+  if (!isOrgAdmin()) return;
   if (!confirm('Hapus produk kompetitor ini?')) return;
   deleteCompetitorProduct(id);
   showToast('Dihapus', 'success'); render();
@@ -3262,12 +3278,12 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
-  if (!empId && !isManager()) {
+  if (!empId && !isOrgAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
   let outId = outletId || fd.get('outletId');
-  if (!isManager()) {
+  if (!isOrgAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outId)) {
       showToast('Outlet tidak diizinkan (belum dikunjungi)', 'error');
@@ -3422,7 +3438,7 @@ function renderFieldPhotosGallery({ managerView }) {
                   ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${esc(prod.name)}</div>` : ''}
                   ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${esc(comp.name)}</div>` : ''}
                   <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || p.createdAt || '').slice(0, 10))}</div>
-                  ${(!managerView || isManager()) ? `
+                  ${(!managerView || isOrgAdmin()) ? `
                     <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
                   ` : ''}
                 </div>
@@ -3443,11 +3459,11 @@ window.FT.setPhotoFilter = function(type) {
 window.FT.openVisitPhotoInput = function(visitId, outletId) {
   const outlet = getOutlets().find(o => o.id === outletId);
   const empId = myEmployeeId();
-  if (!empId && !isManager()) {
+  if (!empId && !isOrgAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
-  if (empId && !isManager()) {
+  if (empId && !isOrgAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outletId)) {
       showToast('Outlet belum pernah dikunjungi', 'error');
@@ -3541,11 +3557,11 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
-  if (!empId && !isManager()) {
+  if (!empId && !isOrgAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
-  if (empId && !isManager()) {
+  if (empId && !isOrgAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outletId)) {
       showToast('Outlet tidak diizinkan', 'error');
@@ -3598,7 +3614,7 @@ window.FT.deleteFieldPhotoConfirm = function(id) {
   const p = photos.find(x => x.id === id);
   if (!p) return;
   const empId = myEmployeeId();
-  if (!isManager() && p.recordedBy !== empId) {
+  if (!isOrgAdmin() && p.recordedBy !== empId) {
     showToast('Hanya bisa hapus foto sendiri', 'error');
     return;
   }
@@ -3612,7 +3628,7 @@ window.FT.deleteFieldPhotoConfirm = function(id) {
 function renderMobileSim() {
   const employees = getEmployees().filter(e => e.role === 'Field Sales');
   const myId = myEmployeeId();
-  if (!isManager() && myId) {
+  if (!isOrgAdmin() && myId) {
     state.selectedMobileEmp = myId;
   }
   const current = employees.find(e => e.id === state.selectedMobileEmp) || employees[0];

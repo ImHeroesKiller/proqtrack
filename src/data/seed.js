@@ -75,7 +75,8 @@ export const seedAttendance = [
 ];
 
 export const seedAccounts = [
-  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'demo123', role: 'manager',  employeeId: null,    name: 'Manager Demo' },
+  { id: 'ACC-SUPER', email: 'superadmin@proqtrack.id', password: 'demo123', role: 'superadmin', employeeId: null, organizationId: null, name: 'Superadmin Demo' },
+  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'demo123', role: 'manager',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Manager Demo' },
   { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'budi123',    role: 'employee', employeeId: 'EMP001', name: 'Budi Santoso' },
   { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'siti123',    role: 'employee', employeeId: 'EMP002', name: 'Siti Nurhaliza' },
   { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'ahmad123',   role: 'employee', employeeId: 'EMP003', name: 'Ahmad Wijaya' },

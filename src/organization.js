@@ -6,7 +6,7 @@ import {
 import { esc, statusBadge } from './lib/utils.js';
 
 function canManageOrgs() {
-  return window.FT?.state?.account?.role === 'manager';
+  return window.FT?.state?.account?.role === 'superadmin';
 }
 
 function counts(orgId) {
@@ -41,7 +41,7 @@ const HUB_LINKS = [
 ];
 
 export function renderOrganizations() {
-  if (!canManageOrgs()) return '<div class="card"><p>Hanya manager yang mengelola organisasi.</p></div>';
+  if (!canManageOrgs()) return '<div class="card"><p>Hanya superadmin yang mengelola daftar organisasi.</p></div>';
   const current = getCurrentOrgId();
   const rows = getOrganizations();
   return `
@@ -192,6 +192,7 @@ if (!document.getElementById('org-css')) {
 }
 
 export function orgSwitcherHtml() {
+  if (window.FT?.state?.account?.role !== 'superadmin') return '';
   const orgs = getOrganizations(true);
   if (orgs.length < 2) return '';
   const current = getCurrentOrgId();

@@ -14,7 +14,7 @@ function toast(msg, type = 'success') {
 }
 
 function roleLabel(role) {
-  return { manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
+  return { superadmin: 'Superadmin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
 
 function statusLabel(status) {
@@ -40,7 +40,7 @@ export function renderSettings() {
   if (!acc) return '<div class="card"><p>Sesi tidak ditemukan. Silakan masuk ulang.</p></div>';
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
-  const isManager = acc.role === 'manager';
+  const isManager = acc.role === 'manager' || acc.role === 'superadmin';
   const photo = safePhotoUrl(emp?.photo);
 
   return `
@@ -192,7 +192,7 @@ function accountForm(existing) {
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
           <select class="select" name="role">
-            ${['manager', 'supervisor', 'employee'].map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+            ${(account()?.role === 'superadmin' ? ['superadmin', 'manager', 'supervisor', 'employee'] : ['supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="label">Status</label>

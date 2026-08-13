@@ -1,5 +1,5 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=1;
+const VERSION=2;
 const now='2026-07-29T08:30:00.000Z';
 const day='2026-07-29';
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
@@ -28,7 +28,8 @@ function buildUatDatabase(){
     {id:'EMP-UAT-008',employeeNumber:'UAT-0008',name:'Nadia Permata',email:'nadia.noaccount@proqtrack.id',phone:'0812-1000-0008',role:'Field Sales',jobRole:'Field Sales',area:'Depok',status:'active',supervisorId:'EMP-UAT-002',joinDate:'2026-07-01',photo:photo('NP','#D97706'),lat:-6.4,lng:106.82}
   ];
   const accounts=[
-    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'demo123',role:'manager',employeeId:null,name:'Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-SA',email:'superadmin@proqtrack.id',password:'demo123',role:'superadmin',employeeId:null,organizationId:null,name:'Superadmin UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'demo123',role:'manager',employeeId:null,organizationId:'ORG-DEFAULT',name:'Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
     {id:'ACC-UAT-001',email:'rizky.supervisor@proqtrack.id',password:'demo123',role:'supervisor',employeeId:'EMP-UAT-001',name:'Rizky Pratama',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
     {id:'ACC-UAT-002',email:'siti.supervisor@proqtrack.id',password:'demo123',role:'supervisor',employeeId:'EMP-UAT-002',name:'Siti Maharani',status:'active',mustChangePassword:true,lastLoginAt:null,createdAt:now,updatedAt:now},
     {id:'ACC-UAT-003',email:'budi.employee@proqtrack.id',password:'demo123',role:'employee',employeeId:'EMP-UAT-003',name:'Budi Santoso',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
@@ -103,7 +104,9 @@ function buildUatDatabase(){
     {id:'LV-UAT-003',employeeId:'EMP-UAT-005',type:'Cuti Tahunan',startDate:'2026-08-10',endDate:'2026-08-12',days:3,reason:'Liburan',status:'rejected',submittedAt:'2026-07-25',approverId:'ACC-UAT-002',approvedAt:'2026-07-26'}
   ];
   return {
-    _version:8,_uatSeedVersion:VERSION,_seededAt:now,updatedAt:now,
+    _version:11,_uatSeedVersion:VERSION,_seededAt:now,updatedAt:now,
+    organizations:[{id:'ORG-DEFAULT',name:'Organisasi Demo',legalName:'ProQTrack Demo Tenant',code:'DEMO',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
+    currentOrganizationId:'ORG-DEFAULT',
     clients,projects,employees,accounts,projectAssignments,outlets,stores:outlets,attendance,visits,products,stocks,priceObservations,competitors,competitorProducts,competitorIntel,
     promoTypes:[{code:'disc_pct',label:'Diskon %',strategic:false},{code:'bundle',label:'Bundle / Paket',strategic:true},{code:'trade_promo',label:'Trade Promo',strategic:true}],fieldPhotos,photos:fieldPhotos,leaveTypes,leaves,
     projectSettings:projects.map(p=>({id:`PST-${p.id}`,projectId:p.id,modules:p.modules,updatedAt:now})),
