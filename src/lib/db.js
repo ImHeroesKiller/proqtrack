@@ -12,7 +12,9 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 8;
+const DB_VERSION = 9;
+const ORG_KEY = 'proqtrack_current_org';
+export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
 const accountRoleForEmployee = employee =>
@@ -70,7 +72,62 @@ function defaultDB() {
     promoTypes: JSON.parse(JSON.stringify(seedPromoTypes)),
     fieldPhotos: JSON.parse(JSON.stringify(seedFieldPhotos)),
     appSettings: defaultAppSettings(),
+    organizations: [defaultOrganization()],
+    currentOrganizationId: DEFAULT_ORG_ID,
   };
+}
+
+export function defaultOrganization() {
+  return {
+    id: DEFAULT_ORG_ID,
+    name: 'Organisasi Demo',
+    legalName: 'ProQTrack Demo Tenant',
+    code: 'DEMO',
+    industry: 'Field Services',
+    status: 'active',
+    city: 'Jakarta',
+    province: 'DKI Jakarta',
+    website: '',
+    notes: 'Organisasi bawaan hasil migrasi data existing.',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function getCurrentOrgId() {
+  try {
+    return localStorage.getItem(ORG_KEY) || DEFAULT_ORG_ID;
+  } catch {
+    return DEFAULT_ORG_ID;
+  }
+}
+
+export function setCurrentOrgId(id) {
+  const org = getOrganizations(false).find(o => o.id === id);
+  if (!org) throw new Error('Organisasi tidak ditemukan.');
+  const db = getDB();
+  db.currentOrganizationId = id;
+  try { localStorage.setItem(ORG_KEY, id); } catch { /* ignore */ }
+  saveDB();
+  return org;
+}
+
+export function getOrganizations(activeOnly = false) {
+  const rows = getDB().organizations || [];
+  return activeOnly ? rows.filter(o => o.status === 'active') : rows;
+}
+
+export function getOrganization(id = getCurrentOrgId()) {
+  return getOrganizations().find(o => o.id === id) || null;
+}
+
+function scoped(list) {
+  const orgId = getCurrentOrgId();
+  return (list || []).filter(item => !item.organizationId || item.organizationId === orgId);
+}
+
+export function withOrg(data = {}) {
+  return { organizationId: data.organizationId || getCurrentOrgId(), ...data, organizationId: data.organizationId || getCurrentOrgId() };
 }
 
 export function defaultAppSettings() {
@@ -233,6 +290,15 @@ function migrateDB(parsed) {
     email: normalizeEmail(account.email),
   }));
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
+  if (!Array.isArray(out.organizations) || !out.organizations.length) {
+    out.organizations = [defaultOrganization()];
+  }
+  out.currentOrganizationId = out.currentOrganizationId || DEFAULT_ORG_ID;
+  const orgId = out.currentOrganizationId || DEFAULT_ORG_ID;
+  const stamp = rows => Array.isArray(rows) ? rows.map(row => ({ organizationId: orgId, ...row, organizationId: row.organizationId || orgId })) : rows;
+  ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments'].forEach(key => {
+    if (Array.isArray(out[key])) out[key] = stamp(out[key]);
+  });
 
   return out;
 }
@@ -307,7 +373,42 @@ export function resetDB() {
 }
 
 export function getAccounts() {
-  return getDB().accounts;
+  return scoped(getDB().accounts);
+}
+
+export function createOrganization(data) {
+  const db = getDB();
+  const org = {
+    id: uid('ORG'),
+    status: 'active',
+    createdAt: new Date().toISOString(),
+    ...data,
+    name: sanitizePlainText(data.name),
+    legalName: sanitizePlainText(data.legalName || data.name),
+    code: sanitizePlainText(data.code || data.name || 'ORG').toUpperCase().replace(/\s+/g, '').slice(0, 12),
+    updatedAt: new Date().toISOString(),
+  };
+  if (!org.name) throw new Error('Nama organisasi wajib diisi.');
+  if ((db.organizations || []).some(o => o.code === org.code)) throw new Error('Kode organisasi sudah dipakai.');
+  db.organizations = db.organizations || [];
+  db.organizations.push(org);
+  saveDB();
+  return org;
+}
+
+export function updateOrganization(id, data) {
+  const db = getDB();
+  const idx = (db.organizations || []).findIndex(o => o.id === id);
+  if (idx === -1) throw new Error('Organisasi tidak ditemukan.');
+  db.organizations[idx] = {
+    ...db.organizations[idx],
+    ...data,
+    name: sanitizePlainText(data.name ?? db.organizations[idx].name),
+    legalName: sanitizePlainText(data.legalName ?? db.organizations[idx].legalName),
+    updatedAt: new Date().toISOString(),
+  };
+  saveDB();
+  return db.organizations[idx];
 }
 
 export function authenticate(email, password) {
@@ -319,6 +420,10 @@ export function authenticate(email, password) {
     if (!employee || employee.status !== 'active') return null;
   }
   acc.lastLoginAt = new Date().toISOString();
+  if (acc.organizationId) {
+    db.currentOrganizationId = acc.organizationId;
+    try { localStorage.setItem(ORG_KEY, acc.organizationId); } catch { /* ignore */ }
+  }
   saveDB();
   return acc;
 }
@@ -483,7 +588,7 @@ export function updateOwnProfile(accountId, data) {
 }
 
 export function getEmployees() {
-  return getDB().employees;
+  return scoped(getDB().employees);
 }
 
 export function getEmployee(id) {
@@ -495,7 +600,7 @@ export function createEmployee(data) {
   const email = assertUniqueEmail(db, data.email);
   const emp = {
     id: uid('EMP'), totalVisits: 0, todayVisits: 0, targetVisits: 6, status: 'active', photo: '',
-    ...data,
+    ...withOrg(data),
     name: sanitizePlainText(data.name),
     phone: sanitizePlainText(data.phone),
     area: sanitizePlainText(data.area),
@@ -563,7 +668,7 @@ export function deleteEmployee(id) {
 }
 
 export function getOutlets() {
-  return getDB().outlets;
+  return scoped(getDB().outlets);
 }
 
 export function getOutlet(id) {
@@ -658,7 +763,7 @@ export function deleteOutlet(id) {
 }
 
 export function getVisits() {
-  return getDB().visits;
+  return scoped(getDB().visits);
 }
 
 export function getVisitsByEmployee(empId) {
@@ -697,7 +802,7 @@ export function deleteVisit(id) {
 }
 
 export function getAttendance() {
-  return getDB().attendance;
+  return scoped(getDB().attendance);
 }
 
 export function getAttendanceByDate(date) {
@@ -770,7 +875,7 @@ export function getDashboardStats() {
 }
 
 export function getProducts() {
-  return getDB().products;
+  return scoped(getDB().products);
 }
 
 export function getProduct(id) {
@@ -827,7 +932,7 @@ export function deleteProduct(id) {
 }
 
 export function getLeaves() {
-  return getDB().leaves;
+  return scoped(getDB().leaves);
 }
 
 export function getLeavesByEmployee(empId) {
@@ -861,7 +966,7 @@ export function deleteLeave(id) {
 }
 
 export function getStocks() {
-  return getDB().stocks;
+  return scoped(getDB().stocks);
 }
 
 export function getStocksByOutlet(outletId) {
@@ -943,7 +1048,7 @@ export function deletePriceObservation(id) {
 }
 
 export function getCompetitors() {
-  return getDB().competitors || [];
+  return scoped(getDB().competitors || []);
 }
 
 export function getCompetitor(id) {
@@ -981,7 +1086,7 @@ export function deleteCompetitor(id) {
 }
 
 export function getCompetitorProducts() {
-  return getDB().competitorProducts || [];
+  return scoped(getDB().competitorProducts || []);
 }
 
 export function getCompetitorProductsByCompetitor(competitorId) {
@@ -1021,7 +1126,7 @@ export function deleteCompetitorProduct(id) {
 }
 
 export function getCompetitorIntel() {
-  return getDB().competitorIntel || [];
+  return scoped(getDB().competitorIntel || []);
 }
 
 export function getCompetitorIntelByOutlet(outletId) {
@@ -1104,7 +1209,7 @@ export const FIELD_PHOTO_TYPES = [
 ];
 
 export function getFieldPhotos() {
-  return getDB().fieldPhotos || [];
+  return scoped(getDB().fieldPhotos || []);
 }
 
 export function getFieldPhotosByEmployee(empId) {

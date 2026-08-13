@@ -551,21 +551,9 @@ function ensureNav() {
     return;
   }
   nav.querySelectorAll("[data-pm-nav]").forEach((x) => x.remove());
+  applyModuleVisibility();
+  return;
   let items = [];
-  if (r === "manager")
-    items = [
-      ["clients", "Klien", "#/clients"],
-      ["projects", "Project", "#/projects"],
-      ["team", "Assignment", "#/assignments"],
-    ];
-  if (r === "supervisor")
-    items = [
-      ["projects", "Project Saya", "#/my-projects"],
-      ["team", "Tim Saya", "#/my-team"],
-      ["compare", "Komparasi Supervisor", "#/supervisor-compare"],
-    ];
-  if (r === "sales") items = [["projects", "Project Saya", "#/my-projects"]];
-  if (!items.length) return;
   const frag = document.createElement("div");
   frag.dataset.pmNav = "1";
   frag.dataset.pmSignature = signature;
@@ -878,7 +866,7 @@ window.PM = {
       pics = c.additionalPics || [];
     modal(
       id ? "Edit Klien" : "Tambah Klien",
-      `<form class="pm-form" onsubmit="PM.saveClient(event,'${id}')"><div class="full"><label class="label">Nama Perusahaan</label><input class="input" name="name" value="${esc(c.name || "")}" required></div><div><label class="label">Nama Legal</label><input class="input" name="legalName" value="${esc(c.legalName || "")}"></div><div><label class="label">Industri</label><select class="select" name="industry">${["FMCG", "Farmasi", "Bangunan", "Retail", "F&B", "Telco", "Lainnya"].map((x) => `<option ${c.industry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">NPWP / SIUP</label><input class="input" name="npwp" value="${esc(c.npwp || "")}"></div><div><label class="label">Status</label><select class="select" name="status">${["active", "inactive", "prospect"].map((x) => `<option ${c.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div class="full"><label class="label">Alamat</label><textarea class="textarea" name="address">${esc(c.address || "")}</textarea></div><div><label class="label">Kota</label><input class="input" name="city" value="${esc(c.city || "")}"></div><div><label class="label">Provinsi</label><input class="input" name="province" value="${esc(c.province || "")}"></div><div class="full"><label class="label">Website</label><input class="input" name="website" value="${esc(c.website || "")}"></div><div><label class="label">PIC Utama</label><input class="input" name="picName" value="${esc(c.picName || "")}" required></div><div><label class="label">Jabatan PIC</label><input class="input" name="picRole" value="${esc(c.picRole || "")}"></div><div><label class="label">Telepon PIC</label><input class="input" name="picPhone" value="${esc(c.picPhone || "")}"></div><div><label class="label">Email PIC</label><input class="input" type="email" name="picEmail" value="${esc(c.picEmail || "")}"></div><div><label class="label">Mulai Kerja Sama</label><input class="input" type="date" name="cooperationStart" value="${esc(c.cooperationStart || "")}"></div><div><label class="label">Akhir Kerja Sama</label><input class="input" type="date" name="cooperationEnd" value="${esc(c.cooperationEnd || "")}"></div><div class="full"><label class="label">PIC Tambahan (Nama | Jabatan | Telepon | Email)</label><textarea class="textarea" name="additionalPics">${esc(pics.map((p) => [p.name, p.role, p.phone, p.email].join(" | ")).join("\n"))}</textarea></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Klien</button></div></form>`,
+      `<form class="pm-form" onsubmit="PM.saveClient(event,'${id}')"><div class="full"><label class="label">Nama Perusahaan</label><input class="input" name="name" value="${esc(c.name || "")}" required></div><div><label class="label">Nama Legal</label><input class="input" name="legalName" value="${esc(c.legalName || "")}"></div><div><label class="label">Industri</label><select class="select" name="industry">${["FMCG", "Farmasi", "Bangunan", "Retail", "F&B", "Telco", "Lainnya"].map((x) => `<option ${c.industry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">NPWP / SIUP</label><input class="input" name="npwp" value="${esc(c.npwp || "")}"></div><div><label class="label">Status</label><select class="select" name="status">${["active", "inactive", "prospect"].map((x) => `<option ${c.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div class="full"><label class="label">Alamat</label><textarea class="textarea" name="address">${esc(c.address || "")}</textarea></div><div><label class="label">Kota</label><input class="input" name="city" value="${esc(c.city || "")}"></div><div><label class="label">Provinsi</label><input class="input" name="province" value="${esc(c.province || "")}"></div><div class="full"><label class="label">Website</label><input class="input" name="website" value="${esc(c.website || "")}"></div><div class="full"><label class="label">Logo klien</label><input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp"><input type="hidden" name="logoUrl" value="${esc(c.logoUrl || c.logo || "")}">${c.logoUrl || c.logo ? `<img alt="Logo" src="${esc(c.logoUrl || c.logo)}" style="max-height:48px;margin-top:8px">` : ""}</div><div><label class="label">PIC Utama</label><input class="input" name="picName" value="${esc(c.picName || "")}" required></div><div><label class="label">Jabatan PIC</label><input class="input" name="picRole" value="${esc(c.picRole || "")}"></div><div><label class="label">Telepon PIC</label><input class="input" name="picPhone" value="${esc(c.picPhone || "")}"></div><div><label class="label">Email PIC</label><input class="input" type="email" name="picEmail" value="${esc(c.picEmail || "")}"></div><div><label class="label">Mulai Kerja Sama</label><input class="input" type="date" name="cooperationStart" value="${esc(c.cooperationStart || "")}"></div><div><label class="label">Akhir Kerja Sama</label><input class="input" type="date" name="cooperationEnd" value="${esc(c.cooperationEnd || "")}"></div><div class="full"><label class="label">PIC Tambahan (Nama | Jabatan | Telepon | Email)</label><textarea class="textarea" name="additionalPics">${esc(pics.map((p) => [p.name, p.role, p.phone, p.email].join(" | ")).join("\n"))}</textarea></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Klien</button></div></form>`,
     );
   },
   saveClient(e, id) {
@@ -948,13 +936,36 @@ window.PM = {
       cooperationEnd,
       createdAt: old?.createdAt || now(),
       updatedAt: now(),
+      organizationId: old?.organizationId || localStorage.getItem('proqtrack_current_org') || 'ORG-DEFAULT',
+      logo: old?.logo || "",
+      logoUrl: formValue(fd, "logoUrl") || old?.logoUrl || old?.logo || "",
+      r2Key: old?.r2Key || "",
     };
-    const i = rows.findIndex((x) => x.id === id);
-    i >= 0 ? (rows[i] = data) : rows.push(data);
-    db.clients = rows;
-    writeDB(db);
-    this.close();
-    renderClients();
+    const finish = () => {
+      const i = rows.findIndex((x) => x.id === id);
+      i >= 0 ? (rows[i] = data) : rows.push(data);
+      db.clients = rows;
+      writeDB(db);
+      this.close();
+      renderClients();
+    };
+    const file = e.target.querySelector('[name="logoFile"]')?.files?.[0];
+    if (file && window.R2?.uploadAsset) {
+      window.R2.uploadAsset(file, { category: 'client-logo', projectId: 'general', name: file.name })
+        .then(uploaded => {
+          data.logoUrl = uploaded.url;
+          data.logo = uploaded.url;
+          data.r2Key = uploaded.key;
+          data.logoStorage = 'r2';
+          finish();
+        })
+        .catch(error => {
+          window.showToast?.(`Logo R2 gagal: ${error.message || error}`, 'error');
+          finish();
+        });
+      return;
+    }
+    finish();
   },
   viewClient(id) {
     if (!canManage()) return;

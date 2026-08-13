@@ -212,6 +212,6 @@ export function sanitizePlainText(value = '') {
 export function safePhotoUrl(url = '') {
   const value = String(url || '').trim();
   if (!value || /['"<>]/.test(value)) return '';
-  if (/^(https?:\/\/|data:image\/|data:image\/svg\+xml|\.\/assets\/|assets\/)/i.test(value)) return value;
+  if (/^(https?:\/\/|data:image\/|data:image\/svg\+xml|\.\/assets\/|assets\/|\/api\/files\/)/i.test(value)) return value;
   return '';
 }

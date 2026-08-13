@@ -19,14 +19,17 @@ import {
   getPromoTypes, getPromoTypeLabel,
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
+  getOrganization, getCurrentOrgId,
 } from './lib/db.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
+import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
   normalizeAttendanceStatus,
 } from './lib/utils.js';
+import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -77,8 +80,7 @@ function displayRole(account) {
 }
 
 function defaultRouteFor(account) {
-  if (account?.role === 'manager') return '#/';
-  if (account?.role === 'supervisor') return '#/myday';
+  if (account?.role === 'manager' || account?.role === 'supervisor') return '#/';
   return '#/myday';
 }
 
@@ -128,44 +130,55 @@ const NAV_ITEMS = [
     { id: 'tracking',  label: 'Live Tracking',   icon: '◎', route: '#/tracking' },
     { id: 'visits',    label: 'Lacak Kunjungan', icon: '☰', route: '#/visits' },
   ]},
+  { section: 'Project', items: [
+    { id: 'clients',     label: 'Klien',      icon: '▣', route: '#/clients' },
+    { id: 'projects',    label: 'Project',    icon: '▦', route: '#/projects' },
+    { id: 'assignments', label: 'Assignment', icon: '☰', route: '#/assignments' },
+  ]},
   { section: 'Manajemen', items: [
-    { id: 'employees', label: 'Karyawan',     icon: '◉', route: '#/employees' },
-    { id: 'outlets',   label: 'Outlet',       icon: '⬡', route: '#/outlets' },
-    { id: 'products',  label: 'Produk',       icon: '▦', route: '#/products' },
-    { id: 'stocks',    label: 'Stok Outlet',  icon: '▥', route: '#/stocks' },
-  ]},
-  { section: 'Kompetitor', items: [
-    { id: 'competitors',        label: 'Kompetitor',         icon: '◇', route: '#/competitors' },
-    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: '◈', route: '#/competitor-analysis' },
-  ]},
-  { section: 'Lapangan', items: [
-    { id: 'field-photos', label: 'Foto Lapangan', icon: '▣', route: '#/field-photos' },
-  ]},
-  { section: 'SDM', items: [
+    { id: 'employees',  label: 'Karyawan',    icon: '◉', route: '#/employees' },
+    { id: 'outlets',    label: 'Toko',        icon: '⬡', route: '#/outlets' },
+    { id: 'products',   label: 'Produk',      icon: '▦', route: '#/products' },
+    { id: 'stocks',     label: 'Stok Outlet', icon: '▥', route: '#/stocks' },
     { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
     { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
   ]},
+  { section: 'Kompetitor', items: [
+    { id: 'competitors',         label: 'Kompetitor',         icon: '◇', route: '#/competitors' },
+    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: '◈', route: '#/competitor-analysis' },
+  ]},
+  { section: 'Lapangan', items: [
+    { id: 'field-photos', label: 'Foto & Aset', icon: '▣', route: '#/field-photos' },
+  ]},
+  { section: 'Analitik', items: [
+    { id: 'reports', label: 'Laporan', icon: '▧', route: '#/reports' },
+  ]},
   { section: 'Sistem', items: [
-    { id: 'accounts', label: 'Manajemen Akun', icon: '◐', route: '#/accounts' },
-    { id: 'settings', label: 'Pengaturan',     icon: '⚙', route: '#/settings' },
+    { id: 'organizations', label: 'Organisasi',     icon: '⬡', route: '#/organizations' },
+    { id: 'accounts',      label: 'Manajemen Akun', icon: '◐', route: '#/accounts' },
+    { id: 'settings',      label: 'Pengaturan',     icon: '⚙', route: '#/settings' },
   ]},
 ];
 
 const NAV_ITEMS_SUPERVISOR = [
-  { section: 'Menu', items: [
-    { id: 'myday',    label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
-    { id: 'tracking', label: 'Live Tracking',  icon: '◎', route: '#/tracking' },
-    { id: 'visits',   label: 'Kunjungan Tim',  icon: '☰', route: '#/visits' },
+  { section: 'Menu Utama', items: [
+    { id: 'dashboard', label: 'Beranda Tim',    icon: '▣', route: '#/' },
+    { id: 'myday',     label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
+    { id: 'tracking',  label: 'Live Tracking',  icon: '◎', route: '#/tracking' },
+    { id: 'visits',    label: 'Kunjungan Tim',  icon: '☰', route: '#/visits' },
   ]},
-  { section: 'Data Lapangan', items: [
-    { id: 'mystocks',  label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
-    { id: 'myprices',  label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
-    { id: 'myintel',   label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
-    { id: 'field-photos', label: 'Foto Lapangan', icon: '▣', route: '#/field-photos' },
+  { section: 'Project', items: [
+    { id: 'my-projects',         label: 'Project Saya',           icon: '▦', route: '#/my-projects' },
+    { id: 'my-team',             label: 'Tim Saya',               icon: '◉', route: '#/my-team' },
+    { id: 'supervisor-compare',  label: 'Komparasi Supervisor',   icon: '◈', route: '#/supervisor-compare' },
   ]},
-  { section: 'SDM', items: [
-    { id: 'attendance', label: 'Absensi Tim', icon: '✓', route: '#/attendance' },
-    { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
+  { section: 'Lapangan', items: [
+    { id: 'mystocks',      label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
+    { id: 'myprices',      label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
+    { id: 'myintel',       label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
+    { id: 'field-photos',  label: 'Foto Lapangan',    icon: '▣', route: '#/field-photos' },
+    { id: 'attendance',    label: 'Absensi Tim',      icon: '✓', route: '#/attendance' },
+    { id: 'leaves',        label: 'Ijin & Cuti',      icon: '▤', route: '#/leaves' },
   ]},
   { section: 'Sistem', items: [
     { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
@@ -173,19 +186,20 @@ const NAV_ITEMS_SUPERVISOR = [
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
-  { section: 'Menu', items: [
+  { section: 'Menu Utama', items: [
     { id: 'myday',    label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
     { id: 'myvisits', label: 'Kunjungan Saya', icon: '☰', route: '#/myvisits' },
   ]},
-  { section: 'Data Lapangan', items: [
-    { id: 'mystocks',  label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
-    { id: 'myprices',  label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
-    { id: 'myintel',   label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
-    { id: 'myphotos',  label: 'Foto Lapangan',    icon: '▣', route: '#/myphotos' },
+  { section: 'Project', items: [
+    { id: 'my-projects', label: 'Project Saya', icon: '▦', route: '#/my-projects' },
   ]},
-  { section: 'SDM', items: [
-    { id: 'myattendance', label: 'Absensi Saya', icon: '✓', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Ijin & Cuti',  icon: '▤', route: '#/myleaves' },
+  { section: 'Lapangan', items: [
+    { id: 'mystocks',     label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
+    { id: 'myprices',     label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
+    { id: 'myintel',      label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
+    { id: 'myphotos',     label: 'Foto Lapangan',    icon: '▣', route: '#/myphotos' },
+    { id: 'myattendance', label: 'Absensi Saya',     icon: '✓', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Ijin & Cuti',      icon: '▤', route: '#/myleaves' },
   ]},
   { section: 'Sistem', items: [
     { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
@@ -273,9 +287,11 @@ function render() {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
     }
-  } else if (isManager() && (route === '#/' || route === '#')) {
-    pageTitle = 'Beranda'; pageSubtitle = 'Ringkasan aktivitas tim lapangan hari ini';
-    pageContent = renderDashboard();
+  } else if ((isManager() || isSupervisor()) && (route === '#/' || route === '#')) {
+    const org = getOrganization();
+    pageTitle = isManager() ? 'Beranda Organisasi' : 'Beranda Tim';
+    pageSubtitle = org ? `${org.name} · ${org.code}` : 'Ringkasan operasional';
+    pageContent = isManager() ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
     pageTitle = 'Live Tracking'; pageSubtitle = 'Pantau lokasi tim lapangan secara real-time';
     pageContent = renderTracking();
@@ -317,6 +333,13 @@ function render() {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
     pageTitle = 'Detail Outlet'; pageSubtitle = '';
+  } else if (isManager() && route === '#/organizations') {
+    pageTitle = 'Organisasi'; pageSubtitle = 'Tenant / workspace terpisah per klien bisnis Anda';
+    pageContent = renderOrganizations();
+  } else if (isManager() && route.startsWith('#/organizations/')) {
+    const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
+    pageTitle = 'Workspace Organisasi'; pageSubtitle = 'Modul data milik organisasi ini';
+    pageContent = renderOrganizationHub(orgId);
   } else if (route === '#/settings') {
     pageTitle = 'Pengaturan'; pageSubtitle = 'Akun, keamanan, dan preferensi aplikasi';
     pageContent = renderSettings();
@@ -363,6 +386,7 @@ function render() {
   }
 
   attachPageHandlers();
+  bindAssetFields(document);
   if (route === '#/tracking') initMap();
 }
 
@@ -404,6 +428,7 @@ function renderSidebar() {
         <div class="sidebar-logo">PQ</div>
         <div class="sidebar-logo-text">ProQTrack<small>Monitoring System</small></div>
       </div>
+      ${orgSwitcherHtml()}
       <nav class="sidebar-nav">${navHTML}</nav>
       <div class="sidebar-footer">
         <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
@@ -465,9 +490,14 @@ window.FT.handleLogin = function(e) {
   state.route = defaultRouteFor(acc);
   location.hash = state.route;
   render();
+  issueUploadSession(acc).catch(error => {
+    console.warn('upload_session_failed', error);
+    showToast('Sesi unggah cloud belum aktif. Foto tetap bisa disimpan lokal.', 'error');
+  });
 };
 
 window.FT.logout = function() {
+  clearApiToken();
   state.loggedIn = false;
   state.account = null;
   state.route = '#/login';
@@ -476,179 +506,143 @@ window.FT.logout = function() {
 };
 
 // ===== Dashboard =====
-function renderDashboard() {
+function dashLink(href, label) {
+  return `<a class="btn btn-secondary btn-sm" href="${href}">${label}</a>`;
+}
+
+function renderManagerDashboard() {
   const stats = getDashboardStats();
-  const employees = getEmployees();
+  const org = getOrganization();
   const todayVisits = getVisits().filter(v => v.date === todayISO());
-  const attendance = getAttendance().filter(a => a.date === todayISO());
-
-  const statCards = [
-    { label: 'Total Karyawan',      value: stats.totalEmployees, icon: '👥', bg: 'bg-blue-50', color: 'var(--blue-600)' },
-    { label: 'Kunjungan Hari Ini',  value: stats.todayVisits,    icon: '📋', bg: 'bg-amber-50', color: 'var(--amber-500)' },
-    { label: 'Stok Menipis',        value: stats.lowStocks,     icon: '📊', bg: 'bg-emerald-50', color: 'var(--green-600)' },
-    { label: 'Ijin/Cuti Pending',  value: stats.pendingLeaves,  icon: '📄', bg: 'bg-purple-50', color: '#7c3aed' },
-  ];
-
-  // Activity feed (latest visits)
-  const recentVisits = [...todayVisits].sort((a,b) => (b.checkInTime||'').localeCompare(a.checkInTime||'')).slice(0, 6);
-  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-
-  // Attendance summary
-  const attSummary = [
-    { label: 'Hadir',       value: stats.attendanceHadir,      color: 'var(--green-600)', bg: '#ecfdf5' },
-    { label: 'Terlambat',   value: stats.attendanceTerlambat,  color: 'var(--amber-500)', bg: '#fffbeb' },
-    { label: 'Tidak Hadir', value: stats.attendanceTidakHadir, color: 'var(--red-500)',  bg: '#fef2f2' },
-  ];
-
-  // Top performers
-  const topPerformers = [...employees]
-    .map(e => ({ ...e, todayVisits: visitsTodayCount(e.id), targetVisits: targetOf(e) }))
-    .sort((a,b) => b.todayVisits - a.todayVisits).slice(0, 5);
-
+  const employees = getEmployees();
+  const pendingLeaves = getLeaves().filter(l => l.status === 'pending').length;
   return `
-    <div class="grid-4" style="margin-bottom:24px;">
-      ${statCards.map(s => `
-        <div class="stat-card">
-          <div class="stat-icon" style="background:${s.bg}; color:${s.color};">${s.icon}</div>
-          <div class="stat-label">${s.label}</div>
-          <div class="stat-value">${s.value}</div>
+    <div class="card" style="background:linear-gradient(135deg,#fff7ed,#fff);border-color:#fed7aa">
+      <div class="filter-row">
+        <div>
+          <div class="card-title">${esc(org?.name || 'Organisasi')}</div>
+          <div class="card-subtitle">Workspace ${esc(org?.code || '-')} · ${employees.filter(e=>e.status==='active').length} tenaga aktif</div>
         </div>
-      `).join('')}
-    </div>
-
-    <div class="grid-3" style="margin-bottom:24px;">
-      <div class="card" style="grid-column: span 2;">
-        <div class="card-title">Aktivitas Kunjungan Terkini</div>
-        <div class="card-subtitle">Kunjungan outlet hari ini</div>
-        ${recentVisits.length === 0 ? `<div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada kunjungan</h3></div>` : `
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          ${recentVisits.map(v => {
-            const emp = empMap[v.employeeId]; const out = outletMap[v.outletId];
-            if (!emp || !out) return '';
-            const avatarColors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
-            const cIdx = emp.name.charCodeAt(0) % avatarColors.length;
-            return `
-              <div style="display:flex; align-items:center; gap:12px; padding:10px; border-radius:10px; background:var(--gray-50);">
-                <div class="avatar" style="background:${avatarColors[cIdx]};">${getInitials(emp.name)}</div>
-                <div style="flex:1; min-width:0;">
-                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${esc(emp.name)}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${outletIcon(out.type)} ${out.name}</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:12px; color:var(--gray-400);">${v.checkInTime || 'planned'}</div>
-                  ${statusBadge(v.status)}
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-        `}
-      </div>
-
-      <div class="card">
-        <div class="card-title">Absensi Hari Ini</div>
-        <div class="card-subtitle">Status kehadiran tim</div>
-        <div style="display:flex; flex-direction:column; gap:12px;">
-          ${attSummary.map(a => `
-            <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-radius:10px; background:${a.bg};">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div style="width:10px; height:10px; border-radius:50%; background:${a.color};"></div>
-                <span style="font-size:14px; font-weight:600; color:var(--gray-700);">${a.label}</span>
-              </div>
-              <span style="font-size:20px; font-weight:800; color:${a.color};">${a.value}</span>
-            </div>
-          `).join('')}
-        </div>
+        <div class="spacer"></div>
+        ${dashLink('#/organizations','Ganti organisasi')}
+        ${dashLink('#/tracking','Live map')}
+        ${dashLink('#/reports','Laporan')}
       </div>
     </div>
-
+    <div class="grid-4">
+      ${[
+        ['Karyawan aktif', employees.filter(e=>e.status==='active').length, '#/employees'],
+        ['Kunjungan hari ini', stats.todayVisits, '#/visits'],
+        ['Stok menipis', stats.lowStocks, '#/stocks'],
+        ['Cuti pending', pendingLeaves, '#/leaves'],
+      ].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
+    </div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Top Performer Hari Ini</div>
-        <div class="card-subtitle">Karyawan dengan kunjungan terbanyak</div>
-        <div style="display:flex; flex-direction:column; gap:8px;">
-          ${topPerformers.map((e, i) => {
-            const pct = Math.round(e.todayVisits / e.targetVisits * 100);
-            const avatarColors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
-            const cIdx = e.name.charCodeAt(0) % avatarColors.length;
-            return `
-              <div style="display:flex; align-items:center; gap:12px; padding:10px; border-radius:10px; background:var(--gray-50);">
-                <div style="font-size:16px; font-weight:800; color:${i===0?'var(--amber-500)':'var(--gray-300)'}; width:24px;">#${i+1}</div>
-                <div class="avatar" style="background:${avatarColors[cIdx]};">${getInitials(e.name)}</div>
-                <div style="flex:1; min-width:0;">
-                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${esc(e.name)}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${esc(e.area)}</div>
-                </div>
-                <div style="text-align:right; min-width:80px;">
-                  <div style="font-size:14px; font-weight:700; color:var(--gray-800);">${visitsTodayCount(e.id)}/${targetOf(e)}</div>
-                  <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
+        <div class="card-title">Aktivitas hari ini</div>
+        ${todayVisits.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Waktu</th><th>Sales</th><th>Outlet</th><th>Status</th></tr></thead><tbody>${todayVisits.slice(0,8).map(v => {
+          const emp = employees.find(e => e.id === v.employeeId);
+          const out = getOutlets().find(o => o.id === v.outletId);
+          return `<tr><td>${esc(v.checkInTime || '-')}</td><td>${esc(emp?.name || '-')}</td><td>${esc(out?.name || '-')}</td><td>${statusBadge(v.status)}</td></tr>`;
+        }).join('')}</tbody></table></div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Live Tracking atau buat kunjungan.</p></div>'}
       </div>
-
       <div class="card">
-        <div class="card-title">Progress Kunjungan</div>
-        <div class="card-subtitle">Target vs realisasi hari ini</div>
-        <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:20px;">
-          ${[
-            { label: 'Selesai',  value: stats.completedVisits, total: stats.todayVisits, color: 'var(--green-600)' },
-            { label: 'Aktif',    value: stats.activeVisits,   total: stats.todayVisits, color: 'var(--blue-600)' },
-            { label: 'Direncanakan', value: stats.plannedVisits, total: stats.todayVisits, color: 'var(--amber-500)' },
-          ].map(r => {
-            const pct = r.total > 0 ? Math.round(r.value / r.total * 100) : 0;
-            return `
-              <div>
-                <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
-                  <span style="color:var(--gray-600); font-weight:500;">${r.label}</span>
-                  <span style="color:var(--gray-800); font-weight:600;">${r.value} (${pct}%)</span>
-                </div>
-                <div class="progress-bar"><div class="progress-fill" style="width:${pct}%; background:${r.color};"></div></div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-        <div style="padding:16px; background:var(--blue-50); border-radius:12px; display:flex; align-items:center; gap:12px;">
-          <div style="font-size:32px; font-weight:800; color:var(--blue-700);">${stats.avgRating || '-'}</div>
-          <div>
-            <div style="font-size:13px; font-weight:600; color:var(--gray-700);">Rata-rata Rating</div>
-            <div style="font-size:12px; color:var(--gray-400);">Dari kunjungan selesai hari ini</div>
-          </div>
-          <div style="margin-left:auto; font-size:20px; color:#fbbf24;">${'★'.repeat(Math.round(stats.avgRating || 0))}${'☆'.repeat(5 - Math.round(stats.avgRating || 0))}</div>
+        <div class="card-title">Pintasan workspace</div>
+        <div class="org-hub">
+          ${[['#/clients','Klien'],['#/projects','Project'],['#/employees','Karyawan'],['#/outlets','Toko'],['#/products','Produk'],['#/competitors','Kompetitor']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Data organisasi aktif</span></a>`).join('')}
         </div>
       </div>
     </div>
   `;
 }
 
-// ===== Tracking Page =====
-function renderTracking() {
-  const employees = getEmployees().filter(e => e.status === 'active');
+function renderSupervisorDashboard() {
+  const mine = myEmployeeId();
+  const team = getEmployees().filter(e => e.supervisorId === mine || e.id === mine);
+  const teamIds = new Set(team.map(e => e.id));
+  const visits = getVisits().filter(v => teamIds.has(v.employeeId) && v.date === todayISO());
+  const pending = getLeaves().filter(l => teamIds.has(l.employeeId) && l.status === 'pending');
+  const active = visits.filter(v => v.status === 'checked-in');
   return `
-    <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
-      <div class="map-container" style="flex:1; min-width:0; position:relative;">
-        <div id="trackingMap"></div>
-        <div class="map-sidebar-panel">
-          <h3>Tim Lapangan (${employees.length})</h3>
-          <div id="mapEmpList">
-            ${employees.map(e => {
-              const dotColor = e.status === 'active' ? 'var(--green-500)' : 'var(--gray-300)';
-              const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
-              const activeVisit = visits.find(v => v.status === 'checked-in');
-              return `
-                <div class="map-emp-item" data-emp="${e.id}" onclick="FT.focusEmployee('${e.id}')">
-                  <div class="emp-status-dot" style="background:${dotColor};"></div>
-                  <div class="emp-info">
-                    <div class="emp-name">${esc(e.name)}</div>
-                    <div class="emp-area">${esc(e.area)} · ${visitsTodayCount(e.id)} kunjungan${activeVisit ? ' · 🟢 active' : ''}</div>
-                  </div>
+    <div class="grid-4">
+      ${[['Anggota tim', team.length, '#/my-team'],['Kunjungan tim', visits.length, '#/visits'],['Sedang di lapangan', active.length, '#/tracking'],['Ijin menunggu', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Tim hari ini</div>
+        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)}/${targetOf(e)}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" onclick="FT.focusEmployee('${e.id}')">Lacak</a></div>`).join('') || '<p class="am-muted">Belum ada anggota tim.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Perlu tindakan</div>
+        ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : '<p class="am-muted">Tidak ada pengajuan pending.</p>'}
+        <div class="am-actions" style="margin-top:12px">${dashLink('#/myday','Hari saya')} ${dashLink('#/my-projects','Project')}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  return isSupervisor() ? renderSupervisorDashboard() : renderManagerDashboard();
+}
+
+function trackingEmployees() {
+  const q = String(state._trackQuery || '').toLowerCase();
+  const area = state._trackArea || '';
+  const field = state._trackField || '';
+  return getEmployees().filter(e => e.status === 'active').filter(e => {
+    const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
+    const active = visits.some(v => v.status === 'checked-in');
+    if (q && !`${e.name} ${e.area} ${e.role} ${e.phone}`.toLowerCase().includes(q)) return false;
+    if (area && e.area !== area) return false;
+    if (field === 'active' && !active) return false;
+    if (field === 'idle' && active) return false;
+    return true;
+  });
+}
+
+function renderTracking() {
+  const employees = trackingEmployees();
+  const areas = [...new Set(getEmployees().map(e => e.area).filter(Boolean))];
+  return `
+    <div class="card">
+      <div class="filter-row">
+        <input class="input search-input" placeholder="Cari nama, area, telepon" value="${esc(state._trackQuery || '')}" oninput="FT.filterTracking(this.value)">
+        <select class="select" style="width:auto" onchange="FT.filterTrackingArea(this.value)">
+          <option value="">Semua area</option>
+          ${areas.map(a => `<option value="${esc(a)}" ${state._trackArea===a?'selected':''}>${esc(a)}</option>`).join('')}
+        </select>
+        <select class="select" style="width:auto" onchange="FT.filterTrackingField(this.value)">
+          <option value="">Semua status</option>
+          <option value="active" ${state._trackField==='active'?'selected':''}>Sedang check-in</option>
+          <option value="idle" ${state._trackField==='idle'?'selected':''}>Belum check-in</option>
+        </select>
+        <button class="btn btn-secondary" type="button" onclick="FT.fitTracking()">Tampilkan semua</button>
+      </div>
+    </div>
+    <div class="map-container" style="position:relative;">
+      <div id="trackingMap"></div>
+      <div class="map-sidebar-panel">
+        <h3>Tim (${employees.length})</h3>
+        <div id="mapEmpList">
+          ${employees.map(e => {
+            const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
+            const activeVisit = visits.find(v => v.status === 'checked-in');
+            const maps = (e.lat && e.lng) ? `https://www.google.com/maps/dir/?api=1&destination=${e.lat},${e.lng}` : '#';
+            return `
+              <div class="map-emp-item" data-emp="${e.id}">
+                <div class="emp-status-dot" style="background:${activeVisit ? 'var(--green-500)' : 'var(--gray-300)'};"></div>
+                <div class="emp-info" onclick="FT.focusEmployee('${e.id}')" style="cursor:pointer;flex:1">
+                  <div class="emp-name">${esc(e.name)}</div>
+                  <div class="emp-area">${esc(e.area)} · ${visitsTodayCount(e.id)} kunjungan${activeVisit ? ' · check-in' : ''}</div>
                 </div>
-              `;
-            }).join('')}
-          </div>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <button class="btn btn-secondary btn-sm" onclick="FT.focusEmployee('${e.id}')">Fokus</button>
+                  <a class="btn btn-secondary btn-sm" href="${maps}" target="_blank" rel="noreferrer">Navigasi</a>
+                  ${e.phone ? `<a class="btn btn-secondary btn-sm" href="https://wa.me/${String(e.phone).replace(/\D/g,'')}" target="_blank">WA</a>` : ''}
+                </div>
+              </div>
+            `;
+          }).join('') || '<p class="am-muted">Tidak ada tim sesuai filter.</p>'}
         </div>
       </div>
     </div>
@@ -663,7 +657,7 @@ function initMap() {
     setTimeout(initMap, 200);
     return;
   }
-  const employees = getEmployees().filter(e => e.status === 'active');
+  const employees = trackingEmployees();
 
   if (_map) { _map.remove(); _map = null; _markers = {}; }
   _map = L.map('trackingMap', { zoomControl: true }).setView([-6.2, 106.85], 12);
@@ -711,6 +705,16 @@ function initMap() {
   }, 5000);
 }
 
+window.FT.filterTracking = function(value) { state._trackQuery = value; render(); };
+window.FT.filterTrackingArea = function(value) { state._trackArea = value; render(); };
+window.FT.filterTrackingField = function(value) { state._trackField = value; render(); };
+window.FT.fitTracking = function() {
+  if (!_map) return;
+  const marks = Object.values(_markers);
+  if (!marks.length) return;
+  const group = L.featureGroup(marks);
+  _map.fitBounds(group.getBounds().pad(0.2));
+};
 window.FT.focusEmployee = function(empId) {
   const emp = getEmployees().find(e => e.id === empId);
   if (!emp || !_map || !_markers[empId]) return;
@@ -1030,8 +1034,8 @@ window.FT.openEmployeeModal = function() {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Password Login</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required></div>
-        <div class="form-group"><label class="label">URL Foto</label><input class="input" type="url" name="photo" placeholder="https://..."></div>
       </div>
+      ${assetField({ name: 'photo', label: 'Foto karyawan (unggah ke R2)', category: 'employee-photo' })}
       <div class="form-row">
         <div class="form-group">
           <label class="label">Role</label>
@@ -1146,8 +1150,9 @@ window.FT.editEmployee = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Password Baru</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></div>
-        <div class="form-group"><label class="label">URL Foto</label><input class="input" type="url" name="photo" value="${emp.photo || ''}" placeholder="https://..."></div>
       </div>
+      ${assetField({ name: 'photo', current: emp.photo || '', label: 'Foto karyawan (unggah ke R2)', category: 'employee-photo' })}
+      <div class="form-row">
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label><select class="select" name="role"><option ${emp.role==='Field Sales'?'selected':''}>Field Sales</option><option ${emp.role==='Supervisor'?'selected':''}>Supervisor</option></select></div>
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area)}" required></div>
@@ -3478,7 +3483,7 @@ window.FT.onPhotoFileSelected = async function(e) {
   }
 };
 
-window.FT.saveFieldPhoto = function(e, visitId, outletId) {
+window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
@@ -3493,8 +3498,24 @@ window.FT.saveFieldPhoto = function(e, visitId, outletId) {
       return;
     }
   }
-  const dataUrl = fd.get('dataUrl') || document.getElementById('photoDataUrl')?.value || null;
-  if (!dataUrl) {
+  const file = e.target.querySelector('[name="photoFile"]')?.files?.[0];
+  let dataUrl = fd.get('dataUrl') || document.getElementById('photoDataUrl')?.value || null;
+  let photoUrl = '';
+  let r2Key = '';
+  if (file) {
+    try {
+      const uploaded = await uploadAsset(file, {
+        category: 'field-photo',
+        projectId: fd.get('projectId') || 'general',
+        name: file.name,
+      });
+      photoUrl = uploaded.url;
+      r2Key = uploaded.key;
+    } catch (error) {
+      showToast(`R2 gagal, foto disimpan lokal: ${error.message || error}`, 'error');
+    }
+  }
+  if (!dataUrl && !photoUrl) {
     showToast('Pilih atau ambil foto dulu', 'error');
     return;
   }
@@ -3508,11 +3529,13 @@ window.FT.saveFieldPhoto = function(e, visitId, outletId) {
     productId: fd.get('productId') || null,
     competitorId: type === 'competitor' ? (fd.get('competitorId') || null) : (fd.get('competitorId') || null),
     dataUrl,
+    photoUrl: photoUrl || dataUrl,
+    r2Key,
     recordedBy: empId || state.account?.id || 'manager',
     recordedAt: new Date().toISOString(),
   });
   closeModal();
-  showToast('Foto lapangan tersimpan', 'success');
+  showToast(r2Key ? 'Foto tersimpan di R2' : 'Foto lapangan tersimpan lokal', 'success');
   render();
 };
 
@@ -3757,6 +3780,7 @@ function openModal(title, content) {
       </div>
     </div>
   `;
+  bindAssetFields(root);
 }
 function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
 window.FT.closeModal = closeModal;

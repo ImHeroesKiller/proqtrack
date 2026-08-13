@@ -16,7 +16,10 @@ function installSessionContinuity(){
     const wrapped=function(event){
       const result=originalLogin.call(this,event);
       const account=window.FT?.state?.account;
-      if(account?.id)sessionStorage.setItem(SESSION_KEY,JSON.stringify({accountId:account.id,email:account.email,route:window.FT.state.route||location.hash||'#/',savedAt:new Date().toISOString()}));
+      if(account?.id){
+        sessionStorage.setItem(SESSION_KEY,JSON.stringify({accountId:account.id,email:account.email,route:window.FT.state.route||location.hash||'#/',savedAt:new Date().toISOString()}));
+        window.R2?.issueUploadSession?.(account).catch(()=>{});
+      }
       return result;
     };
     wrapped.__sessionWrapped=true;
@@ -41,6 +44,7 @@ function installSessionContinuity(){
   window.FT.state.route=saved.route&&saved.route!=='#/login'?saved.route:(account.role==='manager'?'#/':'#/myday');
   if(location.hash!==window.FT.state.route)location.hash=window.FT.state.route;
   else window.dispatchEvent(new HashChangeEvent('hashchange'));
+  window.R2?.issueUploadSession?.(account).catch(()=>{});
 }
 
 const CARD_ROUTES={

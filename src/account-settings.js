@@ -3,6 +3,7 @@ import {
   createAccount, updateAccount, changePassword, updateOwnProfile,
 } from './lib/db.js';
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl } from './lib/utils.js';
+import { assetField } from './lib/uploads.js';
 
 function account() {
   return window.FT?.state?.account || null;
@@ -96,7 +97,7 @@ export function renderSettings() {
         <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
         <form class="am-form" onsubmit="AM.saveOrg(event)">
           <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
-          <div class="form-group"><label class="label">Logo (path atau URL)</label><input class="input" name="companyLogo" value="${esc(settings.companyLogo || '')}"></div>
+          ${assetField({ name: 'companyLogo', current: settings.companyLogo || '', label: 'Logo organisasi (unggah ke R2)', category: 'company-logo' })}
           <button class="btn btn-primary" type="submit">Simpan organisasi</button>
         </form>
       </section>
