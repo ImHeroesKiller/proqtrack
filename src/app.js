@@ -32,6 +32,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { defaultPortrait } from './lib/avatars.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 
 // Make utils available globally for inline handlers
@@ -619,7 +620,6 @@ window.FT.handleLogin = function(e) {
   }
   issueUploadSession(acc).catch(error => {
     console.warn('upload_session_failed', error);
-    showToast('Sesi unggah cloud belum aktif. Foto tetap bisa disimpan lokal.', 'error');
   });
 };
 
@@ -1181,30 +1181,52 @@ window.FT.filterEmployees = function() {
   });
 };
 
+function employeePhotoField(current = '') {
+  const src = current || '';
+  return `
+    <div class="form-group emp-photo-field">
+      <label class="label">Foto karyawan</label>
+      <div class="employee-photo-editor">
+        <img class="employee-photo-preview" alt="Preview" src="${src || ''}" onerror="this.style.opacity=.3">
+        <div>
+          <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" onchange="FT.previewEmployeePhoto(this)">
+          <input type="hidden" name="photo" value="${esc(src)}">
+          <div class="employee-photo-help">Satu foto, disimpan di database aplikasi (bukan R2).</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+window.FT.previewEmployeePhoto = function(input) {
+  const file = input.files?.[0];
+  const preview = input.closest('.emp-photo-field')?.querySelector('.employee-photo-preview');
+  if (file && preview) preview.src = URL.createObjectURL(file);
+};
+
+async function photoFromEmployeeForm(form, fallback = '') {
+  const file = form.querySelector('input[name="photoFile"]')?.files?.[0];
+  if (file) return compressImage(file, 320, 0.82);
+  return form.querySelector('input[name="photo"]')?.value || fallback;
+}
+
 window.FT.openEmployeeModal = function() {
   openModal('Tambah Karyawan', `
     <form onsubmit="FT.createEmployee(event)">
+      ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
       <div class="form-group"><label class="label">Nama Lengkap</label><input class="input" name="name" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" required></div>
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" placeholder="08xx-xxxx-xxxx" required></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Password Login</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required></div>
-      </div>
-      ${assetField({ name: 'photo', label: 'Foto karyawan (unggah ke R2)', category: 'employee-photo' })}
+      <div class="form-group"><label class="label">Password Login</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required></div>
       <div class="form-row">
         <div class="form-group">
           <label class="label">Role</label>
-          <select class="select" name="role"><option>Field Sales</option><option>Supervisor</option><option>Admin</option></select>
+          <select class="select" name="role"><option>Field Sales</option><option>Supervisor</option></select>
         </div>
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" placeholder="Jakarta Pusat" required></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Latitude</label><input class="input" type="number" step="0.0001" name="lat" value="-6.2000" required></div>
-        <div class="form-group"><label class="label">Longitude</label><input class="input" type="number" step="0.0001" name="lng" value="106.8000" required></div>
-      </div>
-      <div class="form-group"><label class="label">Target Kunjungan Harian</label><input class="input" type="number" name="targetVisits" value="6" required></div>
+      <div class="form-group"><label class="label">Target Kunjungan Harian</label><input class="input" type="number" name="targetVisits" value="6" min="1" required></div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -1213,15 +1235,16 @@ window.FT.openEmployeeModal = function() {
   `);
 };
 
-window.FT.createEmployee = function(e) {
+window.FT.createEmployee = async function(e) {
   e.preventDefault();
   if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const fd = new FormData(e.target);
-  const data = Object.fromEntries(fd);
-  data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
-  data.targetVisits = parseInt(data.targetVisits);
-  data.joinDate = new Date().toISOString().slice(0,10);
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+  data.targetVisits = parseInt(data.targetVisits, 10) || 6;
+  data.joinDate = new Date().toISOString().slice(0, 10);
   try {
+    data.photo = await photoFromEmployeeForm(form, '');
+    delete data.photoFile;
     createEmployee(data);
     closeModal(); showToast('Karyawan dan akun login berhasil dibuat', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }
@@ -1260,7 +1283,7 @@ function renderEmployeeDetail(id) {
           <div class="detail-label">Telepon</div><div class="detail-value">${emp.phone}</div>
           <div class="detail-label">Area</div><div class="detail-value">${esc(emp.area)}</div>
           <div class="detail-label">Bergabung</div><div class="detail-value">${formatDate(emp.joinDate)}</div>
-          <div class="detail-label">Lokasi</div><div class="detail-value">${emp.lat.toFixed(4)}, ${emp.lng.toFixed(4)}</div>
+          <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(emp.lat)) ? `${Number(emp.lat).toFixed(4)}, ${Number(emp.lng).toFixed(4)}` : '—'}</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:20px;">
           <button class="btn btn-secondary btn-sm" onclick="location.hash='#/employees'">← Kembali</button>
@@ -1302,27 +1325,20 @@ window.FT.editEmployee = function(id) {
   if (!emp) return;
   openModal('Edit Karyawan', `
     <form onsubmit="FT.updateEmployee(event, '${id}')">
+      ${employeePhotoField(emp.photo || defaultPortrait(emp))}
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(emp.name)}" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(emp.email)}" required></div>
-        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${emp.phone}" required></div>
+        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}" required></div>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Password Baru</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></div>
-      </div>
-      ${assetField({ name: 'photo', current: emp.photo || '', label: 'Foto karyawan (unggah ke R2)', category: 'employee-photo' })}
-      <div class="form-row">
+      <div class="form-group"><label class="label">Password Baru</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label><select class="select" name="role"><option ${emp.role==='Field Sales'?'selected':''}>Field Sales</option><option ${emp.role==='Supervisor'?'selected':''}>Supervisor</option></select></div>
-        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area)}" required></div>
+        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Lat</label><input class="input" type="number" step="0.0001" name="lat" value="${emp.lat}" required></div>
-        <div class="form-group"><label class="label">Lng</label><input class="input" type="number" step="0.0001" name="lng" value="${emp.lng}" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Target Harian</label><input class="input" type="number" name="targetVisits" value="${emp.targetVisits}" required></div>
-        <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${emp.status==='active'?'selected':''}>Active</option><option value="inactive" ${emp.status==='inactive'?'selected':''}>Inactive</option></select></div>
+        <div class="form-group"><label class="label">Target Harian</label><input class="input" type="number" name="targetVisits" min="1" value="${emp.targetVisits || 6}" required></div>
+        <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${emp.status==='active'?'selected':''}>Aktif</option><option value="inactive" ${emp.status==='inactive'?'selected':''}>Nonaktif</option></select></div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
@@ -1332,14 +1348,18 @@ window.FT.editEmployee = function(id) {
   `);
 };
 
-window.FT.updateEmployee = function(e, id) {
+window.FT.updateEmployee = async function(e, id) {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const data = Object.fromEntries(fd);
-  data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
-  data.targetVisits = parseInt(data.targetVisits);
+  const form = e.target;
+  const current = getEmployees().find(x => x.id === id);
+  const data = Object.fromEntries(new FormData(form));
+  data.targetVisits = parseInt(data.targetVisits, 10) || current?.targetVisits || 6;
   if (!data.password) delete data.password;
+  delete data.lat;
+  delete data.lng;
   try {
+    data.photo = await photoFromEmployeeForm(form, current?.photo || '');
+    delete data.photoFile;
     updateEmployee(id, data);
     closeModal(); showToast('Karyawan dan akun login diperbarui', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }

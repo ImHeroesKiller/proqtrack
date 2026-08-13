@@ -37,7 +37,7 @@ export async function issueUploadSession(account) {
     body: JSON.stringify({
       sub: account.id,
       email: account.email,
-      role: account.role,
+      role: account.role === 'superadmin' ? 'manager' : account.role,
       projectIds: assignments,
       clientIds: [],
     }),
