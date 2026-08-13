@@ -263,15 +263,27 @@ export function renderOutletProposalForm() {
   const projects = (db.projects || []).filter(p => ['active', 'planning'].includes(p.status));
   const mine = getOutletProposals();
   const role = window.FT?.state?.account?.role;
-  const queue = role === 'employee' ? mine : getOutletProposals().filter(p => p.status === 'pending');
+  const emp = getEmployees().find(e => e.id === empId());
   return `
     ${role === 'employee' ? `
     <div class="card">
       <div class="card-title">Ajukan toko baru</div>
-      <div class="card-subtitle">Isi data toko yang baru ditemukan. Aktif setelah supervisor dan manager menyetujui.</div>
+      <div class="card-subtitle">Tandai lokasi di peta OpenStreetMap. Project mengikuti assignment Anda; supervisor/manager bisa mengubahnya saat menyetujui.</div>
       <form onsubmit="FS.submitOutlet(event)">
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
-        <div class="form-group"><label class="label">Alamat</label><textarea class="textarea" name="address" required></textarea></div>
+        <div class="form-group">
+          <label class="label">Lokasi di peta</label>
+          <div class="filter-row" style="margin-bottom:8px">
+            <input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan...">
+            <button type="button" class="btn btn-secondary" onclick="FS.searchOutletMap()">Cari</button>
+          </div>
+          <div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div>
+          <div class="am-muted" id="outletMapHint" style="margin-top:6px">Klik peta untuk menandai toko. Lat/lng tersimpan seperti outlet lain.</div>
+          <input type="hidden" name="lat" id="outletLat" required>
+          <input type="hidden" name="lng" id="outletLng" required>
+          <input type="hidden" name="mapLabel" id="outletMapLabel">
+        </div>
+        <div class="form-group"><label class="label">Alamat (dari peta, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required></textarea></div>
         <div class="form-row">
           <div class="form-group"><label class="label">Tipe</label>
             <select class="select" name="type"><option>Toko Kelontong</option><option>Minimarket</option><option>Apotek</option><option>Toko Bangunan</option><option>Lainnya</option></select>
@@ -281,16 +293,10 @@ export function renderOutletProposalForm() {
           </div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area"></div>
+          <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" value="${esc(emp?.area || '')}"></div>
           <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
         </div>
         <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
-        <div class="form-group"><label class="label">Project (opsional)</label>
-          <select class="select" name="projectId">
-            <option value="">Belum ditentukan</option>
-            ${projects.map(p => `<option value="${p.id}">${esc(p.code || '')} — ${esc(p.name)}</option>`).join('')}
-          </select>
-        </div>
         <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes" placeholder="Kenapa toko ini potensial, jam buka, dll."></textarea></div>
         <button class="btn btn-primary" type="submit">Kirim untuk persetujuan</button>
       </form>
@@ -308,6 +314,9 @@ export function renderOutletProposalForm() {
                 <td>${esc(p.submittedByName || '')}<div class="am-muted">${formatDateShort((p.submittedAt || '').slice(0,10))}</div></td>
                 <td>${esc(proposalStatusLabel(p))}</td>
                 ${role !== 'employee' && p.status === 'pending' ? `<td>
+                  <select class="select" id="proj-${p.id}" style="min-width:140px;margin-bottom:6px">
+                    ${projects.map(pr => `<option value="${pr.id}" ${p.projectId === pr.id ? 'selected' : ''}>${esc(pr.code || pr.name)}</option>`).join('')}
+                  </select>
                   <button class="btn btn-primary btn-sm" onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
                   <button class="btn btn-danger btn-sm" onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
                 </td>` : (role !== 'employee' ? '<td></td>' : '')}
@@ -321,7 +330,9 @@ export function renderOutletProposalForm() {
 window.FS.submitOutlet = function(e) {
   e.preventDefault();
   try {
-    createOutletProposal(Object.fromEntries(new FormData(e.target).entries()));
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    if (!data.lat || !data.lng) throw new Error('Tandai lokasi toko di peta dulu.');
+    createOutletProposal(data);
     window.showToast?.('Pengajuan toko terkirim. Menunggu supervisor dan manager.', 'success');
     e.target.reset();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -332,11 +343,95 @@ window.FS.submitOutlet = function(e) {
 
 window.FS.reviewOutlet = function(id, decision) {
   try {
-    const row = reviewOutletProposal(id, decision);
+    const projectId = document.getElementById('proj-' + id)?.value || null;
+    const row = reviewOutletProposal(id, decision, '', projectId);
     window.showToast?.(row.status === 'approved' ? 'Toko disetujui dan masuk master.' : decision === 'approved' ? 'Persetujuan Anda tercatat. Menunggu pihak lain.' : 'Pengajuan ditolak.', 'success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch (err) {
     window.showToast?.(err.message || err, 'error');
+  }
+};
+
+let _outletMap = null;
+let _outletMarker = null;
+
+async function reverseGeocode(lat, lng) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function applyGeocode(data, lat, lng) {
+  const addr = data?.address || {};
+  document.getElementById('outletLat').value = lat;
+  document.getElementById('outletLng').value = lng;
+  document.getElementById('outletMapLabel').value = data?.display_name || '';
+  const addressEl = document.getElementById('outletAddress');
+  if (addressEl && (!addressEl.value || addressEl.dataset.fromMap === '1')) {
+    addressEl.value = data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+    addressEl.dataset.fromMap = '1';
+  }
+  const areaEl = document.getElementById('outletArea');
+  if (areaEl && (!areaEl.value || areaEl.dataset.fromMap === '1')) {
+    areaEl.value = addr.city || addr.town || addr.county || addr.state || '';
+    areaEl.dataset.fromMap = '1';
+  }
+  const hint = document.getElementById('outletMapHint');
+  if (hint) hint.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)} · ${data?.display_name || 'Titik ditandai'}`;
+}
+
+function placeMarker(lat, lng) {
+  if (!_outletMap || typeof L === 'undefined') return;
+  if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
+  else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
+  _outletMap.panTo([lat, lng]);
+}
+
+window.FS.initOutletMap = function() {
+  const el = document.getElementById('outletPickMap');
+  if (!el || typeof L === 'undefined') return;
+  if (_outletMap) {
+    _outletMap.remove();
+    _outletMap = null;
+    _outletMarker = null;
+  }
+  const emp = getEmployees().find(e => e.id === empId());
+  const start = [emp?.lat || -6.2, emp?.lng || 106.82];
+  _outletMap = L.map(el, { zoomControl: true }).setView(start, 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(_outletMap);
+  _outletMap.on('click', async ev => {
+    const { lat, lng } = ev.latlng;
+    placeMarker(lat, lng);
+    try {
+      const geo = await reverseGeocode(lat, lng);
+      applyGeocode(geo, lat, lng);
+    } catch {
+      applyGeocode(null, lat, lng);
+    }
+  });
+  setTimeout(() => _outletMap?.invalidateSize(), 200);
+};
+
+window.FS.searchOutletMap = async function() {
+  const q = document.getElementById('outletMapSearch')?.value?.trim();
+  if (!q) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const rows = await res.json();
+    const hit = rows[0];
+    if (!hit) { window.showToast?.('Alamat tidak ditemukan', 'error'); return; }
+    const lat = Number(hit.lat);
+    const lng = Number(hit.lon);
+    placeMarker(lat, lng);
+    _outletMap?.setView([lat, lng], 16);
+    applyGeocode(hit, lat, lng);
+  } catch {
+    window.showToast?.('Gagal mencari di OpenStreetMap', 'error');
   }
 };
 

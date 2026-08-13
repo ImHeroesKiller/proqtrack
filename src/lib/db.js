@@ -1020,9 +1020,10 @@ export function createOutletProposal(data) {
     city: sanitizePlainText(data.city || ''),
     phone: sanitizePlainText(data.phone || ''),
     owner: sanitizePlainText(data.owner || ''),
-    lat: data.lat ? Number(data.lat) : null,
-    lng: data.lng ? Number(data.lng) : null,
-    projectId: data.projectId || null,
+    lat: data.lat !== '' && data.lat != null ? Number(data.lat) : null,
+    lng: data.lng !== '' && data.lng != null ? Number(data.lng) : null,
+    mapLabel: sanitizePlainText(data.mapLabel || ''),
+    projectId: data.projectId || defaultProjectIdForEmployee(actor.employeeId),
     notes: sanitizePlainText(data.notes || ''),
     submittedBy: actor.employeeId || actor.id,
     submittedByName: actor.name,
@@ -1034,6 +1035,9 @@ export function createOutletProposal(data) {
     ...withOrg(data),
   };
   if (!proposal.name) throw new Error('Nama toko wajib diisi.');
+  if (proposal.lat == null || proposal.lng == null || Number.isNaN(proposal.lat) || Number.isNaN(proposal.lng)) {
+    throw new Error('Tandai lokasi toko di peta.');
+  }
   const db = getDB();
   db.outletProposals = db.outletProposals || [];
   db.outletProposals.push(proposal);
@@ -1041,7 +1045,16 @@ export function createOutletProposal(data) {
   return proposal;
 }
 
-export function reviewOutletProposal(id, decision, note = '') {
+function defaultProjectIdForEmployee(employeeId) {
+  if (!employeeId) return null;
+  const db = getDB();
+  const active = (db.projectAssignments || []).filter(a =>
+    a.employeeId === employeeId && a.status === 'active'
+  );
+  return active[0]?.projectId || null;
+}
+
+export function reviewOutletProposal(id, decision, note = '', projectId = null) {
   const actor = assertLoggedIn();
   const db = getDB();
   const row = (db.outletProposals || []).find(p => p.id === id);
@@ -1061,6 +1074,7 @@ export function reviewOutletProposal(id, decision, note = '') {
   } else {
     throw new Error('Akses ditolak');
   }
+  if (projectId) row.projectId = projectId;
   if (row.supervisorStatus === 'rejected' || row.managerStatus === 'rejected') {
     row.status = 'rejected';
   } else if (row.supervisorStatus === 'approved' && row.managerStatus === 'approved') {
@@ -1079,7 +1093,7 @@ export function reviewOutletProposal(id, decision, note = '') {
       lng: row.lng,
       organizationId: row.organizationId,
       projectIds: row.projectId ? [row.projectId] : [],
-      clientId: null,
+      clientId: (db.projects || []).find(p => p.id === row.projectId)?.clientId || null,
     };
     db.outlets.push(outlet);
     row.outletId = outlet.id;

@@ -456,6 +456,7 @@ function render() {
   attachPageHandlers();
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
+  if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
