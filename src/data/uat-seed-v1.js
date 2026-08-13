@@ -1,7 +1,7 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=3;
+const VERSION=4;
 const now='2026-07-29T08:30:00.000Z';
-const day='2026-07-29';
+const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
 const photo=(label,color)=>svg(label,color);
 

@@ -367,6 +367,7 @@ function migrateDB(parsed) {
     email: normalizeEmail(account.email),
   }));
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
+  if (!Array.isArray(out.attendancePoints)) out.attendancePoints = [];
   if (!Array.isArray(out.organizations) || !out.organizations.length) {
     out.organizations = [defaultOrganization()];
   }
@@ -991,6 +992,54 @@ export function deleteVisit(id) {
   if (visit) assertCanAccessEmployee(visit.employeeId);
   db.visits = db.visits.filter(v => v.id !== id);
   saveDB();
+}
+
+export function visitDay(visit) {
+  return String(visit?.date || visit?.visitDate || '').slice(0, 10);
+}
+
+export function getVisitsOnDate(date, employeeId = null) {
+  return getVisits().filter(v => visitDay(v) === date && (!employeeId || v.employeeId === employeeId));
+}
+
+export function getVisitLocations(employeeId) {
+  return getVisits()
+    .filter(v => v.employeeId === employeeId && v.checkInTime)
+    .sort((a, b) => `${b.date || ''} ${b.checkInTime || ''}`.localeCompare(`${a.date || ''} ${a.checkInTime || ''}`));
+}
+
+export function getAttendancePoints() {
+  const rows = scoped(getDB().attendancePoints || []);
+  if (rows.length) return rows;
+  const org = getOrganization();
+  return [{
+    id: 'APT-OFFICE',
+    organizationId: getCurrentOrgId(),
+    type: 'office',
+    name: org?.name ? `Kantor ${org.name}` : 'Kantor',
+    address: [org?.city, org?.province].filter(Boolean).join(', '),
+    builtIn: true,
+  }];
+}
+
+export function createAttendancePoint(data) {
+  const actor = assertLoggedIn();
+  if (!isOrgAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
+  const point = {
+    id: uid('APT'),
+    type: ['office', 'meeting', 'store'].includes(data.type) ? data.type : 'meeting',
+    name: sanitizePlainText(data.name),
+    address: sanitizePlainText(data.address || ''),
+    outletId: data.outletId || null,
+    ...withOrg(data),
+    createdBy: actor.id,
+  };
+  if (!point.name) throw new Error('Nama titik absensi wajib diisi.');
+  const db = getDB();
+  db.attendancePoints = db.attendancePoints || [];
+  db.attendancePoints.push(point);
+  saveDB();
+  return point;
 }
 
 export function getAttendance() {

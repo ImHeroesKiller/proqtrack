@@ -20,7 +20,9 @@ import {
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
+  getVisitsOnDate, visitDay, getAttendancePoints,
 } from './lib/db.js';
+import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
@@ -175,6 +177,7 @@ const NAV_ITEMS_SUPERVISOR = [
   { section: 'Menu Utama', items: [
     { id: 'dashboard', label: 'Beranda Tim',    icon: 'home', route: '#/' },
     { id: 'myday',     label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
+    { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
     { id: 'tracking',  label: 'Live Tracking',  icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Kunjungan Tim',  icon: 'visits', route: '#/visits' },
   ]},
@@ -199,6 +202,7 @@ const NAV_ITEMS_SUPERVISOR = [
 const NAV_ITEMS_EMPLOYEE = [
   { section: 'Menu Utama', items: [
     { id: 'myday',    label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
+    { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
     { id: 'myvisits', label: 'Kunjungan Saya', icon: 'visits', route: '#/myvisits' },
   ]},
   { section: 'Project', items: [
@@ -303,13 +307,16 @@ function render() {
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
   // Field personal routes (employee + supervisor)
   } else if (!manager && (
-    route === '#/myday' || route === '#/myvisits' || route === '#/mystocks' ||
+    route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
     route === '#/myattendance' || route === '#/myleaves'
   )) {
     if (route === '#/myday') {
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
       pageContent = renderMyDay();
+    } else if (route === '#/last-location') {
+      pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
+      pageContent = renderLastLocation();
     } else if (route === '#/myvisits') {
       pageTitle = 'Kunjungan Saya'; pageSubtitle = 'Riwayat semua kunjungan Anda';
       pageContent = renderMyVisits();
@@ -338,7 +345,7 @@ function render() {
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Ringkasan operasional';
     pageContent = isOrgAdmin() ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
-    pageTitle = 'Live Tracking'; pageSubtitle = 'Pantau lokasi tim lapangan secara real-time';
+    pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in terakhir tim di toko atau lokasi kerja';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
     pageTitle = 'Lacak Kunjungan'; pageSubtitle = 'Daftar kunjungan outlet oleh tim lapangan';
@@ -1501,31 +1508,30 @@ function renderMyDay() {
   const empId = myEmployeeId();
   const emp = getEmployees().find(e => e.id === empId);
   if (!emp) return `<div class="empty-state"><h3>Data karyawan tidak ditemukan</h3></div>`;
-  const visits = getVisits().filter(v => v.employeeId === empId && v.date === todayISO());
+  const visits = getVisitsOnDate(todayISO(), empId);
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
   const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
   const cIdx = emp.name.charCodeAt(0) % colors.length;
   const completed = visits.filter(v => v.status === 'completed');
   const activeV = visits.filter(v => v.status === 'checked-in');
   const planned = visits.filter(v => v.status === 'planned');
-  const pct = emp.targetVisits > 0 ? Math.round(emp.todayVisits / emp.targetVisits * 100) : 0;
+  const pct = emp.targetVisits > 0 ? Math.round(visits.length / emp.targetVisits * 100) : 0;
 
   return `
     <div class="grid-3" style="margin-bottom:24px;">
       <div class="stat-card">
-        <div class="stat-icon" style="background:var(--blue-50); color:var(--blue-600);">📋</div>
+        <div class="stat-icon" style="background:var(--blue-50); color:var(--blue-600);">${appIcon('visits')}</div>
         <div class="stat-label">Kunjungan Hari Ini</div>
-        <div class="stat-value">${emp.todayVisits}<span style="font-size:16px; color:var(--gray-400); font-weight:500;"> / ${emp.targetVisits}</span></div>
+        <div class="stat-value">${visits.length}<span style="font-size:16px; color:var(--gray-400); font-weight:500;"> / ${emp.targetVisits}</span></div>
         <div class="progress-bar" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background:var(--green-50); color:var(--green-600);">✅</div>
+        <div class="stat-icon" style="background:var(--green-50); color:var(--green-600);">${appIcon('attendance')}</div>
         <div class="stat-label">Selesai</div>
         <div class="stat-value">${completed.length}</div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background:var(--amber-50); color:var(--amber-500);">⏳</div>
+        <div class="stat-icon" style="background:var(--amber-50); color:var(--amber-500);">${appIcon('calendar')}</div>
         <div class="stat-label">Aktif & Direncanakan</div>
         <div class="stat-value">${activeV.length + planned.length}</div>
       </div>
@@ -1534,16 +1540,8 @@ function renderMyDay() {
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Status Absensi</div>
-        <div class="card-subtitle">Kehadiran Anda hari ini</div>
-        ${att ? `
-          <div style="display:flex; align-items:center; gap:12px; padding:16px; border-radius:12px; background:${att.status==='hadir'?'#ecfdf5':att.status==='terlambat'?'#fffbeb':'#fef2f2'};">
-            <div style="font-size:32px;">${normalizeAttendanceStatus(att.status)==='hadir'?'✅':normalizeAttendanceStatus(att.status)==='terlambat'?'⏰':'❌'}</div>
-            <div>
-              <div style="font-size:18px; font-weight:800; color:${att.status==='hadir'?'var(--green-600)':att.status==='terlambat'?'var(--amber-500)':'var(--red-500)'};">${att.status === 'hadir' ? 'Hadir' : att.status === 'terlambat' ? 'Terlambat' : 'Tidak Hadir'}</div>
-              <div style="font-size:13px; color:var(--gray-500);">Check in: ${att.checkInTime || '-'} · ${att.checkInLocation || '-'}</div>
-            </div>
-          </div>
-        ` : `<div class="empty-state"><div class="empty-icon">📝</div><h3>Belum check in</h3></div>`}
+        <div class="card-subtitle">Check-in hari ini: kantor, toko pertama, atau meeting point</div>
+        ${attendanceCheckinCard()}
       </div>
 
       <div class="card">
@@ -1563,8 +1561,8 @@ function renderMyDay() {
 
     <div class="card" style="margin-top:20px;">
       <div class="card-title">Kunjungan Hari Ini</div>
-      <div class="card-subtitle">${visits.length} kunjungan terjadwal</div>
-      ${visits.length === 0 ? `<div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada kunjungan hari ini</h3></div>` : `
+      <div class="card-subtitle">${visits.length} kunjungan dijadwalkan supervisor/manager untuk hari ini</div>
+      ${visits.length === 0 ? `<div class="empty-state">${appIcon('visits')}<h3>Belum ada kunjungan hari ini</h3><p>Jadwal muncul setelah supervisor atau manager menugaskan toko untuk tanggal ini.</p></div>` : `
         <div style="display:flex; flex-direction:column; gap:10px;">
           ${visits.map(v => {
             const o = outletMap[v.outletId];
@@ -1611,22 +1609,21 @@ function renderMyVisits() {
       <div class="visits-table-wrapper">
         <table class="table">
           <thead>
-            <tr><th>Tanggal</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th>Rating</th></tr>
+            <tr><th>Tanggal</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
-            ${visits.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada riwayat kunjungan</h3></div></td></tr>` :
+            ${visits.length === 0 ? `<tr><td colspan="7"><div class="empty-state">${appIcon('visits')}<h3>Belum ada riwayat kunjungan</h3></div></td></tr>` :
             visits.map(v => {
               const o = outletMap[v.outletId];
-              const stars = v.rating > 0 ? `${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}` : '-';
               return `
                 <tr>
-                  <td>${formatDateShort(v.date)}</td>
+                  <td>${formatDateShort(visitDay(v))}</td>
                   <td>${o ? outletIcon(o.type)+' '+o.name : '-'}</td>
                   <td>${v.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
                   <td>${statusBadge(v.status)}</td>
-                  <td style="color:#fbbf24;">${stars}</td>
+                  <td><button class="btn btn-secondary btn-sm" type="button" onclick="FS.openVisitDetail('${v.id}')">Detail</button></td>
                 </tr>
               `;
             }).join('')}
@@ -1967,6 +1964,7 @@ function renderAttendanceManager() {
           <option>hadir</option><option>terlambat</option><option>tidak hadir</option>
         </select>
         <div class="spacer"></div>
+        <button class="btn btn-secondary" type="button" onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
@@ -1992,6 +1990,18 @@ function renderAttendanceManager() {
     </div>
   `;
 }
+
+window.FT.openAttendancePointModal = function() {
+  openModal('Titik absensi', `
+    <form onsubmit="FS.addAttendancePoint(event)">
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" required placeholder="Kantor pusat / Meeting point Senayan"></div>
+      <div class="form-group"><label class="label">Jenis</label>
+        <select class="select" name="type"><option value="office">Kantor</option><option value="meeting">Meeting point</option><option value="store">Toko</option></select>
+      </div>
+      <div class="form-group"><label class="label">Alamat</label><input class="input" name="address"></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
+    </form>`);
+};
 
 window.FT.filterAttendance = function() {
   const search = document.getElementById('attSearch').value.toLowerCase();
@@ -2461,26 +2471,7 @@ window.FT.openVisitStockInput = function(visitId, outletId) {
       📍 Update stok produk di outlet ini berdasarkan pengamatan lapangan
     </div>
     <form onsubmit="FT.saveVisitStock(event, '${visitId}', '${outletId}')">
-      <div class="form-group">
-        <label class="label">Produk</label>
-        <select class="select" name="productId" id="stockProductSelect" required onchange="FT.prefillStockQty('${outletId}')">
-          <option value="">— Pilih produk —</option>
-          ${products.map(p => {
-            const existing = stocks.find(s => s.productId === p.id);
-            return `<option value="${p.id}" data-qty="${existing ? existing.quantity : ''}" data-min="${existing ? existing.minStock : 5}">${p.name} (${p.sku})${existing ? ' — stok: '+existing.quantity : ''}</option>`;
-          }).join('')}
-        </select>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Quantity Saat Ini</label>
-          <input class="input" type="number" name="quantity" id="stockQtyInput" required min="0">
-        </div>
-        <div class="form-group">
-          <label class="label">Min. Stok</label>
-          <input class="input" type="number" name="minStock" id="stockMinInput" value="5" required min="0">
-        </div>
-      </div>
+      ${productPickerRows('stock', outletId)}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Stok</button>
@@ -2503,25 +2494,22 @@ window.FT.prefillStockQty = function(outletId) {
 
 window.FT.saveVisitStock = function(e, visitId, outletId) {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const projectId = fd.get('projectId') || null;
-  const productId = fd.get('productId');
-  const quantity = parseInt(fd.get('quantity'));
-  const minStock = parseInt(fd.get('minStock'));
   const empId = myEmployeeId();
-
-  // Update existing or create new
-  const existing = getStocksByOutlet(outletId).find(
-    s => s.productId === productId && (s.projectId || null) === projectId
-  );
-  if (existing) {
-    updateStock(existing.id, { quantity, minStock, updatedBy: empId, projectId });
-  } else {
-    createStock({ outletId, productId, quantity, minStock, updatedBy: empId, projectId });
-  }
-  closeModal();
-  showToast('Stok berhasil diupdate', 'success');
-  render();
+  const rows = [...e.target.querySelectorAll('.fs-product-row')];
+  try {
+    rows.forEach(row => {
+      const productId = row.querySelector('[name="productId"]')?.value;
+      const quantity = parseInt(row.querySelector('[name="quantity"]')?.value, 10);
+      const minStock = parseInt(row.querySelector('[name="minStock"]')?.value, 10);
+      if (!productId) return;
+      const existing = getStocksByOutlet(outletId).find(s => s.productId === productId);
+      if (existing) updateStock(existing.id, { quantity, minStock, updatedBy: empId });
+      else createStock({ outletId, productId, quantity, minStock, updatedBy: empId });
+    });
+    closeModal();
+    showToast(`${rows.length} produk stok disimpan`, 'success');
+    render();
+  } catch (error) { showToast(error.message || error, 'error'); }
 };
 
 // ===== Price/Discount input during visit =====
@@ -2534,27 +2522,7 @@ window.FT.openVisitPriceInput = function(visitId, outletId) {
       💰 Catat harga jual dan diskon yang teramati di outlet ini
     </div>
     <form onsubmit="FT.saveVisitPrice(event, '${visitId}', '${outletId}')">
-      <div class="form-group">
-        <label class="label">Produk</label>
-        <select class="select" name="productId" required>
-          <option value="">— Pilih produk —</option>
-          ${products.map(p => `<option value="${p.id}">${p.name} (${p.sku}) — resmi: ${formatCurrency(p.price)}</option>`).join('')}
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="label">Harga Teramati (Rp)</label>
-        <input class="input" type="number" name="observedPrice" required min="0" placeholder="Harga yang terlihat di toko">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Diskon (%)</label>
-          <input class="input" type="number" name="discountPercent" value="0" min="0" max="100" step="0.5">
-        </div>
-        <div class="form-group">
-          <label class="label">Diskon Nominal (Rp)</label>
-          <input class="input" type="number" name="discountAmount" value="0" min="0">
-        </div>
-      </div>
+      ${productPickerRows('price', outletId)}
       <div class="form-group">
         <label class="label">Catatan</label>
         <textarea class="textarea" name="notes" placeholder="Promo, kompetitor, perubahan harga, dll..."></textarea>
@@ -2569,22 +2537,25 @@ window.FT.openVisitPriceInput = function(visitId, outletId) {
 
 window.FT.saveVisitPrice = function(e, visitId, outletId) {
   e.preventDefault();
-  const fd = new FormData(e.target);
   const empId = myEmployeeId();
-  createPriceObservation({
-    projectId: fd.get('projectId') || null,
-    visitId,
-    outletId,
-    productId: fd.get('productId'),
-    observedPrice: parseInt(fd.get('observedPrice')),
-    discountPercent: parseFloat(fd.get('discountPercent')) || 0,
-    discountAmount: parseInt(fd.get('discountAmount')) || 0,
-    notes: fd.get('notes') || '',
-    recordedBy: empId,
-  });
-  closeModal();
-  showToast('Observasi harga berhasil dicatat', 'success');
-  render();
+  const rows = [...e.target.querySelectorAll('.fs-product-row')];
+  try {
+    rows.forEach(row => {
+      const productId = row.querySelector('[name="productId"]')?.value;
+      if (!productId) return;
+      createPriceObservation({
+        visitId, outletId, productId,
+        observedPrice: parseInt(row.querySelector('[name="observedPrice"]')?.value, 10),
+        discountPercent: parseFloat(row.querySelector('[name="discountPercent"]')?.value) || 0,
+        discountAmount: parseInt(row.querySelector('[name="discountAmount"]')?.value, 10) || 0,
+        notes: e.target.querySelector('[name="notes"]')?.value || '',
+        recordedBy: empId,
+      });
+    });
+    closeModal();
+    showToast(`${rows.length} observasi harga disimpan`, 'success');
+    render();
+  } catch (error) { showToast(error.message || error, 'error'); }
 };
 
 // ===== Standalone price observation modal (from My Prices page) =====
@@ -3240,6 +3211,7 @@ function intelFormHTML(visitId, outletId, opts = {}) {
       <div class="modal-footer" style="padding:0;margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Intel</button>
+        <button type="submit" class="btn btn-secondary" data-more="1">Simpan & produk lain</button>
       </div>
     </form>
   `;
@@ -3359,6 +3331,10 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
   });
   closeModal();
   showToast('Intel kompetitor tersimpan', 'success');
+  if (e.submitter?.dataset?.more && visitId && outletId) {
+    FT.openVisitIntelInput(visitId, outletId);
+    return;
+  }
   render();
 };
 
@@ -3369,9 +3345,8 @@ function renderFieldPhotosGallery({ managerView }) {
     ? [...getFieldPhotos()]
     : [...getFieldPhotosByEmployee(empId)];
   photos.sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
-
-  const filterType = state._photoFilterType || '';
-  if (filterType) photos = photos.filter(p => (p.photoType || p.type) === filterType);
+  photos = applyPhotoFilters(photos);
+  const filterType = state._photoFilters?.type || state._photoFilterType || '';
 
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
@@ -3421,16 +3396,8 @@ function renderFieldPhotosGallery({ managerView }) {
     </div>
 
     <div class="card">
-      <div class="filter-row">
-        <div class="card-title" style="margin:0;">${managerView ? 'Galeri Tim' : 'Galeri Saya'}</div>
-        <div class="spacer"></div>
-        <select class="select" style="width:auto;min-width:140px;" onchange="FT.setPhotoFilter(this.value)">
-          <option value="">Semua jenis</option>
-          ${FIELD_PHOTO_TYPES.map(t => `
-            <option value="${t.code}" ${filterType === t.code ? 'selected' : ''}>${t.label}</option>
-          `).join('')}
-        </select>
-      </div>
+      <div class="card-title" style="margin:0 0 10px">${managerView ? 'Galeri Tim' : 'Galeri Saya'}</div>
+      ${photoFilterBar(managerView)}
       <div class="card-subtitle">${managerView ? 'Semua foto field sales & supervisor' : 'Hanya foto yang Anda ambil'}</div>
 
       ${photos.length === 0 ? `

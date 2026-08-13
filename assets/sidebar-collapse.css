@@ -39,6 +39,16 @@
   .sidebar.collapsed .sidebar-user {
     justify-content: center;
   }
+  .sidebar.collapsed .sidebar-logo {
+    background-image: none !important;
+    width: 38px !important;
+    height: 38px !important;
+    font-size: 13px !important;
+  }
+  .sidebar.collapsed .sidebar-logo::before,
+  .sidebar.collapsed .sidebar-logo::after {
+    display: none !important;
+  }
 }
 
 @media (max-width: 899px) {

@@ -687,7 +687,7 @@ function renderProjects(readOnly = false) {
   return shell(
     readOnly ? "Project Saya" : "Project",
     readOnly
-      ? "Project yang ditugaskan dan modul yang tersedia"
+      ? "Informasi ringkas project yang ditugaskan kepada Anda"
       : "SoW, periode, target, assignment dan pengaturan modul",
     `${kpis([
       ["Total Project", rows.length],
@@ -703,13 +703,20 @@ function renderProjects(readOnly = false) {
             x.status === "active" && rows.some((p) => p.id === x.projectId),
         ).length,
       ],
-    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th><th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="projectRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
       .map((p) => {
         const c = cm[p.clientId] || {},
           ass = (db.projectAssignments || []).filter(
             (a) => a.projectId === p.id && a.status === "active",
           );
-        return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${esc(`${p.name} ${p.code} ${c.name || ""}`.toLowerCase())}"><td><strong>${esc(p.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code)}</div></td><td>${esc(c.name || "-")}</td><td>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td><td>${p.targetVisits || "-"} visit<br><span style="font-size:11px;color:#94a3b8">${p.targetOutlets || "-"} outlet</span></td><td>${ass.length}</td><td>${statusBadge(p.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" onclick="PM.viewProject('${p.id}')">${svg("eye")} Detail</button>${!readOnly && canManage() ? `<button class="btn btn-secondary btn-sm" onclick="PM.openProject('${p.id}')">${svg("edit")} Edit</button>` : ""}</div></td></tr>`;
+        const em = Object.fromEntries((db.employees || []).map((x) => [x.id, x]));
+        const sup = ass.find((a) => a.roleOnProject === "supervisor") || {};
+        const managerName = (db.accounts || []).find((a) => a.role === "manager" && a.status === "active")?.name || "—";
+        const search = esc(`${p.name} ${p.code} ${c.name || ""}`.toLowerCase());
+        if (readOnly) {
+          return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}"><td><strong>${esc(p.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code || "")}</div></td><td>${esc(c.name || "-")}</td><td>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td><td>${esc(em[sup.employeeId || p.supervisorId]?.name || "—")}</td><td>${esc(managerName)}</td></tr>`;
+        }
+        return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}"><td><strong>${esc(p.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code)}</div></td><td>${esc(c.name || "-")}</td><td>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td><td>${p.targetVisits || "-"} visit<br><span style="font-size:11px;color:#94a3b8">${p.targetOutlets || "-"} outlet</span></td><td>${ass.length}</td><td>${statusBadge(p.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" onclick="PM.viewProject('${p.id}')">${svg("eye")} Detail</button>${canManage() ? `<button class="btn btn-secondary btn-sm" onclick="PM.openProject('${p.id}')">${svg("edit")} Edit</button>` : ""}</div></td></tr>`;
       })
       .join("")}</tbody></table></div></div>`,
   );
