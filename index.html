@@ -382,7 +382,11 @@
     .sidebar.collapsed .nav-item { justify-content: center; padding: 11px 8px; position: relative; }
     .sidebar.collapsed .nav-badge { position: absolute; top: 4px; right: 6px; margin: 0; }
     .sidebar.collapsed .sidebar-user { justify-content: center; }
-    .sidebar.collapsed .sidebar-logo { background-image: none !important; width: 38px !important; height: 38px !important; }
+    .sidebar.collapsed .sidebar-logo {
+      width: 38px !important; height: 38px !important; min-width: 38px !important;
+      background: url('./assets/icon-proqtrack.svg') center / 30px 30px no-repeat !important;
+      color: transparent !important; font-size: 0 !important; overflow: hidden;
+    }
     .mobile-menu-btn { display: none; }
     .sidebar-backdrop { display: none !important; }
     .grid-4 { grid-template-columns: repeat(4, 1fr); }

@@ -32,7 +32,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
-import { icon as appIcon } from '../assets/icons.js';
+import { icon as appIcon, iconSvg } from '../assets/icons.js';
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -477,7 +477,7 @@ function renderSidebar() {
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
       navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" title="${esc(item.label)}" onclick="return FT.goNav(event,'${item.route}')">
-        <span class="nav-icon" data-vector="1">${appIcon(item.icon)}</span>
+        <span class="nav-icon" data-vector="1" data-icon="${item.icon}">${iconSvg(item.icon)}</span>
         <span class="nav-label">${item.label}</span>
         ${badge}
       </a>`;

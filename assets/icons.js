@@ -73,26 +73,37 @@ export const ROUTE_ICONS = {
   '#/reports': 'chart',
 };
 
-export function icon(name, cls = '') {
+export function iconSvg(name) {
   const d = ICON_PATHS[name] || ICON_PATHS.chart;
-  return `<span class="app-icon phase0-icon ${cls}" data-icon="${name}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">${d}</svg></span>`;
+  return `<svg class="app-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+}
+
+export function icon(name, cls = '') {
+  return `<span class="app-icon phase0-icon ${cls}" data-icon="${name}" aria-hidden="true">${iconSvg(name)}</span>`;
 }
 
 export function iconForRoute(route) {
-  return icon(ROUTE_ICONS[route] || 'home');
+  return iconSvg(ROUTE_ICONS[route] || 'home');
 }
 
 if (typeof document !== 'undefined' && !document.getElementById('app-icons-css')) {
   const s = document.createElement('style');
   s.id = 'app-icons-css';
   s.textContent = `
-    .app-icon,.phase0-icon{display:inline-grid;place-items:center;width:1.15em;height:1.15em;flex:0 0 auto;line-height:0}
-    .app-icon svg,.phase0-icon svg{width:100%;height:100%;display:block}
-    .nav-icon{display:inline-grid;place-items:center;width:22px;height:22px;opacity:.88}
+    .app-icon,.phase0-icon{
+      display:inline-grid;place-items:center;flex:0 0 auto;line-height:0;
+      width:20px;height:20px;min-width:20px;min-height:20px;font-size:16px;
+    }
+    .app-icon svg,.phase0-icon svg,.nav-icon svg,.stat-icon svg,.app-icon-svg{
+      width:20px;height:20px;min-width:20px;min-height:20px;display:block;stroke:currentColor;
+    }
+    .nav-icon{display:inline-grid!important;place-items:center;width:22px!important;height:22px!important;min-width:22px;opacity:.88;font-size:16px!important}
+    .nav-icon .app-icon{width:20px;height:20px}
     .nav-item.active .nav-icon{opacity:1;color:var(--brand,#ef5000)}
-    .phase0-button-icon{margin-right:6px;width:15px;height:15px}
+    .phase0-button-icon{margin-right:6px;width:16px;height:16px}
+    .phase0-button-icon svg{width:16px;height:16px}
     .stat-icon .app-icon,.stat-icon .phase0-icon{width:20px;height:20px}
-    .empty-icon .app-icon{width:36px;height:36px;opacity:.45}
+    .empty-icon .app-icon,.empty-icon svg{width:36px;height:36px;opacity:.45}
   `;
   document.head.appendChild(s);
 }
