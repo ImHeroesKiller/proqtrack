@@ -7,7 +7,10 @@ import {
   seedCompetitors, seedCompetitorProducts, seedCompetitorIntel,
   seedPromoTypes, seedFieldPhotos,
 } from '../data/seed.js';
-import { uid, sanitizePlainText, todayISO, normalizeAttendanceStatus } from './utils.js';
+import {
+  uid, sanitizePlainText, todayISO, normalizeAttendanceStatus,
+  hashPassword, passwordMatches, publicAccount,
+} from './utils.js';
 import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
@@ -21,6 +24,43 @@ const accountRoleForEmployee = employee =>
   String(employee?.role || '').toLowerCase().includes('supervisor') ? 'supervisor' : 'employee';
 
 /** HR status can deactivate login, but never lift a manager suspension. */
+function getActor() {
+  return (typeof window !== 'undefined' && window.FT?.state?.account) || null;
+}
+
+function assertLoggedIn() {
+  const actor = getActor();
+  if (!actor) throw new Error('Akses ditolak');
+  return actor;
+}
+
+function assertManager() {
+  const actor = assertLoggedIn();
+  if (actor.role !== 'manager') throw new Error('Akses ditolak');
+  return actor;
+}
+
+function visibleEmployeeIds(actor = getActor(), db = getDB()) {
+  const orgId = getCurrentOrgId();
+  const inOrg = (db.employees || []).filter(e => !e.organizationId || e.organizationId === orgId);
+  if (!actor || actor.role === 'manager') return new Set(inOrg.map(e => e.id));
+  if (actor.role === 'supervisor') {
+    return new Set(inOrg.filter(e => e.id === actor.employeeId || e.supervisorId === actor.employeeId).map(e => e.id));
+  }
+  return new Set(actor.employeeId ? [actor.employeeId] : []);
+}
+
+function canAccessEmployee(employeeId, actor = getActor()) {
+  if (!actor) return false;
+  if (actor.role === 'manager') return true;
+  return visibleEmployeeIds(actor).has(employeeId);
+}
+
+function assertCanAccessEmployee(employeeId) {
+  assertLoggedIn();
+  if (!canAccessEmployee(employeeId)) throw new Error('Akses ditolak');
+}
+
 function applyEmployeeAccountStatus(account, employee) {
   if (!account) return;
   if (employee?.status !== 'active') {
@@ -59,7 +99,7 @@ function syncEmployeeAccount(db, employee, password) {
   applyEmployeeAccountStatus(account, employee);
   if (password) {
     if (String(password).length < 8) throw new Error('Password login minimal 8 karakter.');
-    account.password = String(password);
+    account.password = hashPassword(password);
   }
   return account;
 }
@@ -215,6 +255,7 @@ function migrateDB(parsed) {
     status: 'active',
     ...account,
     email: normalizeEmail(account.email),
+    password: hashPassword(account.password || ''),
   }));
   out.employees.forEach(employee => {
     const account = out.accounts.find(a => a.employeeId === employee.id);
@@ -387,10 +428,15 @@ export function resetDB() {
 }
 
 export function getAccounts() {
-  return scoped(getDB().accounts);
+  const actor = getActor();
+  const rows = scoped(getDB().accounts).map(publicAccount);
+  if (!actor) return [];
+  if (actor.role === 'manager') return rows;
+  return rows.filter(a => a.id === actor.id);
 }
 
 export function createOrganization(data) {
+  assertManager();
   const db = getDB();
   const org = {
     id: uid('ORG'),
@@ -411,6 +457,7 @@ export function createOrganization(data) {
 }
 
 export function updateOrganization(id, data) {
+  assertManager();
   const db = getDB();
   const idx = (db.organizations || []).findIndex(o => o.id === id);
   if (idx === -1) throw new Error('Organisasi tidak ditemukan.');
@@ -428,18 +475,19 @@ export function updateOrganization(id, data) {
 export function authenticate(email, password) {
   const db = getDB();
   const acc = db.accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
-  if (!acc || acc.status === 'inactive' || acc.status === 'suspended' || acc.password !== password) return null;
+  if (!acc || acc.status === 'inactive' || acc.status === 'suspended' || !passwordMatches(acc.password, password)) return null;
   if (acc.employeeId) {
     const employee = getEmployee(acc.employeeId);
     if (!employee || employee.status !== 'active') return null;
   }
   acc.lastLoginAt = new Date().toISOString();
+  if (!String(acc.password).startsWith('sha256$')) acc.password = hashPassword(password);
   if (acc.organizationId) {
     db.currentOrganizationId = acc.organizationId;
     try { localStorage.setItem(ORG_KEY, acc.organizationId); } catch { /* ignore */ }
   }
   saveDB();
-  return acc;
+  return publicAccount(acc);
 }
 
 function countActiveManagers(db, exceptId = null) {
@@ -467,6 +515,7 @@ export function getAppSettings() {
 }
 
 export function updateAppSettings(partial) {
+  assertManager();
   const db = getDB();
   db.appSettings = {
     ...defaultAppSettings(),
@@ -484,6 +533,7 @@ export function updateAppSettings(partial) {
 }
 
 export function createAccount(data) {
+  assertManager();
   const db = getDB();
   const email = assertAccountEmail(db, data.email);
   if (!data.password || String(data.password).length < 8) {
@@ -503,7 +553,7 @@ export function createAccount(data) {
     organizationId: getCurrentOrgId(),
     email,
     name: sanitizePlainText(data.name) || email,
-    password: String(data.password),
+    password: hashPassword(data.password),
     role,
     employeeId,
     status: data.status === 'inactive' ? 'inactive' : 'active',
@@ -518,10 +568,11 @@ export function createAccount(data) {
     if (account.name) employee.name = account.name;
   }
   saveDB();
-  return account;
+  return publicAccount(account);
 }
 
 export function updateAccount(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.accounts.findIndex(a => a.id === id);
   if (idx === -1) throw new Error('Akun tidak ditemukan.');
@@ -555,26 +606,30 @@ export function updateAccount(id, data) {
     mustChangePassword: data.mustChangePassword ?? current.mustChangePassword,
     updatedAt: new Date().toISOString(),
   };
-  if (data.password) db.accounts[idx].password = String(data.password);
+  if (data.password) db.accounts[idx].password = hashPassword(data.password);
   if (employeeId) {
     const employee = db.employees.find(e => e.id === employeeId);
     employee.email = email;
     employee.name = db.accounts[idx].name;
   }
   saveDB();
-  return db.accounts[idx];
+  return publicAccount(db.accounts[idx]);
 }
 
 export function changePassword(accountId, currentPassword, nextPassword) {
+  const actor = assertLoggedIn();
+  if (actor.id !== accountId && actor.role !== 'manager') throw new Error('Akses ditolak');
   const db = getDB();
   const account = db.accounts.find(a => a.id === accountId);
   if (!account) throw new Error('Akun tidak ditemukan.');
-  if (account.password !== currentPassword) throw new Error('Password saat ini salah.');
+  if (!passwordMatches(account.password, currentPassword)) throw new Error('Password saat ini salah.');
   if (!nextPassword || String(nextPassword).length < 8) {
     throw new Error('Password baru minimal 8 karakter.');
   }
-  if (nextPassword === currentPassword) throw new Error('Password baru harus berbeda.');
-  account.password = String(nextPassword);
+  if (passwordMatches(account.password, nextPassword) || nextPassword === currentPassword) {
+    throw new Error('Password baru harus berbeda.');
+  }
+  account.password = hashPassword(nextPassword);
   account.mustChangePassword = false;
   account.passwordChangedAt = new Date().toISOString();
   saveDB();
@@ -582,6 +637,8 @@ export function changePassword(accountId, currentPassword, nextPassword) {
 }
 
 export function updateOwnProfile(accountId, data) {
+  const actor = assertLoggedIn();
+  if (actor.id !== accountId) throw new Error('Akses ditolak');
   const db = getDB();
   const account = db.accounts.find(a => a.id === accountId);
   if (!account) throw new Error('Akun tidak ditemukan.');
@@ -599,11 +656,15 @@ export function updateOwnProfile(accountId, data) {
     }
   }
   saveDB();
-  return account;
+  return publicAccount(account);
 }
 
 export function getEmployees() {
-  return scoped(getDB().employees);
+  const rows = scoped(getDB().employees);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(e => ids.has(e.id));
 }
 
 export function getEmployee(id) {
@@ -611,6 +672,7 @@ export function getEmployee(id) {
 }
 
 export function createEmployee(data) {
+  assertManager();
   const db = getDB();
   const email = assertUniqueEmail(db, data.email);
   const emp = {
@@ -635,6 +697,7 @@ export function createEmployee(data) {
 }
 
 export function updateEmployee(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.employees.findIndex(e => e.id === id);
   if (idx === -1) return null;
@@ -665,6 +728,7 @@ export function updateEmployee(id, data) {
 }
 
 export function deleteEmployee(id) {
+  assertManager();
   const db = getDB();
   const referenced = [
     db.visits, db.attendance, db.leaves, db.projectAssignments,
@@ -737,6 +801,7 @@ function assertOperationalContext(db, data, { product = false } = {}) {
 }
 
 export function createOutlet(data) {
+  assertManager();
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
   const outlet = {
@@ -754,6 +819,7 @@ export function createOutlet(data) {
 }
 
 export function updateOutlet(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.outlets.findIndex(o => o.id === id);
   if (idx === -1) return null;
@@ -772,13 +838,18 @@ export function updateOutlet(id, data) {
 }
 
 export function deleteOutlet(id) {
+  assertManager();
   const db = getDB();
   db.outlets = db.outlets.filter(o => o.id !== id);
   saveDB();
 }
 
 export function getVisits() {
-  return scoped(getDB().visits);
+  const rows = scoped(getDB().visits);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(v => ids.has(v.employeeId));
 }
 
 export function getVisitsByEmployee(empId) {
@@ -794,6 +865,7 @@ export function getVisitsByDate(date) {
 }
 
 export function createVisit(data) {
+  assertCanAccessEmployee(data.employeeId);
   assertOperationalContext(getDB(), data);
   const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...withOrg(data) };
   getDB().visits.push(visit);
@@ -805,6 +877,10 @@ export function updateVisit(id, data) {
   const db = getDB();
   const idx = db.visits.findIndex(v => v.id === id);
   if (idx === -1) return null;
+  assertCanAccessEmployee(db.visits[idx].employeeId);
+  if (data.employeeId && data.employeeId !== db.visits[idx].employeeId) {
+    assertCanAccessEmployee(data.employeeId);
+  }
   db.visits[idx] = { ...db.visits[idx], ...data };
   saveDB();
   return db.visits[idx];
@@ -812,12 +888,18 @@ export function updateVisit(id, data) {
 
 export function deleteVisit(id) {
   const db = getDB();
+  const visit = db.visits.find(v => v.id === id);
+  if (visit) assertCanAccessEmployee(visit.employeeId);
   db.visits = db.visits.filter(v => v.id !== id);
   saveDB();
 }
 
 export function getAttendance() {
-  return scoped(getDB().attendance);
+  const rows = scoped(getDB().attendance);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(a => ids.has(a.employeeId));
 }
 
 export function getAttendanceByDate(date) {
@@ -829,6 +911,7 @@ export function getAttendanceByEmployee(empId) {
 }
 
 export function createAttendance(data) {
+  assertCanAccessEmployee(data.employeeId);
   const att = { id: uid('ATT'), ...withOrg(data) };
   getDB().attendance.push(att);
   saveDB();
@@ -839,6 +922,7 @@ export function updateAttendance(id, data) {
   const db = getDB();
   const idx = db.attendance.findIndex(a => a.id === id);
   if (idx === -1) return null;
+  assertCanAccessEmployee(db.attendance[idx].employeeId);
   db.attendance[idx] = { ...db.attendance[idx], ...data };
   saveDB();
   return db.attendance[idx];
@@ -898,6 +982,7 @@ export function getProduct(id) {
 }
 
 export function createProduct(data) {
+  assertManager();
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
   const product = {
@@ -921,6 +1006,7 @@ export function createProduct(data) {
 }
 
 export function updateProduct(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.products.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -941,13 +1027,18 @@ export function updateProduct(id, data) {
 }
 
 export function deleteProduct(id) {
+  assertManager();
   const db = getDB();
   db.products = db.products.filter(p => p.id !== id);
   saveDB();
 }
 
 export function getLeaves() {
-  return scoped(getDB().leaves);
+  const rows = scoped(getDB().leaves);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(l => ids.has(l.employeeId));
 }
 
 export function getLeavesByEmployee(empId) {
@@ -959,6 +1050,9 @@ export function getLeaveTypes() {
 }
 
 export function createLeave(data) {
+  assertCanAccessEmployee(data.employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && data.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
   const leave = { id: uid('LV'), status: 'pending', submittedAt: new Date().toISOString().slice(0,10), approverId: null, approvedAt: null, ...withOrg(data) };
   getDB().leaves.push(leave);
   saveDB();
@@ -969,13 +1063,25 @@ export function updateLeave(id, data) {
   const db = getDB();
   const idx = db.leaves.findIndex(l => l.id === id);
   if (idx === -1) return null;
-  db.leaves[idx] = { ...db.leaves[idx], ...data };
+  const actor = assertLoggedIn();
+  const current = db.leaves[idx];
+  assertCanAccessEmployee(current.employeeId);
+  const nextStatus = data.status || current.status;
+  if (nextStatus !== current.status && !['manager', 'supervisor'].includes(actor.role)) {
+    throw new Error('Akses ditolak');
+  }
+  db.leaves[idx] = { ...current, ...data };
   saveDB();
   return db.leaves[idx];
 }
 
 export function deleteLeave(id) {
   const db = getDB();
+  const leave = db.leaves.find(l => l.id === id);
+  if (leave) {
+    const actor = assertLoggedIn();
+    if (actor.role !== 'manager' && leave.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
 }
@@ -1071,6 +1177,7 @@ export function getCompetitor(id) {
 }
 
 export function createCompetitor(data) {
+  assertManager();
   const c = {
     id: uid('CMP'),
     status: 'active',
@@ -1085,6 +1192,7 @@ export function createCompetitor(data) {
 }
 
 export function updateCompetitor(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.competitors.findIndex(c => c.id === id);
   if (idx === -1) return null;
@@ -1094,6 +1202,7 @@ export function updateCompetitor(id, data) {
 }
 
 export function deleteCompetitor(id) {
+  assertManager();
   const db = getDB();
   db.competitors = db.competitors.filter(c => c.id !== id);
   db.competitorProducts = (db.competitorProducts || []).filter(p => p.competitorId !== id);
@@ -1109,6 +1218,7 @@ export function getCompetitorProductsByCompetitor(competitorId) {
 }
 
 export function createCompetitorProduct(data) {
+  assertManager();
   const p = {
     id: uid('CPD'),
     status: 'active',
@@ -1124,6 +1234,7 @@ export function createCompetitorProduct(data) {
 }
 
 export function updateCompetitorProduct(id, data) {
+  assertManager();
   const db = getDB();
   const idx = db.competitorProducts.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -1135,13 +1246,18 @@ export function updateCompetitorProduct(id, data) {
 }
 
 export function deleteCompetitorProduct(id) {
+  assertManager();
   const db = getDB();
   db.competitorProducts = db.competitorProducts.filter(p => p.id !== id);
   saveDB();
 }
 
 export function getCompetitorIntel() {
-  return scoped(getDB().competitorIntel || []);
+  const rows = scoped(getDB().competitorIntel || []);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(i => ids.has(i.recordedBy) || ids.has(i.employeeId));
 }
 
 export function getCompetitorIntelByOutlet(outletId) {
@@ -1157,6 +1273,13 @@ export function getCompetitorIntelByEmployee(empId) {
 }
 
 export function createCompetitorIntel(data) {
+  const actor = assertLoggedIn();
+  const owner = data.recordedBy || data.employeeId || actor.employeeId;
+  if (actor.role === 'employee') {
+    if (owner !== actor.employeeId) throw new Error('Akses ditolak');
+  } else {
+    assertCanAccessEmployee(owner);
+  }
   assertOperationalContext(getDB(), data, { product: true });
   const intel = {
     id: uid('INT'),
@@ -1224,7 +1347,11 @@ export const FIELD_PHOTO_TYPES = [
 ];
 
 export function getFieldPhotos() {
-  return scoped(getDB().fieldPhotos || []);
+  const rows = scoped(getDB().fieldPhotos || []);
+  const actor = getActor();
+  if (!actor || actor.role === 'manager') return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(p => ids.has(p.employeeId) || ids.has(p.recordedBy));
 }
 
 export function getFieldPhotosByEmployee(empId) {
@@ -1246,6 +1373,13 @@ export function getAccessibleFieldPhotos(empId, isManagerRole) {
 }
 
 export function createFieldPhoto(data) {
+  const actor = assertLoggedIn();
+  const owner = data.employeeId || data.recordedBy || actor.employeeId;
+  if (actor.role === 'employee') {
+    if (owner !== actor.employeeId) throw new Error('Akses ditolak');
+  } else if (actor.role !== 'manager') {
+    assertCanAccessEmployee(owner);
+  }
   assertOperationalContext(getDB(), data, { product: !!data.productId });
   const photo = {
     id: uid('PHO'),
@@ -1270,6 +1404,8 @@ export function updateFieldPhoto(id, data) {
   const db = getDB();
   const idx = db.fieldPhotos.findIndex(p => p.id === id);
   if (idx === -1) return null;
+  const owner = db.fieldPhotos[idx].employeeId || db.fieldPhotos[idx].recordedBy;
+  if (owner) assertCanAccessEmployee(owner);
   db.fieldPhotos[idx] = { ...db.fieldPhotos[idx], ...data };
   saveDB();
   return db.fieldPhotos[idx];
@@ -1277,6 +1413,9 @@ export function updateFieldPhoto(id, data) {
 
 export function deleteFieldPhoto(id) {
   const db = getDB();
+  const photo = (db.fieldPhotos || []).find(p => p.id === id);
+  const owner = photo?.employeeId || photo?.recordedBy;
+  if (owner) assertCanAccessEmployee(owner);
   db.fieldPhotos = db.fieldPhotos.filter(p => p.id !== id);
   saveDB();
 }

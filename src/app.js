@@ -282,6 +282,11 @@ function render() {
   // Project Management routes are rendered by src/types/index.js after the
   // application shell exists. This prevents false redirects and 404 states.
   if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
+    const managerOnlyPm = route === '#/clients' || route === '#/projects' || route === '#/assignments';
+    if (managerOnlyPm && !isManager()) {
+      location.hash = defaultRouteFor(state.account);
+      return;
+    }
     pageTitle = 'Project Management';
     pageSubtitle = 'Memuat data project dan klien';
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
@@ -728,7 +733,7 @@ function initMap() {
   // Simulate live movement: nudge employees slightly every 5s
   if (state.livePolling) clearInterval(state.livePolling);
   state.livePolling = setInterval(() => {
-    const emps = getEmployees().filter(e => e.status === 'active');
+    const emps = trackingEmployees();
     emps.forEach(e => {
       const m = _markers[e.id];
       if (m) {
@@ -913,10 +918,14 @@ window.FT.createVisit = function(e) {
   const data = Object.fromEntries(fd);
   if (data.checkInTime === '') data.checkInTime = null;
   if (data.checkOutTime === '') data.checkOutTime = null;
-  createVisit(data);
-  closeModal();
-  showToast('Kunjungan berhasil ditambahkan', 'success');
-  render();
+  try {
+    createVisit(data);
+    closeModal();
+    showToast('Kunjungan berhasil ditambahkan', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Akses ditolak', 'error');
+  }
 };
 
 window.FT.viewVisit = function(id) {
@@ -969,17 +978,23 @@ window.FT.closeSidebar = function() {
 };
 
 window.FT.checkInVisit = function(id) {
-  updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-  closeModal(); showToast('Berhasil check in', 'success'); render();
+  try {
+    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
+    closeModal(); showToast('Berhasil check in', 'success'); render();
+  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
 window.FT.checkOutVisit = function(id) {
-  updateVisit(id, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
-  closeModal(); showToast('Berhasil check out', 'success'); render();
+  try {
+    updateVisit(id, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
+    closeModal(); showToast('Berhasil check out', 'success'); render();
+  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
 window.FT.deleteVisit = function(id) {
   if (!confirm('Hapus kunjungan ini?')) return;
-  deleteVisit(id);
-  closeModal(); showToast('Kunjungan dihapus', 'success'); render();
+  try {
+    deleteVisit(id);
+    closeModal(); showToast('Kunjungan dihapus', 'success'); render();
+  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
 
 // ===== Employees Page =====
@@ -1093,6 +1108,7 @@ window.FT.openEmployeeModal = function() {
 
 window.FT.createEmployee = function(e) {
   e.preventDefault();
+  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
@@ -1105,6 +1121,7 @@ window.FT.createEmployee = function(e) {
 };
 
 window.FT.deleteEmployee = function(id) {
+  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus karyawan ini?')) return;
   const result = deleteEmployee(id);
   showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
@@ -1322,6 +1339,7 @@ window.FT.openOutletModal = function() {
 
 window.FT.createOutlet = function(e) {
   e.preventDefault();
+  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
@@ -1332,6 +1350,7 @@ window.FT.createOutlet = function(e) {
 };
 
 window.FT.deleteOutlet = function(id) {
+  if (!isManager()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus outlet ini?')) return;
   deleteOutlet(id);
   showToast('Outlet dihapus', 'success'); render();
