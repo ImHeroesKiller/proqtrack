@@ -17,6 +17,7 @@ ensureLink('stylesheet', './assets/phase0.css');
 ensureLink('stylesheet', './assets/phase0-v2.css');
 ensureLink('stylesheet', './assets/sidebar-collapse.css');
 ensureLink('stylesheet', './assets/field-mobile.css');
+ensureLink('stylesheet', './assets/ui-2026.css');
 ensureLink('manifest', './manifest.webmanifest');
 ensureLink('icon', PWA_ICON, { type: 'image/svg+xml' });
 ensureLink('apple-touch-icon', PWA_ICON);
