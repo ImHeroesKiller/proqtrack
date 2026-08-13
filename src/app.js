@@ -30,6 +30,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { icon as appIcon } from '../assets/icons.js';
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -135,83 +136,83 @@ function entityScopeFields(entity = {}) {
 
 const NAV_ITEMS = [
   { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda',         icon: '▣', route: '#/' },
-    { id: 'tracking',  label: 'Live Tracking',   icon: '◎', route: '#/tracking' },
-    { id: 'visits',    label: 'Lacak Kunjungan', icon: '☰', route: '#/visits' },
+    { id: 'dashboard', label: 'Beranda',         icon: 'home', route: '#/' },
+    { id: 'tracking',  label: 'Live Tracking',   icon: 'tracking', route: '#/tracking' },
+    { id: 'visits',    label: 'Lacak Kunjungan', icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
-    { id: 'clients',     label: 'Klien',      icon: '▣', route: '#/clients' },
-    { id: 'projects',    label: 'Project',    icon: '▦', route: '#/projects' },
-    { id: 'assignments', label: 'Assignment', icon: '☰', route: '#/assignments' },
+    { id: 'clients',     label: 'Klien',      icon: 'clients', route: '#/clients' },
+    { id: 'projects',    label: 'Project',    icon: 'briefcase', route: '#/projects' },
+    { id: 'assignments', label: 'Assignment', icon: 'team', route: '#/assignments' },
   ]},
   { section: 'Manajemen', items: [
-    { id: 'employees',  label: 'Karyawan',    icon: '◉', route: '#/employees' },
-    { id: 'outlets',    label: 'Toko',        icon: '⬡', route: '#/outlets' },
-    { id: 'products',   label: 'Produk',      icon: '▦', route: '#/products' },
-    { id: 'stocks',     label: 'Stok Outlet', icon: '▥', route: '#/stocks' },
-    { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
-    { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
+    { id: 'employees',  label: 'Karyawan',    icon: 'employees', route: '#/employees' },
+    { id: 'outlets',    label: 'Toko',        icon: 'outlets', route: '#/outlets' },
+    { id: 'products',   label: 'Produk',      icon: 'products', route: '#/products' },
+    { id: 'stocks',     label: 'Stok Outlet', icon: 'stocks', route: '#/stocks' },
+    { id: 'attendance', label: 'Absensi',     icon: 'attendance', route: '#/attendance' },
+    { id: 'leaves',     label: 'Ijin & Cuti', icon: 'leaves', route: '#/leaves' },
   ]},
   { section: 'Kompetitor', items: [
-    { id: 'competitors',         label: 'Kompetitor',         icon: '◇', route: '#/competitors' },
-    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: '◈', route: '#/competitor-analysis' },
+    { id: 'competitors',         label: 'Kompetitor',         icon: 'competitors', route: '#/competitors' },
+    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: 'analysis', route: '#/competitor-analysis' },
   ]},
   { section: 'Lapangan', items: [
-    { id: 'field-photos', label: 'Foto & Aset', icon: '▣', route: '#/field-photos' },
+    { id: 'field-photos', label: 'Foto & Aset', icon: 'photos', route: '#/field-photos' },
   ]},
   { section: 'Analitik', items: [
-    { id: 'reports', label: 'Laporan', icon: '▧', route: '#/reports' },
+    { id: 'reports', label: 'Laporan', icon: 'chart', route: '#/reports' },
   ]},
   { section: 'Sistem', items: [
-    { id: 'organizations', label: 'Organisasi',     icon: '⬡', route: '#/organizations' },
-    { id: 'accounts',      label: 'Manajemen Akun', icon: '◐', route: '#/accounts' },
-    { id: 'settings',      label: 'Pengaturan',     icon: '⚙', route: '#/settings' },
+    { id: 'organizations', label: 'Organisasi',     icon: 'organizations', route: '#/organizations' },
+    { id: 'accounts',      label: 'Manajemen Akun', icon: 'accounts', route: '#/accounts' },
+    { id: 'settings',      label: 'Pengaturan',     icon: 'settings', route: '#/settings' },
   ]},
 ];
 
 const NAV_ITEMS_SUPERVISOR = [
   { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda Tim',    icon: '▣', route: '#/' },
-    { id: 'myday',     label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
-    { id: 'tracking',  label: 'Live Tracking',  icon: '◎', route: '#/tracking' },
-    { id: 'visits',    label: 'Kunjungan Tim',  icon: '☰', route: '#/visits' },
+    { id: 'dashboard', label: 'Beranda Tim',    icon: 'home', route: '#/' },
+    { id: 'myday',     label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
+    { id: 'tracking',  label: 'Live Tracking',  icon: 'tracking', route: '#/tracking' },
+    { id: 'visits',    label: 'Kunjungan Tim',  icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
-    { id: 'my-projects',         label: 'Project Saya',           icon: '▦', route: '#/my-projects' },
-    { id: 'my-team',             label: 'Tim Saya',               icon: '◉', route: '#/my-team' },
-    { id: 'supervisor-compare',  label: 'Komparasi Supervisor',   icon: '◈', route: '#/supervisor-compare' },
+    { id: 'my-projects',         label: 'Project Saya',           icon: 'briefcase', route: '#/my-projects' },
+    { id: 'my-team',             label: 'Tim Saya',               icon: 'team', route: '#/my-team' },
+    { id: 'supervisor-compare',  label: 'Komparasi Supervisor',   icon: 'compare', route: '#/supervisor-compare' },
   ]},
   { section: 'Lapangan', items: [
-    { id: 'mystocks',      label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
-    { id: 'myprices',      label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
-    { id: 'myintel',       label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
-    { id: 'field-photos',  label: 'Foto Lapangan',    icon: '▣', route: '#/field-photos' },
-    { id: 'attendance',    label: 'Absensi Tim',      icon: '✓', route: '#/attendance' },
-    { id: 'leaves',        label: 'Ijin & Cuti',      icon: '▤', route: '#/leaves' },
+    { id: 'mystocks',      label: 'Stok Outlet',      icon: 'stocks', route: '#/mystocks' },
+    { id: 'myprices',      label: 'Harga & Diskon',   icon: 'price', route: '#/myprices' },
+    { id: 'myintel',       label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
+    { id: 'field-photos',  label: 'Foto Lapangan',    icon: 'photos', route: '#/field-photos' },
+    { id: 'attendance',    label: 'Absensi Tim',      icon: 'attendance', route: '#/attendance' },
+    { id: 'leaves',        label: 'Ijin & Cuti',      icon: 'leaves', route: '#/leaves' },
   ]},
   { section: 'Sistem', items: [
-    { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
+    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
   ]},
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
   { section: 'Menu Utama', items: [
-    { id: 'myday',    label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
-    { id: 'myvisits', label: 'Kunjungan Saya', icon: '☰', route: '#/myvisits' },
+    { id: 'myday',    label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
+    { id: 'myvisits', label: 'Kunjungan Saya', icon: 'visits', route: '#/myvisits' },
   ]},
   { section: 'Project', items: [
-    { id: 'my-projects', label: 'Project Saya', icon: '▦', route: '#/my-projects' },
+    { id: 'my-projects', label: 'Project Saya', icon: 'briefcase', route: '#/my-projects' },
   ]},
   { section: 'Lapangan', items: [
-    { id: 'mystocks',     label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
-    { id: 'myprices',     label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
-    { id: 'myintel',      label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
-    { id: 'myphotos',     label: 'Foto Lapangan',    icon: '▣', route: '#/myphotos' },
-    { id: 'myattendance', label: 'Absensi Saya',     icon: '✓', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Ijin & Cuti',      icon: '▤', route: '#/myleaves' },
+    { id: 'mystocks',     label: 'Stok Outlet',      icon: 'stocks', route: '#/mystocks' },
+    { id: 'myprices',     label: 'Harga & Diskon',   icon: 'price', route: '#/myprices' },
+    { id: 'myintel',      label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
+    { id: 'myphotos',     label: 'Foto Lapangan',    icon: 'photos', route: '#/myphotos' },
+    { id: 'myattendance', label: 'Absensi Saya',     icon: 'attendance', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Ijin & Cuti',      icon: 'leaves', route: '#/myleaves' },
   ]},
   { section: 'Sistem', items: [
-    { id: 'settings', label: 'Pengaturan', icon: '⚙', route: '#/settings' },
+    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
   ]},
 ];
 // ===== Router =====
@@ -468,7 +469,7 @@ function renderSidebar() {
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
       navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${item.route}')">
-        <span class="nav-icon">${item.icon}</span>
+        <span class="nav-icon" data-vector="1">${appIcon(item.icon)}</span>
         <span>${item.label}</span>
         ${badge}
       </a>`;
