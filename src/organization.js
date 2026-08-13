@@ -10,7 +10,7 @@ function canManageOrgs() {
 }
 
 function counts(orgId) {
-  const match = row => !row.organizationId || row.organizationId === orgId;
+  const match = row => row.organizationId === orgId;
   const db = JSON.parse(localStorage.getItem('proqtrack_db_v6') || '{}');
   return {
     clients: (db.clients || []).filter(match).length,

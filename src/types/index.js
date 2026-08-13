@@ -90,6 +90,43 @@ function readDB() {
     return {};
   }
 }
+const DEFAULT_ORG_ID = "ORG-DEFAULT";
+function currentOrgId() {
+  try {
+    return localStorage.getItem("proqtrack_current_org") || DEFAULT_ORG_ID;
+  } catch {
+    return DEFAULT_ORG_ID;
+  }
+}
+function orgRows(list) {
+  const orgId = currentOrgId();
+  return (list || []).filter((row) => row && row.organizationId === orgId);
+}
+function mergeOrgRows(all, next) {
+  const orgId = currentOrgId();
+  const others = (all || []).filter((row) => row.organizationId && row.organizationId !== orgId);
+  return [...others, ...next.map((row) => ({ ...row, organizationId: orgId }))];
+}
+function viewDB() {
+  const db = readDB();
+  return {
+    ...db,
+    clients: orgRows(db.clients),
+    projects: orgRows(db.projects),
+    projectAssignments: orgRows(db.projectAssignments),
+    employees: orgRows(db.employees),
+    accounts: orgRows(db.accounts),
+  };
+}
+function persistView(view) {
+  const raw = readDB();
+  raw.clients = mergeOrgRows(raw.clients, view.clients || []);
+  raw.projects = mergeOrgRows(raw.projects, view.projects || []);
+  raw.projectAssignments = mergeOrgRows(raw.projectAssignments, view.projectAssignments || []);
+  raw.employees = mergeOrgRows(raw.employees, view.employees || []);
+  raw.projectSettings = view.projectSettings;
+  writeDB(raw);
+}
 function writeDB(db) {
   db._version = Math.max(7, Number(db._version || 0));
   db.updatedAt = now();
@@ -454,6 +491,14 @@ function migrateV7() {
           : { ...r, projectId: null },
       );
   });
+  ["clients", "projects", "projectAssignments"].forEach((key) => {
+    if (Array.isArray(db[key])) {
+      db[key] = db[key].map((row) => ({
+        ...row,
+        organizationId: row.organizationId || DEFAULT_ORG_ID,
+      }));
+    }
+  });
   writeDB(db);
 }
 function state() {
@@ -463,7 +508,7 @@ function account() {
   return state().account || null;
 }
 function employee() {
-  const db = readDB(),
+  const db = viewDB(),
     a = account();
   return db.employees?.find((e) => e.id === a?.employeeId) || null;
 }
@@ -481,7 +526,7 @@ function role() {
   return a ? "sales" : "guest";
 }
 function activeAssignments(employeeId) {
-  const db = readDB();
+  const db = viewDB();
   return (db.projectAssignments || [])
     .filter((a) => a.employeeId === employeeId && a.status === "active")
     .filter((a) =>
@@ -490,13 +535,13 @@ function activeAssignments(employeeId) {
 }
 function accessibleProjectIds() {
   if (role() === "manager")
-    return new Set((readDB().projects || []).map((p) => p.id));
+    return new Set((viewDB().projects || []).map((p) => p.id));
   return new Set(
     activeAssignments(account()?.employeeId).map((a) => a.projectId),
   );
 }
 function projectModules() {
-  const db = readDB(),
+  const db = viewDB(),
     ids = accessibleProjectIds();
   const settings = (db.projectSettings || []).filter((s) =>
     ids.has(s.projectId),
@@ -509,7 +554,7 @@ function canManage() {
   return role() === "manager";
 }
 function scopedEmployees(projectId = null) {
-  const db = readDB(),
+  const db = viewDB(),
     r = role(),
     me = employee();
   if (r === "manager") return db.employees || [];
@@ -608,7 +653,7 @@ function kpis(items) {
   return `<div class="pm-grid">${items.map((x) => `<div class="pm-kpi"><div class="pm-kpi-label">${esc(x[0])}</div><div class="pm-kpi-value">${esc(x[1])}</div>${x[2] ? `<div class="pm-kpi-note">${esc(x[2])}</div>` : ""}</div>`).join("")}</div>`;
 }
 function renderClients() {
-  const db = readDB(),
+  const db = viewDB(),
     rows = db.clients || [];
   return shell(
     "Klien",
@@ -633,7 +678,7 @@ function renderClients() {
   );
 }
 function renderProjects(readOnly = false) {
-  const db = readDB(),
+  const db = viewDB(),
     cm = clientById(db),
     ids = accessibleProjectIds();
   let rows = (db.projects || []).filter(
@@ -670,7 +715,7 @@ function renderProjects(readOnly = false) {
   );
 }
 function renderAssignments() {
-  const db = readDB(),
+  const db = viewDB(),
     pm = projectById(db),
     cm = clientById(db),
     em = Object.fromEntries((db.employees || []).map((x) => [x.id, x]));
@@ -703,7 +748,7 @@ function renderAssignments() {
   );
 }
 function renderMyTeam() {
-  const db = readDB(),
+  const db = viewDB(),
     me = employee(),
     ids = accessibleProjectIds(),
     team = scopedEmployees();
@@ -737,7 +782,7 @@ function renderMyTeam() {
   );
 }
 function renderSupervisorCompare() {
-  const db = readDB(),
+  const db = viewDB(),
     ids = accessibleProjectIds();
   const supervisors = (db.employees || [])
     .filter((e) =>
@@ -861,7 +906,7 @@ window.PM = {
   },
   openClient(id = "") {
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       c = (db.clients || []).find((x) => x.id === id) || {},
       pics = c.additionalPics || [];
     modal(
@@ -872,7 +917,7 @@ window.PM = {
   saveClient(e, id) {
     e.preventDefault();
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       fd = new FormData(e.target),
       rows = db.clients || [],
       old = rows.find((x) => x.id === id),
@@ -945,7 +990,7 @@ window.PM = {
       const i = rows.findIndex((x) => x.id === id);
       i >= 0 ? (rows[i] = data) : rows.push(data);
       db.clients = rows;
-      writeDB(db);
+      persistView(db);
       this.close();
       renderClients();
     };
@@ -969,7 +1014,7 @@ window.PM = {
   },
   viewClient(id) {
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       c = db.clients.find((x) => x.id === id),
       projects = db.projects.filter((p) => p.clientId === id);
     if (!c) return;
@@ -980,7 +1025,7 @@ window.PM = {
   },
   openProject(id = "") {
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       p = (db.projects || []).find((x) => x.id === id) || {};
     if (!db.clients?.length) {
       alert("Tambahkan klien terlebih dahulu sebelum membuat project.");
@@ -994,7 +1039,7 @@ window.PM = {
   saveProject(e, id) {
     e.preventDefault();
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       fd = new FormData(e.target),
       rows = db.projects || [],
       old = rows.find((x) => x.id === id),
@@ -1045,12 +1090,12 @@ window.PM = {
         updatedAt: now(),
         updatedBy: account()?.id,
       });
-    writeDB(db);
+    persistView(db);
     this.close();
     renderProjects(false);
   },
   viewProject(id) {
-    const db = readDB(),
+    const db = viewDB(),
       p = db.projects.find((x) => x.id === id),
       c = db.clients.find((x) => x.id === p?.clientId),
       ass = (db.projectAssignments || []).filter((a) => a.projectId === id),
@@ -1074,7 +1119,7 @@ window.PM = {
   },
   setModule(projectId, module, value) {
     if (!canManage()) return;
-    const db = readDB();
+    const db = viewDB();
     let s = db.projectSettings.find((x) => x.projectId === projectId);
     if (!s) {
       s = { projectId, modules: defaultModules() };
@@ -1083,12 +1128,12 @@ window.PM = {
     s.modules = { ...defaultModules(), ...s.modules, [module]: value };
     s.updatedAt = now();
     s.updatedBy = account()?.id;
-    writeDB(db);
+    persistView(db);
     applyModuleVisibility();
   },
   openAssign(projectId) {
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       p = db.projects.find((x) => x.id === projectId),
       active = db.projectAssignments.filter(
         (a) => a.projectId === projectId && a.status === "active",
@@ -1122,7 +1167,7 @@ window.PM = {
   saveAssignment(e, projectId) {
     e.preventDefault();
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       fd = new FormData(e.target),
       employeeId = formValue(fd, "employeeId"),
       roleOnProject = formValue(fd, "roleOnProject"),
@@ -1229,12 +1274,12 @@ window.PM = {
         ...assignmentData,
       });
     if (emp && roleOnProject === "supervisor") emp.role = "Supervisor";
-    writeDB(db);
+    persistView(db);
     this.openAssign(projectId);
   },
   toggleAssignment(id) {
     if (!canManage()) return;
-    const db = readDB(),
+    const db = viewDB(),
       a = db.projectAssignments.find((x) => x.id === id);
     if (!a) return;
     a.status = a.status === "active" ? "removed" : "active";
@@ -1243,7 +1288,7 @@ window.PM = {
       a.removedAt = now();
       a.removedBy = account()?.id;
     }
-    writeDB(db);
+    persistView(db);
     if (location.hash === "#/assignments") renderAssignments();
   },
 };
@@ -1253,7 +1298,7 @@ function enhanceDashboard() {
   if (!content || content.querySelector("[data-pm-dashboard]")) return;
   const grid = content.querySelector(".grid-4,.grid-3,.grid-2");
   if (!grid) return;
-  const db = readDB();
+  const db = viewDB();
   let cards = "";
   if (role() === "manager")
     cards = [
@@ -1298,7 +1343,7 @@ function enhanceProjectSelector() {
       ""
     ).toLowerCase();
     if (!/(kunjungan|visit|intel|kompetitor|foto|harga|stok)/.test(txt)) return;
-    const db = readDB(),
+    const db = viewDB(),
       projects = db.projects.filter((p) => ids.includes(p.id));
     const wrap = document.createElement("div");
     wrap.className = "pm-project-selector";

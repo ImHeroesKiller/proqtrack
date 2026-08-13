@@ -12,7 +12,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -123,7 +123,7 @@ export function getOrganization(id = getCurrentOrgId()) {
 
 function scoped(list) {
   const orgId = getCurrentOrgId();
-  return (list || []).filter(item => !item.organizationId || item.organizationId === orgId);
+  return (list || []).filter(item => item && item.organizationId === orgId);
 }
 
 export function withOrg(data = {}) {
@@ -294,8 +294,11 @@ function migrateDB(parsed) {
     out.organizations = [defaultOrganization()];
   }
   out.currentOrganizationId = out.currentOrganizationId || DEFAULT_ORG_ID;
-  const orgId = out.currentOrganizationId || DEFAULT_ORG_ID;
-  const stamp = rows => Array.isArray(rows) ? rows.map(row => ({ organizationId: orgId, ...row, organizationId: row.organizationId || orgId })) : rows;
+  const isDemoId = id => /^(ORG-DEFAULT$|CL-UAT|PRJ-UAT|ASN-UAT|EMP-UAT|OUT-UAT|ACC-UAT|CL00|PRJ00|EMP00|OUT00|ACC00)/.test(String(id || ''));
+  const stamp = rows => Array.isArray(rows) ? rows.map(row => ({
+    ...row,
+    organizationId: isDemoId(row.id) ? DEFAULT_ORG_ID : (row.organizationId || DEFAULT_ORG_ID),
+  })) : rows;
   ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments'].forEach(key => {
     if (Array.isArray(out[key])) out[key] = stamp(out[key]);
   });
