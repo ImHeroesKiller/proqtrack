@@ -26,12 +26,12 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
 
 | Role | Email | Password |
 |------|-------|----------|
-| Superadmin | `superadmin@proqtrack.id` | `demo123` |
-| Manager (1 org) | `manager@proqtrack.id` | `demo123` |
-| Supervisor | `rizky.supervisor@proqtrack.id` | `demo123` |
-| Field Sales | `budi.employee@proqtrack.id` | `demo123` |
+| Superadmin | `superadmin@proqtrack.id` | `Proqpay2026` |
+| Manager (1 org) | `manager@proqtrack.id` | `Proqpay2026` |
+| Supervisor | `rizky.supervisor@proqtrack.id` | `Proqpay2026` |
+| Field Sales | `budi.employee@proqtrack.id` | `Proqpay2026` |
 
-Akun UAT lain: `siti.supervisor@`, `dewi.employee@` — password `demo123`. Password tidak ditampilkan di halaman login.
+Akun UAT lain: `siti.supervisor@`, `dewi.employee@` — password `Proqpay2026`. Password tidak ditampilkan di halaman login.
 
 ## Jalankan lokal
 

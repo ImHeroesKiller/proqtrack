@@ -75,16 +75,16 @@ export const seedAttendance = [
 ];
 
 export const seedAccounts = [
-  { id: 'ACC-SUPER', email: 'superadmin@proqtrack.id', password: 'demo123', role: 'superadmin', employeeId: null, organizationId: null, name: 'Superadmin Demo' },
-  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'demo123', role: 'manager',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Manager Demo' },
-  { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'budi123',    role: 'employee', employeeId: 'EMP001', name: 'Budi Santoso' },
-  { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'siti123',    role: 'employee', employeeId: 'EMP002', name: 'Siti Nurhaliza' },
-  { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'ahmad123',   role: 'employee', employeeId: 'EMP003', name: 'Ahmad Wijaya' },
-  { id: 'ACC004', email: 'dewi.lestari@proqtrack.id',    password: 'dewi123',    role: 'employee', employeeId: 'EMP004', name: 'Dewi Lestari' },
-  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'rizki123',   role: 'employee', employeeId: 'EMP005', name: 'Rizki Pratama' },
-  { id: 'ACC006', email: 'maya.sari@proqtrack.id',       password: 'maya123',    role: 'employee', employeeId: 'EMP006', name: 'Maya Sari' },
-  { id: 'ACC007', email: 'fajar.nugroho@proqtrack.id',   password: 'fajar123',   role: 'employee', employeeId: 'EMP007', name: 'Fajar Nugroho' },
-  { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'indah123',   role: 'employee', employeeId: 'EMP008', name: 'Indah Permata' },
+  { id: 'ACC-SUPER', email: 'superadmin@proqtrack.id', password: 'Proqpay2026', role: 'superadmin', employeeId: null, organizationId: null, name: 'Superadmin Demo' },
+  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'Proqpay2026', role: 'manager',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Manager Demo' },
+  { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP001', name: 'Budi Santoso' },
+  { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP002', name: 'Siti Nurhaliza' },
+  { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP003', name: 'Ahmad Wijaya' },
+  { id: 'ACC004', email: 'dewi.lestari@proqtrack.id',    password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP004', name: 'Dewi Lestari' },
+  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP005', name: 'Rizki Pratama' },
+  { id: 'ACC006', email: 'maya.sari@proqtrack.id',       password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP006', name: 'Maya Sari' },
+  { id: 'ACC007', email: 'fajar.nugroho@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP007', name: 'Fajar Nugroho' },
+  { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP008', name: 'Indah Permata' },
 ];
 
 // Our catalog — Nestlé, Unilever, Indofood, Mayora, Wings + Semen Tiga Roda / Dulux-style lines

@@ -384,8 +384,20 @@ function migrateDB(parsed) {
   return out;
 }
 
+const LEGACY_DEMO_PASSWORDS = ['demo123', 'budi123', 'siti123', 'ahmad123', 'dewi123', 'rizki123', 'maya123', 'fajar123', 'indah123'];
+const DEMO_PASSWORD = 'Proqpay2026';
+
+function upgradeLegacyDemoPasswords(accounts) {
+  (accounts || []).forEach(account => {
+    if (LEGACY_DEMO_PASSWORDS.some(p => passwordMatches(account.password, p))) {
+      account.password = hashPassword(DEMO_PASSWORD);
+    }
+  });
+}
+
 function ensurePlatformAccounts(db) {
   db.accounts = db.accounts || [];
+  upgradeLegacyDemoPasswords(db.accounts);
   db.accounts.forEach(account => {
     if (account.role === 'superadmin') {
       account.organizationId = null;
@@ -399,7 +411,7 @@ function ensurePlatformAccounts(db) {
       id: 'ACC-SUPER',
       email: 'superadmin@proqtrack.id',
       name: 'Superadmin ProQTrack',
-      password: hashPassword('demo123'),
+      password: hashPassword(DEMO_PASSWORD),
       role: 'superadmin',
       employeeId: null,
       organizationId: null,
