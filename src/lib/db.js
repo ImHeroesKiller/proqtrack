@@ -7,7 +7,8 @@ import {
   seedCompetitors, seedCompetitorProducts, seedCompetitorIntel,
   seedPromoTypes, seedFieldPhotos,
 } from '../data/seed.js';
-import { uid } from './utils.js';
+import { uid, sanitizePlainText, todayISO } from './utils.js';
+import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
@@ -111,11 +112,24 @@ function migrateDB(parsed) {
 
   out.products = migrateProducts(out.products);
   out.competitorIntel = migrateCompetitorIntel(out.competitorIntel);
-  out.employees = out.employees.map(employee => ({
-    photo: '',
-    ...employee,
-    email: normalizeEmail(employee.email),
-  }));
+  out.employees = out.employees.map(employee => {
+    const next = {
+      photo: '',
+      todayVisits: 0,
+      targetVisits: 6,
+      totalVisits: 0,
+      ...employee,
+      name: sanitizePlainText(employee.name || employee.fullName || ''),
+      email: normalizeEmail(employee.email),
+      phone: sanitizePlainText(employee.phone || ''),
+      area: sanitizePlainText(employee.area || ''),
+      todayVisits: Number(employee.todayVisits) || 0,
+      targetVisits: Number(employee.targetVisits) || 6,
+      totalVisits: Number(employee.totalVisits) || 0,
+    };
+    if (!next.photo) next.photo = defaultPortrait(next);
+    return next;
+  });
   out.accounts = out.accounts.map(account => ({
     status: 'active',
     ...account,
@@ -162,6 +176,13 @@ function migrateDB(parsed) {
   if (!out.fieldPhotos.length) {
     out.fieldPhotos = JSON.parse(JSON.stringify(seedFieldPhotos));
   }
+
+  const photoTypeMap = { display: 'shelf', stock: 'product', promo: 'competitor' };
+  out.fieldPhotos = out.fieldPhotos.map(photo => {
+    const raw = photo.photoType || photo.type || 'location';
+    const photoType = photoTypeMap[raw] || raw;
+    return { ...photo, photoType, type: photoType };
+  });
 
   return out;
 }
@@ -261,9 +282,14 @@ export function createEmployee(data) {
   const db = getDB();
   const email = assertUniqueEmail(db, data.email);
   const emp = {
-    id: uid('EMP'), totalVisits: 0, todayVisits: 0, status: 'active', photo: '',
-    ...data, email,
+    id: uid('EMP'), totalVisits: 0, todayVisits: 0, targetVisits: 6, status: 'active', photo: '',
+    ...data,
+    name: sanitizePlainText(data.name),
+    phone: sanitizePlainText(data.phone),
+    area: sanitizePlainText(data.area),
+    email,
   };
+  if (!emp.photo) emp.photo = defaultPortrait(emp);
   delete emp.password;
   db.employees.push(emp);
   try {
@@ -281,7 +307,15 @@ export function updateEmployee(id, data) {
   const idx = db.employees.findIndex(e => e.id === id);
   if (idx === -1) return null;
   const email = assertUniqueEmail(db, data.email || db.employees[idx].email, id);
-  const next = { ...db.employees[idx], ...data, email };
+  const next = {
+    ...db.employees[idx],
+    ...data,
+    name: sanitizePlainText(data.name ?? db.employees[idx].name),
+    phone: sanitizePlainText(data.phone ?? db.employees[idx].phone),
+    area: sanitizePlainText(data.area ?? db.employees[idx].area),
+    email,
+  };
+  if (!next.photo) next.photo = defaultPortrait(next);
   delete next.password;
   syncEmployeeAccount(db, next, data.password);
   db.employees[idx] = next;
@@ -373,7 +407,14 @@ function assertOperationalContext(db, data, { product = false } = {}) {
 export function createOutlet(data) {
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
-  const outlet = { id: uid('OUT'), status: 'active', ...data, ...scope };
+  const outlet = {
+    id: uid('OUT'), status: 'active', ...data, ...scope,
+    name: sanitizePlainText(data.name),
+    address: sanitizePlainText(data.address),
+    owner: sanitizePlainText(data.owner),
+    phone: sanitizePlainText(data.phone),
+    area: sanitizePlainText(data.area),
+  };
   delete outlet.projectId;
   db.outlets.push(outlet);
   saveDB();
@@ -385,7 +426,14 @@ export function updateOutlet(id, data) {
   const idx = db.outlets.findIndex(o => o.id === id);
   if (idx === -1) return null;
   const scope = normalizeEntityScope(db, { ...db.outlets[idx], ...data });
-  db.outlets[idx] = { ...db.outlets[idx], ...data, ...scope };
+  db.outlets[idx] = {
+    ...db.outlets[idx], ...data, ...scope,
+    name: sanitizePlainText(data.name ?? db.outlets[idx].name),
+    address: sanitizePlainText(data.address ?? db.outlets[idx].address),
+    owner: sanitizePlainText(data.owner ?? db.outlets[idx].owner),
+    phone: sanitizePlainText(data.phone ?? db.outlets[idx].phone),
+    area: sanitizePlainText(data.area ?? db.outlets[idx].area),
+  };
   delete db.outlets[idx].projectId;
   saveDB();
   return db.outlets[idx];
@@ -466,7 +514,7 @@ export function updateAttendance(id, data) {
 
 export function getDashboardStats() {
   const db = getDB();
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }); // YYYY-MM-DD WIB
+  const today = todayISO();
   const todayVisits = db.visits.filter(v => v.date === today);
   const completedVisits = todayVisits.filter(v => v.status === 'completed');
   const activeVisits = todayVisits.filter(v => v.status === 'checked-in');
@@ -848,7 +896,7 @@ export function getFieldPhotos() {
 }
 
 export function getFieldPhotosByEmployee(empId) {
-  return getFieldPhotos().filter(p => p.recordedBy === empId);
+  return getFieldPhotos().filter(p => p.recordedBy === empId || p.employeeId === empId);
 }
 
 export function getFieldPhotosByOutlet(outletId) {

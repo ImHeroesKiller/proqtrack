@@ -171,5 +171,31 @@ export const PHOTO_TYPE_LABELS = {
 };
 
 export function photoTypeLabel(type) {
-  return PHOTO_TYPE_LABELS[type] || type || '—';
+  const normalized = type === 'display' ? 'shelf' : type === 'stock' ? 'product' : type === 'promo' ? 'competitor' : type;
+  return PHOTO_TYPE_LABELS[normalized] || type || '—';
+}
+
+export function todayISO() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+}
+
+export function esc(value = '') {
+  return String(value ?? '').replace(/[&<>"']/g, c => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  })[c]);
+}
+
+export function sanitizePlainText(value = '') {
+  return String(value ?? '').replace(/<[^>]*>/g, '').replace(/[<>]/g, '').trim();
+}
+
+export function safePhotoUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value || /['"<>]/.test(value)) return '';
+  if (/^(https?:\/\/|data:image\/|data:image\/svg\+xml|\.\/assets\/|assets\/)/i.test(value)) return value;
+  return '';
 }

@@ -64,6 +64,9 @@ function buildEmployees(existing) {
 }
 function enrich() {
   const db = readDB();
+  if (Number(db._uatSeedVersion || 0) > 0 || localStorage.getItem('proqtrack_uat_seed_active')) {
+    return;
+  }
   // Seed only when absent. Never overwrite Project Management v7 edits.
   if (!Array.isArray(db.clients) || !db.clients.length) db.clients = CLIENTS.map(([id,name,initials,color]) => ({id,name,initials,color,status:'active',logo:clientLogo(name,initials,color)}));
   if (!Array.isArray(db.projects) || !db.projects.length) db.projects = PROJECTS.map(([id,name,clientId,area],index)=>({id,name,clientId,area,status:index===8?'planning':'active',startDate:`2026-${String((index%6)+1).padStart(2,'0')}-01`,employeeTarget:10}));

@@ -23,7 +23,7 @@ import {
 import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
-  compressImage, photoTypeLabel,
+  compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl,
 } from './lib/utils.js';
 
 // Make utils available globally for inline handlers
@@ -58,6 +58,43 @@ const PROJECT_MANAGEMENT_ROUTES = new Set([
 
 function isManager() {
   return state.account && state.account.role === 'manager';
+}
+
+function isSupervisor() {
+  return state.account && state.account.role === 'supervisor';
+}
+
+function canViewTeamOps() {
+  return isManager() || isSupervisor();
+}
+
+function displayRole(account) {
+  if (account?.role === 'manager') return 'Manager';
+  if (account?.role === 'supervisor') return 'Supervisor';
+  return 'Field Sales';
+}
+
+function defaultRouteFor(account) {
+  if (account?.role === 'manager') return '#/';
+  if (account?.role === 'supervisor') return '#/myday';
+  return '#/myday';
+}
+
+function visitsTodayCount(employeeId) {
+  return getVisits().filter(v => v.employeeId === employeeId && v.date === todayISO()).length;
+}
+
+function targetOf(employee) {
+  return Number(employee?.targetVisits) || 6;
+}
+
+function avatarStyle(person) {
+  const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
+  const name = person?.name || '?';
+  const color = colors[name.charCodeAt(0) % colors.length];
+  const photo = safePhotoUrl(person?.photo);
+  const bg = photo ? `background-image:url('${photo}');background-size:cover;background-position:center;font-size:0;` : '';
+  return `background:${color};${bg}`;
 }
 
 function myEmployeeId() {
@@ -104,6 +141,24 @@ const NAV_ITEMS = [
   ]},
   { section: 'SDM', items: [
     { id: 'attendance', label: 'Absensi',     icon: '✓', route: '#/attendance' },
+    { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
+  ]},
+];
+
+const NAV_ITEMS_SUPERVISOR = [
+  { section: 'Menu', items: [
+    { id: 'myday',    label: 'Hari Saya',      icon: '⌂', route: '#/myday' },
+    { id: 'tracking', label: 'Live Tracking',  icon: '◎', route: '#/tracking' },
+    { id: 'visits',   label: 'Kunjungan Tim',  icon: '☰', route: '#/visits' },
+  ]},
+  { section: 'Data Lapangan', items: [
+    { id: 'mystocks',  label: 'Stok Outlet',      icon: '▥', route: '#/mystocks' },
+    { id: 'myprices',  label: 'Harga & Diskon',   icon: '◈', route: '#/myprices' },
+    { id: 'myintel',   label: 'Intel Kompetitor', icon: '◇', route: '#/myintel' },
+    { id: 'field-photos', label: 'Foto Lapangan', icon: '▣', route: '#/field-photos' },
+  ]},
+  { section: 'SDM', items: [
+    { id: 'attendance', label: 'Absensi Tim', icon: '✓', route: '#/attendance' },
     { id: 'leaves',     label: 'Ijin & Cuti', icon: '▤', route: '#/leaves' },
   ]},
 ];
@@ -163,6 +218,11 @@ function render() {
   let pageTitle = '';
   let pageSubtitle = '';
   const manager = isManager();
+  const teamOps = canViewTeamOps();
+  if (route === '#/photos') {
+    location.hash = '#/field-photos';
+    return;
+  }
 
   // Project Management routes are rendered by src/types/index.js after the
   // application shell exists. This prevents false redirects and 404 states.
@@ -170,8 +230,12 @@ function render() {
     pageTitle = 'Project Management';
     pageSubtitle = 'Memuat data project dan klien';
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
-  // Employee role: scoped routes only
-  } else if (!manager) {
+  // Field personal routes (employee + supervisor)
+  } else if (!manager && (
+    route === '#/myday' || route === '#/myvisits' || route === '#/mystocks' ||
+    route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
+    route === '#/myattendance' || route === '#/myleaves'
+  )) {
     if (route === '#/myday') {
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
       pageContent = renderMyDay();
@@ -196,57 +260,56 @@ function render() {
     } else if (route === '#/myleaves') {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
-    } else {
-      if (route !== '#/myday') { location.hash = '#/myday'; return; }
-      pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
-      pageContent = renderMyDay();
     }
-  } else if (route === '#/' || route === '#') {
+  } else if (isManager() && (route === '#/' || route === '#')) {
     pageTitle = 'Beranda'; pageSubtitle = 'Ringkasan aktivitas tim lapangan hari ini';
     pageContent = renderDashboard();
-  } else if (route === '#/tracking') {
+  } else if (teamOps && route === '#/tracking') {
     pageTitle = 'Live Tracking'; pageSubtitle = 'Pantau lokasi tim lapangan secara real-time';
     pageContent = renderTracking();
-  } else if (route === '#/visits') {
+  } else if (teamOps && route === '#/visits') {
     pageTitle = 'Lacak Kunjungan'; pageSubtitle = 'Daftar kunjungan outlet oleh tim lapangan';
     pageContent = renderVisits();
-  } else if (route === '#/employees') {
+  } else if (isManager() && route === '#/employees') {
     pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
     pageContent = renderEmployees();
-  } else if (route === '#/outlets') {
+  } else if (isManager() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
-  } else if (route === '#/products') {
+  } else if (isManager() && route === '#/products') {
     pageTitle = 'Produk'; pageSubtitle = 'Katalog produk distribusi FMCG & bangunan';
     pageContent = renderProducts();
-  } else if (route === '#/stocks') {
+  } else if (isManager() && route === '#/stocks') {
     pageTitle = 'Stok Outlet'; pageSubtitle = 'Pantau stok produk di setiap outlet';
     pageContent = renderStocks();
-  } else if (route === '#/competitors') {
+  } else if (isManager() && route === '#/competitors') {
     pageTitle = 'Kompetitor'; pageSubtitle = 'Master merek kompetitor & katalog produknya';
     pageContent = renderCompetitors();
-  } else if (route === '#/competitor-analysis') {
+  } else if (teamOps && route === '#/competitor-analysis') {
     pageTitle = 'Analisa Kompetitor'; pageSubtitle = 'Ringkasan intel lapangan dari seluruh sales';
     pageContent = renderCompetitorAnalysis();
-  } else if (route === '#/field-photos') {
+  } else if (teamOps && route === '#/field-photos') {
     pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit seluruh tim lapangan';
     pageContent = renderFieldPhotosGallery({ managerView: true });
-  } else if (route === '#/attendance') {
+  } else if (teamOps && route === '#/attendance') {
     pageTitle = 'Absensi'; pageSubtitle = 'Rekap kehadiran tim lapangan';
     pageContent = renderAttendanceManager();
-  } else if (route === '#/leaves') {
+  } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Kelola pengajuan ijin dan cuti karyawan';
     pageContent = renderLeavesManager();
-  } else if (route.startsWith('#/employee/')) {
+  } else if (isManager() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
     pageTitle = 'Detail Karyawan'; pageSubtitle = '';
-  } else if (route.startsWith('#/outlet/')) {
+  } else if (isManager() && route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
     pageTitle = 'Detail Outlet'; pageSubtitle = '';
+  } else if (!isManager()) {
+    location.hash = '#/myday';
+    return;
   } else {
-    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${route}</p></div>`;
+    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${esc(route)}</p></div>`;
   }
 
   app.innerHTML = `
@@ -266,7 +329,7 @@ function render() {
           <div class="topbar-actions">
             ${route === '#/tracking' ? '<div class="live-badge"><span class="live-dot"></span> LIVE</div>' : ''}
             <div class="live-badge" style="color: var(--gray-600); background: var(--gray-100); border-color: var(--gray-200);">
-              <span>${formatDateShort('2024-07-27')}</span>
+              <span>${formatDateShort(todayISO())}</span>
             </div>
           </div>
         </div>
@@ -288,7 +351,7 @@ function render() {
 // ===== Sidebar =====
 function renderSidebar() {
   const currentRoute = state.route;
-  const navSource = isManager() ? NAV_ITEMS : NAV_ITEMS_EMPLOYEE;
+  const navSource = isManager() ? NAV_ITEMS : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
   let navHTML = '';
   for (const section of navSource) {
     navHTML += `<div class="nav-section-label">${section.section}</div>`;
@@ -297,11 +360,11 @@ function renderSidebar() {
         || (item.id === 'dashboard' && (currentRoute === '#/' || currentRoute === '#'))
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
       let badge = '';
-      if (isManager() && item.id === 'tracking') {
+      if (canViewTeamOps() && item.id === 'tracking') {
         const activeEmps = getEmployees().filter(e => e.status === 'active').length;
         badge = `<span class="nav-badge">${activeEmps}</span>`;
       }
-      if (isManager() && item.id === 'leaves') {
+      if (canViewTeamOps() && item.id === 'leaves') {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
         if (pending > 0) badge = `<span class="nav-badge" style="background:var(--amber-500);">${pending}</span>`;
       }
@@ -328,8 +391,8 @@ function renderSidebar() {
         <div class="sidebar-user">
           <div class="sidebar-avatar">${getInitials(state.user.name)}</div>
           <div class="sidebar-user-info">
-            <div class="name">${state.user.name}</div>
-            <div class="role">${state.user.role}</div>
+            <div class="name">${esc(state.user.name)}</div>
+            <div class="role">${esc(state.user.role)}</div>
           </div>
           <button class="logout-btn" onclick="FT.logout()" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -362,13 +425,7 @@ function renderLogin() {
           </button>
         </form>
         <div style="text-align:center; margin-top:24px; font-size:12px; color:var(--gray-400);">
-          <div style="font-weight:600; color:var(--gray-500); margin-bottom:6px;">Akun Tersedia:</div>
-          <div style="text-align:left; display:inline-block; line-height:1.8;">
-            <div>👔 <b>manager@proqtrack.id</b> / demo123</div>
-            <div>👤 budi.santoso@proqtrack.id / budi123</div>
-            <div>👤 siti.nurhaliza@proqtrack.id / siti123</div>
-            <div style="color:var(--gray-300); font-size:11px;">…dan 6 akun karyawan lainnya</div>
-          </div>
+          Hubungi admin untuk akun akses. Jangan bagikan password di perangkat bersama.
         </div>
       </div>
     </div>
@@ -386,8 +443,8 @@ window.FT.handleLogin = function(e) {
   }
   state.loggedIn = true;
   state.account = acc;
-  state.user = { name: acc.name, role: acc.role === 'manager' ? 'Manager' : 'Field Sales', email: acc.email };
-  state.route = acc.role === 'manager' ? '#/' : '#/myday';
+  state.user = { name: acc.name, role: displayRole(acc), email: acc.email };
+  state.route = defaultRouteFor(acc);
   location.hash = state.route;
   render();
 };
@@ -404,8 +461,8 @@ window.FT.logout = function() {
 function renderDashboard() {
   const stats = getDashboardStats();
   const employees = getEmployees();
-  const todayVisits = getVisits().filter(v => v.date === '2024-07-27');
-  const attendance = getAttendance().filter(a => a.date === '2024-07-27');
+  const todayVisits = getVisits().filter(v => v.date === todayISO());
+  const attendance = getAttendance().filter(a => a.date === todayISO());
 
   const statCards = [
     { label: 'Total Karyawan',      value: stats.totalEmployees, icon: '👥', bg: 'bg-blue-50', color: 'var(--blue-600)' },
@@ -427,7 +484,9 @@ function renderDashboard() {
   ];
 
   // Top performers
-  const topPerformers = [...employees].sort((a,b) => b.todayVisits - a.todayVisits).slice(0, 5);
+  const topPerformers = [...employees]
+    .map(e => ({ ...e, todayVisits: visitsTodayCount(e.id), targetVisits: targetOf(e) }))
+    .sort((a,b) => b.todayVisits - a.todayVisits).slice(0, 5);
 
   return `
     <div class="grid-4" style="margin-bottom:24px;">
@@ -455,7 +514,7 @@ function renderDashboard() {
               <div style="display:flex; align-items:center; gap:12px; padding:10px; border-radius:10px; background:var(--gray-50);">
                 <div class="avatar" style="background:${avatarColors[cIdx]};">${getInitials(emp.name)}</div>
                 <div style="flex:1; min-width:0;">
-                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${emp.name}</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${esc(emp.name)}</div>
                   <div style="font-size:12px; color:var(--gray-400);">${outletIcon(out.type)} ${out.name}</div>
                 </div>
                 <div style="text-align:right;">
@@ -500,11 +559,11 @@ function renderDashboard() {
                 <div style="font-size:16px; font-weight:800; color:${i===0?'var(--amber-500)':'var(--gray-300)'}; width:24px;">#${i+1}</div>
                 <div class="avatar" style="background:${avatarColors[cIdx]};">${getInitials(e.name)}</div>
                 <div style="flex:1; min-width:0;">
-                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${e.name}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${e.area}</div>
+                  <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${esc(e.name)}</div>
+                  <div style="font-size:12px; color:var(--gray-400);">${esc(e.area)}</div>
                 </div>
                 <div style="text-align:right; min-width:80px;">
-                  <div style="font-size:14px; font-weight:700; color:var(--gray-800);">${e.todayVisits}/${e.targetVisits}</div>
+                  <div style="font-size:14px; font-weight:700; color:var(--gray-800);">${visitsTodayCount(e.id)}/${targetOf(e)}</div>
                   <div class="progress-bar" style="margin-top:4px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
                 </div>
               </div>
@@ -559,14 +618,14 @@ function renderTracking() {
           <div id="mapEmpList">
             ${employees.map(e => {
               const dotColor = e.status === 'active' ? 'var(--green-500)' : 'var(--gray-300)';
-              const visits = getVisits().filter(v => v.employeeId === e.id && v.date === '2024-07-27');
+              const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
               const activeVisit = visits.find(v => v.status === 'checked-in');
               return `
                 <div class="map-emp-item" data-emp="${e.id}" onclick="FT.focusEmployee('${e.id}')">
                   <div class="emp-status-dot" style="background:${dotColor};"></div>
                   <div class="emp-info">
-                    <div class="emp-name">${e.name}</div>
-                    <div class="emp-area">${e.area} · ${e.todayVisits} kunjungan${activeVisit ? ' · 🟢 active' : ''}</div>
+                    <div class="emp-name">${esc(e.name)}</div>
+                    <div class="emp-area">${esc(e.area)} · ${visitsTodayCount(e.id)} kunjungan${activeVisit ? ' · 🟢 active' : ''}</div>
                   </div>
                 </div>
               `;
@@ -598,7 +657,7 @@ function initMap() {
   employees.forEach(e => {
     const cIdx = e.name.charCodeAt(0) % avatarColors.length;
     const color = avatarColors[cIdx];
-    const visits = getVisits().filter(v => v.employeeId === e.id && v.date === '2024-07-27');
+    const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
     const activeVisit = visits.find(v => v.status === 'checked-in');
     const icon = L.divIcon({
       className: 'ft-marker',
@@ -609,10 +668,10 @@ function initMap() {
     const outlet = activeVisit ? getOutlets().find(o => o.id === activeVisit.outletId) : null;
     m.bindPopup(`
       <div style="font-size:13px; min-width:160px;">
-        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${e.name}</div>
-        <div style="color:#666;">${e.role} · ${e.area}</div>
-        <div style="margin-top:6px;">📞 ${e.phone}</div>
-        <div>📋 ${e.todayVisits}/${e.targetVisits} kunjungan hari ini</div>
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(e.name)}</div>
+        <div style="color:#666;">${e.role} · ${esc(e.area)}</div>
+        <div style="margin-top:6px;">📞 ${esc(e.phone)}</div>
+        <div>📋 ${visitsTodayCount(e.id)}/${targetOf(e)} kunjungan hari ini</div>
         ${activeVisit && outlet ? `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #eee; color:#ea580c;">📍 Sedang di: ${outlet.name}</div>` : ''}
       </div>
     `);
@@ -661,7 +720,7 @@ function renderVisits() {
         </select>
         <select class="select" id="visitEmpFilter" style="width:200px;" onchange="FT.filterVisits()">
           <option value="">Semua Karyawan</option>
-          ${getEmployees().map(e => `<option value="${e.id}">${e.name}</option>`).join('')}
+          ${getEmployees().map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
         </select>
         <div class="spacer"></div>
         <button class="btn btn-primary" onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
@@ -693,7 +752,7 @@ function renderVisits() {
                   <td>
                     <div style="display:flex; align-items:center; gap:8px;">
                       <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
-                      <span style="font-weight:600;">${emp.name}</span>
+                      <span style="font-weight:600;">${esc(emp.name)}</span>
                     </div>
                   </td>
                   <td>${outletIcon(out.type)} ${out.name}</td>
@@ -746,19 +805,19 @@ window.FT.openVisitModal = function() {
       <div class="form-group">
         <label class="label">Karyawan</label>
         <select class="select" name="employeeId" required>
-          ${employees.map(e => `<option value="${e.id}">${e.name} — ${e.area}</option>`).join('')}
+          ${employees.map(e => `<option value="${e.id}">${esc(e.name)} — ${esc(e.area)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
         <label class="label">Outlet</label>
         <select class="select" name="outletId" required>
-          ${outlets.map(o => `<option value="${o.id}">${o.name} — ${o.area}</option>`).join('')}
+          ${outlets.map(o => `<option value="${o.id}">${esc(o.name)} — ${o.area}</option>`).join('')}
         </select>
       </div>
       <div class="form-row">
         <div class="form-group">
           <label class="label">Tanggal</label>
-          <input class="input" type="date" name="date" value="2024-07-27" required>
+          <input class="input" type="date" name="date" value="${todayISO()}" required>
         </div>
         <div class="form-group">
           <label class="label">Status</label>
@@ -906,15 +965,15 @@ function renderEmployees() {
                     <div style="display:flex; align-items:center; gap:10px;">
                       <div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div>
                       <div>
-                        <div style="font-weight:600; color:var(--gray-800);">${e.name}</div>
-                        <div style="font-size:12px; color:var(--gray-400);">${e.email}</div>
+                        <div style="font-weight:600; color:var(--gray-800);">${esc(e.name)}</div>
+                        <div style="font-size:12px; color:var(--gray-400);">${esc(e.email)}</div>
                       </div>
                     </div>
                   </td>
                   <td>${roleBadge(e.role)}</td>
-                  <td>${e.area}</td>
-                  <td>${e.phone}</td>
-                  <td><span style="font-weight:600;">${e.todayVisits}</span>/${e.targetVisits}</td>
+                  <td>${esc(e.area)}</td>
+                  <td>${esc(e.phone)}</td>
+                  <td><span style="font-weight:600;">${visitsTodayCount(e.id)}</span>/${targetOf(e)}</td>
                   <td>${e.totalVisits}</td>
                   <td>${statusBadge(e.status)}</td>
                   <td>
@@ -1010,15 +1069,15 @@ function renderEmployeeDetail(id) {
       <div class="card" style="flex:0 0 320px;">
         <div style="text-align:center; padding:12px 0 20px;">
           <div class="avatar avatar-lg" style="background:${colors[cIdx]}; margin:0 auto 12px;${emp.photo ? `background-image:url('${emp.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(emp.name)}</div>
-          <div style="font-size:20px; font-weight:800; color:var(--gray-900);">${emp.name}</div>
+          <div style="font-size:20px; font-weight:800; color:var(--gray-900);">${esc(emp.name)}</div>
           <div style="margin-top:4px;">${roleBadge(emp.role)}</div>
           <div style="margin-top:8px;">${statusBadge(emp.status)}</div>
         </div>
         <div class="detail-grid">
           <div class="detail-label">ID</div><div class="detail-value">${emp.id}</div>
-          <div class="detail-label">Email</div><div class="detail-value">${emp.email}</div>
+          <div class="detail-label">Email</div><div class="detail-value">${esc(emp.email)}</div>
           <div class="detail-label">Telepon</div><div class="detail-value">${emp.phone}</div>
-          <div class="detail-label">Area</div><div class="detail-value">${emp.area}</div>
+          <div class="detail-label">Area</div><div class="detail-value">${esc(emp.area)}</div>
           <div class="detail-label">Bergabung</div><div class="detail-value">${formatDate(emp.joinDate)}</div>
           <div class="detail-label">Lokasi</div><div class="detail-value">${emp.lat.toFixed(4)}, ${emp.lng.toFixed(4)}</div>
         </div>
@@ -1062,9 +1121,9 @@ window.FT.editEmployee = function(id) {
   if (!emp) return;
   openModal('Edit Karyawan', `
     <form onsubmit="FT.updateEmployee(event, '${id}')">
-      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${emp.name}" required></div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(emp.name)}" required></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${emp.email}" required></div>
+        <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(emp.email)}" required></div>
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${emp.phone}" required></div>
       </div>
       <div class="form-row">
@@ -1073,7 +1132,7 @@ window.FT.editEmployee = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label><select class="select" name="role"><option ${emp.role==='Field Sales'?'selected':''}>Field Sales</option><option ${emp.role==='Supervisor'?'selected':''}>Supervisor</option></select></div>
-        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${emp.area}" required></div>
+        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area)}" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Lat</label><input class="input" type="number" step="0.0001" name="lat" value="${emp.lat}" required></div>
@@ -1129,7 +1188,7 @@ function renderOutlets() {
             ${outlets.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏪</div><h3>Belum ada outlet</h3></div></td></tr>` :
             outlets.map(o => `
               <tr>
-                <td><div style="font-weight:600; color:var(--gray-800);">${outletIcon(o.type)} ${o.name}</div><div style="font-size:12px; color:var(--gray-400);">${o.address}</div></td>
+                <td><div style="font-weight:600; color:var(--gray-800);">${outletIcon(o.type)} ${esc(o.name)}</div><div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div></td>
                 <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${o.type}</span></td>
                 <td>${o.area}</td>
                 <td>${o.owner}</td>
@@ -1232,13 +1291,13 @@ function renderOutletDetail(id) {
       <div class="card" style="flex:0 0 320px;">
         <div style="text-align:center; padding:12px 0 20px;">
           <div style="font-size:48px; margin-bottom:8px;">${outletIcon(o.type)}</div>
-          <div style="font-size:18px; font-weight:800; color:var(--gray-900);">${o.name}</div>
+          <div style="font-size:18px; font-weight:800; color:var(--gray-900);">${esc(o.name)}</div>
           <div style="margin-top:4px;">${statusBadge(o.status)}</div>
         </div>
         <div class="detail-grid">
           <div class="detail-label">ID</div><div class="detail-value">${o.id}</div>
           <div class="detail-label">Tipe</div><div class="detail-value">${o.type}</div>
-          <div class="detail-label">Alamat</div><div class="detail-value full">${o.address}</div>
+          <div class="detail-label">Alamat</div><div class="detail-value full">${esc(o.address)}</div>
           <div class="detail-label">Pemilik</div><div class="detail-value">${o.owner}</div>
           <div class="detail-label">Telepon</div><div class="detail-value">${o.phone}</div>
           <div class="detail-label">Area</div><div class="detail-value">${o.area}</div>
@@ -1280,9 +1339,9 @@ window.FT.editOutlet = function(id) {
   if (!o) return;
   openModal('Edit Outlet', `
     <form onsubmit="FT.updateOutlet(event, '${id}')">
-      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${o.name}" required></div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(o.name)}" required></div>
       ${entityScopeFields(o)}
-      <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${o.address}" required></div>
+      <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${esc(o.address)}" required></div>
       <div class="form-row">
         <div class="form-group">
           <label class="label">Tipe</label>
@@ -1326,9 +1385,9 @@ function renderMyDay() {
   const empId = myEmployeeId();
   const emp = getEmployees().find(e => e.id === empId);
   if (!emp) return `<div class="empty-state"><h3>Data karyawan tidak ditemukan</h3></div>`;
-  const visits = getVisits().filter(v => v.employeeId === empId && v.date === '2024-07-27');
+  const visits = getVisits().filter(v => v.employeeId === empId && v.date === todayISO());
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const att = getAttendance().find(a => a.employeeId === empId && a.date === '2024-07-27');
+  const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
   const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
   const cIdx = emp.name.charCodeAt(0) % colors.length;
   const completed = visits.filter(v => v.status === 'completed');
@@ -1377,9 +1436,9 @@ function renderMyDay() {
         <div style="display:flex; align-items:center; gap:12px;">
           <div class="avatar avatar-lg" style="background:${colors[cIdx]};">${getInitials(emp.name)}</div>
           <div>
-            <div style="font-size:16px; font-weight:700; color:var(--gray-900);">${emp.name}</div>
+            <div style="font-size:16px; font-weight:700; color:var(--gray-900);">${esc(emp.name)}</div>
             <div style="font-size:13px; color:var(--gray-400);">${roleBadge(emp.role)}</div>
-            <div style="font-size:12px; color:var(--gray-400); margin-top:4px;">📍 ${emp.area} · 📞 ${emp.phone}</div>
+            <div style="font-size:12px; color:var(--gray-400); margin-top:4px;">📍 ${esc(emp.area)} · 📞 ${emp.phone}</div>
             <div style="font-size:12px; color:var(--gray-400);">Total kunjungan: ${emp.totalVisits}</div>
           </div>
         </div>
@@ -1398,8 +1457,8 @@ function renderMyDay() {
               <div style="display:flex; align-items:center; gap:12px; padding:14px; border-radius:12px; background:var(--gray-50); ${v.status==='checked-in'?'border:2px solid var(--blue-200);':''}">
                 <div style="font-size:28px;">${outletIcon(o.type)}</div>
                 <div style="flex:1; min-width:0;">
-                  <div style="font-size:15px; font-weight:600; color:var(--gray-800);">${o.name}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${o.address}</div>
+                  <div style="font-size:15px; font-weight:600; color:var(--gray-800);">${esc(o.name)}</div>
+                  <div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div>
                   ${v.checkInTime ? `<div style="font-size:11px; color:var(--gray-400); margin-top:2px;">⏱ ${v.checkInTime}${v.checkOutTime ? ` → ${v.checkOutTime}` : ''} (${formatDuration(v.checkInTime, v.checkOutTime)})</div>` : ''}
                 </div>
                 <div style="text-align:right;">
@@ -1664,7 +1723,7 @@ function renderStocks() {
         <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." oninput="FT.filterStocks()">
         <select class="select" id="stockOutletFilter" style="width:200px;" onchange="FT.filterStocks()">
           <option value="">Semua Outlet</option>
-          ${getOutlets().map(o => `<option value="${o.id}">${o.name}</option>`).join('')}
+          ${getOutlets().map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}
         </select>
         <select class="select" id="stockStatusFilter" style="width:160px;" onchange="FT.filterStocks()">
           <option value="">Semua Status</option>
@@ -1685,7 +1744,7 @@ function renderStocks() {
               const isLow = s.quantity <= s.minStock;
               return `
                 <tr>
-                  <td>${outletIcon(o.type)} ${o.name}</td>
+                  <td>${outletIcon(o.type)} ${esc(o.name)}</td>
                   <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px; color:var(--gray-400);">${p.sku}</span></td>
                   <td style="font-weight:700; color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
                   <td style="color:var(--gray-400);">${s.minStock}</td>
@@ -1720,7 +1779,7 @@ window.FT.filterStocks = function() {
 window.FT.openStockModal = function() {
   openModal('Tambah Stok', `
     <form onsubmit="FT.createStock(event)">
-      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${o.name}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${p.name} (${p.sku})</option>`).join('')}</select></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Quantity</label><input class="input" type="number" name="quantity" required></div>
@@ -1803,7 +1862,7 @@ function renderAttendanceManager() {
               if (!emp) return '';
               return `
                 <tr>
-                  <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div><span style="font-weight:600;">${emp.name}</span></div></td>
+                  <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
                   <td>${formatDateShort(a.date)}</td>
                   <td>${a.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td style="font-size:13px;">${a.checkInLocation || '-'}</td>
@@ -1862,7 +1921,7 @@ function renderLeavesManager() {
               if (!emp) return '';
               return `
                 <tr>
-                  <td><span style="font-weight:600;">${emp.name}</span></td>
+                  <td><span style="font-weight:600;">${esc(emp.name)}</span></td>
                   <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
                   <td>${formatDateShort(l.startDate)}</td>
                   <td>${formatDateShort(l.endDate)}</td>
@@ -2138,7 +2197,7 @@ function renderMyStocks() {
               const isLow = s.quantity <= s.minStock;
               return `
                 <tr>
-                  <td>${outletIcon(o.type)} ${o.name}</td>
+                  <td>${outletIcon(o.type)} ${esc(o.name)}</td>
                   <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
                   <td style="font-weight:700;color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
                   <td style="color:var(--gray-400);">${s.minStock}</td>
@@ -2256,7 +2315,7 @@ function renderMyPrices() {
               return `
                 <tr>
                   <td style="font-size:13px;">${formatDateShort(obs.recordedAt)}</td>
-                  <td>${outletIcon(o.type)} ${o.name}</td>
+                  <td>${outletIcon(o.type)} ${esc(o.name)}</td>
                   <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
                   <td style="font-weight:700;">${formatCurrency(obs.observedPrice)}</td>
                   <td>${discStr !== '-' ? '<span style="color:var(--amber-600);font-weight:600;">'+discStr+'</span>' : '-'}</td>
@@ -2427,7 +2486,7 @@ window.FT.openPriceObsModal = function() {
         <label class="label">Outlet (yang pernah dikunjungi)</label>
         <select class="select" name="outletId" required>
           <option value="">— Pilih outlet —</option>
-          ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${o.name}</option>`).join('')}
+          ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${esc(o.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -2987,7 +3046,7 @@ function intelFormHTML(visitId, outletId, opts = {}) {
           <label class="label">Outlet (pernah dikunjungi)</label>
           <select class="select" name="outletId" required>
             <option value="">— Pilih outlet —</option>
-            ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${o.name}</option>`).join('')}
+            ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${esc(o.name)}</option>`).join('')}
           </select>
         </div>
       ` : `<input type="hidden" name="outletId" value="${outletId||''}">`}
@@ -3196,7 +3255,7 @@ function renderFieldPhotosGallery({ managerView }) {
   photos.sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
 
   const filterType = state._photoFilterType || '';
-  if (filterType) photos = photos.filter(p => p.type === filterType);
+  if (filterType) photos = photos.filter(p => (p.photoType || p.type) === filterType);
 
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
@@ -3208,7 +3267,7 @@ function renderFieldPhotosGallery({ managerView }) {
 
   const byType = FIELD_PHOTO_TYPES.map(t => ({
     ...t,
-    count: (managerView ? getFieldPhotos() : getFieldPhotosByEmployee(empId)).filter(p => p.type === t.code).length,
+    count: (managerView ? getFieldPhotos() : getFieldPhotosByEmployee(empId)).filter(p => (p.photoType || p.type) === t.code).length,
   }));
 
   return `
@@ -3462,9 +3521,9 @@ function renderMobileSim() {
   }
   const current = employees.find(e => e.id === state.selectedMobileEmp) || employees[0];
   if (current) state.selectedMobileEmp = current.id;
-  const visits = getVisits().filter(v => v.employeeId === (current?.id) && v.date === '2024-07-27');
+  const visits = getVisits().filter(v => v.employeeId === (current?.id) && v.date === todayISO());
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const att = getAttendance().find(a => a.employeeId === current?.id && a.date === '2024-07-27');
+  const att = getAttendance().find(a => a.employeeId === current?.id && a.date === todayISO());
 
   const tabs = [
     { id: 'home',   icon: '🏠', label: 'Beranda' },

@@ -92,9 +92,9 @@ function buildUatDatabase(){
     {id:'CIN-UAT-002',projectId:'PRJ-UAT-003',visitId:'VIS-UAT-003',outletId:'OUT-UAT-004',employeeId:'EMP-UAT-004',competitorId:'CMP-UAT-002',competitorProductId:'CPD-UAT-002',promoType:'disc_pct',title:'Diskon 15%',description:'Diskon member klinik.',severity:'medium',status:'resolved',createdAt:'2026-07-28T07:00:00.000Z'}
   ];
   const fieldPhotos=[
-    {id:'PHT-UAT-001',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',storeId:'OUT-UAT-001',outletId:'OUT-UAT-001',type:'display',photoType:'display',title:'Display Gondola',note:'Display sesuai planogram.',photoUrl:photo('DSP','#EF5000'),createdAt:now,status:'approved'},
-    {id:'PHT-UAT-002',employeeId:'EMP-UAT-004',projectId:'PRJ-UAT-003',storeId:'OUT-UAT-004',outletId:'OUT-UAT-004',type:'stock',photoType:'stock',title:'Rak Vitamin',note:'Dua SKU kosong.',photoUrl:photo('STK','#2563EB'),createdAt:now,status:'pending'},
-    {id:'PHT-UAT-003',employeeId:'EMP-UAT-005',projectId:'PRJ-UAT-002',storeId:'OUT-UAT-005',outletId:'OUT-UAT-005',type:'promo',photoType:'promo',title:'Promo Kompetitor',note:'Bundle kasir.',photoUrl:photo('PRM','#DC2626'),createdAt:now,status:'flagged'}
+    {id:'PHT-UAT-001',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',storeId:'OUT-UAT-001',outletId:'OUT-UAT-001',type:'shelf',photoType:'shelf',title:'Display Gondola',note:'Display sesuai planogram.',photoUrl:photo('DSP','#EF5000'),createdAt:now,status:'approved'},
+    {id:'PHT-UAT-002',employeeId:'EMP-UAT-004',projectId:'PRJ-UAT-003',storeId:'OUT-UAT-004',outletId:'OUT-UAT-004',type:'product',photoType:'product',title:'Rak Vitamin',note:'Dua SKU kosong.',photoUrl:photo('STK','#2563EB'),createdAt:now,status:'pending'},
+    {id:'PHT-UAT-003',employeeId:'EMP-UAT-005',projectId:'PRJ-UAT-002',storeId:'OUT-UAT-005',outletId:'OUT-UAT-005',type:'competitor',photoType:'competitor',title:'Promo Kompetitor',note:'Bundle kasir.',photoUrl:photo('PRM','#DC2626'),createdAt:now,status:'flagged'}
   ];
   const leaveTypes=[{id:'LVT-UAT-001',name:'Cuti Tahunan',quota:12,color:'#EA580C',needsApproval:true},{id:'LVT-UAT-002',name:'Sakit',quota:7,color:'#EF4444',needsApproval:true},{id:'LVT-UAT-003',name:'Ijin Dinas',quota:30,color:'#059669',needsApproval:false}];
   const leaves=[

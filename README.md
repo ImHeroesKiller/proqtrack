@@ -27,10 +27,10 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
 | Role | Email | Password |
 |------|-------|----------|
 | Manager | `manager@proqtrack.id` | `demo123` |
-| Field Sales | `budi.santoso@proqtrack.id` | `budi123` |
-| Supervisor | `rizki.pratama@proqtrack.id` | `rizki123` |
+| Supervisor | `rizky.supervisor@proqtrack.id` | `demo123` |
+| Field Sales | `budi.employee@proqtrack.id` | `demo123` |
 
-Akun lain: `siti.nurhaliza@`, `ahmad.wijaya@`, `dewi.lestari@`, `maya.sari@`, `indah.permata@` — password pola `nama123`.
+Akun UAT lain: `siti.supervisor@`, `dewi.employee@` — password `demo123`. Password tidak ditampilkan di halaman login.
 
 ## Jalankan lokal
 
@@ -59,14 +59,14 @@ Butuh static server karena aplikasi memakai ES modules.
 
 ### Supervisor
 
-1. Login `rizki.pratama@proqtrack.id`.
+1. Login `rizky.supervisor@proqtrack.id`.
 2. Buka **Project Saya** untuk project read-only.
 3. Buka **Tim Saya** untuk sales dengan `supervisorId` yang sesuai.
 4. Buka **Komparasi Supervisor** untuk metrik agregat pada project yang sama.
 
 ### Sales
 
-1. Login `budi.santoso@proqtrack.id`.
+1. Login `budi.employee@proqtrack.id`.
 2. Buka **Project Saya**.
 3. Menu field mengikuti module flags project aktif yang di-assign.
 4. Saat membuat visit/intel/foto/harga/stok, pilih project bila assignment aktif lebih dari satu.
