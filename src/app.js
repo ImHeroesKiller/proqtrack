@@ -23,7 +23,8 @@ import {
 import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
-  compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl,
+  compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
+  normalizeAttendanceStatus,
 } from './lib/utils.js';
 
 // Make utils available globally for inline handlers
@@ -1190,10 +1191,10 @@ function renderOutlets() {
               <tr>
                 <td><div style="font-weight:600; color:var(--gray-800);">${outletIcon(o.type)} ${esc(o.name)}</div><div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div></td>
                 <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${o.type}</span></td>
-                <td>${o.area}</td>
-                <td>${o.owner}</td>
-                <td>${o.phone}</td>
-                <td>${o.visitFrequency}</td>
+                <td>${esc(displayValue(o.area))}</td>
+                <td>${esc(displayValue(o.owner))}</td>
+                <td>${esc(displayValue(o.phone))}</td>
+                <td>${esc(displayValue(o.visitFrequency))}</td>
                 <td>${statusBadge(o.status)}</td>
                 <td>
                   <button class="btn btn-secondary btn-sm" onclick="location.hash='#/outlet/${o.id}'">Detail</button>
@@ -1421,7 +1422,7 @@ function renderMyDay() {
         <div class="card-subtitle">Kehadiran Anda hari ini</div>
         ${att ? `
           <div style="display:flex; align-items:center; gap:12px; padding:16px; border-radius:12px; background:${att.status==='hadir'?'#ecfdf5':att.status==='terlambat'?'#fffbeb':'#fef2f2'};">
-            <div style="font-size:32px;">${att.status==='hadir'?'✅':att.status==='terlambat'?'⏰':'❌'}</div>
+            <div style="font-size:32px;">${normalizeAttendanceStatus(att.status)==='hadir'?'✅':normalizeAttendanceStatus(att.status)==='terlambat'?'⏰':'❌'}</div>
             <div>
               <div style="font-size:18px; font-weight:800; color:${att.status==='hadir'?'var(--green-600)':att.status==='terlambat'?'var(--amber-500)':'var(--red-500)'};">${att.status === 'hadir' ? 'Hadir' : att.status === 'terlambat' ? 'Terlambat' : 'Tidak Hadir'}</div>
               <div style="font-size:13px; color:var(--gray-500);">Check in: ${att.checkInTime || '-'} · ${att.checkInLocation || '-'}</div>
@@ -1995,9 +1996,9 @@ function renderMyAttendance() {
   const emp = getEmployees().find(e => e.id === empId);
   const records = getAttendance().filter(a => a.employeeId === empId).sort((a,b) => b.date.localeCompare(a.date));
   const summary = {
-    hadir: records.filter(r => r.status === 'hadir').length,
-    terlambat: records.filter(r => r.status === 'terlambat').length,
-    tidakHadir: records.filter(r => r.status === 'tidak hadir').length,
+    hadir: records.filter(r => normalizeAttendanceStatus(r.status) === 'hadir').length,
+    terlambat: records.filter(r => normalizeAttendanceStatus(r.status) === 'terlambat').length,
+    tidakHadir: records.filter(r => normalizeAttendanceStatus(r.status) === 'tidak hadir').length,
   };
   return `
     <div class="grid-3" style="margin-bottom:24px;">
@@ -2882,13 +2883,13 @@ function renderCompetitorAnalysis() {
               const cp = cpdMap[i.competitorProductId];
               const comp = cp ? compMap[cp.competitorId] : null;
               const o = outletMap[i.outletId];
-              const emp = empMap[i.recordedBy];
+              const emp = empMap[i.recordedBy || i.employeeId];
               const gap = (i.ourPrice || 0) - (i.competitorPrice || 0);
               const gapColor = gap > 0 ? 'var(--red)' : gap < 0 ? 'var(--green)' : 'var(--gray-400)';
               return `
                 <tr>
                   <td style="font-size:12px;">${formatDateShort(i.recordedAt)}</td>
-                  <td style="font-size:12px;">${emp?.name?.split(' ')[0] || i.recordedBy}</td>
+                  <td style="font-size:12px;">${esc(emp?.name?.split(' ')[0] || '—')}</td>
                   <td>${o ? outletIcon(o.type)+' '+o.name : i.outletId}</td>
                   <td><span style="font-weight:600;">${our?.name || '—'}</span><br><span style="font-size:11px;color:var(--gray-400);">${our?.brand||''}</span></td>
                   <td>
@@ -2898,7 +2899,7 @@ function renderCompetitorAnalysis() {
                   <td style="font-weight:600;">${formatCurrency(i.ourPrice)}</td>
                   <td style="font-weight:600;">${formatCurrency(i.competitorPrice)}</td>
                   <td style="font-weight:700;color:${gapColor};">${gap===0?'—':(gap>0?'+':'')+formatCurrency(gap).replace('Rp ','Rp ')}</td>
-                  <td style="font-weight:600;">${i.shelfShare}%</td>
+                  <td style="font-weight:600;">${i.shelfShare != null && i.shelfShare !== '' ? `${i.shelfShare}%` : '—'}</td>
                   <td>${visibilityBadge(i.visibility)}</td>
                   <td>${promoBadgeHTML(i)}</td>
                   <td style="font-size:11px;color:var(--gray-500);max-width:140px;">${i.promoNotes || i.notes || '—'}</td>
@@ -3327,23 +3328,24 @@ function renderFieldPhotosGallery({ managerView }) {
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:14px;">
           ${photos.map(p => {
             const o = outletMap[p.outletId];
-            const emp = empMap[p.recordedBy];
+            const emp = empMap[p.recordedBy || p.employeeId];
             const prod = p.productId ? productMap[p.productId] : null;
             const comp = p.competitorId ? compMap[p.competitorId] : null;
-            const thumb = p.dataUrl
-              ? `<img src="${p.dataUrl}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
-              : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.type)}</div>`;
+            const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
+            const thumb = imageSrc
+              ? `<img src="${imageSrc}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
+              : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
             return `
               <div style="border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:white;">
                 ${thumb}
                 <div style="padding:10px;">
                   <div style="font-size:11px;font-weight:700;color:var(--blue-600);margin-bottom:2px;">${photoTypeLabel(p.type)}</div>
-                  <div style="font-size:12px;font-weight:600;color:var(--gray-800);line-height:1.3;min-height:32px;">${p.caption || 'Tanpa caption'}</div>
-                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">${o ? outletIcon(o.type) + ' ' + o.name : p.outletId}</div>
-                  ${managerView ? `<div style="font-size:11px;color:var(--gray-400);">${emp?.name || p.recordedBy}</div>` : ''}
-                  ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${prod.name}</div>` : ''}
-                  ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${comp.name}</div>` : ''}
-                  <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || '').slice(0, 10))}</div>
+                  <div style="font-size:12px;font-weight:600;color:var(--gray-800);line-height:1.3;min-height:32px;">${esc(p.caption || p.title || 'Tanpa caption')}</div>
+                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">${o ? outletIcon(o.type) + ' ' + esc(o.name) : esc(p.outletId || '—')}</div>
+                  ${managerView ? `<div style="font-size:11px;color:var(--gray-400);">${esc(emp?.name || '—')}</div>` : ''}
+                  ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${esc(prod.name)}</div>` : ''}
+                  ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${esc(comp.name)}</div>` : ''}
+                  <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || p.createdAt || '').slice(0, 10))}</div>
                   ${(!managerView || isManager()) ? `
                     <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
                   ` : ''}

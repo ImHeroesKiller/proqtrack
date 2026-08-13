@@ -7,7 +7,7 @@ import {
   seedCompetitors, seedCompetitorProducts, seedCompetitorIntel,
   seedPromoTypes, seedFieldPhotos,
 } from '../data/seed.js';
-import { uid, sanitizePlainText, todayISO } from './utils.js';
+import { uid, sanitizePlainText, todayISO, normalizeAttendanceStatus } from './utils.js';
 import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
@@ -147,7 +147,11 @@ function migrateDB(parsed) {
   out.outlets = out.outlets.map(outlet => ({
     clientId: null,
     projectIds: [],
+    owner: '',
+    visitFrequency: '',
     ...outlet,
+    owner: outlet.owner || '',
+    visitFrequency: outlet.visitFrequency || '',
     projectIds: Array.isArray(outlet.projectIds)
       ? [...new Set(outlet.projectIds.filter(Boolean))]
       : (outlet.projectId ? [outlet.projectId] : []),
@@ -181,8 +185,32 @@ function migrateDB(parsed) {
   out.fieldPhotos = out.fieldPhotos.map(photo => {
     const raw = photo.photoType || photo.type || 'location';
     const photoType = photoTypeMap[raw] || raw;
-    return { ...photo, photoType, type: photoType };
+    const recordedBy = photo.recordedBy || photo.employeeId || '';
+    const recordedAt = photo.recordedAt || photo.createdAt || '';
+    return {
+      ...photo,
+      photoType,
+      type: photoType,
+      recordedBy,
+      employeeId: photo.employeeId || recordedBy,
+      recordedAt,
+      dataUrl: photo.dataUrl || photo.photoUrl || '',
+      caption: photo.caption || photo.title || photo.note || '',
+    };
   });
+
+  out.competitorIntel = out.competitorIntel.map(row => ({
+    ...row,
+    recordedBy: row.recordedBy || row.employeeId || '',
+    employeeId: row.employeeId || row.recordedBy || '',
+    recordedAt: row.recordedAt || row.createdAt || '',
+    notes: row.notes || row.description || row.title || '',
+  }));
+
+  out.attendance = (out.attendance || []).map(row => ({
+    ...row,
+    status: normalizeAttendanceStatus(row.status || row.attendanceStatus) || row.status,
+  }));
 
   return out;
 }
@@ -521,9 +549,9 @@ export function getDashboardStats() {
   const plannedVisits = todayVisits.filter(v => v.status === 'planned');
   const activeEmployees = db.employees.filter(e => e.status === 'active');
   const todayAttendance = db.attendance.filter(a => a.date === today);
-  const hadir = todayAttendance.filter(a => a.status === 'hadir');
-  const terlambat = todayAttendance.filter(a => a.status === 'terlambat');
-  const tidakHadir = todayAttendance.filter(a => a.status === 'tidak hadir');
+  const hadir = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'hadir');
+  const terlambat = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'terlambat');
+  const tidakHadir = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'tidak hadir');
   const intel = db.competitorIntel || [];
 
   return {

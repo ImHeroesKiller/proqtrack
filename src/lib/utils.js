@@ -64,9 +64,24 @@ export function visibilityBadge(level) {
   return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${cls}">${labels[level] || level}</span>`;
 }
 
+export function normalizeAttendanceStatus(status) {
+  const raw = String(status || '').toLowerCase();
+  if (['hadir', 'present', 'valid', 'on_time', 'ontime'].includes(raw)) return 'hadir';
+  if (['terlambat', 'late', 'flagged'].includes(raw)) return 'terlambat';
+  if (['tidak hadir', 'absent', 'rejected', 'no_show'].includes(raw)) return 'tidak hadir';
+  return status || '';
+}
+
 export function statusBadge(status) {
-  const cls = STATUS_STYLES[status] || 'bg-gray-100 text-gray-600 border-gray-200';
-  return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${cls}">${status}</span>`;
+  const normalized = normalizeAttendanceStatus(status) || status;
+  const cls = STATUS_STYLES[normalized] || STATUS_STYLES[status] || 'bg-gray-100 text-gray-600 border-gray-200';
+  const label = normalized || status || '—';
+  return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${cls}">${label}</span>`;
+}
+
+export function displayValue(value, fallback = '—') {
+  if (value === undefined || value === null || value === '') return fallback;
+  return value;
 }
 
 const ROLE_STYLES = {
