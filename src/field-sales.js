@@ -3,7 +3,8 @@ import {
   getPriceObservations, getCompetitorIntel, getFieldPhotos, getFieldPhotosByEmployee,
   getAttendance, createAttendance, getAttendancePoints, createAttendancePoint,
   getVisitLocations, getVisitsOnDate, visitDay, FIELD_PHOTO_TYPES,
-  getOrganization, getCurrentOrgId,
+  getOrganization, getCurrentOrgId, getDB,
+  createOutletProposal, getOutletProposals, reviewOutletProposal,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
@@ -246,6 +247,97 @@ window.FS = {
       window.showToast?.(err.message || err, 'error');
     }
   },
+};
+
+function proposalStatusLabel(p) {
+  if (p.status === 'approved') return 'Disetujui (toko aktif)';
+  if (p.status === 'rejected') return 'Ditolak';
+  const bits = [];
+  bits.push(p.supervisorStatus === 'approved' ? 'SPV ✓' : p.supervisorStatus === 'rejected' ? 'SPV ✗' : 'SPV menunggu');
+  bits.push(p.managerStatus === 'approved' ? 'Mgr ✓' : p.managerStatus === 'rejected' ? 'Mgr ✗' : 'Mgr menunggu');
+  return bits.join(' · ');
+}
+
+export function renderOutletProposalForm() {
+  const db = getDB();
+  const projects = (db.projects || []).filter(p => ['active', 'planning'].includes(p.status));
+  const mine = getOutletProposals();
+  const role = window.FT?.state?.account?.role;
+  const queue = role === 'employee' ? mine : getOutletProposals().filter(p => p.status === 'pending');
+  return `
+    ${role === 'employee' ? `
+    <div class="card">
+      <div class="card-title">Ajukan toko baru</div>
+      <div class="card-subtitle">Isi data toko yang baru ditemukan. Aktif setelah supervisor dan manager menyetujui.</div>
+      <form onsubmit="FS.submitOutlet(event)">
+        <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
+        <div class="form-group"><label class="label">Alamat</label><textarea class="textarea" name="address" required></textarea></div>
+        <div class="form-row">
+          <div class="form-group"><label class="label">Tipe</label>
+            <select class="select" name="type"><option>Toko Kelontong</option><option>Minimarket</option><option>Apotek</option><option>Toko Bangunan</option><option>Lainnya</option></select>
+          </div>
+          <div class="form-group"><label class="label">Channel</label>
+            <select class="select" name="channel"><option>General Trade</option><option>Modern Trade</option><option>Pharmacy</option><option>Building Material</option></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area"></div>
+          <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
+        </div>
+        <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
+        <div class="form-group"><label class="label">Project (opsional)</label>
+          <select class="select" name="projectId">
+            <option value="">Belum ditentukan</option>
+            ${projects.map(p => `<option value="${p.id}">${esc(p.code || '')} — ${esc(p.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes" placeholder="Kenapa toko ini potensial, jam buka, dll."></textarea></div>
+        <button class="btn btn-primary" type="submit">Kirim untuk persetujuan</button>
+      </form>
+    </div>` : ''}
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">${role === 'employee' ? 'Status pengajuan saya' : 'Antrian persetujuan toko baru'}</div>
+      <div class="visits-table-wrapper">
+        <table class="table">
+          <thead><tr><th>Toko</th><th>Area</th><th>Diajukan</th><th>Status</th>${role !== 'employee' ? '<th></th>' : ''}</tr></thead>
+          <tbody>
+            ${(role === 'employee' ? mine : getOutletProposals()).length ? (role === 'employee' ? mine : getOutletProposals()).map(p => `
+              <tr>
+                <td><strong>${esc(p.name)}</strong><div class="am-muted">${esc(p.address || '')}</div></td>
+                <td>${esc(p.area || p.city || '—')}</td>
+                <td>${esc(p.submittedByName || '')}<div class="am-muted">${formatDateShort((p.submittedAt || '').slice(0,10))}</div></td>
+                <td>${esc(proposalStatusLabel(p))}</td>
+                ${role !== 'employee' && p.status === 'pending' ? `<td>
+                  <button class="btn btn-primary btn-sm" onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
+                  <button class="btn btn-danger btn-sm" onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
+                </td>` : (role !== 'employee' ? '<td></td>' : '')}
+              </tr>`).join('') : '<tr><td colspan="5"><div class="empty-state"><h3>Belum ada pengajuan</h3></div></td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+window.FS.submitOutlet = function(e) {
+  e.preventDefault();
+  try {
+    createOutletProposal(Object.fromEntries(new FormData(e.target).entries()));
+    window.showToast?.('Pengajuan toko terkirim. Menunggu supervisor dan manager.', 'success');
+    e.target.reset();
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  } catch (err) {
+    window.showToast?.(err.message || err, 'error');
+  }
+};
+
+window.FS.reviewOutlet = function(id, decision) {
+  try {
+    const row = reviewOutletProposal(id, decision);
+    window.showToast?.(row.status === 'approved' ? 'Toko disetujui dan masuk master.' : decision === 'approved' ? 'Persetujuan Anda tercatat. Menunggu pihak lain.' : 'Pengajuan ditolak.', 'success');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  } catch (err) {
+    window.showToast?.(err.message || err, 'error');
+  }
 };
 
 export { locationTypeLabel };

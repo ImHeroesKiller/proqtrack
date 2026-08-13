@@ -71,6 +71,8 @@ export const ROUTE_ICONS = {
   '#/my-team': 'team',
   '#/supervisor-compare': 'compare',
   '#/reports': 'chart',
+  '#/new-outlet': 'store',
+  '#/outlet-approvals': 'store',
 };
 
 export function iconSvg(name) {

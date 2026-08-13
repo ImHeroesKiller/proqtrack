@@ -22,7 +22,7 @@ import {
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints,
 } from './lib/db.js';
-import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows } from './field-sales.js';
+import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
@@ -151,6 +151,7 @@ const NAV_ITEMS = [
   { section: 'Manajemen', items: [
     { id: 'employees',  label: 'Karyawan',    icon: 'employees', route: '#/employees' },
     { id: 'outlets',    label: 'Toko',        icon: 'outlets', route: '#/outlets' },
+    { id: 'outlet-approvals', label: 'Persetujuan Toko', icon: 'store', route: '#/outlet-approvals' },
     { id: 'products',   label: 'Produk',      icon: 'products', route: '#/products' },
     { id: 'stocks',     label: 'Stok Outlet', icon: 'stocks', route: '#/stocks' },
     { id: 'attendance', label: 'Absensi',     icon: 'attendance', route: '#/attendance' },
@@ -193,6 +194,7 @@ const NAV_ITEMS_SUPERVISOR = [
     { id: 'field-photos',  label: 'Foto Lapangan',    icon: 'photos', route: '#/field-photos' },
     { id: 'attendance',    label: 'Absensi Tim',      icon: 'attendance', route: '#/attendance' },
     { id: 'leaves',        label: 'Ijin & Cuti',      icon: 'leaves', route: '#/leaves' },
+    { id: 'outlet-approvals', label: 'Persetujuan Toko', icon: 'store', route: '#/outlet-approvals' },
   ]},
   { section: 'Sistem', items: [
     { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
@@ -207,6 +209,7 @@ const NAV_ITEMS_EMPLOYEE = [
   ]},
   { section: 'Project', items: [
     { id: 'my-projects', label: 'Project Saya', icon: 'briefcase', route: '#/my-projects' },
+    { id: 'new-outlet', label: 'Toko Baru', icon: 'store', route: '#/new-outlet' },
   ]},
   { section: 'Lapangan', items: [
     { id: 'mystocks',     label: 'Stok Outlet',      icon: 'stocks', route: '#/mystocks' },
@@ -309,7 +312,7 @@ function render() {
   } else if (!manager && (
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
-    route === '#/myattendance' || route === '#/myleaves'
+    route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet'
   )) {
     if (route === '#/myday') {
       pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
@@ -338,6 +341,9 @@ function render() {
     } else if (route === '#/myleaves') {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
+    } else if (route === '#/new-outlet') {
+      pageTitle = 'Toko Baru'; pageSubtitle = 'Pengajuan toko baru menunggu persetujuan supervisor dan manager';
+      pageContent = renderOutletProposalForm();
     }
   } else if ((isOrgAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
@@ -353,6 +359,9 @@ function render() {
   } else if (isOrgAdmin() && route === '#/employees') {
     pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
     pageContent = renderEmployees();
+  } else if ((isOrgAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
+    pageTitle = 'Persetujuan Toko'; pageSubtitle = 'Setujui atau tolak pengajuan toko dari sales';
+    pageContent = renderOutletProposalForm();
   } else if (isOrgAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
@@ -2345,7 +2354,7 @@ function renderMyStocks() {
 function renderMyPrices() {
   const empId = myEmployeeId();
   const visitedIds = getVisitedOutletIds(empId);
-  const observations = getPriceObservations().filter(p => visitedIds.includes(p.outletId));
+  const observations = getPriceObservations().filter(p => p.recordedBy === empId || visitedIds.includes(p.outletId));
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
@@ -2429,9 +2438,9 @@ function renderMyPrices() {
           <tbody>
             ${observations.sort((a,b) => (b.recordedAt||'').localeCompare(a.recordedAt||'')).map(obs => {
               const p = productMap[obs.productId];
-              const o = outletMap[obs.outletId];
-              if (!p || !o) return '';
-              const official = p.price;
+              const o = outletMap[obs.outletId] || getOutlets().find(x => x.id === obs.outletId);
+              if (!obs.productId && !obs.observedPrice) return '';
+              const official = p?.price || 0;
               const diff = obs.observedPrice - official;
               const diffStr = diff === 0 ? '-' : (diff > 0 ? `+${formatCurrency(diff)}` : formatCurrency(diff));
               const diffColor = diff > 0 ? 'var(--red-500)' : diff < 0 ? 'var(--green-600)' : 'var(--gray-400)';
@@ -2441,8 +2450,8 @@ function renderMyPrices() {
               return `
                 <tr>
                   <td style="font-size:13px;">${formatDateShort(obs.recordedAt)}</td>
-                  <td>${outletIcon(o.type)} ${esc(o.name)}</td>
-                  <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
+                  <td>${o ? outletIcon(o.type)+' '+esc(o.name) : esc(obs.outletId || '—')}</td>
+                  <td><span style="font-weight:600;">${esc(p?.name || obs.productId || '—')}</span><br><span style="font-size:11px;color:var(--gray-400);">${esc(p?.sku || '')}</span></td>
                   <td style="font-weight:700;">${formatCurrency(obs.observedPrice)}</td>
                   <td>${discStr !== '-' ? '<span style="color:var(--amber-600);font-weight:600;">'+discStr+'</span>' : '-'}</td>
                   <td style="color:var(--gray-400);">${formatCurrency(official)}</td>
@@ -3017,7 +3026,7 @@ function promoBadgeHTML(intel) {
 function renderMyIntel() {
   const empId = myEmployeeId();
   const visitedIds = getVisitedOutletIds(empId);
-  const intel = getCompetitorIntel().filter(i => visitedIds.includes(i.outletId));
+  const intel = getCompetitorIntel().filter(i => i.recordedBy === empId || visitedIds.includes(i.outletId));
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const cpdMap = Object.fromEntries(getCompetitorProducts().map(p => [p.id, p]));
   const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));

@@ -368,6 +368,13 @@ function migrateDB(parsed) {
   }));
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
   if (!Array.isArray(out.attendancePoints)) out.attendancePoints = [];
+  if (!Array.isArray(out.outletProposals)) out.outletProposals = [];
+  (out.priceObservations || []).forEach(row => {
+    if (row && !row.organizationId) row.organizationId = row.organizationId || DEFAULT_ORG_ID;
+  });
+  (out.competitorIntel || []).forEach(row => {
+    if (row && !row.organizationId) row.organizationId = DEFAULT_ORG_ID;
+  });
   if (!Array.isArray(out.organizations) || !out.organizations.length) {
     out.organizations = [defaultOrganization()];
   }
@@ -377,7 +384,7 @@ function migrateDB(parsed) {
     ...row,
     organizationId: isDemoId(row.id) ? DEFAULT_ORG_ID : (row.organizationId || DEFAULT_ORG_ID),
   })) : rows;
-  ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments'].forEach(key => {
+  ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments','outletProposals'].forEach(key => {
     if (Array.isArray(out[key])) out[key] = stamp(out[key]);
   });
   ensurePlatformAccounts(out);
@@ -988,6 +995,99 @@ export function deleteOutlet(id) {
   saveDB();
 }
 
+export function getOutletProposals() {
+  const rows = scoped(getDB().outletProposals || []);
+  const actor = getActor();
+  if (!actor) return [];
+  if (isOrgAdminRole(actor.role)) return rows;
+  if (actor.role === 'supervisor') {
+    const team = visibleEmployeeIds(actor);
+    return rows.filter(p => team.has(p.submittedBy) || p.submittedBy === actor.employeeId);
+  }
+  return rows.filter(p => p.submittedBy === actor.employeeId);
+}
+
+export function createOutletProposal(data) {
+  const actor = assertLoggedIn();
+  if (!actor.employeeId && actor.role === 'employee') throw new Error('Akun sales belum tertaut karyawan.');
+  const proposal = {
+    id: uid('OPR'),
+    name: sanitizePlainText(data.name),
+    address: sanitizePlainText(data.address || ''),
+    type: sanitizePlainText(data.type || 'Toko'),
+    channel: sanitizePlainText(data.channel || ''),
+    area: sanitizePlainText(data.area || ''),
+    city: sanitizePlainText(data.city || ''),
+    phone: sanitizePlainText(data.phone || ''),
+    owner: sanitizePlainText(data.owner || ''),
+    lat: data.lat ? Number(data.lat) : null,
+    lng: data.lng ? Number(data.lng) : null,
+    projectId: data.projectId || null,
+    notes: sanitizePlainText(data.notes || ''),
+    submittedBy: actor.employeeId || actor.id,
+    submittedByName: actor.name,
+    submittedAt: new Date().toISOString(),
+    supervisorStatus: 'pending',
+    managerStatus: 'pending',
+    status: 'pending',
+    outletId: null,
+    ...withOrg(data),
+  };
+  if (!proposal.name) throw new Error('Nama toko wajib diisi.');
+  const db = getDB();
+  db.outletProposals = db.outletProposals || [];
+  db.outletProposals.push(proposal);
+  saveDB();
+  return proposal;
+}
+
+export function reviewOutletProposal(id, decision, note = '') {
+  const actor = assertLoggedIn();
+  const db = getDB();
+  const row = (db.outletProposals || []).find(p => p.id === id);
+  if (!row) throw new Error('Pengajuan toko tidak ditemukan.');
+  if (row.status !== 'pending') throw new Error('Pengajuan sudah diputuskan.');
+  const ok = decision === 'approved' ? 'approved' : 'rejected';
+  if (actor.role === 'supervisor') {
+    row.supervisorStatus = ok;
+    row.supervisorId = actor.id;
+    row.supervisorAt = new Date().toISOString();
+    row.supervisorNote = sanitizePlainText(note);
+  } else if (actor.role === 'manager' || actor.role === 'superadmin') {
+    row.managerStatus = ok;
+    row.managerId = actor.id;
+    row.managerAt = new Date().toISOString();
+    row.managerNote = sanitizePlainText(note);
+  } else {
+    throw new Error('Akses ditolak');
+  }
+  if (row.supervisorStatus === 'rejected' || row.managerStatus === 'rejected') {
+    row.status = 'rejected';
+  } else if (row.supervisorStatus === 'approved' && row.managerStatus === 'approved') {
+    row.status = 'approved';
+    const outlet = {
+      id: uid('OUT'),
+      status: 'active',
+      name: row.name,
+      address: row.address,
+      type: row.type,
+      channel: row.channel,
+      area: row.area || row.city,
+      phone: row.phone,
+      owner: row.owner,
+      lat: row.lat,
+      lng: row.lng,
+      organizationId: row.organizationId,
+      projectIds: row.projectId ? [row.projectId] : [],
+      clientId: null,
+    };
+    db.outlets.push(outlet);
+    row.outletId = outlet.id;
+  }
+  saveDB();
+  return row;
+}
+
 export function getVisits() {
   const rows = scoped(getDB().visits);
   const actor = getActor();
@@ -1338,7 +1438,7 @@ export function createPriceObservation(data) {
     discountAmount: 0,
     notes: '',
     recordedAt: new Date().toISOString().slice(0,10),
-    ...data
+    ...withOrg(data),
   };
   getDB().priceObservations.push(obs);
   saveDB();
@@ -1484,7 +1584,7 @@ export function createCompetitorIntel(data) {
     promoNotes: '',
     notes: '',
     recordedAt: new Date().toISOString().slice(0, 10),
-    ...data,
+    ...withOrg(data),
   };
   intel.ourPrice = Number(intel.ourPrice) || 0;
   intel.competitorPrice = Number(intel.competitorPrice) || 0;
