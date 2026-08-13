@@ -731,7 +731,7 @@ export function updateAccount(id, data) {
 
 export function changePassword(accountId, currentPassword, nextPassword) {
   const actor = assertLoggedIn();
-  if (actor.id !== accountId && actor.role !== 'manager') throw new Error('Akses ditolak');
+  if (actor.id !== accountId && actor.role !== 'manager' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
   const db = getDB();
   const account = db.accounts.find(a => a.id === accountId);
   if (!account) throw new Error('Akun tidak ditemukan.');

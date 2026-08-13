@@ -516,8 +516,8 @@ function renderSidebar() {
   return `
     <aside class="sidebar ${state.sidebarOpen ? 'open' : ''} ${state.sidebarCollapsed ? 'collapsed' : ''}">
       <div class="sidebar-header">
-        <div class="sidebar-logo">PQ</div>
-        <div class="sidebar-logo-text">ProQTrack<small>Monitoring System</small></div>
+        <div class="sidebar-logo">${getAppSettings().companyLogo ? `<img src="${esc(getAppSettings().companyLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
+        <div class="sidebar-logo-text">${esc(getAppSettings().companyName || 'ProQTrack')}<small>Monitoring System</small></div>
         <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
         </button>
@@ -1205,7 +1205,7 @@ window.FT.previewEmployeePhoto = function(input) {
 
 async function photoFromEmployeeForm(form, fallback = '') {
   const file = form.querySelector('input[name="photoFile"]')?.files?.[0];
-  if (file) return compressImage(file, 320, 0.82);
+  if (file) return compressImage(file, { maxPx: 320, quality: 0.82 });
   return form.querySelector('input[name="photo"]')?.value || fallback;
 }
 

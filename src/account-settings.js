@@ -2,8 +2,7 @@ import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   createAccount, updateAccount, changePassword, updateOwnProfile,
 } from './lib/db.js';
-import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl } from './lib/utils.js';
-import { assetField } from './lib/uploads.js';
+import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
 function account() {
   return window.FT?.state?.account || null;
@@ -26,6 +25,13 @@ function linkedEmployee(acc) {
   return getEmployees().find(e => e.id === acc.employeeId) || null;
 }
 
+const TIMEZONES = [
+  ['Asia/Jakarta', 'WIB — Jakarta'],
+  ['Asia/Makassar', 'WITA — Makassar'],
+  ['Asia/Jayapura', 'WIT — Jayapura'],
+  ['UTC', 'UTC'],
+];
+
 function storageKb() {
   try {
     const raw = localStorage.getItem('proqtrack_db_v6') || '';
@@ -41,6 +47,7 @@ export function renderSettings() {
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
   const isManager = acc.role === 'manager' || acc.role === 'superadmin';
+  const canAccounts = isManager;
   const photo = safePhotoUrl(emp?.photo);
 
   return `
@@ -90,9 +97,14 @@ export function renderSettings() {
         <div class="card-title">Preferensi tampilan</div>
         <form class="am-form" onsubmit="AM.savePrefs(event)">
           <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
-          <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
-          <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock ? 'checked' : ''}> Tampilkan badge stok menipis</label>
-          <p class="am-muted">Zona waktu laporan: ${esc(settings.timezone || 'Asia/Jakarta')}</p>
+          <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
+          <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
+          <div class="form-group">
+            <label class="label">Zona waktu</label>
+            <select class="select" name="timezone">
+              ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${settings.timezone === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+            </select>
+          </div>
           <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
         </form>
       </section>
@@ -103,7 +115,17 @@ export function renderSettings() {
         <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
         <form class="am-form" onsubmit="AM.saveOrg(event)">
           <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
-          ${assetField({ name: 'companyLogo', current: settings.companyLogo || '', label: 'Logo organisasi (unggah ke R2)', category: 'company-logo' })}
+          <div class="form-group emp-photo-field">
+            <label class="label">Logo organisasi</label>
+            <div class="employee-photo-editor">
+              <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
+              <div>
+                <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" onchange="AM.previewLogo(this)">
+                <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
+                <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
+              </div>
+            </div>
+          </div>
           <button class="btn btn-primary" type="submit">Simpan organisasi</button>
         </form>
       </section>
@@ -112,7 +134,7 @@ export function renderSettings() {
       <section class="card">
         <div class="card-title">Sesi & data lokal</div>
         <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
-        ${isManager ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
+        ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
         <div class="am-actions">
           <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
         </div>
@@ -123,8 +145,8 @@ export function renderSettings() {
 
 export function renderAccounts() {
   const acc = account();
-  if (acc?.role !== 'manager') {
-    return '<div class="card"><p>Hanya manager yang dapat mengelola akun.</p></div>';
+  if (acc?.role !== 'manager' && acc?.role !== 'superadmin') {
+    return '<div class="card"><p>Hanya superadmin dan manager yang dapat mengelola akun.</p></div>';
   }
   const q = (window.FT.state._accountQuery || '').toLowerCase();
   const roleFilter = window.FT.state._accountRole || '';
@@ -228,11 +250,10 @@ window.AM = {
     try {
       const data = formData(event);
       const next = updateOwnProfile(account().id, data);
-      window.FT.state.account = getAccounts().find(a => a.id === next.id);
-      window.FT.state.user = { name: next.name, role: window.FT.state.user.role, email: next.email };
+      const fresh = getAccounts().find(a => a.id === next.id) || next;
+      window.FT.state.account = fresh;
+      window.FT.state.user = { name: fresh.name, role: window.FT.state.user.role, email: fresh.email };
       toast('Profil disimpan');
-      window.FT.navigate ? location.hash = '#/settings' : null;
-      location.hash = '#/settings';
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
@@ -264,17 +285,33 @@ window.AM = {
         compactTables: form.compactTables.checked,
         notifyLeave: form.notifyLeave.checked,
         notifyLowStock: form.notifyLowStock.checked,
+        timezone: form.timezone.value || 'Asia/Jakarta',
       });
       document.body.classList.toggle('am-compact', form.compactTables.checked);
       toast('Preferensi disimpan');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
     }
   },
-  saveOrg(event) {
+  previewLogo(input) {
+    const file = input.files?.[0];
+    const preview = input.closest('.emp-photo-field')?.querySelector('.employee-photo-preview');
+    if (file && preview) preview.src = URL.createObjectURL(file);
+  },
+  async saveOrg(event) {
+    event.preventDefault();
     try {
-      const data = formData(event);
-      updateAppSettings({ companyName: data.companyName, companyLogo: data.companyLogo });
+      const form = event.target;
+      const data = Object.fromEntries(new FormData(form).entries());
+      const file = form.logoFile?.files?.[0];
+      let companyLogo = data.companyLogo || '';
+      if (file) {
+        companyLogo = file.type === 'image/svg+xml'
+          ? await file.text().then(t => `data:image/svg+xml;utf8,${encodeURIComponent(t)}`)
+          : await compressImage(file, { maxPx: 512, quality: 0.88 });
+      }
+      updateAppSettings({ companyName: data.companyName, companyLogo });
       toast('Identitas organisasi disimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {

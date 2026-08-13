@@ -4,18 +4,26 @@ export function cn(...classes) {
   return classes.filter(Boolean).join(' ');
 }
 
+function dateTimeZone() {
+  try {
+    return JSON.parse(localStorage.getItem('proqtrack_db_v6') || '{}')?.appSettings?.timezone || 'Asia/Jakarta';
+  } catch {
+    return 'Asia/Jakarta';
+  }
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
-  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone: dateTimeZone() });
 }
 
 export function formatDateShort(dateStr) {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
-  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: dateTimeZone() });
 }
 
 export function getInitials(name) {
