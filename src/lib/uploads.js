@@ -37,13 +37,18 @@ export async function issueUploadSession(account) {
     body: JSON.stringify({
       sub: account.id,
       email: account.email,
-      role: account.role === 'superadmin' ? 'manager' : account.role,
+      role: account.role,
       projectIds: assignments,
       clientIds: [],
     }),
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message || data.error || `HTTP ${res.status}`);
+  const data = await res.json().catch(() => null);
+  if (!data || typeof data !== 'object') return null;
+  if (!res.ok) {
+    if ([404, 405, 501, 503].includes(res.status)) return null;
+    throw new Error(data.message || data.error || `HTTP ${res.status}`);
+  }
+  if (!data.token) return null;
   sessionStorage.setItem(TOKEN_KEY, data.token);
   sessionStorage.setItem(TOKEN_META, JSON.stringify({ exp: data.exp, role: account.role }));
   return data.token;
