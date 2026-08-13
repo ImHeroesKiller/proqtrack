@@ -216,6 +216,11 @@ function navigate(route) {
 
 window.FT.goNav = function(event, route) {
   event?.preventDefault?.();
+  if (state.account?.mustChangePassword && route !== '#/settings') {
+    showToast('Ganti password terlebih dahulu sebelum memakai menu lain.', 'error');
+    location.hash = '#/settings';
+    return false;
+  }
   const nav = document.querySelector('.sidebar-nav');
   if (nav) state._sidebarScroll = nav.scrollTop;
   state.sidebarOpen = false;
@@ -228,6 +233,10 @@ window.FT.goNav = function(event, route) {
 };
 
 window.addEventListener('hashchange', () => {
+  if (state.loggedIn && state.account?.mustChangePassword && getRoute() !== '#/settings') {
+    location.hash = '#/settings';
+    return;
+  }
   state.route = getRoute();
   state.sidebarOpen = false;
   render();
@@ -251,6 +260,11 @@ function render() {
 
   if (!state.loggedIn) {
     app.innerHTML = renderLogin();
+    return;
+  }
+
+  if (state.account?.mustChangePassword && getRoute() !== '#/settings') {
+    location.hash = '#/settings';
     return;
   }
 
@@ -358,6 +372,10 @@ function render() {
   } else if (route === '#/settings') {
     pageTitle = 'Pengaturan'; pageSubtitle = 'Akun, keamanan, dan preferensi aplikasi';
     pageContent = renderSettings();
+  } else if (isManager() && (route === '#/reports' || route.startsWith('#/reports/'))) {
+    pageTitle = 'Laporan';
+    pageSubtitle = 'Analitik dan segmentasi data operasional';
+    pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
   } else if (isManager() && route === '#/accounts') {
     pageTitle = 'Manajemen Akun'; pageSubtitle = 'Login, role, status, dan tautan karyawan';
     pageContent = renderAccounts();
@@ -501,9 +519,12 @@ window.FT.handleLogin = function(e) {
   state.loggedIn = true;
   state.account = acc;
   state.user = { name: acc.name, role: displayRole(acc), email: acc.email };
-  state.route = defaultRouteFor(acc);
+  state.route = acc.mustChangePassword ? '#/settings' : defaultRouteFor(acc);
   location.hash = state.route;
   render();
+  if (acc.mustChangePassword) {
+    showToast('Wajib ganti password sebelum memakai aplikasi.', 'error');
+  }
   issueUploadSession(acc).catch(error => {
     console.warn('upload_session_failed', error);
     showToast('Sesi unggah cloud belum aktif. Foto tetap bisa disimpan lokal.', 'error');

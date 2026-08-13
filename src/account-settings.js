@@ -69,6 +69,12 @@ export function renderSettings() {
         </form>
       </section>
 
+      ${acc.mustChangePassword ? `
+      <section class="card" style="border-color:#fdba74;background:#fff7ed">
+        <div class="card-title">Wajib ganti password</div>
+        <div class="card-subtitle">Admin menandai akun ini harus mengganti password sebelum memakai menu lain.</div>
+      </section>` : ''}
+
       <section class="card">
         <div class="card-title">Keamanan</div>
         <div class="card-subtitle">Ganti password akun ini. Minimal 8 karakter.</div>
@@ -237,8 +243,15 @@ window.AM = {
       const data = formData(event);
       if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
       changePassword(account().id, data.currentPassword, data.nextPassword);
+      const next = getAccounts().find(a => a.id === account().id);
+      if (next && window.FT?.state) {
+        window.FT.state.account = next;
+      }
       toast('Password diperbarui');
       event.target.reset();
+      if (location.hash === '#/settings') {
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+      }
     } catch (error) {
       toast(error.message || error, 'error');
     }

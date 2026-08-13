@@ -20,6 +20,17 @@ const normalizeEmail = value => String(value || '').trim().toLowerCase();
 const accountRoleForEmployee = employee =>
   String(employee?.role || '').toLowerCase().includes('supervisor') ? 'supervisor' : 'employee';
 
+/** HR status can deactivate login, but never lift a manager suspension. */
+function applyEmployeeAccountStatus(account, employee) {
+  if (!account) return;
+  if (employee?.status !== 'active') {
+    account.status = 'inactive';
+    return;
+  }
+  if (account.status === 'suspended') return;
+  account.status = account.status || 'active';
+}
+
 function assertUniqueEmail(db, email, employeeId = null) {
   const normalized = normalizeEmail(email);
   if (!normalized) throw new Error('Email wajib diisi.');
@@ -45,7 +56,7 @@ function syncEmployeeAccount(db, employee, password) {
   account.email = employee.email;
   account.name = employee.name;
   account.role = accountRoleForEmployee(employee);
-  account.status = employee.status === 'active' ? 'active' : 'inactive';
+  applyEmployeeAccountStatus(account, employee);
   if (password) {
     if (String(password).length < 8) throw new Error('Password login minimal 8 karakter.');
     account.password = String(password);
@@ -211,7 +222,7 @@ function migrateDB(parsed) {
       account.email = employee.email;
       account.name = employee.name;
       account.role = accountRoleForEmployee(employee);
-      account.status = employee.status === 'active' ? 'active' : 'inactive';
+      applyEmployeeAccountStatus(account, employee);
     }
   });
   out.outlets = out.outlets.map(outlet => ({
