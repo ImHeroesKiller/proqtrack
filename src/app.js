@@ -140,7 +140,7 @@ function entityScopeFields(entity = {}) {
 const NAV_ITEMS = [
   { section: 'Menu Utama', items: [
     { id: 'dashboard', label: 'Beranda',         icon: 'home', route: '#/' },
-    { id: 'tracking',  label: 'Live Tracking',   icon: 'tracking', route: '#/tracking' },
+    { id: 'tracking',  label: 'Last Location',   icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Lacak Kunjungan', icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
@@ -179,7 +179,7 @@ const NAV_ITEMS_SUPERVISOR = [
     { id: 'dashboard', label: 'Beranda Tim',    icon: 'home', route: '#/' },
     { id: 'myday',     label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
     { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
-    { id: 'tracking',  label: 'Live Tracking',  icon: 'tracking', route: '#/tracking' },
+    { id: 'tracking',  label: 'Last Location Tim',  icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Kunjungan Tim',  icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
@@ -439,7 +439,7 @@ function render() {
           </div>
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
-            ${route === '#/tracking' ? '<div class="live-badge"><span class="live-dot"></span> LIVE</div>' : ''}
+            ${route === '#/tracking' ? '<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">Last check-in</div>' : ''}
           </div>
         </div>
         <div class="content">
@@ -663,17 +663,31 @@ function renderDashboard() {
   return isSupervisor() ? renderSupervisorDashboard() : renderManagerDashboard();
 }
 
+function lastKnownLocation(empId) {
+  const visits = getVisits()
+    .filter(v => v.employeeId === empId && v.checkInTime)
+    .sort((a, b) => `${visitDay(b)} ${b.checkInTime || ''}`.localeCompare(`${visitDay(a)} ${a.checkInTime || ''}`));
+  const visit = visits[0];
+  if (!visit) return null;
+  const outlet = getOutlets().find(o => o.id === visit.outletId);
+  const lat = Number(visit.lat ?? visit.checkInLat ?? outlet?.lat);
+  const lng = Number(visit.lng ?? visit.checkInLng ?? outlet?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { visit, outlet, lat, lng };
+}
+
 function trackingEmployees() {
   const q = String(state._trackQuery || '').toLowerCase();
   const area = state._trackArea || '';
   const field = state._trackField || '';
   return getEmployees().filter(e => e.status === 'active').filter(e => {
-    const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
-    const active = visits.some(v => v.status === 'checked-in');
+    const loc = lastKnownLocation(e.id);
+    const today = loc && visitDay(loc.visit) === todayISO();
     if (q && !`${e.name} ${e.area} ${e.role} ${e.phone}`.toLowerCase().includes(q)) return false;
     if (area && e.area !== area) return false;
-    if (field === 'active' && !active) return false;
-    if (field === 'idle' && active) return false;
+    if (field === 'today' && !today) return false;
+    if (field === 'hasloc' && !loc) return false;
+    if (field === 'noloc' && loc) return false;
     return true;
   });
 }
@@ -691,8 +705,9 @@ function renderTracking() {
         </select>
         <select class="select" style="width:auto" onchange="FT.filterTrackingField(this.value)">
           <option value="">Semua status</option>
-          <option value="active" ${state._trackField==='active'?'selected':''}>Sedang check-in</option>
-          <option value="idle" ${state._trackField==='idle'?'selected':''}>Belum check-in</option>
+          <option value="today" ${state._trackField==='today'?'selected':''}>Check-in hari ini</option>
+          <option value="hasloc" ${state._trackField==='hasloc'?'selected':''}>Punya last location</option>
+          <option value="noloc" ${state._trackField==='noloc'?'selected':''}>Belum ada last location</option>
         </select>
         <button class="btn btn-secondary" type="button" onclick="FT.fitTracking()">Tampilkan semua</button>
       </div>
@@ -703,15 +718,17 @@ function renderTracking() {
         <h3>Tim (${employees.length})</h3>
         <div id="mapEmpList">
           ${employees.map(e => {
-            const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
-            const activeVisit = visits.find(v => v.status === 'checked-in');
-            const maps = (e.lat && e.lng) ? `https://www.google.com/maps/dir/?api=1&destination=${e.lat},${e.lng}` : '#';
+            const loc = lastKnownLocation(e.id);
+            const maps = loc ? `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}` : '#';
+            const lastLabel = loc
+              ? `${esc(loc.outlet?.name || 'Lokasi kerja')} · ${formatDateShort(visitDay(loc.visit))} ${loc.visit.checkInTime || ''}`
+              : 'Belum ada last location';
             return `
               <div class="map-emp-item" data-emp="${e.id}">
-                <div class="emp-status-dot" style="background:${activeVisit ? 'var(--green-500)' : 'var(--gray-300)'};"></div>
+                <div class="emp-status-dot" style="background:${loc ? 'var(--green-500)' : 'var(--gray-300)'};"></div>
                 <div class="emp-info" onclick="FT.focusEmployee('${e.id}')" style="cursor:pointer;flex:1">
                   <div class="emp-name">${esc(e.name)}</div>
-                  <div class="emp-area">${esc(e.area)} · ${visitsTodayCount(e.id)} kunjungan${activeVisit ? ' · check-in' : ''}</div>
+                  <div class="emp-area">${esc(e.area)} · ${lastLabel}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:4px">
                   <button class="btn btn-secondary btn-sm" onclick="FT.focusEmployee('${e.id}')">Fokus</button>
@@ -743,44 +760,32 @@ function initMap() {
     attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(_map);
 
+  if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
+
   const avatarColors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
   employees.forEach(e => {
+    const loc = lastKnownLocation(e.id);
+    if (!loc) return;
     const cIdx = e.name.charCodeAt(0) % avatarColors.length;
     const color = avatarColors[cIdx];
-    const visits = getVisits().filter(v => v.employeeId === e.id && v.date === todayISO());
-    const activeVisit = visits.find(v => v.status === 'checked-in');
+    const today = visitDay(loc.visit) === todayISO();
     const icon = L.divIcon({
       className: 'ft-marker',
-      html: `<div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;${activeVisit?'border-color:#10b981;border-width:4px;':''}">${getInitials(e.name)}</div>`,
+      html: `<div style="width:36px;height:36px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;${today?'border-color:#10b981;border-width:4px;':''}">${getInitials(e.name)}</div>`,
       iconSize: [36,36], iconAnchor: [18,18]
     });
-    const m = L.marker([e.lat, e.lng], { icon }).addTo(_map);
-    const outlet = activeVisit ? getOutlets().find(o => o.id === activeVisit.outletId) : null;
+    const m = L.marker([loc.lat, loc.lng], { icon }).addTo(_map);
     m.bindPopup(`
       <div style="font-size:13px; min-width:160px;">
         <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(e.name)}</div>
-        <div style="color:#666;">${e.role} · ${esc(e.area)}</div>
+        <div style="color:#666;">${esc(e.role)} · ${esc(e.area)}</div>
+        <div style="margin-top:6px;">Last location: ${esc(loc.outlet?.name || 'Lokasi kerja')}</div>
+        <div>${esc(formatDateShort(visitDay(loc.visit)))} ${esc(loc.visit.checkInTime || '')}${loc.visit.checkOutTime ? ' · keluar ' + esc(loc.visit.checkOutTime) : ' · masih di lokasi'}</div>
         <div style="margin-top:6px;">📞 ${esc(e.phone)}</div>
-        <div>📋 ${visitsTodayCount(e.id)}/${targetOf(e)} kunjungan hari ini</div>
-        ${activeVisit && outlet ? `<div style="margin-top:6px; padding-top:6px; border-top:1px solid #eee; color:#ea580c;">📍 Sedang di: ${outlet.name}</div>` : ''}
       </div>
     `);
     _markers[e.id] = m;
   });
-
-  // Simulate live movement: nudge employees slightly every 5s
-  if (state.livePolling) clearInterval(state.livePolling);
-  state.livePolling = setInterval(() => {
-    const emps = trackingEmployees();
-    emps.forEach(e => {
-      const m = _markers[e.id];
-      if (m) {
-        const newLat = e.lat + (Math.random() - 0.5) * 0.002;
-        const newLng = e.lng + (Math.random() - 0.5) * 0.002;
-        m.setLatLng([newLat, newLng]);
-      }
-    });
-  }, 5000);
 }
 
 window.FT.filterTracking = function(value) { state._trackQuery = value; render(); };
@@ -794,9 +799,9 @@ window.FT.fitTracking = function() {
   _map.fitBounds(group.getBounds().pad(0.2));
 };
 window.FT.focusEmployee = function(empId) {
-  const emp = getEmployees().find(e => e.id === empId);
-  if (!emp || !_map || !_markers[empId]) return;
-  _map.setView([emp.lat, emp.lng], 15, { animate: true });
+  const loc = lastKnownLocation(empId);
+  if (!loc || !_map || !_markers[empId]) return;
+  _map.setView([loc.lat, loc.lng], 15, { animate: true });
   _markers[empId].openPopup();
   document.querySelectorAll('.map-emp-item').forEach(el => el.classList.remove('selected'));
   document.querySelector(`.map-emp-item[data-emp="${empId}"]`)?.classList.add('selected');

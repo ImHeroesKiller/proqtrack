@@ -144,7 +144,7 @@
   .sidebar {
     position: fixed; left: 0; top: 0; bottom: 0; width: 280px; max-width: 85vw;
     background: white; border-right: 1px solid var(--gray-200);
-    display: flex; flex-direction: column; z-index: 60;
+    display: flex; flex-direction: column; z-index: 80;
     transform: translateX(-100%); transition: transform .28s cubic-bezier(.4,0,.2,1);
     box-shadow: none;
   }
@@ -280,8 +280,14 @@
   .map-container {
     display: flex; flex-direction: column; border-radius: var(--radius);
     overflow: hidden; border: 1px solid var(--gray-200);
+    position: relative; isolation: isolate; z-index: 0;
   }
-  #trackingMap { width: 100%; height: 320px; background: var(--gray-100); }
+  #trackingMap { width: 100%; height: 320px; background: var(--gray-100); position: relative; z-index: 0; isolation: isolate; }
+  #trackingMap .leaflet-container { z-index: 0 !important; }
+  #trackingMap .leaflet-pane, #trackingMap .leaflet-map-pane { z-index: 1; }
+  #trackingMap .leaflet-top, #trackingMap .leaflet-bottom { z-index: 2; }
+  .main-area { min-width: 0; flex: 1; position: relative; z-index: 1; }
+  .content { min-width: 0; overflow-x: hidden; }
   .map-sidebar-panel {
     width: 100%; background: white; padding: 12px;
     overflow-y: auto; max-height: 220px; border-top: 1px solid var(--gray-200);
@@ -367,7 +373,7 @@
     .sidebar {
       position: sticky; transform: none; width: 250px; flex-shrink: 0;
       height: 100dvh; box-shadow: none; border-right: 1px solid var(--gray-200);
-      transition: width .22s ease;
+      transition: width .22s ease; z-index: 80;
     }
     .sidebar.open { box-shadow: none; }
     .sidebar-toggle { display: inline-flex; }
