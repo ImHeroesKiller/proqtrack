@@ -214,6 +214,19 @@ function navigate(route) {
   location.hash = route;
 }
 
+window.FT.goNav = function(event, route) {
+  event?.preventDefault?.();
+  const nav = document.querySelector('.sidebar-nav');
+  if (nav) state._sidebarScroll = nav.scrollTop;
+  state.sidebarOpen = false;
+  if (location.hash === route) {
+    render();
+    return false;
+  }
+  location.hash = route;
+  return false;
+};
+
 window.addEventListener('hashchange', () => {
   state.route = getRoute();
   state.sidebarOpen = false;
@@ -233,6 +246,8 @@ window.showToast = function(msg, type = '') {
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
+  const sidebarScroll = document.querySelector('.sidebar-nav')?.scrollTop || state._sidebarScroll || 0;
+  state._sidebarScroll = sidebarScroll;
 
   if (!state.loggedIn) {
     app.innerHTML = renderLogin();
@@ -369,9 +384,6 @@ function render() {
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
             ${route === '#/tracking' ? '<div class="live-badge"><span class="live-dot"></span> LIVE</div>' : ''}
-            <div class="live-badge" style="color: var(--gray-600); background: var(--gray-100); border-color: var(--gray-200);">
-              <span>${formatDateShort(todayISO())}</span>
-            </div>
           </div>
         </div>
         <div class="content">
@@ -388,6 +400,8 @@ function render() {
   attachPageHandlers();
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
+  const nav = document.querySelector('.sidebar-nav');
+  if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
 
 // ===== Sidebar =====
@@ -414,7 +428,7 @@ function renderSidebar() {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
-      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" onclick="FT.closeSidebar()">
+      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${item.route}')">
         <span class="nav-icon">${item.icon}</span>
         <span>${item.label}</span>
         ${badge}

@@ -489,6 +489,7 @@ export function createAccount(data) {
   }
   const account = {
     id: uid('ACC'),
+    organizationId: getCurrentOrgId(),
     email,
     name: sanitizePlainText(data.name) || email,
     password: String(data.password),
@@ -728,7 +729,7 @@ export function createOutlet(data) {
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
   const outlet = {
-    id: uid('OUT'), status: 'active', ...data, ...scope,
+    id: uid('OUT'), status: 'active', ...withOrg(data), ...scope,
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address),
     owner: sanitizePlainText(data.owner),
@@ -778,12 +779,12 @@ export function getVisitsByOutlet(outletId) {
 }
 
 export function getVisitsByDate(date) {
-  return getDB().visits.filter(v => v.date === date);
+  return getVisits().filter(v => v.date === date);
 }
 
 export function createVisit(data) {
   assertOperationalContext(getDB(), data);
-  const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...data };
+  const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...withOrg(data) };
   getDB().visits.push(visit);
   saveDB();
   return visit;
@@ -817,7 +818,7 @@ export function getAttendanceByEmployee(empId) {
 }
 
 export function createAttendance(data) {
-  const att = { id: uid('ATT'), ...data };
+  const att = { id: uid('ATT'), ...withOrg(data) };
   getDB().attendance.push(att);
   saveDB();
   return att;
@@ -894,7 +895,7 @@ export function createProduct(data) {
     brand: '',
     cost: null,
     margin: null,
-    ...data,
+    ...withOrg(data),
     ...scope,
   };
   delete product.projectId;
@@ -947,7 +948,7 @@ export function getLeaveTypes() {
 }
 
 export function createLeave(data) {
-  const leave = { id: uid('LV'), status: 'pending', submittedAt: new Date().toISOString().slice(0,10), approverId: null, approvedAt: null, ...data };
+  const leave = { id: uid('LV'), status: 'pending', submittedAt: new Date().toISOString().slice(0,10), approverId: null, approvedAt: null, ...withOrg(data) };
   getDB().leaves.push(leave);
   saveDB();
   return leave;
@@ -982,7 +983,7 @@ export function getStocksByProduct(productId) {
 
 export function createStock(data) {
   assertOperationalContext(getDB(), data, { product: true });
-  const stock = { id: uid('STK'), lastUpdated: new Date().toISOString().slice(0,10), ...data };
+  const stock = { id: uid('STK'), lastUpdated: new Date().toISOString().slice(0,10), ...withOrg(data) };
   getDB().stocks.push(stock);
   saveDB();
   return stock;
@@ -1004,7 +1005,7 @@ export function deleteStock(id) {
 }
 
 export function getPriceObservations() {
-  return getDB().priceObservations || [];
+  return scoped(getDB().priceObservations || []);
 }
 
 export function getPriceObservationsByOutlet(outletId) {
@@ -1065,7 +1066,7 @@ export function createCompetitor(data) {
     color: '#64748b',
     category: '',
     notes: '',
-    ...data,
+    ...withOrg(data),
   };
   getDB().competitors.push(c);
   saveDB();
@@ -1245,7 +1246,7 @@ export function createFieldPhoto(data) {
     competitorId: null,
     dataUrl: null,
     recordedAt: new Date().toISOString(),
-    ...data,
+    ...withOrg(data),
   };
   if (!photo.productId) photo.productId = null;
   if (!photo.competitorId) photo.competitorId = null;
