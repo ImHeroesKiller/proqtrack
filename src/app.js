@@ -2544,6 +2544,7 @@ window.FT.saveVisitPrice = function(e, visitId, outletId) {
       const productId = row.querySelector('[name="productId"]')?.value;
       if (!productId) return;
       createPriceObservation({
+        projectId: getVisits().find(v => v.id === visitId)?.projectId || null,
         visitId, outletId, productId,
         observedPrice: parseInt(row.querySelector('[name="observedPrice"]')?.value, 10),
         discountPercent: parseFloat(row.querySelector('[name="discountPercent"]')?.value) || 0,
@@ -2617,20 +2618,22 @@ window.FT.saveStandalonePrice = function(e) {
   // Link to most recent visit at this outlet if available
   const recentVisit = getVisits().filter(v => v.employeeId === empId && v.outletId === outletId)
     .sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
-  createPriceObservation({
-    projectId: fd.get('projectId') || null,
-    visitId: recentVisit?.id || null,
-    outletId,
-    productId: fd.get('productId'),
-    observedPrice: parseInt(fd.get('observedPrice')),
-    discountPercent: parseFloat(fd.get('discountPercent')) || 0,
-    discountAmount: parseInt(fd.get('discountAmount')) || 0,
-    notes: fd.get('notes') || '',
-    recordedBy: empId,
-  });
-  closeModal();
-  showToast('Observasi harga berhasil dicatat', 'success');
-  render();
+  try {
+    createPriceObservation({
+      projectId: fd.get('projectId') || recentVisit?.projectId || null,
+      visitId: recentVisit?.id || null,
+      outletId,
+      productId: fd.get('productId'),
+      observedPrice: parseInt(fd.get('observedPrice')),
+      discountPercent: parseFloat(fd.get('discountPercent')) || 0,
+      discountAmount: parseInt(fd.get('discountAmount')) || 0,
+      notes: fd.get('notes') || '',
+      recordedBy: empId,
+    });
+    closeModal();
+    showToast('Observasi harga berhasil dicatat', 'success');
+    render();
+  } catch (error) { showToast(error.message || error, 'error'); }
 };
 
 
@@ -3287,10 +3290,11 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
   }
   // Link visit if standalone
   let vId = visitId;
-  if (!vId && empId) {
-    const recent = getVisits().filter(v => v.employeeId === empId && v.outletId === outId)
+  let recent = null;
+  if (empId && outId) {
+    recent = getVisits().filter(v => v.employeeId === empId && v.outletId === outId)
       .sort((a,b) => (b.date||'').localeCompare(a.date||''))[0];
-    vId = recent?.id || null;
+    if (!vId) vId = recent?.id || null;
   }
   const hasPromo = fd.get('hasPromo') === 'true' || fd.get('hasPromo') === 'on';
   let promoType = fd.get('promoType') || '';
@@ -3313,8 +3317,9 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
   } else {
     promoType = '';
   }
+  try {
   createCompetitorIntel({
-    projectId: fd.get('projectId') || null,
+    projectId: fd.get('projectId') || recent?.projectId || null,
     visitId: vId,
     outletId: outId,
     productId: fd.get('productId'),
@@ -3336,6 +3341,7 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
     return;
   }
   render();
+  } catch (error) { showToast(error.message || error, 'error'); }
 };
 
 // ===== Field Photos =====

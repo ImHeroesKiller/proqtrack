@@ -259,13 +259,17 @@ window.AM = {
   savePrefs(event) {
     event.preventDefault();
     const form = event.target;
-    updateAppSettings({
-      compactTables: form.compactTables.checked,
-      notifyLeave: form.notifyLeave.checked,
-      notifyLowStock: form.notifyLowStock.checked,
-    });
-    document.body.classList.toggle('am-compact', form.compactTables.checked);
-    toast('Preferensi disimpan');
+    try {
+      updateAppSettings({
+        compactTables: form.compactTables.checked,
+        notifyLeave: form.notifyLeave.checked,
+        notifyLowStock: form.notifyLowStock.checked,
+      });
+      document.body.classList.toggle('am-compact', form.compactTables.checked);
+      toast('Preferensi disimpan');
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
   },
   saveOrg(event) {
     try {

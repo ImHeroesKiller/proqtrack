@@ -599,7 +599,13 @@ export function getAppSettings() {
 }
 
 export function updateAppSettings(partial) {
-  assertOrgAdmin();
+  const actor = assertLoggedIn();
+  const orgOnly = ['companyName', 'companyLogo', 'timezone'];
+  if (orgOnly.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
+    if (actor.role !== 'manager' && actor.role !== 'superadmin') {
+      throw new Error('Akses ditolak');
+    }
+  }
   const db = getDB();
   db.appSettings = {
     ...defaultAppSettings(),
@@ -876,25 +882,63 @@ function normalizeEntityScope(db, data) {
   return { clientId, projectIds };
 }
 
+function linkedProjectIds(entity) {
+  if (!entity) return [];
+  if (Array.isArray(entity.projectIds) && entity.projectIds.length) return entity.projectIds.filter(Boolean);
+  return entity.projectId ? [entity.projectId] : [];
+}
+
+function inferProjectId(db, data) {
+  if (data.projectId) return data.projectId;
+  if (data.visitId) {
+    const visit = (db.visits || []).find(v => v.id === data.visitId);
+    if (visit?.projectId) return visit.projectId;
+  }
+  if (data.outletId) {
+    const outlet = (db.outlets || []).find(o => o.id === data.outletId);
+    const ids = linkedProjectIds(outlet);
+    if (ids.length) return ids[0];
+  }
+  return null;
+}
+
+function belongsToProject(entity, projectId, project) {
+  const ids = linkedProjectIds(entity);
+  if (!ids.length) {
+    if (entity.clientId && project?.clientId) return entity.clientId === project.clientId;
+    return true;
+  }
+  return ids.includes(projectId);
+}
+
 function assertOperationalContext(db, data, { product = false } = {}) {
+  const projectId = inferProjectId(db, data);
+  if (projectId && !data.projectId) data.projectId = projectId;
   if (!data.projectId) return;
   const project = db.projects?.find(p => p.id === data.projectId);
-  if (!project || project.status !== 'active') throw new Error('Aktivitas memerlukan project aktif.');
+  if (!project || (project.status && project.status !== 'active' && project.status !== 'planning')) {
+    throw new Error('Aktivitas memerlukan project aktif.');
+  }
   const employeeId = data.employeeId || data.recordedBy || data.updatedBy;
-  if (employeeId && !db.projectAssignments?.some(a =>
+  if (employeeId && (db.projectAssignments || []).length && !db.projectAssignments.some(a =>
     a.projectId === data.projectId &&
     a.employeeId === employeeId &&
     a.status === 'active'
-  )) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  )) {
+    // allow if the employee has any active assignment in this org (catalog work at a store)
+    const hasAny = db.projectAssignments.some(a => a.employeeId === employeeId && a.status === 'active');
+    if (!hasAny) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  }
   if (data.outletId) {
     const outlet = db.outlets.find(o => o.id === data.outletId);
-    if (!outlet?.projectIds?.includes(data.projectId)) {
+    if (outlet && !belongsToProject(outlet, data.projectId, project)) {
       throw new Error('Outlet tidak terdaftar pada project ini.');
     }
   }
   if (product && data.productId) {
     const item = db.products.find(p => p.id === data.productId);
-    if (!item?.projectIds?.includes(data.projectId)) {
+    if (!item) throw new Error('Produk tidak ditemukan.');
+    if (!belongsToProject(item, data.projectId, project)) {
       throw new Error('Produk tidak terdaftar pada project ini.');
     }
   }
