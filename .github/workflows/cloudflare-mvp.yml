@@ -41,6 +41,27 @@ jobs:
       - name: Provision bindings and deploy
         run: npx wrangler deploy
 
+      - name: Ensure Worker API_AUTH_SECRET
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler whoami
+          list_json="$(npx wrangler secret list --format json 2>/dev/null | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const start = raw.indexOf("[");
+            process.stdout.write(start >= 0 ? raw.slice(start) : "[]");
+          ')"
+          if node -e '
+            const list = JSON.parse(process.argv[1] || "[]");
+            const names = (Array.isArray(list) ? list : []).map((x) => x.name || x);
+            process.exit(names.includes("API_AUTH_SECRET") ? 0 : 1);
+          ' "$list_json"; then
+            echo "API_AUTH_SECRET already present — not rotating"
+          else
+            echo "API_AUTH_SECRET missing — generating and storing (value not logged)"
+            openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET
+          fi
+
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
 

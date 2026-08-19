@@ -167,7 +167,7 @@ test('login rejects unknown users, bad passwords, and plaintext hashes', async (
     users: [{
       id: 'ACC-1',
       email: 'sales@proqtrack.id',
-      password_hash: 'Proqpay2026',
+      password_hash: 'plaintext-not-a-hash',
       role: 'employee',
       status: 'active',
       project_ids: '[]',
@@ -181,7 +181,7 @@ test('login rejects unknown users, bad passwords, and plaintext hashes', async (
   assert.equal(missing.status, 401);
   const plaintext = await handleApi(request('/api/auth/login', {
     method: 'POST',
-    body: { email: 'sales@proqtrack.id', password: 'Proqpay2026' },
+    body: { email: 'sales@proqtrack.id', password: 'plaintext-not-a-hash' },
   }), env);
   assert.equal(plaintext.status, 401);
 });

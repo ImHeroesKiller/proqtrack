@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 12;
+const DB_VERSION = 13;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -489,20 +489,22 @@ function migrateDB(parsed) {
   return out;
 }
 
-const LEGACY_DEMO_PASSWORDS = ['demo123', 'budi123', 'siti123', 'ahmad123', 'dewi123', 'rizki123', 'maya123', 'fajar123', 'indah123'];
-const DEMO_PASSWORD = 'Proqpay2026';
+const RETIRED_SEED_PASSWORD_HASHES = new Set([
+  'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',
+]);
+const LOCAL_SEED_PASSWORD_HASH = 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c';
 
-function upgradeLegacyDemoPasswords(accounts) {
+function rotateRetiredSeedPasswords(accounts) {
   (accounts || []).forEach(account => {
-    if (LEGACY_DEMO_PASSWORDS.some(p => passwordMatches(account.password, p))) {
-      account.password = hashPassword(DEMO_PASSWORD);
+    if (RETIRED_SEED_PASSWORD_HASHES.has(String(account.password || ''))) {
+      account.password = LOCAL_SEED_PASSWORD_HASH;
     }
   });
 }
 
 function ensurePlatformAccounts(db) {
   db.accounts = db.accounts || [];
-  upgradeLegacyDemoPasswords(db.accounts);
+  rotateRetiredSeedPasswords(db.accounts);
   db.accounts.forEach(account => {
     if (account.role === 'superadmin') {
       account.organizationId = null;
@@ -510,22 +512,6 @@ function ensurePlatformAccounts(db) {
     }
     if (!account.organizationId) account.organizationId = DEFAULT_ORG_ID;
   });
-  const hasSuper = db.accounts.some(a => a.role === 'superadmin' && a.status === 'active');
-  if (!hasSuper) {
-    db.accounts.push({
-      id: 'ACC-SUPER',
-      email: 'superadmin@proqtrack.id',
-      name: 'Superadmin ProQTrack',
-      password: hashPassword(DEMO_PASSWORD),
-      role: 'superadmin',
-      employeeId: null,
-      organizationId: null,
-      status: 'active',
-      mustChangePassword: false,
-      lastLoginAt: null,
-      createdAt: new Date().toISOString(),
-    });
-  }
 }
 
 let _cache = null;
