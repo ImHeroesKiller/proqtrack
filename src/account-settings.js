@@ -29,7 +29,6 @@ function renderProjectStoreSettings() {
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
   return `
-      <section class="card">
         <div class="card-title">Katalog toko per project</div>
         <div class="card-subtitle">Aktifkan pengajuan toko baru dan atur opsi Segment, Type, dan Ownership untuk project itu.</div>
         <form class="am-form" onsubmit="AM.saveStoreCatalog(event)">
@@ -44,8 +43,7 @@ function renderProjectStoreSettings() {
           <div class="form-group"><label class="label">Type / tipe store</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
           <div class="form-group"><label class="label">Akun / ownership store</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
           <button class="btn btn-primary" type="submit">Simpan katalog project</button>
-        </form>
-      </section>`;
+        </form>`;
 }
 
 function linkedEmployee(acc) {
@@ -77,110 +75,124 @@ export function renderSettings() {
   const isManager = acc.role === 'manager' || acc.role === 'superadmin';
   const canAccounts = isManager;
   const photo = safePhotoUrl(emp?.photo);
+  const tabs = [
+    ['profil', 'Profil'],
+    ['keamanan', 'Keamanan'],
+    ['tampilan', 'Tampilan'],
+    ...(isManager ? [['organisasi', 'Organisasi'], ['katalog', 'Katalog toko']] : []),
+    ...(acc.role === 'employee' ? [['perangkat', 'Perangkat']] : []),
+    ['sesi', 'Sesi'],
+  ];
+  const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
+  const pane = id => `class="am-pane ${tab === id ? 'active' : ''}"`;
 
   return `
-    <div class="am-grid">
-      <section class="card">
-        <div class="card-title">Profil saya</div>
-        <div class="card-subtitle">Nama dan kontak yang tampil di aplikasi</div>
-        <div class="am-profile">
-          <div class="am-avatar" style="${photo ? `background-image:url('${photo}');background-size:cover` : ''}">${photo ? '' : esc(getInitials(acc.name))}</div>
-          <div>
-            <strong>${esc(acc.name)}</strong>
-            <div class="am-muted">${esc(acc.email)} · ${esc(roleLabel(acc.role))}</div>
-            <div class="am-muted">Login terakhir: ${acc.lastLoginAt ? formatDate(acc.lastLoginAt) : 'Baru saja'}</div>
-          </div>
-        </div>
-        <form class="am-form" onsubmit="AM.saveProfile(event)">
-          <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" required></div>
-          <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(acc.email)}" required></div>
-          ${emp ? `
-            <div class="form-row">
-              <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}"></div>
-              <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}"></div>
-            </div>
-          ` : ''}
-          <button class="btn btn-primary" type="submit">Simpan profil</button>
-        </form>
-      </section>
-
+    <div class="am-settings">
       ${acc.mustChangePassword ? `
-      <section class="card" style="border-color:#fdba74;background:#fff7ed">
+      <section class="card" style="border-color:#fdba74;background:#fff7ed;margin-bottom:12px">
         <div class="card-title">Wajib ganti password</div>
-        <div class="card-subtitle">Admin menandai akun ini harus mengganti password sebelum memakai menu lain.</div>
+        <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
-
-      <section class="card">
-        <div class="card-title">Keamanan</div>
-        <div class="card-subtitle">Ganti password akun ini. Minimal 8 karakter.</div>
-        <form class="am-form" onsubmit="AM.savePassword(event)">
-          <div class="form-group"><label class="label">Password saat ini</label><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></div>
-          <div class="form-group"><label class="label">Password baru</label><input class="input" type="password" name="nextPassword" minlength="8" autocomplete="new-password" required></div>
-          <div class="form-group"><label class="label">Ulangi password baru</label><input class="input" type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></div>
-          <button class="btn btn-primary" type="submit">Perbarui password</button>
-        </form>
-      </section>
-
-      <section class="card">
-        <div class="card-title">Preferensi tampilan</div>
-        <form class="am-form" onsubmit="AM.savePrefs(event)">
-          <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
-          <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
-          <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
-          <div class="form-group">
-            <label class="label">Zona waktu</label>
-            <select class="select" name="timezone">
-              ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${settings.timezone === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
-            </select>
+      <nav class="am-tabs" aria-label="Pengaturan">
+        ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
+      </nav>
+      <div class="card am-tab-body">
+        <section ${pane('profil')}>
+          <div class="card-title">Profil saya</div>
+          <div class="card-subtitle">Nama dan kontak yang tampil di aplikasi</div>
+          <div class="am-profile">
+            <div class="am-avatar" style="${photo ? `background-image:url('${photo}');background-size:cover` : ''}">${photo ? '' : esc(getInitials(acc.name))}</div>
+            <div>
+              <strong>${esc(acc.name)}</strong>
+              <div class="am-muted">${esc(acc.email)} · ${esc(roleLabel(acc.role))}</div>
+              <div class="am-muted">Login terakhir: ${acc.lastLoginAt ? formatDate(acc.lastLoginAt) : 'Baru saja'}</div>
+            </div>
           </div>
-          <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
-        </form>
-      </section>
+          <form class="am-form" onsubmit="AM.saveProfile(event)">
+            <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" required></div>
+            <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(acc.email)}" required></div>
+            ${emp ? `
+              <div class="form-row">
+                <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}"></div>
+                <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}"></div>
+              </div>
+            ` : ''}
+            <button class="btn btn-primary" type="submit">Simpan profil</button>
+          </form>
+        </section>
 
-      ${isManager ? `
-      <section class="card">
-        <div class="card-title">Organisasi</div>
-        <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
-        <form class="am-form" onsubmit="AM.saveOrg(event)">
-          <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
-          <div class="form-group emp-photo-field">
-            <label class="label">Logo organisasi</label>
-            <div class="employee-photo-editor">
-              <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
-              <div>
-                <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" onchange="AM.previewLogo(this)">
-                <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
-                <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
+        <section ${pane('keamanan')}>
+          <div class="card-title">Keamanan</div>
+          <div class="card-subtitle">Ganti password akun ini. Minimal 8 karakter.</div>
+          <form class="am-form" onsubmit="AM.savePassword(event)">
+            <div class="form-group"><label class="label">Password saat ini</label><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></div>
+            <div class="form-group"><label class="label">Password baru</label><input class="input" type="password" name="nextPassword" minlength="8" autocomplete="new-password" required></div>
+            <div class="form-group"><label class="label">Ulangi password baru</label><input class="input" type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></div>
+            <button class="btn btn-primary" type="submit">Perbarui password</button>
+          </form>
+        </section>
+
+        <section ${pane('tampilan')}>
+          <div class="card-title">Preferensi tampilan</div>
+          <form class="am-form" onsubmit="AM.savePrefs(event)">
+            <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
+            <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
+            <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
+            <div class="form-group">
+              <label class="label">Zona waktu</label>
+              <select class="select" name="timezone">
+                ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${settings.timezone === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+              </select>
+            </div>
+            <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
+          </form>
+        </section>
+
+        ${isManager ? `
+        <section ${pane('organisasi')}>
+          <div class="card-title">Organisasi</div>
+          <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
+          <form class="am-form" onsubmit="AM.saveOrg(event)">
+            <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
+            <div class="form-group emp-photo-field">
+              <label class="label">Logo organisasi</label>
+              <div class="employee-photo-editor">
+                <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
+                <div>
+                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" onchange="AM.previewLogo(this)">
+                  <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
+                  <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
+                </div>
               </div>
             </div>
-          </div>
-          <button class="btn btn-primary" type="submit">Simpan organisasi</button>
-        </form>
-      </section>
-      ${renderProjectStoreSettings()}
-      ` : ''}
+            <button class="btn btn-primary" type="submit">Simpan organisasi</button>
+          </form>
+        </section>
+        <section ${pane('katalog')}>${renderProjectStoreSettings()}</section>
+        ` : ''}
 
-      ${acc.role === 'employee' ? `
-      <section class="card">
-        <div class="card-title">Perangkat terpasang</div>
-        <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset IMEI.</div>
-        ${acc.deviceId ? `
-          <div class="detail-grid">
-            <div class="detail-label">IMEI / ID</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
-            <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || '—')}</div>
-            <div class="detail-label">Dipasang</div><div class="detail-value">${acc.devicePairedAt ? formatDate(acc.devicePairedAt) : '—'}</div>
-          </div>
-        ` : `<p class="am-muted">Belum terpasang. Login berikutnya dari perangkat ini akan menjadi perangkat resmi.</p>`}
-      </section>` : ''}
+        ${acc.role === 'employee' ? `
+        <section ${pane('perangkat')}>
+          <div class="card-title">Perangkat terpasang</div>
+          <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset IMEI.</div>
+          ${acc.deviceId ? `
+            <div class="detail-grid">
+              <div class="detail-label">IMEI / ID</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
+              <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || '—')}</div>
+              <div class="detail-label">Dipasang</div><div class="detail-value">${acc.devicePairedAt ? formatDate(acc.devicePairedAt) : '—'}</div>
+            </div>
+          ` : `<p class="am-muted">Belum terpasang. Login berikutnya dari perangkat ini akan menjadi perangkat resmi.</p>`}
+        </section>` : ''}
 
-      <section class="card">
-        <div class="card-title">Sesi & data lokal</div>
-        <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
-        ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
-        <div class="am-actions">
-          <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
-        </div>
-      </section>
+        <section ${pane('sesi')}>
+          <div class="card-title">Sesi & data lokal</div>
+          <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
+          ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
+          <div class="am-actions">
+            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
+          </div>
+        </section>
+      </div>
     </div>
   `;
 }
@@ -298,6 +310,10 @@ function formData(event) {
 }
 
 window.AM = {
+  setTab(id) {
+    window.FT.state._settingsTab = id;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
   saveProfile(event) {
     try {
       const data = formData(event);
@@ -451,6 +467,13 @@ function installStyles() {
   style.id = 'account-settings-css';
   style.textContent = `
     .am-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+    .am-settings{display:grid;gap:12px}
+    .am-tabs{display:flex;flex-wrap:wrap;gap:6px}
+    .am-tab{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gray-600);cursor:pointer}
+    .am-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
+    .am-tab-body{min-height:280px}
+    .am-pane{display:none}
+    .am-pane.active{display:block}
     .am-profile{display:flex;gap:14px;align-items:center;margin-bottom:16px}
     .am-avatar{width:56px;height:56px;border-radius:16px;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:800}
     .am-muted{font-size:12px;color:var(--gray-400);margin-top:3px}
