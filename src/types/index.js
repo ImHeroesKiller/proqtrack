@@ -14,6 +14,7 @@ const ALL_MODULES = [
   "photos",
   "attendance",
   "leaves",
+  "newOutlet",
 ];
 const MODULE_LABELS = {
   visits: "Kunjungan",
@@ -23,6 +24,7 @@ const MODULE_LABELS = {
   photos: "Foto Lapangan",
   attendance: "Absensi",
   leaves: "Ijin & Cuti",
+  newOutlet: "Tambah Toko Baru",
 };
 const PROJECT_ROUTES = new Set([
   "#/clients",

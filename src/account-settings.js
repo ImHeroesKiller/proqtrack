@@ -1,6 +1,7 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   createAccount, updateAccount, changePassword, updateOwnProfile, resetSalesDevice,
+  getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
 } from './lib/db.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
@@ -19,6 +20,32 @@ function roleLabel(role) {
 
 function statusLabel(status) {
   return { active: 'Aktif', inactive: 'Nonaktif', suspended: 'Ditangguhkan' }[status] || status || '—';
+}
+
+function renderProjectStoreSettings() {
+  const db = getDB();
+  const projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
+  const selected = window.FT.state._storeProjectId || projects[0]?.id || '';
+  const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
+  const lines = arr => (arr || []).join('\n');
+  return `
+      <section class="card">
+        <div class="card-title">Katalog toko per project</div>
+        <div class="card-subtitle">Aktifkan pengajuan toko baru dan atur opsi Segment, Type, dan Ownership untuk project itu.</div>
+        <form class="am-form" onsubmit="AM.saveStoreCatalog(event)">
+          <div class="form-group">
+            <label class="label">Project</label>
+            <select class="select" name="projectId" onchange="AM.pickStoreProject(this.value)">
+              ${projects.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
+            </select>
+          </div>
+          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Izinkan sales menambah toko baru di project ini</label>
+          <div class="form-group"><label class="label">Segment (satu baris satu opsi)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
+          <div class="form-group"><label class="label">Type / tipe store</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
+          <div class="form-group"><label class="label">Akun / ownership store</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
+          <button class="btn btn-primary" type="submit">Simpan katalog project</button>
+        </form>
+      </section>`;
 }
 
 function linkedEmployee(acc) {
@@ -130,6 +157,7 @@ export function renderSettings() {
           <button class="btn btn-primary" type="submit">Simpan organisasi</button>
         </form>
       </section>
+      ${renderProjectStoreSettings()}
       ` : ''}
 
       ${acc.role === 'employee' ? `
@@ -313,6 +341,27 @@ window.AM = {
       });
       document.body.classList.toggle('am-compact', form.compactTables.checked);
       toast('Preferensi disimpan');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  pickStoreProject(id) {
+    window.FT.state._storeProjectId = id;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  saveStoreCatalog(event) {
+    event.preventDefault();
+    try {
+      const form = event.target;
+      const split = name => String(form[name].value || '').split(/\n/).map(s => s.trim()).filter(Boolean);
+      saveProjectStoreSettings(form.projectId.value, {
+        allowNewOutlet: form.allowNewOutlet.checked,
+        segments: split('segments'),
+        types: split('types'),
+        ownerships: split('ownerships'),
+      });
+      toast('Katalog toko project disimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');

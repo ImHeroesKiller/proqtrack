@@ -218,6 +218,74 @@ export function defaultAppSettings() {
   };
 }
 
+export function defaultStoreCatalog() {
+  return {
+    allowNewOutlet: true,
+    segments: ['GT', 'MT', 'Other'],
+    types: ['Toko Kelontong', 'Minimarket', 'Apotek', 'Toko Bangunan', 'Lainnya'],
+    ownerships: ['Independent', 'Own Store', 'Franchise', 'Modern Chain', 'Third Party'],
+  };
+}
+
+export function formatOutletLabel(outlet) {
+  if (!outlet) return '—';
+  const num = outlet.outletNumber || outlet.code || outlet.id || '';
+  return `${num} — ${outlet.name || 'Toko'}`;
+}
+
+function nextOutletNumber(db) {
+  const nums = (db.outlets || []).map(o => {
+    const m = String(o.outletNumber || o.code || '').match(/(\d+)/);
+    return m ? Number(m[1]) : 0;
+  });
+  const n = Math.max(0, ...nums) + 1;
+  return `OUT-${String(n).padStart(4, '0')}`;
+}
+
+export function getProjectStoreSettings(projectId) {
+  const db = getDB();
+  const row = (db.projectSettings || []).find(s => s.projectId === projectId) || {};
+  const catalog = { ...defaultStoreCatalog(), ...(row.storeCatalog || {}) };
+  const allow = row.modules?.newOutlet !== false && catalog.allowNewOutlet !== false;
+  return { ...catalog, allowNewOutlet: allow, projectId };
+}
+
+export function saveProjectStoreSettings(projectId, data) {
+  const actor = assertOrgAdmin();
+  const db = getDB();
+  db.projectSettings = db.projectSettings || [];
+  let row = db.projectSettings.find(s => s.projectId === projectId);
+  if (!row) {
+    row = { projectId, modules: { newOutlet: true } };
+    db.projectSettings.push(row);
+  }
+  row.modules = { ...(row.modules || {}), newOutlet: data.allowNewOutlet !== false };
+  row.storeCatalog = {
+    allowNewOutlet: data.allowNewOutlet !== false,
+    segments: (data.segments || []).map(sanitizePlainText).filter(Boolean),
+    types: (data.types || []).map(sanitizePlainText).filter(Boolean),
+    ownerships: (data.ownerships || []).map(sanitizePlainText).filter(Boolean),
+  };
+  row.updatedAt = new Date().toISOString();
+  row.updatedBy = actor.id;
+  saveDB();
+  return getProjectStoreSettings(projectId);
+}
+
+export function canEmployeeAddStore(employeeId = getActor()?.employeeId) {
+  const db = getDB();
+  const ids = (db.projectAssignments || [])
+    .filter(a => a.employeeId === employeeId && a.status === 'active')
+    .map(a => a.projectId);
+  if (!ids.length) return false;
+  return ids.some(id => getProjectStoreSettings(id).allowNewOutlet);
+}
+
+export function storeCatalogForEmployee(employeeId = getActor()?.employeeId) {
+  const projectId = defaultProjectIdForEmployee(employeeId);
+  return getProjectStoreSettings(projectId);
+}
+
 /** Ensure product rows have brand/cost/margin fields without wiping user data */
 function migrateProducts(products) {
   if (!Array.isArray(products)) return JSON.parse(JSON.stringify(seedProducts));
@@ -384,6 +452,10 @@ function migrateDB(parsed) {
     ...row,
     organizationId: isDemoId(row.id) ? DEFAULT_ORG_ID : (row.organizationId || DEFAULT_ORG_ID),
   })) : rows;
+  (out.outlets || []).forEach((o, i) => {
+    if (o && !o.outletNumber && !o.code) o.outletNumber = `OUT-${String(i + 1).padStart(4, '0')}`;
+    else if (o && !o.outletNumber) o.outletNumber = o.code;
+  });
   ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments','outletProposals'].forEach(key => {
     if (Array.isArray(out[key])) out[key] = stamp(out[key]);
   });
@@ -1052,22 +1124,54 @@ export function getOutletProposals() {
 export function createOutletProposal(data) {
   const actor = assertLoggedIn();
   if (!actor.employeeId && actor.role === 'employee') throw new Error('Akun sales belum tertaut karyawan.');
-  const proposal = {
-    id: uid('OPR'),
+  const projectId = data.projectId || defaultProjectIdForEmployee(actor.employeeId);
+  if (actor.role === 'employee' && !getProjectStoreSettings(projectId).allowNewOutlet) {
+    throw new Error('Pengajuan toko baru tidak aktif pada project ini.');
+  }
+  const db = getDB();
+  const org = withOrg(data);
+  const outletNumber = nextOutletNumber(db);
+  const outlet = {
+    id: uid('OUT'),
+    outletNumber,
+    code: outletNumber,
+    status: 'pending',
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address || ''),
     type: sanitizePlainText(data.type || 'Toko'),
     channel: sanitizePlainText(data.channel || ''),
     ownership: sanitizePlainText(data.ownership || ''),
-    notesKind: sanitizePlainText(data.notesKind || 'freetext'),
     area: sanitizePlainText(data.area || ''),
-    city: sanitizePlainText(data.city || ''),
     phone: sanitizePlainText(data.phone || ''),
     owner: sanitizePlainText(data.owner || ''),
     lat: data.lat !== '' && data.lat != null ? Number(data.lat) : null,
     lng: data.lng !== '' && data.lng != null ? Number(data.lng) : null,
+    projectIds: projectId ? [projectId] : [],
+    clientId: (db.projects || []).find(p => p.id === projectId)?.clientId || null,
+    createdBy: actor.employeeId || actor.id,
+    submittedBy: actor.employeeId || actor.id,
+    ...org,
+  };
+  if (!outlet.name) throw new Error('Nama toko wajib diisi.');
+  if (outlet.lat == null || outlet.lng == null || Number.isNaN(outlet.lat) || Number.isNaN(outlet.lng)) {
+    throw new Error('Ambil lokasi toko dari perangkat dulu.');
+  }
+  const proposal = {
+    id: uid('OPR'),
+    name: outlet.name,
+    address: outlet.address,
+    type: outlet.type,
+    channel: outlet.channel,
+    ownership: outlet.ownership,
+    notesKind: sanitizePlainText(data.notesKind || 'freetext'),
+    area: outlet.area,
+    city: sanitizePlainText(data.city || ''),
+    phone: outlet.phone,
+    owner: outlet.owner,
+    lat: outlet.lat,
+    lng: outlet.lng,
     mapLabel: sanitizePlainText(data.mapLabel || ''),
-    projectId: data.projectId || defaultProjectIdForEmployee(actor.employeeId),
+    projectId,
     notes: sanitizePlainText(data.notes || ''),
     submittedBy: actor.employeeId || actor.id,
     submittedByName: actor.name,
@@ -1075,14 +1179,12 @@ export function createOutletProposal(data) {
     supervisorStatus: 'pending',
     managerStatus: 'pending',
     status: 'pending',
-    outletId: null,
-    ...withOrg(data),
+    outletId: outlet.id,
+    outletNumber,
+    ...org,
   };
-  if (!proposal.name) throw new Error('Nama toko wajib diisi.');
-  if (proposal.lat == null || proposal.lng == null || Number.isNaN(proposal.lat) || Number.isNaN(proposal.lng)) {
-    throw new Error('Ambil lokasi toko dari perangkat dulu.');
-  }
-  const db = getDB();
+  db.outlets = db.outlets || [];
+  db.outlets.push(outlet);
   db.outletProposals = db.outletProposals || [];
   db.outletProposals.push(proposal);
   saveDB();
@@ -1121,27 +1223,38 @@ export function reviewOutletProposal(id, decision, note = '', projectId = null) 
   if (projectId) row.projectId = projectId;
   if (row.supervisorStatus === 'rejected' || row.managerStatus === 'rejected') {
     row.status = 'rejected';
+    const existing = (db.outlets || []).find(o => o.id === row.outletId);
+    if (existing) existing.status = 'inactive';
   } else if (row.supervisorStatus === 'approved' && row.managerStatus === 'approved') {
     row.status = 'approved';
-    const outlet = {
-      id: uid('OUT'),
-      status: 'active',
-      name: row.name,
-      address: row.address,
-      type: row.type,
-      channel: row.channel,
-      ownership: row.ownership || '',
-      area: row.area || row.city,
-      phone: row.phone,
-      owner: row.owner,
-      lat: row.lat,
-      lng: row.lng,
-      organizationId: row.organizationId,
-      projectIds: row.projectId ? [row.projectId] : [],
-      clientId: (db.projects || []).find(p => p.id === row.projectId)?.clientId || null,
-    };
-    db.outlets.push(outlet);
-    row.outletId = outlet.id;
+    let outlet = (db.outlets || []).find(o => o.id === row.outletId);
+    if (!outlet) {
+      outlet = {
+        id: uid('OUT'),
+        outletNumber: row.outletNumber || nextOutletNumber(db),
+        status: 'active',
+        name: row.name,
+        address: row.address,
+        type: row.type,
+        channel: row.channel,
+        ownership: row.ownership || '',
+        area: row.area || row.city,
+        phone: row.phone,
+        owner: row.owner,
+        lat: row.lat,
+        lng: row.lng,
+        organizationId: row.organizationId,
+        projectIds: row.projectId ? [row.projectId] : [],
+        clientId: (db.projects || []).find(p => p.id === row.projectId)?.clientId || null,
+      };
+      db.outlets.push(outlet);
+      row.outletId = outlet.id;
+    } else {
+      outlet.status = 'active';
+      outlet.ownership = row.ownership || outlet.ownership;
+      outlet.channel = row.channel || outlet.channel;
+      outlet.type = row.type || outlet.type;
+    }
   }
   saveDB();
   return row;
@@ -1830,8 +1943,18 @@ export function getCompetitorAnalysisSummary() {
 }
 
 export function getVisitedOutletIds(empId) {
-  const visits = getDB().visits.filter(v => v.employeeId === empId);
-  return [...new Set(visits.map(v => v.outletId))];
+  const db = getDB();
+  const fromVisits = (db.visits || []).filter(v => !empId || v.employeeId === empId).map(v => v.outletId);
+  const projectIds = new Set((db.projectAssignments || [])
+    .filter(a => a.employeeId === empId && a.status === 'active')
+    .map(a => a.projectId));
+  const fromProjects = (db.outlets || [])
+    .filter(o => o.status !== 'inactive' && ((o.projectIds || []).some(id => projectIds.has(id)) || projectIds.has(o.projectId)))
+    .map(o => o.id);
+  const fromMine = (db.outlets || [])
+    .filter(o => o.status !== 'inactive' && (o.createdBy === empId || o.submittedBy === empId))
+    .map(o => o.id);
+  return [...new Set([...fromVisits, ...fromProjects, ...fromMine].filter(Boolean))];
 }
 
 export function getProductsForVisitedOutlets(empId) {

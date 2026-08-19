@@ -5,6 +5,7 @@ import {
   getVisitLocations, getVisitsOnDate, visitDay, FIELD_PHOTO_TYPES,
   getOrganization, getCurrentOrgId, getDB,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
+  canEmployeeAddStore, storeCatalogForEmployee, formatOutletLabel,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
@@ -264,8 +265,11 @@ export function renderOutletProposalForm() {
   const mine = getOutletProposals();
   const role = window.FT?.state?.account?.role;
   const emp = getEmployees().find(e => e.id === empId());
+  const canAdd = role !== 'employee' || canEmployeeAddStore(empId());
+  const catalog = storeCatalogForEmployee(empId());
+  const opt = (rows) => (rows || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
   return `
-    ${role === 'employee' ? `
+    ${role === 'employee' && canAdd ? `
     <div class="card">
       <div class="card-title">Ajukan toko baru</div>
       <div class="card-subtitle">Ambil lokasi dari perangkat. Alamat terisi otomatis. Project mengikuti assignment Anda.</div>
@@ -283,25 +287,15 @@ export function renderOutletProposalForm() {
         <div class="form-group"><label class="label">Alamat (otomatis dari lokasi, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required placeholder="Terisi otomatis setelah ambil lokasi"></textarea></div>
         <div class="form-row">
           <div class="form-group"><label class="label">Segment</label>
-            <select class="select" name="channel">
-              <option value="GT">GT — General Trade</option>
-              <option value="MT">MT — Modern Trade</option>
-              <option value="Other">Other</option>
-            </select>
+            <select class="select" name="channel">${opt(catalog.segments)}</select>
           </div>
           <div class="form-group"><label class="label">Akun (ownership store)</label>
-            <select class="select" name="ownership">
-              <option value="Independent">Independent</option>
-              <option value="Own Store">Own Store</option>
-              <option value="Franchise">Franchise</option>
-              <option value="Modern Chain">Modern Chain</option>
-              <option value="Third Party">Third Party</option>
-            </select>
+            <select class="select" name="ownership">${opt(catalog.ownerships)}</select>
           </div>
         </div>
         <div class="form-row">
           <div class="form-group"><label class="label">Type (tipe store)</label>
-            <select class="select" name="type"><option>Toko Kelontong</option><option>Minimarket</option><option>Apotek</option><option>Toko Bangunan</option><option>Lainnya</option></select>
+            <select class="select" name="type">${opt(catalog.types)}</select>
           </div>
           <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" value="${esc(emp?.area || '')}"></div>
         </div>
@@ -338,7 +332,7 @@ export function renderOutletProposalForm() {
           <tbody>
             ${(role === 'employee' ? mine : getOutletProposals()).length ? (role === 'employee' ? mine : getOutletProposals()).map(p => `
               <tr>
-                <td><strong>${esc(p.name)}</strong><div class="am-muted">${esc(p.address || '')}</div></td>
+                <td><strong>${esc(p.outletNumber || '')} ${esc(p.name)}</strong><div class="am-muted">${esc(p.address || '')}</div></td>
                 <td>${esc(p.area || p.city || '—')}</td>
                 <td>${esc(p.submittedByName || '')}<div class="am-muted">${formatDateShort((p.submittedAt || '').slice(0,10))}</div></td>
                 <td>${esc(proposalStatusLabel(p))}</td>

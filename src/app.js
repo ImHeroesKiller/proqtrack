@@ -21,6 +21,7 @@ import {
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
+  canEmployeeAddStore, formatOutletLabel,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
@@ -490,6 +491,7 @@ function renderSidebar() {
     navHTML += `<div class="nav-section-label">${section.section}</div>`;
     for (const item of section.items) {
       if (item.id === 'organizations' && !isSuperadmin()) continue;
+      if (item.id === 'new-outlet' && !canEmployeeAddStore(state.account?.employeeId)) continue;
       const active = currentRoute === item.route
         || (item.id === 'dashboard' && (currentRoute === '#/' || currentRoute === '#'))
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
@@ -975,7 +977,7 @@ window.FT.openVisitModal = function() {
       <div class="form-group">
         <label class="label">Outlet</label>
         <select class="select" name="outletId" required>
-          ${outlets.map(o => `<option value="${o.id}">${esc(o.name)} — ${o.area}</option>`).join('')}
+          ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
         </select>
       </div>
       <div class="form-row">
@@ -1979,7 +1981,7 @@ function renderStocks() {
         <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." oninput="FT.filterStocks()">
         <select class="select" id="stockOutletFilter" style="width:200px;" onchange="FT.filterStocks()">
           <option value="">Semua Outlet</option>
-          ${getOutlets().map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('')}
+          ${getOutlets().map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
         </select>
         <select class="select" id="stockStatusFilter" style="width:160px;" onchange="FT.filterStocks()">
           <option value="">Semua Status</option>
@@ -2035,7 +2037,7 @@ window.FT.filterStocks = function() {
 window.FT.openStockModal = function() {
   openModal('Tambah Stok', `
     <form onsubmit="FT.createStock(event)">
-      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${p.name} (${p.sku})</option>`).join('')}</select></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Quantity</label><input class="input" type="number" name="quantity" required></div>
@@ -2727,7 +2729,7 @@ window.FT.openPriceObsModal = function() {
         <label class="label">Outlet (yang pernah dikunjungi)</label>
         <select class="select" name="outletId" required>
           <option value="">— Pilih outlet —</option>
-          ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${esc(o.name)}</option>`).join('')}
+          ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
@@ -3295,7 +3297,7 @@ function intelFormHTML(visitId, outletId, opts = {}) {
           <label class="label">Outlet (pernah dikunjungi)</label>
           <select class="select" name="outletId" required>
             <option value="">— Pilih outlet —</option>
-            ${outlets.map(o => `<option value="${o.id}">${outletIcon(o.type)} ${esc(o.name)}</option>`).join('')}
+            ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
           </select>
         </div>
       ` : `<input type="hidden" name="outletId" value="${outletId||''}">`}
