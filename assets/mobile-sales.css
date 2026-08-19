@@ -1,0 +1,223 @@
+/* Sales mobile home — rujukan template/MobileUI-ProqTrack.png */
+@media (max-width: 899px) {
+  .role-field .topbar-hidden-mobile { display: none; }
+  .role-sales .field-dock { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.mq-home {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 8px;
+}
+.mq-head {
+  display: grid;
+  grid-template-columns: 40px 1fr 40px 40px;
+  gap: 8px;
+  align-items: center;
+}
+.mq-hello h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -.03em;
+  line-height: 1.2;
+}
+.mq-hello p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+.mq-icon-btn, .mq-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  border: 1px solid rgba(20,22,26,.08);
+  background: rgba(255,255,255,.86);
+  display: grid;
+  place-items: center;
+  position: relative;
+  color: #1f2937;
+  cursor: pointer;
+}
+.mq-avatar {
+  border: 0;
+  color: #fff;
+  font-weight: 800;
+  font-size: 13px;
+}
+.mq-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+.mq-card {
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 22px;
+  padding: 16px;
+  box-shadow: 0 10px 28px rgba(24,31,45,.05);
+}
+.mq-card-kicker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 10px;
+}
+.mq-card-kicker svg { width: 16px; height: 16px; color: var(--brand); }
+.mq-progress-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+}
+.mq-big { font-size: 40px; font-weight: 800; letter-spacing: -.05em; line-height: 1; }
+.mq-big small { font-size: 18px; color: #94a3b8; font-weight: 600; }
+.mq-pills { display: grid; grid-template-columns: repeat(3, auto); gap: 14px; text-align: center; }
+.mq-pills b { display: block; font-size: 18px; }
+.mq-pills span { font-size: 11px; color: #94a3b8; }
+.mq-pills .ok { color: #16a34a; }
+.mq-pills .warn { color: #ea580c; }
+.mq-bar { height: 6px; background: #f1f5f9; border-radius: 99px; overflow: hidden; margin-top: 14px; }
+.mq-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ff7a2e, #ef5000); border-radius: inherit; }
+.mq-bar-label { font-size: 11px; color: #ea580c; font-weight: 700; margin-top: 6px; }
+.mq-att {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.mq-att-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: #ecfdf5;
+  border-radius: 14px;
+  padding: 8px 10px;
+}
+.mq-att-status small { display: block; font-size: 10px; color: #64748b; }
+.mq-att-status strong { color: #15803d; font-size: 14px; }
+.mq-dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; }
+.mq-att-meta { font-size: 12px; color: #64748b; }
+.mq-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #fed7aa;
+  color: #c2410c;
+  border-radius: 12px;
+  padding: 8px 10px;
+  text-decoration: none;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fff7ed;
+}
+.mq-ghost svg { width: 14px; height: 14px; }
+.mq-store { display: grid; grid-template-columns: 48px 1fr auto; gap: 10px; align-items: start; }
+.mq-store h2 { margin: 0; font-size: 16px; }
+.mq-store p, .mq-next-row p { margin: 2px 0 0; font-size: 12px; color: #94a3b8; }
+.mq-store-ico {
+  width: 48px; height: 48px; border-radius: 16px;
+  background: #fff3e8; color: #ea580c;
+  display: grid; place-items: center; font-size: 22px;
+}
+.mq-store-ico.sm { width: 40px; height: 40px; border-radius: 14px; font-size: 18px; }
+.mq-live { font-size: 11px; color: #ea580c; font-weight: 700; white-space: nowrap; }
+.mq-meta-line { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #64748b; margin-top: 4px; }
+.mq-meta-line svg { width: 12px; height: 12px; color: #16a34a; }
+.mq-tiles { display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 6px; margin: 14px 0 12px; }
+.mq-tile {
+  border: 1px solid #eef2f6;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #475569;
+  text-decoration: none;
+  cursor: pointer;
+}
+.mq-tile-ico { width: 22px; height: 22px; color: #ea580c; }
+.mq-tile:nth-child(2) .mq-tile-ico { color: #d97706; }
+.mq-tile:nth-child(3) .mq-tile-ico { color: #7c3aed; }
+.mq-tile:nth-child(4) .mq-tile-ico { color: #2563eb; }
+.mq-tile:nth-child(5) .mq-tile-ico { color: #ea580c; }
+.mq-checkout {
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  padding: 13px;
+  background: linear-gradient(180deg, #ff6a1a, #ef5000);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: .04em;
+  cursor: pointer;
+}
+.mq-next-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.mq-next-head h3 { margin: 0; font-size: 15px; }
+.mq-next-head a { font-size: 12px; color: #94a3b8; text-decoration: none; }
+.mq-next-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid #f1f5f9;
+}
+.mq-next-row:first-of-type { border-top: 0; }
+.mq-next-row strong { font-size: 13px; }
+.mq-route {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 12px;
+  padding: 8px 10px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 0;
+  cursor: pointer;
+}
+.mq-route svg { width: 13px; height: 13px; }
+.mq-next-row:nth-child(2) .mq-store-ico { background: #ecfdf5; color: #16a34a; }
+.mq-next-row:nth-child(3) .mq-store-ico { background: #fff7ed; color: #ea580c; }
+.mq-next-row:nth-child(2) .mq-route { background: #ecfdf5; color: #15803d; }
+.mq-next-row:nth-child(3) .mq-route { background: #fff7ed; color: #c2410c; }
+.mq-att-form { grid-column: 1 / -1; }
+.mq-muted { font-size: 12px; color: #94a3b8; }
+
+.role-sales .field-dock-item.active {
+  color: #c2410c;
+}
+.role-sales .field-dock-item.active::after {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 3px;
+  border-radius: 99px;
+  background: #ef5000;
+  margin-top: 2px;
+}
+
+@media (min-width: 900px) {
+  .mq-home { max-width: 520px; }
+  .role-field .topbar-hidden-mobile { display: flex; }
+}

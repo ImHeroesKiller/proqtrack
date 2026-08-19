@@ -552,7 +552,48 @@ export function updateOrganization(id, data) {
   return db.organizations[idx];
 }
 
-export function authenticate(email, password) {
+function assertSalesDevice(db, acc, device) {
+  if (String(acc.role || '').toLowerCase() !== 'employee') return;
+  const deviceId = String(device?.id || '').trim();
+  if (!deviceId) throw new Error('Perangkat tidak dikenali. Buka aplikasi dari perangkat resmi sales.');
+  const other = db.accounts.find(a =>
+    a.role === 'employee' && a.id !== acc.id && a.deviceId && a.deviceId === deviceId
+  );
+  if (other) {
+    throw new Error('Perangkat ini sudah terpasang ke akun sales lain. Satu device hanya untuk satu sales.');
+  }
+  if (!acc.deviceId) {
+    acc.deviceId = deviceId;
+    acc.deviceImei = device.imei || '';
+    acc.deviceLabel = sanitizePlainText(device.label || '');
+    acc.deviceUserAgent = sanitizePlainText(device.userAgent || '');
+    acc.devicePairedAt = new Date().toISOString();
+    return;
+  }
+  if (acc.deviceId !== deviceId) {
+    throw new Error('Akun sudah terpasang ke perangkat lain. Minta manager mereset IMEI sebelum ganti device.');
+  }
+}
+
+export function resetSalesDevice(accountId) {
+  const actor = assertOrgAdmin();
+  const db = getDB();
+  const acc = db.accounts.find(a => a.id === accountId);
+  if (!acc) throw new Error('Akun tidak ditemukan.');
+  if (acc.role !== 'employee') throw new Error('Reset IMEI hanya untuk akun sales.');
+  if (actor.role === 'manager' && (acc.organizationId || DEFAULT_ORG_ID) !== actor.organizationId) throw new Error('Akses ditolak');
+  acc.deviceId = null;
+  acc.deviceImei = '';
+  acc.deviceLabel = '';
+  acc.deviceUserAgent = '';
+  acc.deviceResetAt = new Date().toISOString();
+  acc.deviceResetBy = actor.id;
+  acc.deviceResetByName = actor.name || actor.email;
+  saveDB();
+  return publicAccount(acc);
+}
+
+export function authenticate(email, password, device = null) {
   const db = getDB();
   const acc = db.accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
   if (!acc || acc.status === 'inactive' || acc.status === 'suspended' || !passwordMatches(acc.password, password)) return null;
@@ -560,6 +601,7 @@ export function authenticate(email, password) {
     const employee = getEmployee(acc.employeeId);
     if (!employee || employee.status !== 'active') return null;
   }
+  assertSalesDevice(db, acc, device);
   acc.lastLoginAt = new Date().toISOString();
   if (!String(acc.password).startsWith('sha256$')) acc.password = hashPassword(password);
   if (acc.role === 'superadmin') {

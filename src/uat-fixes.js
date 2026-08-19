@@ -38,6 +38,11 @@ function installSessionContinuity(){
   const db=readDB();
   const account=(db.accounts||[]).find(a=>a.id===saved.accountId||a.email===saved.email);
   if(!account||account.status==='inactive'||account.status==='suspended'){sessionStorage.removeItem(SESSION_KEY);return;}
+  if(account.role==='employee'&&account.deviceId){
+    let deviceId='';
+    try{deviceId=localStorage.getItem('proqtrack_device_id_v1')||'';}catch{}
+    if(deviceId&&account.deviceId!==deviceId){sessionStorage.removeItem(SESSION_KEY);return;}
+  }
   window.FT.state.loggedIn=true;
   window.FT.state.account=account;
   window.FT.state.user={name:account.name||account.email,role:account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};

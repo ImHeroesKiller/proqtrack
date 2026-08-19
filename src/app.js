@@ -33,6 +33,7 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
+import { getDeviceIdentity } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 
 // Make utils available globally for inline handlers
@@ -447,7 +448,7 @@ function render() {
       ${renderSidebar()}
       <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
-        <div class="topbar">
+        <div class="topbar ${fieldRole && route === '#/myday' ? 'topbar-hidden-mobile' : ''}">
           <button class="mobile-menu-btn" onclick="FT.toggleSidebar()">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
@@ -550,7 +551,6 @@ function renderFieldDock(route) {
       ]
     : [
         { route: '#/myday', label: 'Hari Ini', icon: 'calendar' },
-        { route: '#/last-location', label: 'Lokasi', icon: 'pin' },
         { route: '#/myvisits', label: 'Kunjungan', icon: 'visits' },
         { route: '#/mystocks', label: 'Stok', icon: 'stocks' },
       ];
@@ -604,7 +604,13 @@ window.FT.handleLogin = function(e) {
   e.preventDefault();
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
-  const acc = authenticate(email, password);
+  let acc = null;
+  try {
+    acc = authenticate(email, password, getDeviceIdentity());
+  } catch (error) {
+    showToast(error.message || 'Login ditolak oleh kunci perangkat.', 'error');
+    return;
+  }
   if (!acc) {
     showToast('Email atau password salah', 'error');
     return;
@@ -1584,6 +1590,39 @@ window.FT.updateOutlet = function(e, id) {
   } catch (error) { showToast(error.message, 'error'); }
 };
 
+function greetingNow() {
+  const h = new Date().getHours();
+  if (h < 11) return 'Selamat pagi';
+  if (h < 15) return 'Selamat siang';
+  if (h < 18) return 'Selamat sore';
+  return 'Selamat malam';
+}
+
+function longDateId(d = new Date()) {
+  return d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+function minutesAgoLabel(time) {
+  if (!time) return '';
+  const [hh, mm] = String(time).split(':').map(Number);
+  if (!Number.isFinite(hh)) return '';
+  const then = new Date();
+  then.setHours(hh, mm || 0, 0, 0);
+  const diff = Math.round((Date.now() - then.getTime()) / 60000);
+  if (diff < 1) return 'baru saja';
+  if (diff < 60) return `${diff} menit lalu`;
+  return `${Math.floor(diff / 60)} jam lalu`;
+}
+
+function mapsDir(lat, lng) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) return '';
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || 'Sales';
+}
+
 // ===== Employee: My Day Dashboard =====
 function renderMyDay() {
   const empId = myEmployeeId();
@@ -1596,82 +1635,105 @@ function renderMyDay() {
   const completed = visits.filter(v => v.status === 'completed');
   const activeV = visits.filter(v => v.status === 'checked-in');
   const planned = visits.filter(v => v.status === 'planned');
-  const pct = emp.targetVisits > 0 ? Math.round(visits.length / emp.targetVisits * 100) : 0;
+  const target = Number(emp.targetVisits) || Math.max(visits.length, 1);
+  const doneCount = completed.length;
+  const pct = Math.min(100, Math.round((doneCount / target) * 100));
+  const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
+  const active = activeV[0];
+  const activeOut = active ? outletMap[active.outletId] : null;
+  const attMaps = att && (att.lat || att.lng) ? mapsDir(att.lat, att.lng) : (activeOut ? mapsDir(activeOut.lat, activeOut.lng) : '');
+  const alerts = getLeaves().filter(l => l.employeeId === empId && l.status === 'pending').length;
+  const tile = (label, iconName, onclick) => `<button type="button" class="mq-tile" onclick="${onclick}">
+    <span class="mq-tile-ico">${iconSvg(iconName)}</span><span>${label}</span></button>`;
 
   return `
-    <div class="grid-3" style="margin-bottom:24px;">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--blue-50); color:var(--blue-600);">${appIcon('visits')}</div>
-        <div class="stat-label">Kunjungan Hari Ini</div>
-        <div class="stat-value">${visits.length}<span style="font-size:16px; color:var(--gray-400); font-weight:500;"> / ${emp.targetVisits}</span></div>
-        <div class="progress-bar" style="margin-top:8px;"><div class="progress-fill" style="width:${pct}%;"></div></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--green-50); color:var(--green-600);">${appIcon('attendance')}</div>
-        <div class="stat-label">Selesai</div>
-        <div class="stat-value">${completed.length}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--amber-50); color:var(--amber-500);">${appIcon('calendar')}</div>
-        <div class="stat-label">Aktif & Direncanakan</div>
-        <div class="stat-value">${activeV.length + planned.length}</div>
-      </div>
-    </div>
+    <div class="mq-home">
+      <header class="mq-head">
+        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div class="mq-hello">
+          <h1>${greetingNow()}, ${esc(firstName(emp.name))}! 👋</h1>
+          <p>${esc(longDateId())}</p>
+        </div>
+        <button type="button" class="mq-icon-btn" onclick="location.hash='#/myleaves'" aria-label="Notifikasi">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          ${alerts ? `<span class="mq-badge">${alerts}</span>` : ''}
+        </button>
+        <button type="button" class="mq-avatar" style="background:${colors[cIdx]}" onclick="location.hash='#/settings'">${getInitials(emp.name)}</button>
+      </header>
 
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-title">Status Absensi</div>
-        <div class="card-subtitle">Check-in hari ini: kantor, toko pertama, atau meeting point</div>
-        ${attendanceCheckinCard()}
-      </div>
-
-      <div class="card">
-        <div class="card-title">Profil Saya</div>
-        <div class="card-subtitle">Informasi akun</div>
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div class="avatar avatar-lg" style="background:${colors[cIdx]};">${getInitials(emp.name)}</div>
+      <section class="mq-card mq-progress">
+        <div class="mq-card-kicker">${iconSvg('chart')} Progress Hari Ini</div>
+        <div class="mq-progress-row">
           <div>
-            <div style="font-size:16px; font-weight:700; color:var(--gray-900);">${esc(emp.name)}</div>
-            <div style="font-size:13px; color:var(--gray-400);">${roleBadge(emp.role)}</div>
-            <div style="font-size:12px; color:var(--gray-400); margin-top:4px;">📍 ${esc(emp.area)} · 📞 ${emp.phone}</div>
-            <div style="font-size:12px; color:var(--gray-400);">Total kunjungan: ${emp.totalVisits}</div>
+            <div class="mq-big">${doneCount}<small>/${target}</small></div>
+            <div class="mq-muted">Kunjungan</div>
+          </div>
+          <div class="mq-pills">
+            <div><b class="ok">${completed.length}</b><span>Selesai</span></div>
+            <div><b class="warn">${activeV.length}</b><span>Berlangsung</span></div>
+            <div><b>${planned.length}</b><span>Berikutnya</span></div>
           </div>
         </div>
-      </div>
-    </div>
+        <div class="mq-bar"><i style="width:${pct}%"></i></div>
+        <div class="mq-bar-label">${pct}%</div>
+      </section>
 
-    <div class="card" style="margin-top:20px;">
-      <div class="card-title">Kunjungan Hari Ini</div>
-      <div class="card-subtitle">${visits.length} kunjungan dijadwalkan supervisor/manager untuk hari ini</div>
-      ${visits.length === 0 ? `<div class="empty-state">${appIcon('visits')}<h3>Belum ada kunjungan hari ini</h3><p>Jadwal muncul setelah supervisor atau manager menugaskan toko untuk tanggal ini.</p></div>` : `
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          ${visits.map(v => {
-            const o = outletMap[v.outletId];
-            if (!o) return '';
-            return `
-              <div style="display:flex; align-items:center; gap:12px; padding:14px; border-radius:12px; background:var(--gray-50); ${v.status==='checked-in'?'border:2px solid var(--blue-200);':''}">
-                <div style="font-size:28px;">${outletIcon(o.type)}</div>
-                <div style="flex:1; min-width:0;">
-                  <div style="font-size:15px; font-weight:600; color:var(--gray-800);">${esc(o.name)}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div>
-                  ${v.checkInTime ? `<div style="font-size:11px; color:var(--gray-400); margin-top:2px;">⏱ ${v.checkInTime}${v.checkOutTime ? ` → ${v.checkOutTime}` : ''} (${formatDuration(v.checkInTime, v.checkOutTime)})</div>` : ''}
-                </div>
-                <div style="text-align:right;">
-                  ${statusBadge(v.status)}
-                  ${v.status === 'planned' ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckIn('${v.id}')">Check In</button>` : ''}
-                  ${v.status === 'checked-in' ? `
-                    <br><button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
-                    <br><button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Stok</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Harga</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitIntelInput('${v.id}', '${v.outletId}')">Intel</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-top:4px;" onclick="FT.openVisitPhotoInput('${v.id}', '${v.outletId}')">Foto</button>
-                  ` : ''}
-                </div>
-              </div>
-            `;
-          }).join('')}
+      <section class="mq-card mq-att">
+        ${att ? `
+          <div class="mq-att-status">
+            <span class="mq-dot"></span>
+            <div><small>Status Absensi</small><strong>${esc(att.status === 'late' || att.status === 'terlambat' ? 'Terlambat' : 'Hadir')}</strong></div>
+          </div>
+          <div class="mq-att-meta">Check-in <b>${esc(att.checkInTime || '—')}</b><br>${esc(att.checkInLocation || att.locationName || '—')}</div>
+          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} Lihat Lokasi</a>` : ''}
+        ` : `<div class="mq-att-form">${attendanceCheckinCard()}</div>`}
+      </section>
+
+      ${active && activeOut ? `
+      <section class="mq-card mq-active">
+        <div class="mq-card-kicker">Sedang Dikunjungi</div>
+        <div class="mq-store">
+          <div class="mq-store-ico">${outletIcon(activeOut.type)}</div>
+          <div>
+            <h2>${esc(activeOut.name)}</h2>
+            <p>${esc(activeOut.address || '')}</p>
+            <div class="mq-meta-line">${iconSvg('attendance')} Check-in ${esc(active.checkInTime || '—')} · ${esc(minutesAgoLabel(active.checkInTime))}</div>
+          </div>
+          <span class="mq-live">checked-in</span>
         </div>
-      `}
+        <div class="mq-tiles">
+          ${tile('Stok', 'stocks', `FT.openVisitStockInput('${active.id}','${active.outletId}')`)}
+          ${tile('Harga', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
+          ${tile('Intel', 'intel', `FT.openVisitIntelInput('${active.id}','${active.outletId}')`)}
+          ${tile('Foto', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
+          ${mapsDir(activeOut.lat, activeOut.lng)
+            ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></a>`
+            : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></span>`}
+        </div>
+        <button type="button" class="mq-checkout" onclick="FT.mobileCheckOut('${active.id}')">CHECK OUT →</button>
+      </section>` : ''}
+
+      <section class="mq-card mq-next">
+        <div class="mq-next-head">
+          <h3>Berikutnya</h3>
+          <a href="#/myvisits">Lihat Semua ›</a>
+        </div>
+        ${planned.length ? planned.map(v => {
+          const o = outletMap[v.outletId];
+          if (!o) return '';
+          const km = (emp.lat && o.lat) ? calculateDistance(emp.lat, emp.lng, o.lat, o.lng) : null;
+          const dir = mapsDir(o.lat, o.lng);
+          return `<div class="mq-next-row">
+            <div class="mq-store-ico sm">${outletIcon(o.type)}</div>
+            <div>
+              <strong>${esc(o.name)}</strong>
+              <p>${esc(o.address || '')}</p>
+              <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Terjadwal'} ${km != null ? ` · ${km} km` : ''}</div>
+            </div>
+            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Rute</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
+          </div>`;
+        }).join('') : `<div class="empty-state" style="padding:20px"><h3>Tidak ada jadwal berikutnya</h3></div>`}
+      </section>
     </div>
   `;
 }

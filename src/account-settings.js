@@ -1,7 +1,8 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
-  createAccount, updateAccount, changePassword, updateOwnProfile,
+  createAccount, updateAccount, changePassword, updateOwnProfile, resetSalesDevice,
 } from './lib/db.js';
+
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
 function account() {
@@ -131,6 +132,19 @@ export function renderSettings() {
       </section>
       ` : ''}
 
+      ${acc.role === 'employee' ? `
+      <section class="card">
+        <div class="card-title">Perangkat terpasang</div>
+        <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset IMEI.</div>
+        ${acc.deviceId ? `
+          <div class="detail-grid">
+            <div class="detail-label">IMEI / ID</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
+            <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || '—')}</div>
+            <div class="detail-label">Dipasang</div><div class="detail-value">${acc.devicePairedAt ? formatDate(acc.devicePairedAt) : '—'}</div>
+          </div>
+        ` : `<p class="am-muted">Belum terpasang. Login berikutnya dari perangkat ini akan menjadi perangkat resmi.</p>`}
+      </section>` : ''}
+
       <section class="card">
         <div class="card-title">Sesi & data lokal</div>
         <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
@@ -178,18 +192,22 @@ export function renderAccounts() {
       </div>
       <div class="visits-table-wrapper">
         <table class="table">
-          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Login terakhir</th><th></th></tr></thead>
+          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Perangkat pertama</th><th></th></tr></thead>
           <tbody>
             ${rows.length ? rows.map(a => {
               const emp = employees.find(e => e.id === a.employeeId);
+              const device = a.role === 'employee'
+                ? (a.deviceId ? `${esc(a.deviceImei || 'IMEI')} · ${esc(a.deviceLabel || 'Device')}<div class="am-muted">Login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
+                : '—';
               return `<tr>
                 <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
                 <td>${esc(roleLabel(a.role))}</td>
                 <td>${emp ? esc(emp.name) : '—'}</td>
                 <td>${statusBadge(a.status)}</td>
-                <td>${a.lastLoginAt ? formatDateShort(a.lastLoginAt) : '—'}</td>
+                <td>${device}</td>
                 <td>
                   <button class="btn btn-secondary btn-sm" onclick="AM.openAccount('${a.id}')">Edit</button>
+                  ${a.role === 'employee' && a.deviceId ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset IMEI</button>` : ''}
                   ${a.status === 'active'
                     ? `<button class="btn btn-danger btn-sm" onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
                     : `<button class="btn btn-secondary btn-sm" onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
@@ -232,6 +250,12 @@ function accountForm(existing) {
       <div class="form-group"><label class="label">${existing ? 'Password baru (opsional)' : 'Password'}</label>
         <input class="input" type="password" name="password" minlength="8" autocomplete="new-password" ${existing ? '' : 'required'} placeholder="${existing ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter'}">
       </div>
+      ${existing?.role === 'employee' ? `
+      <div class="form-group">
+        <label class="label">Login perangkat pertama</label>
+        ${existing.deviceId ? `<div class="am-muted">IMEI ${esc(existing.deviceImei || '—')} · ${esc(existing.deviceLabel || '—')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}<br>${esc((existing.deviceUserAgent || '').slice(0, 120))}</div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="AM.resetDevice('${existing.id}')">Reset IMEI</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
+      </div>` : ''}
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -345,6 +369,17 @@ window.AM = {
       else createAccount(data);
       window.FT.closeModal?.();
       toast(id ? 'Akun diperbarui' : 'Akun dibuat');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  resetDevice(id) {
+    if (!confirm('Reset IMEI akun ini? Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+    try {
+      resetSalesDevice(id);
+      window.FT.closeModal?.();
+      toast('IMEI direset. Sales dapat pairing perangkat baru saat login.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
