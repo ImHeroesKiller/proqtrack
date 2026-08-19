@@ -23,6 +23,7 @@ import {
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
+  registerTestDevice,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
@@ -35,8 +36,13 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
-import { getDeviceIdentity } from './lib/device.js';
+import { getDeviceIdentity, markSuperadminHost, isSuperadminHostDevice } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
+
+try {
+  const hostDev = getDeviceIdentity();
+  if (isSuperadminHostDevice(hostDev.id)) registerTestDevice(hostDev, { email: 'superadmin-host' });
+} catch { /* ignore */ }
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -244,6 +250,7 @@ function getRoute() {
 }
 
 function navigate(route) {
+  closeModal();
   location.hash = route;
 }
 
@@ -341,28 +348,28 @@ function render() {
       pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
       pageContent = renderLastLocation();
     } else if (route === '#/myvisits') {
-      pageTitle = 'Kunjungan Saya'; pageSubtitle = 'Riwayat semua kunjungan Anda';
+      pageTitle = 'My Visits'; pageSubtitle = 'Your visit history';
       pageContent = renderMyVisits();
     } else if (route === '#/mystocks') {
-      pageTitle = 'Stok Outlet';
-      pageSubtitle = isSupervisor() ? 'Stok di toko yang dikunjungi tim Anda' : 'Stok produk di outlet yang Anda kunjungi';
+      pageTitle = 'Outlet Stock';
+      pageSubtitle = isSupervisor() ? 'Stock at outlets your team visited' : 'Stock at outlets you visited';
       pageContent = renderMyStocks();
     } else if (route === '#/myprices') {
-      pageTitle = 'Harga & Diskon';
-      pageSubtitle = isSupervisor() ? 'Observasi harga dari kunjungan tim Anda' : 'Pantau harga dan diskon di outlet yang Anda kunjungi';
+      pageTitle = 'Price & Discount';
+      pageSubtitle = isSupervisor() ? 'Price observations from your team' : 'Prices and discounts at visited outlets';
       pageContent = renderMyPrices();
     } else if (route === '#/myintel') {
-      pageTitle = 'Intel Kompetitor';
-      pageSubtitle = isSupervisor() ? 'Intel kompetitor yang dicatat tim Anda' : 'Catat dan pantau intel kompetitor di outlet yang dikunjungi';
+      pageTitle = 'Competitor Intel';
+      pageSubtitle = isSupervisor() ? 'Competitor intel from your team' : 'Competitor intel at visited outlets';
       pageContent = renderMyIntel();
     } else if (route === '#/myphotos') {
-      pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit Anda';
+      pageTitle = 'Field Photos'; pageSubtitle = 'Your visit photos';
       pageContent = renderFieldPhotosGallery({ managerView: false });
     } else if (route === '#/myattendance') {
-      pageTitle = 'Absensi Saya'; pageSubtitle = 'Riwayat kehadiran Anda';
+      pageTitle = 'My Attendance'; pageSubtitle = 'Your attendance history';
       pageContent = renderMyAttendance();
     } else if (route === '#/myleaves') {
-      pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
+      pageTitle = 'Leave'; pageSubtitle = 'Submit and track leave requests';
       pageContent = renderMyLeaves();
     } else if (route === '#/new-outlet') {
       pageTitle = 'New Outlet'; pageSubtitle = 'New outlet submissions wait for supervisor and manager approval';
@@ -373,17 +380,17 @@ function render() {
     }
   } else if ((isOrgAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
-    pageTitle = isOrgAdmin() ? 'Beranda Organisasi' : 'Beranda Tim';
+    pageTitle = isOrgAdmin() ? 'Organization Home' : 'Team Home';
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Ringkasan operasional';
     pageContent = isOrgAdmin() ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
     pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in terakhir tim di toko atau lokasi kerja';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
-    pageTitle = 'Lacak Kunjungan'; pageSubtitle = 'Daftar kunjungan outlet oleh tim lapangan';
+    pageTitle = 'Visits'; pageSubtitle = 'Outlet visits by the field team';
     pageContent = renderVisits();
   } else if (isOrgAdmin() && route === '#/employees') {
-    pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
+    pageTitle = 'Employees'; pageSubtitle = 'Field employee records';
     pageContent = renderEmployees();
   } else if ((isOrgAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
     pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
@@ -398,22 +405,22 @@ function render() {
     pageTitle = 'Product Sales'; pageSubtitle = 'Sales entries used to calculate monthly targets';
     pageContent = renderProductSales({ mine: false });
   } else if (isOrgAdmin() && route === '#/stocks') {
-    pageTitle = 'Stok Outlet'; pageSubtitle = 'Pantau stok produk di setiap outlet';
+    pageTitle = 'Outlet Stock'; pageSubtitle = 'Stock levels at each outlet';
     pageContent = renderStocks();
   } else if (isOrgAdmin() && route === '#/competitors') {
-    pageTitle = 'Kompetitor'; pageSubtitle = 'Master merek kompetitor & katalog produknya';
+    pageTitle = 'Competitors'; pageSubtitle = 'Competitor brands and catalog';
     pageContent = renderCompetitors();
   } else if (teamOps && route === '#/competitor-analysis') {
-    pageTitle = 'Analisa Kompetitor'; pageSubtitle = 'Ringkasan intel lapangan dari seluruh sales';
+    pageTitle = 'Competitor Analysis'; pageSubtitle = 'Field intel summary';
     pageContent = renderCompetitorAnalysis();
   } else if (teamOps && route === '#/field-photos') {
-    pageTitle = 'Foto Lapangan'; pageSubtitle = 'Galeri foto visit seluruh tim lapangan';
+    pageTitle = 'Field Photos'; pageSubtitle = 'Team visit photo gallery';
     pageContent = renderFieldPhotosGallery({ managerView: true });
   } else if (teamOps && route === '#/attendance') {
-    pageTitle = 'Absensi'; pageSubtitle = isSupervisor() ? 'Rekap kehadiran Anda dan tim lapangan' : 'Rekap kehadiran tim lapangan';
+    pageTitle = 'Attendance'; pageSubtitle = isSupervisor() ? 'Your team attendance' : 'Field team attendance';
     pageContent = renderAttendanceManager();
   } else if (teamOps && route === '#/leaves') {
-    pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Kelola pengajuan ijin dan cuti karyawan';
+    pageTitle = 'Leave'; pageSubtitle = 'Leave and time-off requests';
     pageContent = renderLeavesManager();
   } else if (isOrgAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
@@ -429,7 +436,7 @@ function render() {
       return;
     }
     if (route === '#/organizations') {
-      pageTitle = 'Organisasi'; pageSubtitle = 'Tenant / workspace terpisah per klien bisnis Anda';
+      pageTitle = 'Organizations'; pageSubtitle = 'Separate workspaces per tenant';
       pageContent = renderOrganizations();
     } else {
       const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
@@ -440,11 +447,11 @@ function render() {
     pageTitle = 'Settings'; pageSubtitle = 'Account, security, and app preferences';
     pageContent = renderSettings();
   } else if (isOrgAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
-    pageTitle = 'Laporan';
-    pageSubtitle = 'Analitik dan segmentasi data operasional';
+    pageTitle = 'Reports';
+    pageSubtitle = 'Operational analytics and custom extracts';
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
   } else if (isOrgAdmin() && route === '#/accounts') {
-    pageTitle = 'Manajemen Akun'; pageSubtitle = 'Login, role, status, dan tautan karyawan';
+    pageTitle = 'Accounts'; pageSubtitle = 'Logins, roles, and employee links';
     pageContent = renderAccounts();
   } else if (!isOrgAdmin()) {
     location.hash = '#/myday';
@@ -628,6 +635,7 @@ window.FT.handleLogin = function(e) {
     showToast('Email atau password salah', 'error');
     return;
   }
+  if (acc.role === 'superadmin') markSuperadminHost(getDeviceIdentity());
   state.loggedIn = true;
   state.account = acc;
   state.user = { name: acc.name, role: displayRole(acc), email: acc.email };
@@ -643,6 +651,7 @@ window.FT.handleLogin = function(e) {
 };
 
 window.FT.logout = function() {
+  closeModal();
   clearApiToken();
   state.loggedIn = false;
   state.account = null;
@@ -4170,7 +4179,7 @@ function openModal(title, content) {
   `;
   bindAssetFields(root);
 }
-function closeModal() { document.getElementById('modalRoot').innerHTML = ''; }
+function closeModal() { const root = document.getElementById('modalRoot'); if (root) root.innerHTML = ''; }
 window.FT.closeModal = closeModal;
 
 // ===== Page-specific handler attachments =====

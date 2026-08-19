@@ -40,12 +40,16 @@ function installSessionContinuity(){
   if(!account||account.status==='inactive'||account.status==='suspended'){sessionStorage.removeItem(SESSION_KEY);return;}
   if(account.role==='employee'&&account.deviceId){
     let deviceId='';
+    let hostId='';
     try{deviceId=localStorage.getItem('proqtrack_device_id_v1')||'';}catch{}
-    if(deviceId&&account.deviceId!==deviceId){sessionStorage.removeItem(SESSION_KEY);return;}
+    try{hostId=JSON.parse(localStorage.getItem('proqtrack_superadmin_host_v1')||'null')?.id||'';}catch{}
+    const listed=(db.appSettings?.testDevices||[]).some(d=>d&&d.id===deviceId);
+    const isHost=!!(deviceId&&(deviceId===hostId||listed));
+    if(deviceId&&account.deviceId!==deviceId&&!isHost){sessionStorage.removeItem(SESSION_KEY);return;}
   }
   window.FT.state.loggedIn=true;
   window.FT.state.account=account;
-  window.FT.state.user={name:account.name||account.email,role:account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};
+  window.FT.state.user={name:account.name||account.email,role:account.role==='superadmin'?'Superadmin':account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};
   window.FT.state.route=saved.route&&saved.route!=='#/login'?saved.route:(account.role==='manager'?'#/':'#/myday');
   if(location.hash!==window.FT.state.route)location.hash=window.FT.state.route;
   else window.dispatchEvent(new HashChangeEvent('hashchange'));

@@ -220,6 +220,7 @@ export function defaultAppSettings() {
     officeLat: null,
     officeLng: null,
     officeName: 'Office',
+    testDevices: [],
     updatedAt: null,
   };
 }
@@ -443,13 +444,20 @@ function migrateDB(parsed) {
     status: normalizeAttendanceStatus(row.status || row.attendanceStatus) || row.status,
   }));
 
-  out.accounts = out.accounts.map(account => ({
-    status: 'active',
-    lastLoginAt: null,
-    mustChangePassword: false,
-    ...account,
-    email: normalizeEmail(account.email),
-  }));
+  out.accounts = out.accounts.map(account => {
+    const employee = account.employeeId
+      ? (out.employees || []).find(e => e.id === account.employeeId)
+      : null;
+    const syncedRole = employee ? accountRoleForEmployee(employee) : account.role;
+    return {
+      status: 'active',
+      lastLoginAt: null,
+      mustChangePassword: false,
+      ...account,
+      role: ['superadmin', 'manager'].includes(account.role) ? account.role : syncedRole,
+      email: normalizeEmail(account.email),
+    };
+  });
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
   if (!Array.isArray(out.attendancePoints)) out.attendancePoints = [];
   if (!Array.isArray(out.outletProposals)) out.outletProposals = [];
@@ -641,10 +649,46 @@ export function updateOrganization(id, data) {
   return db.organizations[idx];
 }
 
+function isRegisteredTestDevice(db, deviceId) {
+  const id = String(deviceId || '').trim();
+  if (!id) return false;
+  const listed = (db.appSettings?.testDevices || []).some(d => d && d.id === id);
+  if (listed) return true;
+  try {
+    const host = JSON.parse(localStorage.getItem('proqtrack_superadmin_host_v1') || 'null');
+    return !!(host?.id && host.id === id);
+  } catch {
+    return false;
+  }
+}
+
+export function registerTestDevice(device, actor = getActor()) {
+  if (!device?.id) return null;
+  const db = getDB();
+  db.appSettings = { ...defaultAppSettings(), ...(db.appSettings || {}) };
+  const list = Array.isArray(db.appSettings.testDevices) ? db.appSettings.testDevices : [];
+  const next = {
+    id: device.id,
+    imei: device.imei || '',
+    label: sanitizePlainText(device.label || 'Superadmin host'),
+    registeredAt: new Date().toISOString(),
+    registeredBy: actor?.email || actor?.id || 'superadmin',
+  };
+  db.appSettings.testDevices = [next, ...list.filter(d => d.id !== device.id)].slice(0, 20);
+  db.appSettings.updatedAt = next.registeredAt;
+  saveDB();
+  return next;
+}
+
+export function isTestDevice(deviceId) {
+  return isRegisteredTestDevice(getDB(), deviceId);
+}
+
 function assertSalesDevice(db, acc, device) {
   if (String(acc.role || '').toLowerCase() !== 'employee') return;
   const deviceId = String(device?.id || '').trim();
   if (!deviceId) throw new Error('Perangkat tidak dikenali. Buka aplikasi dari perangkat resmi sales.');
+  if (isRegisteredTestDevice(db, deviceId)) return;
   const other = db.accounts.find(a =>
     a.role === 'employee' && a.id !== acc.id && a.deviceId && a.deviceId === deviceId
   );
@@ -689,12 +733,16 @@ export function authenticate(email, password, device = null) {
   if (acc.employeeId) {
     const employee = getEmployee(acc.employeeId);
     if (!employee || employee.status !== 'active') return null;
+    if (acc.role !== 'superadmin' && acc.role !== 'manager') {
+      acc.role = accountRoleForEmployee(employee);
+    }
   }
   assertSalesDevice(db, acc, device);
   acc.lastLoginAt = new Date().toISOString();
   if (!String(acc.password).startsWith('sha256$')) acc.password = hashPassword(password);
   if (acc.role === 'superadmin') {
     db.currentOrganizationId = db.currentOrganizationId || DEFAULT_ORG_ID;
+    if (device?.id) registerTestDevice(device, acc);
   } else if (acc.organizationId) {
     db.currentOrganizationId = acc.organizationId;
     try { localStorage.setItem(ORG_KEY, acc.organizationId); } catch { /* ignore */ }

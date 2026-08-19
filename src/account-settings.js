@@ -3,7 +3,9 @@ import {
   createAccount, updateAccount, changePassword, updateOwnProfile, resetSalesDevice,
   getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
   getAttendancePolicy, getAttendancePoints, createAttendancePoint,
+  isTestDevice,
 } from './lib/db.js';
+import { getDeviceIdentity, isSuperadminHostDevice } from './lib/device.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -85,16 +87,16 @@ function renderAttendanceSettings() {
         <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
         <form class="am-form" onsubmit="AM.addAttendancePoint(event)">
           <div class="form-row">
-            <div class="form-group"><label class="label">Name</label><input class="input" name="name" required></div>
+            <div class="form-group"><label class="label">Name</label><input class="input" name="pointName" required></div>
             <div class="form-group"><label class="label">Type</label>
-              <select class="select" name="type"><option value="point">Point</option><option value="office">Office</option><option value="store">Outlet</option><option value="meeting">Meeting</option></select>
+              <select class="select" name="pointType"><option value="point">Point</option><option value="office">Office</option><option value="store">Outlet</option><option value="meeting">Meeting</option></select>
             </div>
           </div>
           <div class="form-row">
-            <div class="form-group"><label class="label">Latitude</label><input class="input" name="lat"></div>
-            <div class="form-group"><label class="label">Longitude</label><input class="input" name="lng"></div>
+            <div class="form-group"><label class="label">Latitude</label><input class="input" name="pointLat"></div>
+            <div class="form-group"><label class="label">Longitude</label><input class="input" name="pointLng"></div>
           </div>
-          <div class="form-group"><label class="label">Address</label><input class="input" name="address"></div>
+          <div class="form-group"><label class="label">Address</label><input class="input" name="pointAddress"></div>
           <button class="btn btn-secondary" type="submit">Add point</button>
         </form>
         <ul style="margin-top:12px">${points.map(p => `<li><strong>${esc(p.name)}</strong> · ${esc(p.type)}${p.lat != null ? ` · ${p.lat}, ${p.lng}` : ''}</li>`).join('') || '<li class="am-muted">No named points yet.</li>'}</ul>`;
@@ -242,6 +244,18 @@ export function renderSettings() {
         <section ${pane('sesi')}>
           <div class="card-title">Sesi & data lokal</div>
           <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
+          ${acc.role === 'superadmin' ? (() => {
+            const dev = getDeviceIdentity();
+            const host = isSuperadminHostDevice(dev.id) || isTestDevice(dev.id);
+            return `<div class="card" style="margin:14px 0;padding:14px;border:1px solid ${host ? '#86efac' : 'var(--gray-200)'};background:${host ? '#f0fdf4' : 'var(--gray-50)'}">
+              <div class="card-title">Superadmin test device</div>
+              <div class="card-subtitle">This Mac can sign in as any paired sales account without changing their IMEI lock.</div>
+              <div class="detail-grid" style="margin-top:8px">
+                <div class="detail-label">Device ID</div><div class="detail-value">${esc(dev.id)}</div>
+                <div class="detail-label">Status</div><div class="detail-value">${host ? 'Registered host — bypass on' : 'Not registered'}</div>
+              </div>
+            </div>`;
+          })() : ''}
           ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
           <div class="am-actions">
             <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
@@ -437,8 +451,14 @@ window.AM = {
   addAttendancePoint(event) {
     event.preventDefault();
     try {
-      const data = Object.fromEntries(new FormData(event.target));
-      createAttendancePoint(data);
+      const fd = Object.fromEntries(new FormData(event.target));
+      createAttendancePoint({
+        name: fd.pointName || fd.name,
+        type: fd.pointType || fd.type,
+        lat: fd.pointLat || fd.lat,
+        lng: fd.pointLng || fd.lng,
+        address: fd.pointAddress || fd.address,
+      });
       toast('Attendance point added');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {

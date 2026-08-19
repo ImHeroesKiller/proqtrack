@@ -81,7 +81,7 @@ export const seedAccounts = [
   { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP002', name: 'Siti Nurhaliza' },
   { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP003', name: 'Ahmad Wijaya' },
   { id: 'ACC004', email: 'dewi.lestari@proqtrack.id',    password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP004', name: 'Dewi Lestari' },
-  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP005', name: 'Rizki Pratama' },
+  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'Proqpay2026',   role: 'supervisor', employeeId: 'EMP005', name: 'Rizki Pratama' },
   { id: 'ACC006', email: 'maya.sari@proqtrack.id',       password: 'Proqpay2026',    role: 'employee', employeeId: 'EMP006', name: 'Maya Sari' },
   { id: 'ACC007', email: 'fajar.nugroho@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP007', name: 'Fajar Nugroho' },
   { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'Proqpay2026',   role: 'employee', employeeId: 'EMP008', name: 'Indah Permata' },

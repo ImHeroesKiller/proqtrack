@@ -1,4 +1,5 @@
 const DEVICE_KEY = 'proqtrack_device_id_v1';
+export const SUPERADMIN_HOST_KEY = 'proqtrack_superadmin_host_v1';
 
 function randomId() {
   if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
@@ -30,4 +31,29 @@ export function getDeviceIdentity() {
 
 export function isSalesRole(role) {
   return String(role || '').toLowerCase() === 'employee';
+}
+
+export function markSuperadminHost(device = getDeviceIdentity()) {
+  const payload = {
+    id: device.id,
+    imei: device.imei,
+    label: device.label,
+    registeredAt: new Date().toISOString(),
+  };
+  try { localStorage.setItem(SUPERADMIN_HOST_KEY, JSON.stringify(payload)); } catch { /* ignore */ }
+  return payload;
+}
+
+export function getSuperadminHost() {
+  try {
+    const raw = localStorage.getItem(SUPERADMIN_HOST_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function isSuperadminHostDevice(deviceId = getDeviceIdentity().id) {
+  const host = getSuperadminHost();
+  return !!(host?.id && deviceId && host.id === deviceId);
 }

@@ -45,7 +45,7 @@ export async function issueUploadSession(account) {
   const data = await res.json().catch(() => null);
   if (!data || typeof data !== 'object') return null;
   if (!res.ok) {
-    if ([404, 405, 501, 503].includes(res.status)) return null;
+    if ([400, 404, 405, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   if (!data.token) return null;
