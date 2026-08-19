@@ -37,11 +37,13 @@ export const SCHEMA = {
     'leaves', 'stocks', 'priceObservations', 'competitors', 'competitorProducts',
     'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
     'projectAssignments', 'outletProposals', 'attendancePoints',
+    'overtimes', 'wfhRequests', 'dailyReports',
   ],
   globalCollections: [
     'leaveTypes', 'promoTypes', 'organizations', 'projectSettings',
     'projectProducts', 'reportTemplates', 'reportJobs', 'reportExports',
     'reportFilters', 'reportApprovals', 'reportSchedules', 'auditLogs',
+    'newsItems', 'hrContacts',
   ],
   documentKeys: ['_version', 'appSettings', 'reportSettings', 'currentOrganizationId'],
 };
@@ -51,6 +53,7 @@ const SEEDED_EMPTY_ARRAYS = [
   'outletProposals', 'attendancePoints', 'projectProducts',
   'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
   'reportApprovals', 'reportSchedules', 'auditLogs',
+  'overtimes', 'wfhRequests', 'dailyReports',
 ];
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
@@ -215,6 +218,11 @@ function rawDefaultDB() {
     reportApprovals: [],
     reportSchedules: [],
     auditLogs: [],
+    overtimes: [],
+    wfhRequests: [],
+    dailyReports: [],
+    newsItems: JSON.parse(JSON.stringify(defaultNewsItems())),
+    hrContacts: JSON.parse(JSON.stringify(defaultHrContacts())),
     appSettings: defaultAppSettings(),
     organizations: [defaultOrganization()],
     currentOrganizationId: DEFAULT_ORG_ID,
@@ -228,9 +236,9 @@ function defaultDB() {
 export function defaultOrganization() {
   return {
     id: DEFAULT_ORG_ID,
-    name: 'Organisasi Demo',
-    legalName: 'ProQTrack Demo Tenant',
-    code: 'DEMO',
+    name: 'ProQ Indonesia',
+    legalName: 'PT. ProQ Indonesia',
+    code: 'PROQ',
     industry: 'Field Services',
     status: 'active',
     city: 'Jakarta',
@@ -295,7 +303,7 @@ export function withOrg(data = {}) {
 
 export function defaultAppSettings() {
   return {
-    companyName: 'ProQTrack',
+    companyName: 'PT. ProQ Indonesia',
     companyLogo: './assets/logo-light.svg',
     timezone: 'Asia/Jakarta',
     compactTables: false,
@@ -305,10 +313,50 @@ export function defaultAppSettings() {
     attendanceRadiusM: 150,
     officeLat: null,
     officeLng: null,
-    officeName: 'Office',
+    officeName: 'Kantor',
     testDevices: [],
     updatedAt: null,
   };
+}
+
+function defaultNewsItems() {
+  return [
+    {
+      id: 'NWS001',
+      title: 'Jam operasional Ramadan',
+      body: 'Selama Ramadan, jam kerja menjadi 08.00–16.00 WIB. Absen pulang lebih awal tetap dihitung penuh bila sudah 7 jam efektif.',
+      publishedAt: '2026-08-12',
+      pinned: true,
+    },
+    {
+      id: 'NWS002',
+      title: 'Pengajuan lembur lewat aplikasi',
+      body: 'Mulai bulan ini pengajuan lembur hanya diterima di ProQTrack. Lampiran foto atau nota tidak wajib, tetapi alasan harus jelas.',
+      publishedAt: '2026-08-05',
+      pinned: false,
+    },
+    {
+      id: 'NWS003',
+      title: 'Kontak HRD darurat',
+      body: 'Untuk keperluan surat keterangan kerja atau BPJS, hubungi HRD di menu Hubungi HRD. Respon di hari kerja pukul 09.00–17.00.',
+      publishedAt: '2026-07-28',
+      pinned: false,
+    },
+  ];
+}
+
+function defaultHrContacts() {
+  return [
+    {
+      id: 'HRC001',
+      name: 'Dewi HRD',
+      role: 'Human Resources',
+      phone: '021-5794-0101',
+      whatsapp: '6281210000101',
+      email: 'hrd@proqtrack.id',
+      hours: 'Senin–Jumat, 09.00–17.00 WIB',
+    },
+  ];
 }
 
 export function defaultStoreCatalog() {
@@ -1718,6 +1766,50 @@ export function updateAttendance(id, data) {
   return db.attendance[idx];
 }
 
+export function clockInAttendance(employeeId) {
+  assertCanAccessEmployee(employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && actor.employeeId !== employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const existing = getAttendance().find(a => a.employeeId === employeeId && a.date === today);
+  if (existing?.checkInTime) throw new Error('Sudah absen masuk hari ini');
+  const policy = getAttendancePolicy();
+  const now = new Date();
+  const time = now.toTimeString().slice(0, 5);
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false,
+  }).format(now));
+  if (existing) {
+    return updateAttendance(existing.id, {
+      checkInTime: time,
+      status: hour >= 9 ? 'terlambat' : 'hadir',
+      checkInLocation: existing.checkInLocation || policy.officeName || 'Kantor',
+      locationType: existing.locationType || policy.mode || 'office',
+    });
+  }
+  return createAttendance({
+    employeeId,
+    date: today,
+    checkInTime: time,
+    checkOutTime: null,
+    status: hour >= 9 ? 'terlambat' : 'hadir',
+    checkInLocation: policy.officeName || 'Kantor',
+    locationType: policy.mode || 'office',
+  });
+}
+
+export function clockOutAttendance(employeeId) {
+  assertCanAccessEmployee(employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && actor.employeeId !== employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const existing = getAttendance().find(a => a.employeeId === employeeId && a.date === today);
+  if (!existing?.checkInTime) throw new Error('Belum absen masuk');
+  if (existing.checkOutTime) throw new Error('Sudah absen pulang');
+  const time = new Date().toTimeString().slice(0, 5);
+  return updateAttendance(existing.id, { checkOutTime: time });
+}
+
 export function getDashboardStats() {
   const employees = getEmployees();
   const outlets = getOutlets();
@@ -1935,6 +2027,128 @@ export function deleteLeave(id) {
   }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
+}
+
+function scopedEmployeeRows(key) {
+  const rows = scoped(getDB()[key] || []);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(row => ids.has(row.employeeId));
+}
+
+function createEmployeeRequest(key, prefix, data, extra = {}) {
+  assertCanAccessEmployee(data.employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && data.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  const row = {
+    id: uid(prefix),
+    status: extra.status || 'pending',
+    submittedAt: new Date().toISOString().slice(0, 10),
+    approverId: null,
+    approvedAt: null,
+    reason: sanitizePlainText(data.reason || ''),
+    employeeId: data.employeeId,
+    ...extra,
+    ...withOrg({ employeeId: data.employeeId }),
+  };
+  const db = getDB();
+  db[key] = db[key] || [];
+  db[key].push(row);
+  saveDB();
+  return row;
+}
+
+function updateEmployeeRequest(key, id, data) {
+  const db = getDB();
+  const list = db[key] || [];
+  const idx = list.findIndex(row => row.id === id);
+  if (idx === -1) return null;
+  const actor = assertLoggedIn();
+  const current = list[idx];
+  assertCanAccessEmployee(current.employeeId);
+  const nextStatus = data.status || current.status;
+  if (nextStatus !== current.status && !['manager', 'supervisor', 'superadmin'].includes(actor.role)) {
+    throw new Error('Akses ditolak');
+  }
+  list[idx] = { ...current, ...data };
+  saveDB();
+  return list[idx];
+}
+
+export function getOvertimes() {
+  return scopedEmployeeRows('overtimes');
+}
+
+export function getOvertimesByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getOvertimes().filter(row => row.employeeId === empId);
+}
+
+export function createOvertime(data) {
+  const hours = Number(data.hours);
+  if (!data.date) throw new Error('Tanggal lembur wajib diisi');
+  if (!Number.isFinite(hours) || hours <= 0) throw new Error('Jam lembur harus lebih dari 0');
+  return createEmployeeRequest('overtimes', 'OT', data, {
+    date: data.date,
+    startTime: data.startTime || '',
+    endTime: data.endTime || '',
+    hours,
+  });
+}
+
+export function updateOvertime(id, data) {
+  return updateEmployeeRequest('overtimes', id, data);
+}
+
+export function getWfhRequests() {
+  return scopedEmployeeRows('wfhRequests');
+}
+
+export function getWfhRequestsByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getWfhRequests().filter(row => row.employeeId === empId);
+}
+
+export function createWfhRequest(data) {
+  if (!data.date) throw new Error('Tanggal WFH wajib diisi');
+  return createEmployeeRequest('wfhRequests', 'WFH', data, { date: data.date });
+}
+
+export function updateWfhRequest(id, data) {
+  return updateEmployeeRequest('wfhRequests', id, data);
+}
+
+export function getDailyReports() {
+  return scopedEmployeeRows('dailyReports');
+}
+
+export function getDailyReportsByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getDailyReports().filter(row => row.employeeId === empId);
+}
+
+export function createDailyReport(data) {
+  if (!data.summary) throw new Error('Isi laporan harian');
+  return createEmployeeRequest('dailyReports', 'DR', data, {
+    date: data.date || todayISO(),
+    summary: sanitizePlainText(data.summary || ''),
+    blockers: sanitizePlainText(data.blockers || ''),
+    planTomorrow: sanitizePlainText(data.planTomorrow || ''),
+    status: 'submitted',
+  });
+}
+
+export function getNewsItems() {
+  return [...(getDB().newsItems || [])].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return String(b.publishedAt || '').localeCompare(String(a.publishedAt || ''));
+  });
+}
+
+export function getHrContacts() {
+  return getDB().hrContacts || [];
 }
 
 export function getStocks() {

@@ -1,5 +1,5 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=5;
+const VERSION=6;
 const now='2026-07-29T08:30:00.000Z';
 const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
@@ -114,7 +114,7 @@ function buildUatDatabase(){
   }
   return {
     _version:11,_uatSeedVersion:VERSION,_seededAt:now,updatedAt:now,
-    organizations:[{id:'ORG-DEFAULT',name:'Organisasi Demo',legalName:'ProQTrack Demo Tenant',code:'DEMO',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
+    organizations:[{id:'ORG-DEFAULT',name:'ProQ Indonesia',legalName:'PT. ProQ Indonesia',code:'PROQ',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
     currentOrganizationId:'ORG-DEFAULT',
     clients,projects,employees,accounts,projectAssignments,outlets,stores:outlets,attendance,visits,products,stocks,priceObservations,competitors,competitorProducts,competitorIntel,
     promoTypes:[{code:'disc_pct',label:'Diskon %',strategic:false},{code:'bundle',label:'Bundle / Paket',strategic:true},{code:'trade_promo',label:'Trade Promo',strategic:true}],fieldPhotos,photos:fieldPhotos,leaveTypes,leaves,
@@ -147,6 +147,8 @@ function apply(){
   try{current=JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{}
   if(Number(current._uatSeedVersion||0)>=VERSION)return;
   const db=buildUatDatabase();
+  db._uatSeedVersion = VERSION;
+  db._version = 15;
   const text=JSON.stringify(db);
   DB_KEYS.forEach(key=>localStorage.setItem(key,text));
   localStorage.setItem('proqtrack_uat_seed_active',String(VERSION));

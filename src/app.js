@@ -27,6 +27,12 @@ import {
   isOrgAdminRole, isProjectAdminRole,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
+import {
+  renderHrHome, renderPengajuanHub, renderLaporanHub, renderAkunPage,
+  renderOvertimePage, renderIzinPage, renderCutiPage, renderWfhPage,
+  renderDailyReportPage, renderCalendarPage, renderOvertimeRecap,
+  renderMonthlyAttendance, renderNewsPage, renderContactHr, renderHrApprovals,
+} from './hr-home.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
@@ -262,28 +268,50 @@ const NAV_ITEMS_SUPERVISOR = [
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
-  { section: 'Main', items: [
-    { id: 'myday',    label: 'My Day',        icon: 'calendar', route: '#/myday' },
-    { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
-    { id: 'myvisits', label: 'My Visits',      icon: 'visits', route: '#/myvisits' },
+  { section: 'Utama', items: [
+    { id: 'myday',     label: 'Beranda',   icon: 'home',     route: '#/myday' },
+    { id: 'pengajuan', label: 'Pengajuan', icon: 'leaves',   route: '#/pengajuan' },
+    { id: 'laporan',   label: 'Laporan',   icon: 'chart',    route: '#/laporan' },
+    { id: 'akun',      label: 'Akun',      icon: 'accounts', route: '#/akun' },
   ]},
-  { section: 'Project', items: [
-    { id: 'my-projects', label: 'My Projects', icon: 'briefcase', route: '#/my-projects' },
-    { id: 'new-outlet', label: 'New Outlet', icon: 'store', route: '#/new-outlet' },
+  { section: 'Absensi', items: [
+    { id: 'myattendance', label: 'Absensi Saya', icon: 'attendance', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Izin & Cuti',  icon: 'leaves',     route: '#/myleaves' },
+    { id: 'lembur',       label: 'Lembur',       icon: 'overtime',   route: '#/lembur' },
+    { id: 'wfh',          label: 'Work From Home', icon: 'home',     route: '#/wfh' },
   ]},
   { section: 'Field', items: [
-    { id: 'mystocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/mystocks' },
-    { id: 'mysales',      label: 'Product Sales',    icon: 'chart', route: '#/mysales' },
-    { id: 'myprices',     label: 'Price & Discount', icon: 'price', route: '#/myprices' },
-    { id: 'myintel',      label: 'Competitor Intel', icon: 'intel', route: '#/myintel' },
-    { id: 'myphotos',     label: 'Field Photos',     icon: 'photos', route: '#/myphotos' },
-    { id: 'myattendance', label: 'My Attendance',    icon: 'attendance', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Leave',            icon: 'leaves', route: '#/myleaves' },
+    { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
+    { id: 'myvisits', label: 'Kunjungan', icon: 'visits', route: '#/myvisits' },
+    { id: 'my-projects', label: 'Project Saya', icon: 'briefcase', route: '#/my-projects' },
+    { id: 'new-outlet', label: 'Toko Baru', icon: 'store', route: '#/new-outlet' },
+    { id: 'mystocks', label: 'Stok Outlet', icon: 'stocks', route: '#/mystocks' },
+    { id: 'mysales', label: 'Penjualan', icon: 'chart', route: '#/mysales' },
+    { id: 'myprices', label: 'Harga', icon: 'price', route: '#/myprices' },
+    { id: 'myintel', label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
+    { id: 'myphotos', label: 'Foto Lapangan', icon: 'photos', route: '#/myphotos' },
   ]},
-  { section: 'System', items: [
-    { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
+  { section: 'Sistem', items: [
+    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
   ]},
 ];
+
+const HR_EMPLOYEE_ROUTES = new Set([
+  '#/myday', '#/pengajuan', '#/laporan', '#/akun',
+  '#/lembur', '#/izin', '#/cuti', '#/wfh',
+  '#/laporan-harian', '#/kalender', '#/rekap-lembur', '#/rekap-absensi',
+  '#/berita', '#/hubungi-hrd',
+]);
+
+function companyLabelForPage() {
+  const org = getOrganization();
+  return org?.legalName || getAppSettings().companyName || 'PT. ProQ Indonesia';
+}
+
+function isHrChromeRoute(route) {
+  return HR_EMPLOYEE_ROUTES.has(route) || route === '#/myattendance' || route === '#/myleaves';
+}
+
 // ===== Router =====
 function getRoute() {
   return location.hash || '#/';
@@ -390,11 +418,50 @@ function render() {
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
     route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet' ||
-    route === '#/mysales'
+    route === '#/mysales' || HR_EMPLOYEE_ROUTES.has(route)
   )) {
     if (route === '#/myday') {
-      pageTitle = 'My Day'; pageSubtitle = 'Today’s field activity';
-      pageContent = renderMyDay();
+      pageTitle = 'Beranda'; pageSubtitle = companyLabelForPage();
+      pageContent = renderHrHome();
+    } else if (route === '#/pengajuan') {
+      pageTitle = 'Pengajuan'; pageSubtitle = 'Lembur, izin, cuti, dan WFH';
+      pageContent = renderPengajuanHub();
+    } else if (route === '#/laporan') {
+      pageTitle = 'Laporan'; pageSubtitle = 'Laporan harian dan rekap';
+      pageContent = renderLaporanHub();
+    } else if (route === '#/akun') {
+      pageTitle = 'Akun'; pageSubtitle = 'Profil dan pengaturan';
+      pageContent = renderAkunPage();
+    } else if (route === '#/lembur') {
+      pageTitle = 'Ajukan Lembur'; pageSubtitle = 'Kirim dan lacak lembur';
+      pageContent = renderOvertimePage();
+    } else if (route === '#/izin') {
+      pageTitle = 'Ajukan Izin'; pageSubtitle = 'Izin pribadi, dinas, atau sakit';
+      pageContent = renderIzinPage();
+    } else if (route === '#/cuti') {
+      pageTitle = 'Ajukan Cuti'; pageSubtitle = 'Cuti tahunan dan cuti khusus';
+      pageContent = renderCutiPage();
+    } else if (route === '#/wfh') {
+      pageTitle = 'Work From Home'; pageSubtitle = 'Pengajuan kerja dari rumah';
+      pageContent = renderWfhPage();
+    } else if (route === '#/laporan-harian') {
+      pageTitle = 'Laporan Harian'; pageSubtitle = 'Catatan kerja harian';
+      pageContent = renderDailyReportPage();
+    } else if (route === '#/kalender') {
+      pageTitle = 'Kalender'; pageSubtitle = 'Absensi dan cuti bulan ini';
+      pageContent = renderCalendarPage();
+    } else if (route === '#/rekap-lembur') {
+      pageTitle = 'Rekap Lembur'; pageSubtitle = 'Jam lembur disetujui';
+      pageContent = renderOvertimeRecap();
+    } else if (route === '#/rekap-absensi') {
+      pageTitle = 'Rekap Absensi Bulanan'; pageSubtitle = 'Ringkasan kehadiran';
+      pageContent = renderMonthlyAttendance();
+    } else if (route === '#/berita') {
+      pageTitle = 'Berita & Informasi'; pageSubtitle = 'Pengumuman HRD';
+      pageContent = renderNewsPage();
+    } else if (route === '#/hubungi-hrd') {
+      pageTitle = 'Hubungi HRD'; pageSubtitle = 'Kontak human resources';
+      pageContent = renderContactHr();
     } else if (route === '#/last-location') {
       pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
       pageContent = renderLastLocation();
@@ -472,7 +539,7 @@ function render() {
     pageContent = renderAttendanceManager();
   } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Leave'; pageSubtitle = 'Leave and time-off requests';
-    pageContent = renderLeavesManager();
+    pageContent = renderLeavesManager() + (isProjectAdmin() || isSupervisor() ? renderHrApprovals() : '');
   } else if (isProjectAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
@@ -518,7 +585,7 @@ function render() {
       ${renderSidebar()}
       <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
-        <div class="topbar ${fieldRole && route === '#/myday' ? 'topbar-hidden-mobile' : ''}">
+        <div class="topbar ${fieldRole && isHrChromeRoute(route) ? 'topbar-hidden-mobile' : ''}">
           <button class="mobile-menu-btn" onclick="FT.toggleSidebar()">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
@@ -621,23 +688,30 @@ function renderFieldDock(route) {
         { route: '#/visits', label: 'Visits', icon: 'visits' },
       ]
     : [
-        { route: '#/myday', label: 'Today', icon: 'calendar' },
-        { route: '#/myvisits', label: 'Visits', icon: 'visits' },
-        { route: '#/mysales', label: 'Sales', icon: 'chart' },
+        { route: '#/myday', label: 'Home', icon: 'home' },
+        { route: '#/pengajuan', label: 'Pengajuan', icon: 'leaves' },
+        { route: '#/laporan', label: 'Laporan', icon: 'chart' },
+        { route: '#/akun', label: 'Akun', icon: 'accounts' },
       ];
   return `
     <nav class="field-dock" aria-label="Menu cepat">
       ${tabs.map(t => {
-        const active = route === t.route || (t.route === '#/' && (route === '#' || route === '#/'));
+        const pengajuan = new Set(['#/pengajuan', '#/lembur', '#/izin', '#/cuti', '#/wfh', '#/myleaves']);
+        const laporan = new Set(['#/laporan', '#/laporan-harian', '#/kalender', '#/rekap-lembur', '#/rekap-absensi', '#/berita', '#/hubungi-hrd', '#/myattendance']);
+        const active = route === t.route
+          || (t.route === '#/' && (route === '#' || route === '#/'))
+          || (t.route === '#/pengajuan' && pengajuan.has(route))
+          || (t.route === '#/laporan' && laporan.has(route))
+          || (t.route === '#/akun' && (route === '#/settings' || route === '#/akun'));
         return `<a href="${t.route}" class="field-dock-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${t.route}')">
           <span class="field-dock-icon">${iconSvg(t.icon)}</span>
           <span>${t.label}</span>
         </a>`;
       }).join('')}
-      <button type="button" class="field-dock-item" onclick="FT.toggleSidebar()">
+      ${isSupervisor() ? `<button type="button" class="field-dock-item" onclick="FT.toggleSidebar()">
         <span class="field-dock-icon">${iconSvg('projects')}</span>
         <span>Menu</span>
-      </button>
+      </button>` : ''}
     </nav>
   `;
 }
