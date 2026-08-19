@@ -119,6 +119,9 @@ function persistView(view) {
   raw.clients = mergeOrgRows(raw.clients, view.clients || []);
   raw.projects = mergeOrgRows(raw.projects, view.projects || []);
   raw.projectAssignments = mergeOrgRows(raw.projectAssignments, view.projectAssignments || []);
+  // projectSettings is keyed by projectId (not org-sliced). viewDB returns the full
+  // array, so a wholesale replace matches today's callers. Do not org-filter it
+  // here unless viewDB starts slicing it the same way.
   raw.projectSettings = view.projectSettings;
   writeDB(raw);
 }
@@ -458,6 +461,7 @@ function migrateV7() {
     if (!db.projectSettings.some((s) => s.projectId === p.id))
       db.projectSettings.push({
         projectId: p.id,
+        organizationId: p.organizationId || DEFAULT_ORG_ID,
         modules: defaultModules(),
         updatedAt: stamp,
         updatedBy: "ACC001",
@@ -1058,6 +1062,7 @@ window.PM = {
     }
     const data = {
       id: id || uid("PRJ"),
+      organizationId: old?.organizationId || currentOrgId(),
       clientId,
       name: formValue(fd, "name"),
       code,
@@ -1079,6 +1084,7 @@ window.PM = {
     if (!db.projectSettings.some((s) => s.projectId === data.id))
       db.projectSettings.push({
         projectId: data.id,
+        organizationId: data.organizationId,
         modules: defaultModules(),
         updatedAt: now(),
         updatedBy: account()?.id,
