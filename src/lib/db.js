@@ -1069,15 +1069,28 @@ export function createOutlet(data) {
   assertOrgAdmin();
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
+  const outletNumber = data.outletNumber || nextOutletNumber(db);
+  const notes = data.notesKind === 'dropdown' ? (data.notesChoice || data.notes || '') : (data.notes || '');
   const outlet = {
-    id: uid('OUT'), status: 'active', ...withOrg(data), ...scope,
+    id: uid('OUT'), status: data.status || 'active', ...withOrg(data), ...scope,
+    outletNumber,
+    code: outletNumber,
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address),
     owner: sanitizePlainText(data.owner),
     phone: sanitizePlainText(data.phone),
     area: sanitizePlainText(data.area),
+    type: sanitizePlainText(data.type || 'Toko'),
+    channel: sanitizePlainText(data.channel || ''),
+    ownership: sanitizePlainText(data.ownership || ''),
+    notes: sanitizePlainText(notes),
+    lat: data.lat != null && data.lat !== '' ? Number(data.lat) : null,
+    lng: data.lng != null && data.lng !== '' ? Number(data.lng) : null,
   };
   delete outlet.projectId;
+  delete outlet.notesKind;
+  delete outlet.notesChoice;
+  delete outlet.logoFile;
   db.outlets.push(outlet);
   saveDB();
   return outlet;

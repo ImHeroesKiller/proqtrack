@@ -420,11 +420,63 @@ function showMapsLink(lat, lng) {
   a.style.display = 'inline-flex';
 }
 
-window.FS.initOutletMap = function() { /* lokasi sekarang via tombol GPS, bukan peta tertanam */ };
+let _outletMap = null;
+let _outletMarker = null;
+
+window.FS.initOutletMap = function() {
+  const el = document.getElementById('outletPickMap');
+  if (!el || typeof L === 'undefined') return;
+  if (_outletMap) {
+    _outletMap.remove();
+    _outletMap = null;
+    _outletMarker = null;
+  }
+  const start = [-6.2, 106.82];
+  _outletMap = L.map(el, { zoomControl: true }).setView(start, 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19,
+  }).addTo(_outletMap);
+  _outletMap.on('click', async ev => {
+    const { lat, lng } = ev.latlng;
+    if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
+    else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
+    try {
+      const geo = await reverseGeocode(lat, lng);
+      applyGeocode(geo, lat, lng);
+    } catch {
+      applyGeocode(null, lat, lng);
+    }
+    showMapsLink(lat, lng);
+  });
+  setTimeout(() => _outletMap?.invalidateSize(), 220);
+};
+
+window.FS.searchOutletMap = async function() {
+  const q = document.getElementById('outletMapSearch')?.value?.trim();
+  if (!q) return;
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const rows = await res.json();
+    const hit = rows[0];
+    if (!hit) { window.showToast?.('Alamat tidak ditemukan', 'error'); return; }
+    const lat = Number(hit.lat);
+    const lng = Number(hit.lon);
+    if (_outletMap) {
+      _outletMap.setView([lat, lng], 16);
+      if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
+      else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
+    }
+    applyGeocode(hit, lat, lng);
+    showMapsLink(lat, lng);
+  } catch {
+    window.showToast?.('Gagal mencari lokasi', 'error');
+  }
+};
 
 window.FS.toggleNotesKind = function() {
-  const form = document.querySelector('form[onsubmit*="submitOutlet"]');
-  const kind = form?.notesKind?.value || 'freetext';
+  const kind = document.querySelector('input[name="notesKind"]:checked')?.value || 'freetext';
   const text = document.getElementById('outletNotesText');
   const sel = document.getElementById('outletNotesSelect');
   if (text) text.style.display = kind === 'freetext' ? '' : 'none';
@@ -460,7 +512,5 @@ window.FS.captureOutletLocation = function() {
     window.showToast?.(err.message || 'Izin lokasi ditolak', 'error');
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
 };
-
-window.FS.searchOutletMap = async function() {};
 
 export { locationTypeLabel };

@@ -21,7 +21,7 @@ import {
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
-  canEmployeeAddStore, formatOutletLabel,
+  canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
@@ -1429,39 +1429,83 @@ window.FT.filterOutlets = function() {
   });
 };
 
+function storeOptionList(rows) {
+  return (rows || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+}
+
+window.FT.syncManagerOutletCatalog = function(projectId) {
+  const cat = projectId ? getProjectStoreSettings(projectId) : defaultStoreCatalog();
+  const fill = (name, values) => {
+    const sel = document.querySelector(`form[onsubmit*="createOutlet"] select[name="${name}"]`);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = storeOptionList(values);
+    if (cur && values.includes(cur)) sel.value = cur;
+  };
+  fill('channel', cat.segments);
+  fill('ownership', cat.ownerships);
+  fill('type', cat.types);
+};
+
 window.FT.openOutletModal = function() {
+  const cat = defaultStoreCatalog();
   openModal('Tambah Outlet', `
     <form onsubmit="FT.createOutlet(event)">
-      <div class="form-group"><label class="label">Nama Outlet</label><input class="input" name="name" required></div>
-      ${entityScopeFields()}
-      <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" required></div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Tipe</label>
-          <select class="select" name="type">
-            <option>Toko Kelontong</option><option>Minimarket</option><option>Restoran</option>
-            <option>Warung Kopi</option><option>Apotek</option><option>Toko Bangunan</option>
-            <option>Toko Elektronik</option><option>Bakery</option><option>Toko Fashion</option>
-          </select>
+      <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
+      ${entityScopeFields().replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required onchange="FT.syncManagerOutletCatalog(this.value)">')}
+      <div class="form-group">
+        <label class="label">Lokasi di peta</label>
+        <div class="filter-row" style="margin-bottom:8px">
+          <input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat...">
+          <button type="button" class="btn btn-secondary" onclick="FS.searchOutletMap()">Cari</button>
         </div>
-        <div class="form-group"><label class="label">Area</label><input class="input" name="area" required></div>
+        <div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div>
+        <div class="am-muted" id="outletMapHint" style="margin-top:6px">Klik peta untuk menandai titik toko. Alamat terisi otomatis.</div>
+        <input type="hidden" name="lat" id="outletLat" required>
+        <input type="hidden" name="lng" id="outletLng" required>
+        <input type="hidden" name="mapLabel" id="outletMapLabel">
+      </div>
+      <div class="form-group"><label class="label">Alamat (otomatis dari peta, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Segment</label>
+          <select class="select" name="channel">${storeOptionList(cat.segments)}</select>
+        </div>
+        <div class="form-group"><label class="label">Akun (ownership store)</label>
+          <select class="select" name="ownership">${storeOptionList(cat.ownerships)}</select>
+        </div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" required></div>
-        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" required></div>
+        <div class="form-group"><label class="label">Type (tipe store)</label>
+          <select class="select" name="type">${storeOptionList(cat.types)}</select>
+        </div>
+        <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Latitude</label><input class="input" type="number" step="0.0001" name="lat" value="-6.2000" required></div>
-        <div class="form-group"><label class="label">Longitude</label><input class="input" type="number" step="0.0001" name="lng" value="106.8000" required></div>
+        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
+        <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
+      </div>
+      <div class="form-group">
+        <label class="label">Catatan</label>
+        <div class="filter-row" style="margin-bottom:8px">
+          <label class="am-check"><input type="radio" name="notesKind" value="freetext" checked onchange="FS.toggleNotesKind()"> Freetext</label>
+          <label class="am-check"><input type="radio" name="notesKind" value="dropdown" onchange="FS.toggleNotesKind()"> Dropdown</label>
+        </div>
+        <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Catatan toko"></textarea>
+        <select class="select" name="notesChoice" id="outletNotesSelect" style="display:none">
+          <option value="">Pilih catatan</option>
+          <option>Toko potensial, volume tinggi</option>
+          <option>Lokasi strategis / lalu lintas ramai</option>
+          <option>Request dari klien</option>
+          <option>Belum ada coverage di area ini</option>
+          <option>Kompetitor aktif di toko ini</option>
+        </select>
       </div>
       <div class="form-row">
-        <div class="form-group">
-          <label class="label">Frekuensi Kunjungan</label>
+        <div class="form-group"><label class="label">Frekuensi kunjungan</label>
           <select class="select" name="visitFrequency"><option>Mingguan</option><option>Bulanan</option></select>
         </div>
-        <div class="form-group">
-          <label class="label">Status</label>
-          <select class="select" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select>
+        <div class="form-group"><label class="label">Status</label>
+          <select class="select" name="status"><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select>
         </div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
@@ -1470,6 +1514,7 @@ window.FT.openOutletModal = function() {
       </div>
     </form>
   `);
+  setTimeout(() => window.FS?.initOutletMap?.(), 80);
 };
 
 window.FT.createOutlet = function(e) {
@@ -1477,6 +1522,7 @@ window.FT.createOutlet = function(e) {
   if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
+  if (!data.lat || !data.lng) { showToast('Tandai titik toko di peta atau cari lokasi dulu.', 'error'); return; }
   data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
   try {
     createOutlet(data);
