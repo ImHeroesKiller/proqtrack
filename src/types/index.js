@@ -4,8 +4,8 @@
  * Keeps backward compatibility with proqtrack_db_v6 while mirroring v7.
  */
 
-const DB_KEY = "proqtrack_db_v6";
-const DB_V7_KEY = "proqtrack_db_v7";
+import { getDB, saveDB, getCurrentOrgId, getActor, DEFAULT_ORG_ID } from "../lib/db.js";
+
 const ALL_MODULES = [
   "visits",
   "stocks",
@@ -86,21 +86,10 @@ const money = (value) =>
     : "-";
 
 function readDB() {
-  try {
-    return JSON.parse(
-      localStorage.getItem(DB_KEY) || localStorage.getItem(DB_V7_KEY) || "{}",
-    );
-  } catch {
-    return {};
-  }
+  return getDB();
 }
-const DEFAULT_ORG_ID = "ORG-DEFAULT";
 function currentOrgId() {
-  try {
-    return localStorage.getItem("proqtrack_current_org") || DEFAULT_ORG_ID;
-  } catch {
-    return DEFAULT_ORG_ID;
-  }
+  return getCurrentOrgId();
 }
 function orgRows(list) {
   const orgId = currentOrgId();
@@ -119,7 +108,10 @@ function viewDB() {
     projects: orgRows(db.projects),
     projectAssignments: orgRows(db.projectAssignments),
     employees: orgRows(db.employees),
-    accounts: orgRows(db.accounts),
+    accounts: orgRows(db.accounts).map((row) => {
+      const { password, ...safe } = row || {};
+      return safe;
+    }),
   };
 }
 function persistView(view) {
@@ -127,22 +119,14 @@ function persistView(view) {
   raw.clients = mergeOrgRows(raw.clients, view.clients || []);
   raw.projects = mergeOrgRows(raw.projects, view.projects || []);
   raw.projectAssignments = mergeOrgRows(raw.projectAssignments, view.projectAssignments || []);
-  raw.employees = mergeOrgRows(raw.employees, view.employees || []);
   raw.projectSettings = view.projectSettings;
   writeDB(raw);
 }
 function writeDB(db) {
-  db._version = Math.max(7, Number(db._version || 0));
-  db.updatedAt = now();
-  const text = JSON.stringify(db);
-  try {
-    localStorage.setItem(DB_KEY, text);
-    localStorage.setItem(DB_V7_KEY, text);
-    window.dispatchEvent(new CustomEvent("proqtrack:db-updated"));
-  } catch (error) {
-    alert("Penyimpanan browser penuh. Hapus foto lama atau reset data demo.");
-    throw error;
+  if (db && db !== getDB()) {
+    Object.assign(getDB(), db);
   }
+  saveDB();
 }
 function defaultModules() {
   return Object.fromEntries(ALL_MODULES.map((k) => [k, true]));
@@ -391,14 +375,12 @@ function migrateV7() {
       },
     ];
   const emp = Object.fromEntries(db.employees.map((e) => [e.id, e]));
-  if (emp.EMP005) emp.EMP005.role = "Supervisor";
-  if (emp.EMP006) emp.EMP006.role = "Supervisor";
-  ["EMP001", "EMP002", "EMP003", "EMP004"].forEach((id) => {
-    if (emp[id]) emp[id].supervisorId = "EMP005";
-  });
-  ["EMP007", "EMP008"].forEach((id) => {
-    if (emp[id]) emp[id].supervisorId = "EMP006";
-  });
+  if (emp.EMP001 && !emp.EMP001.supervisorId) emp.EMP001.supervisorId = "EMP005";
+  if (emp.EMP002 && !emp.EMP002.supervisorId) emp.EMP002.supervisorId = "EMP005";
+  if (emp.EMP003 && !emp.EMP003.supervisorId) emp.EMP003.supervisorId = "EMP005";
+  if (emp.EMP004 && !emp.EMP004.supervisorId) emp.EMP004.supervisorId = "EMP005";
+  if (emp.EMP007 && !emp.EMP007.supervisorId) emp.EMP007.supervisorId = "EMP005";
+  if (emp.EMP008 && !emp.EMP008.supervisorId) emp.EMP008.supervisorId = "EMP005";
   if (!db.projectAssignments.length) {
     const rows = [];
     let n = 1;
@@ -509,7 +491,7 @@ function state() {
   return window.FT?.state || {};
 }
 function account() {
-  return state().account || null;
+  return getActor() || state().account || null;
 }
 function employee() {
   const db = viewDB(),
@@ -1284,7 +1266,6 @@ window.PM = {
         employeeId,
         ...assignmentData,
       });
-    if (emp && roleOnProject === "supervisor") emp.role = "Supervisor";
     persistView(db);
     this.openAssign(projectId);
   },

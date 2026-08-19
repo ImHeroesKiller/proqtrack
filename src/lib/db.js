@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 13;
+const DB_VERSION = 14;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -25,8 +25,16 @@ const accountRoleForEmployee = employee =>
 
 /** HR status can deactivate login, but never lift a manager suspension. */
 function getActor() {
-  return (typeof window !== 'undefined' && window.FT?.state?.account) || null;
+  const session = (typeof window !== 'undefined' && window.FT?.state?.account) || null;
+  const id = session?.id;
+  if (!id) return null;
+  if (!_cache) return publicAccount(session);
+  const acc = (_cache.accounts || []).find(a => a.id === id);
+  if (!acc || acc.status === 'inactive' || acc.status === 'suspended') return null;
+  return publicAccount(acc);
 }
+
+export { getActor };
 
 function assertLoggedIn() {
   const actor = getActor();
@@ -114,7 +122,7 @@ function syncEmployeeAccount(db, employee, password) {
   return account;
 }
 
-function defaultDB() {
+function rawDefaultDB() {
   return {
     _version: DB_VERSION,
     employees:  JSON.parse(JSON.stringify(seedEmployees)),
@@ -137,6 +145,10 @@ function defaultDB() {
     organizations: [defaultOrganization()],
     currentOrganizationId: DEFAULT_ORG_ID,
   };
+}
+
+function defaultDB() {
+  return migrateDB(rawDefaultDB());
 }
 
 export function defaultOrganization() {
@@ -331,7 +343,7 @@ function migrateCompetitorIntel(rows) {
 }
 
 function migrateDB(parsed) {
-  const base = defaultDB();
+  const base = rawDefaultDB();
   const out = { ...base, ...parsed, _version: DB_VERSION };
 
   for (const key of Object.keys(base)) {
@@ -372,7 +384,9 @@ function migrateDB(parsed) {
     if (account) {
       account.email = employee.email;
       account.name = employee.name;
-      account.role = accountRoleForEmployee(employee);
+      if (!['superadmin', 'manager'].includes(account.role)) {
+        account.role = accountRoleForEmployee(employee);
+      }
       applyEmployeeAccountStatus(account, employee);
     }
   });
@@ -484,6 +498,19 @@ function migrateDB(parsed) {
   ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments','outletProposals'].forEach(key => {
     if (Array.isArray(out[key])) out[key] = stamp(out[key]);
   });
+  const assignmentRoleMap = { field_sales: 'sales', merchandiser: 'sales' };
+  (out.projectAssignments || []).forEach(row => {
+    if (assignmentRoleMap[row.roleOnProject]) row.roleOnProject = assignmentRoleMap[row.roleOnProject];
+    if (row.status === 'ended') row.status = 'removed';
+  });
+  (out.outlets || []).forEach(outlet => {
+    if (outlet && outlet.projectId && !Array.isArray(outlet.projectIds)) {
+      outlet.projectIds = [outlet.projectId];
+    }
+    if (outlet && 'projectId' in outlet && Array.isArray(outlet.projectIds)) {
+      delete outlet.projectId;
+    }
+  });
   ensurePlatformAccounts(out);
 
   return out;
@@ -515,7 +542,7 @@ function ensurePlatformAccounts(db) {
 }
 
 let _cache = null;
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('proqtrack:db-updated', () => { _cache = null; });
 }
 
@@ -559,7 +586,9 @@ export function getDB() {
 export function saveDB() {
   if (!_cache) return;
   try {
-    localStorage.setItem(DB_KEY, JSON.stringify(_cache));
+    const text = JSON.stringify(_cache);
+    localStorage.setItem(DB_KEY, text);
+    try { localStorage.setItem('proqtrack_db_v7', text); } catch { /* legacy mirror */ }
     return true;
   } catch (e) {
     console.error('Failed to save DB', e);
@@ -581,6 +610,10 @@ export function resetDB() {
     try { localStorage.removeItem(k); } catch (_) { /* ignore */ }
   }
   return _cache;
+}
+
+export function __resetForTests() {
+  _cache = null;
 }
 
 export function getAccounts() {
@@ -638,8 +671,6 @@ export function updateOrganization(id, data) {
 function isRegisteredTestDevice(db, deviceId) {
   const id = String(deviceId || '').trim();
   if (!id) return false;
-  const listed = (db.appSettings?.testDevices || []).some(d => d && d.id === id);
-  if (listed) return true;
   try {
     const host = JSON.parse(localStorage.getItem('proqtrack_superadmin_host_v1') || 'null');
     return !!(host?.id && host.id === id);
@@ -650,6 +681,7 @@ function isRegisteredTestDevice(db, deviceId) {
 
 export function registerTestDevice(device, actor = getActor()) {
   if (!device?.id) return null;
+  if (actor?.role !== 'superadmin') throw new Error('Akses ditolak');
   const db = getDB();
   db.appSettings = { ...defaultAppSettings(), ...(db.appSettings || {}) };
   const list = Array.isArray(db.appSettings.testDevices) ? db.appSettings.testDevices : [];
@@ -670,6 +702,10 @@ export function isTestDevice(deviceId) {
   return isRegisteredTestDevice(getDB(), deviceId);
 }
 
+function deviceBindingOf(secret, accountId) {
+  return hashPassword(`${String(secret || '')}|${String(accountId || '')}|proqtrack.device.v1`);
+}
+
 function assertSalesDevice(db, acc, device) {
   if (String(acc.role || '').toLowerCase() !== 'employee') return;
   const deviceId = String(device?.id || '').trim();
@@ -681,8 +717,10 @@ function assertSalesDevice(db, acc, device) {
   if (other) {
     throw new Error('Perangkat ini sudah terpasang ke akun sales lain. Satu device hanya untuk satu sales.');
   }
+  const binding = deviceBindingOf(device?.secret, acc.id);
   if (!acc.deviceId) {
     acc.deviceId = deviceId;
+    acc.deviceBinding = binding;
     acc.deviceImei = device.imei || '';
     acc.deviceLabel = sanitizePlainText(device.label || '');
     acc.deviceUserAgent = sanitizePlainText(device.userAgent || '');
@@ -690,8 +728,14 @@ function assertSalesDevice(db, acc, device) {
     return;
   }
   if (acc.deviceId !== deviceId) {
-    throw new Error('Akun sudah terpasang ke perangkat lain. Minta manager mereset IMEI sebelum ganti device.');
+    const hint = acc.deviceLabel ? ` Perangkat terpasang: ${acc.deviceLabel}.` : '';
+    const when = acc.devicePairedAt ? ` Dipasang ${String(acc.devicePairedAt).slice(0, 10)}.` : '';
+    throw new Error(`Akun sudah terpasang ke perangkat lain.${hint}${when} Minta manager mereset perangkat sebelum ganti HP.`);
   }
+  if (acc.deviceBinding && acc.deviceBinding !== binding) {
+    throw new Error('Sidik perangkat tidak cocok. Minta manager mereset perangkat jika ini HP resmi Anda.');
+  }
+  if (!acc.deviceBinding) acc.deviceBinding = binding;
 }
 
 export function resetSalesDevice(accountId) {
@@ -705,6 +749,7 @@ export function resetSalesDevice(accountId) {
   acc.deviceImei = '';
   acc.deviceLabel = '';
   acc.deviceUserAgent = '';
+  acc.deviceBinding = null;
   acc.deviceResetAt = new Date().toISOString();
   acc.deviceResetBy = actor.id;
   acc.deviceResetByName = actor.name || actor.email;
@@ -717,7 +762,7 @@ export function authenticate(email, password, device = null) {
   const acc = db.accounts.find(a => a.email.toLowerCase() === email.toLowerCase().trim());
   if (!acc || acc.status === 'inactive' || acc.status === 'suspended' || !passwordMatches(acc.password, password)) return null;
   if (acc.employeeId) {
-    const employee = getEmployee(acc.employeeId);
+    const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
     if (acc.role !== 'superadmin' && acc.role !== 'manager') {
       acc.role = accountRoleForEmployee(employee);
@@ -732,6 +777,26 @@ export function authenticate(email, password, device = null) {
   } else if (acc.organizationId) {
     db.currentOrganizationId = acc.organizationId;
     try { localStorage.setItem(ORG_KEY, acc.organizationId); } catch { /* ignore */ }
+  }
+  saveDB();
+  return publicAccount(acc);
+}
+
+export function resumeSession(accountId, device = null) {
+  const db = getDB();
+  const acc = (db.accounts || []).find(a => a.id === accountId);
+  if (!acc || acc.status === 'inactive' || acc.status === 'suspended') return null;
+  if (acc.employeeId) {
+    const employee = findEmployee(acc.employeeId, db);
+    if (!employee || employee.status !== 'active') return null;
+    if (acc.role !== 'superadmin' && acc.role !== 'manager') {
+      acc.role = accountRoleForEmployee(employee);
+    }
+  }
+  try {
+    assertSalesDevice(db, acc, device);
+  } catch {
+    return null;
   }
   saveDB();
   return publicAccount(acc);
@@ -784,8 +849,11 @@ export function getAttendancePolicy() {
 
 export function updateAppSettings(partial) {
   const actor = assertLoggedIn();
-  const orgOnly = ['companyName', 'companyLogo', 'timezone'];
-  if (orgOnly.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
+  const privileged = [
+    'companyName', 'companyLogo', 'timezone', 'attendanceMode', 'attendanceRadiusM',
+    'officeLat', 'officeLng', 'officeName', 'testDevices', 'notifyLeave', 'notifyLowStock',
+  ];
+  if (privileged.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
     if (actor.role !== 'manager' && actor.role !== 'superadmin') {
       throw new Error('Akses ditolak');
     }
@@ -957,8 +1025,16 @@ export function getEmployees() {
   return rows.filter(e => ids.has(e.id));
 }
 
+function findEmployee(id, db = getDB()) {
+  return (db.employees || []).find(e => e.id === id) || null;
+}
+
 export function getEmployee(id) {
-  return getDB().employees.find(e => e.id === id);
+  const emp = findEmployee(id);
+  if (!emp) return null;
+  const actor = getActor();
+  if (!actor || !canAccessEmployee(emp.id, actor)) return null;
+  return emp;
 }
 
 export function createEmployee(data) {
@@ -1041,7 +1117,7 @@ export function getOutlets() {
 }
 
 export function getOutlet(id) {
-  return getDB().outlets.find(o => o.id === id);
+  return getOutlets().find(o => o.id === id) || null;
 }
 
 function normalizeEntityScope(db, data) {
@@ -1070,6 +1146,10 @@ function linkedProjectIds(entity) {
   if (!entity) return [];
   if (Array.isArray(entity.projectIds) && entity.projectIds.length) return entity.projectIds.filter(Boolean);
   return entity.projectId ? [entity.projectId] : [];
+}
+
+export function getLinkedProjectIds(entity) {
+  return linkedProjectIds(entity);
 }
 
 function inferProjectId(db, data) {
@@ -1109,8 +1189,9 @@ function assertOperationalContext(db, data, { product = false } = {}) {
     a.employeeId === employeeId &&
     a.status === 'active'
   )) {
-    // allow if the employee has any active assignment in this org (catalog work at a store)
-    const hasAny = db.projectAssignments.some(a => a.employeeId === employeeId && a.status === 'active');
+    const hasAny = db.projectAssignments.some(a =>
+      a.projectId === data.projectId && a.employeeId === employeeId && a.status === 'active'
+    );
     if (!hasAny) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
   }
   if (data.outletId) {
@@ -1345,11 +1426,12 @@ export function getVisits() {
 }
 
 export function getVisitsByEmployee(empId) {
-  return getDB().visits.filter(v => v.employeeId === empId);
+  if (!canAccessEmployee(empId)) return [];
+  return getVisits().filter(v => v.employeeId === empId);
 }
 
 export function getVisitsByOutlet(outletId) {
-  return getDB().visits.filter(v => v.outletId === outletId);
+  return getVisits().filter(v => v.outletId === outletId);
 }
 
 export function getVisitsByDate(date) {
@@ -1446,11 +1528,12 @@ export function getAttendance() {
 }
 
 export function getAttendanceByDate(date) {
-  return getDB().attendance.filter(a => a.date === date);
+  return getAttendance().filter(a => a.date === date);
 }
 
 export function getAttendanceByEmployee(empId) {
-  return getDB().attendance.filter(a => a.employeeId === empId);
+  if (!canAccessEmployee(empId)) return [];
+  return getAttendance().filter(a => a.employeeId === empId);
 }
 
 export function createAttendance(data) {
@@ -1472,29 +1555,36 @@ export function updateAttendance(id, data) {
 }
 
 export function getDashboardStats() {
-  const db = getDB();
+  const employees = getEmployees();
+  const outlets = getOutlets();
+  const visits = getVisits();
+  const attendance = getAttendance();
+  const products = getProducts();
+  const stocks = getStocks();
+  const leaves = getLeaves();
+  const competitors = getCompetitors();
+  const intel = getCompetitorIntel();
   const today = todayISO();
-  const todayVisits = db.visits.filter(v => v.date === today);
+  const todayVisits = visits.filter(v => v.date === today);
   const completedVisits = todayVisits.filter(v => v.status === 'completed');
   const activeVisits = todayVisits.filter(v => v.status === 'checked-in');
   const plannedVisits = todayVisits.filter(v => v.status === 'planned');
-  const activeEmployees = db.employees.filter(e => e.status === 'active');
-  const todayAttendance = db.attendance.filter(a => a.date === today);
+  const activeEmployees = employees.filter(e => e.status === 'active');
+  const todayAttendance = attendance.filter(a => a.date === today);
   const hadir = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'hadir');
   const terlambat = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'terlambat');
   const tidakHadir = todayAttendance.filter(a => normalizeAttendanceStatus(a.status) === 'tidak hadir');
-  const intel = db.competitorIntel || [];
 
   return {
-    totalEmployees: db.employees.length,
+    totalEmployees: employees.length,
     activeEmployees: activeEmployees.length,
-    totalOutlets: db.outlets.length,
-    activeOutlets: db.outlets.filter(o => o.status === 'active').length,
+    totalOutlets: outlets.length,
+    activeOutlets: outlets.filter(o => o.status === 'active').length,
     todayVisits: todayVisits.length,
     completedVisits: completedVisits.length,
     activeVisits: activeVisits.length,
     plannedVisits: plannedVisits.length,
-    totalVisits: db.visits.length,
+    totalVisits: visits.length,
     attendanceHadir: hadir.length,
     attendanceTerlambat: terlambat.length,
     attendanceTidakHadir: tidakHadir.length,
@@ -1503,14 +1593,14 @@ export function getDashboardStats() {
       if (rated.length === 0) return 0;
       return (rated.reduce((s, v) => s + v.rating, 0) / rated.length).toFixed(1);
     })(),
-    totalProducts: db.products.length,
-    activeProducts: db.products.filter(p => p.status === 'active').length,
-    totalStocks: db.stocks.length,
-    lowStocks: db.stocks.filter(s => s.quantity <= s.minStock).length,
-    pendingLeaves: db.leaves.filter(l => l.status === 'pending').length,
-    approvedLeaves: db.leaves.filter(l => l.status === 'approved').length,
-    rejectedLeaves: db.leaves.filter(l => l.status === 'rejected').length,
-    totalCompetitors: (db.competitors || []).length,
+    totalProducts: products.length,
+    activeProducts: products.filter(p => p.status === 'active').length,
+    totalStocks: stocks.length,
+    lowStocks: stocks.filter(s => s.quantity <= s.minStock).length,
+    pendingLeaves: leaves.filter(l => l.status === 'pending').length,
+    approvedLeaves: leaves.filter(l => l.status === 'approved').length,
+    rejectedLeaves: leaves.filter(l => l.status === 'rejected').length,
+    totalCompetitors: competitors.length,
     totalCompetitorIntel: intel.length,
     intelWithPromo: intel.filter(i => i.hasPromo).length,
   };
@@ -1636,7 +1726,8 @@ export function getLeaves() {
 }
 
 export function getLeavesByEmployee(empId) {
-  return getDB().leaves.filter(l => l.employeeId === empId);
+  if (!canAccessEmployee(empId)) return [];
+  return getLeaves().filter(l => l.employeeId === empId);
 }
 
 export function getLeaveTypes() {
@@ -1661,7 +1752,7 @@ export function updateLeave(id, data) {
   const current = db.leaves[idx];
   assertCanAccessEmployee(current.employeeId);
   const nextStatus = data.status || current.status;
-  if (nextStatus !== current.status && !['manager', 'supervisor'].includes(actor.role)) {
+  if (nextStatus !== current.status && !['manager', 'supervisor', 'superadmin'].includes(actor.role)) {
     throw new Error('Akses ditolak');
   }
   db.leaves[idx] = { ...current, ...data };
@@ -1674,7 +1765,7 @@ export function deleteLeave(id) {
   const leave = db.leaves.find(l => l.id === id);
   if (leave) {
     const actor = assertLoggedIn();
-    if (actor.role !== 'manager' && leave.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+    if (actor.role !== 'manager' && actor.role !== 'superadmin' && leave.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
   }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
@@ -1693,6 +1784,7 @@ export function getStocksByProduct(productId) {
 }
 
 export function createStock(data) {
+  assertLoggedIn();
   assertOperationalContext(getDB(), data, { product: true });
   const stock = { id: uid('STK'), lastUpdated: new Date().toISOString().slice(0,10), ...withOrg(data) };
   getDB().stocks.push(stock);
@@ -1701,6 +1793,7 @@ export function createStock(data) {
 }
 
 export function updateStock(id, data) {
+  assertLoggedIn();
   const db = getDB();
   const idx = db.stocks.findIndex(s => s.id === id);
   if (idx === -1) return null;
@@ -1710,6 +1803,7 @@ export function updateStock(id, data) {
 }
 
 export function deleteStock(id) {
+  assertOrgAdmin();
   const db = getDB();
   db.stocks = db.stocks.filter(s => s.id !== id);
   saveDB();
@@ -1732,6 +1826,7 @@ export function getPriceObservationsByEmployee(empId) {
 }
 
 export function createPriceObservation(data) {
+  assertLoggedIn();
   assertOperationalContext(getDB(), data, { product: true });
   const obs = {
     id: uid('PRC'),
@@ -1748,6 +1843,7 @@ export function createPriceObservation(data) {
 }
 
 export function updatePriceObservation(id, data) {
+  assertLoggedIn();
   const db = getDB();
   const idx = db.priceObservations.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -1757,6 +1853,7 @@ export function updatePriceObservation(id, data) {
 }
 
 export function deletePriceObservation(id) {
+  assertOrgAdmin();
   const db = getDB();
   db.priceObservations = db.priceObservations.filter(p => p.id !== id);
   saveDB();
@@ -1819,7 +1916,7 @@ export function createCompetitorProduct(data) {
     unit: 'pcs',
     typicalPrice: 0,
     sku: '',
-    ...data,
+    ...withOrg(data),
   };
   if (p.typicalPrice != null) p.typicalPrice = Number(p.typicalPrice);
   getDB().competitorProducts.push(p);
@@ -1904,6 +2001,7 @@ export function createCompetitorIntel(data) {
 }
 
 export function updateCompetitorIntel(id, data) {
+  assertLoggedIn();
   const db = getDB();
   const idx = db.competitorIntel.findIndex(i => i.id === id);
   if (idx === -1) return null;
@@ -2015,7 +2113,11 @@ export function deleteFieldPhoto(id) {
 }
 
 export function deleteCompetitorIntel(id) {
+  assertLoggedIn();
   const db = getDB();
+  const intel = (db.competitorIntel || []).find(i => i.id === id);
+  const owner = intel?.recordedBy || intel?.employeeId;
+  if (owner) assertCanAccessEmployee(owner);
   db.competitorIntel = db.competitorIntel.filter(i => i.id !== id);
   saveDB();
 }

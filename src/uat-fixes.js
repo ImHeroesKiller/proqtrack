@@ -1,13 +1,20 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
+import { resumeSession, getLinkedProjectIds } from './lib/db.js';
+import { getDeviceIdentity } from './lib/device.js';
+
 const SESSION_KEY='proqtrack_active_session_v1';
 
 function readDB(){
-  try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{return{};}
+  try{return JSON.parse(localStorage.getItem('proqtrack_db_v6')||localStorage.getItem('proqtrack_db_v7')||'{}')||{};}catch{return{};}
 }
 
 function waitForApp(callback,attempt=0){
   if(window.FT?.state){callback();return;}
   if(attempt<100)setTimeout(()=>waitForApp(callback,attempt+1),25);
+}
+
+function defaultRouteFor(account){
+  if(account?.role==='superadmin'||account?.role==='manager'||account?.role==='supervisor') return '#/';
+  return '#/myday';
 }
 
 function installSessionContinuity(){
@@ -34,23 +41,13 @@ function installSessionContinuity(){
   if(window.FT.state.loggedIn)return;
   let saved=null;
   try{saved=JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null');}catch{}
-  if(!saved)return;
-  const db=readDB();
-  const account=(db.accounts||[]).find(a=>a.id===saved.accountId||a.email===saved.email);
-  if(!account||account.status==='inactive'||account.status==='suspended'){sessionStorage.removeItem(SESSION_KEY);return;}
-  if(account.role==='employee'&&account.deviceId){
-    let deviceId='';
-    let hostId='';
-    try{deviceId=localStorage.getItem('proqtrack_device_id_v1')||'';}catch{}
-    try{hostId=JSON.parse(localStorage.getItem('proqtrack_superadmin_host_v1')||'null')?.id||'';}catch{}
-    const listed=(db.appSettings?.testDevices||[]).some(d=>d&&d.id===deviceId);
-    const isHost=!!(deviceId&&(deviceId===hostId||listed));
-    if(deviceId&&account.deviceId!==deviceId&&!isHost){sessionStorage.removeItem(SESSION_KEY);return;}
-  }
+  if(!saved?.accountId)return;
+  const account=resumeSession(saved.accountId,getDeviceIdentity());
+  if(!account){sessionStorage.removeItem(SESSION_KEY);return;}
   window.FT.state.loggedIn=true;
   window.FT.state.account=account;
   window.FT.state.user={name:account.name||account.email,role:account.role==='superadmin'?'Superadmin':account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};
-  window.FT.state.route=saved.route&&saved.route!=='#/login'?saved.route:(account.role==='manager'?'#/':'#/myday');
+  window.FT.state.route=saved.route&&saved.route!=='#/login'?saved.route:defaultRouteFor(account);
   if(location.hash!==window.FT.state.route)location.hash=window.FT.state.route;
   else window.dispatchEvent(new HashChangeEvent('hashchange'));
   window.R2?.issueUploadSession?.(account).catch(()=>{});
@@ -103,7 +100,11 @@ function installCascadingSelects(form){
     if(!projectId&&selectedOutlet?.projectId){projectId=selectedOutlet.projectId;if(project)project.value=projectId;}
     const selectedProject=(db.projects||[]).find(p=>p.id===projectId);
     if(outlet){
-      const rows=(db.outlets||db.stores||[]).filter(o=>!projectId||o.projectId===projectId);
+      const rows=(db.outlets||db.stores||[]).filter(o=>{
+        if(!projectId)return true;
+        const ids=getLinkedProjectIds(o);
+        return ids.includes(projectId);
+      });
       keepValue(outlet,rows,o=>`${o.name}${o.area?' — '+o.area:''}`);
     }
     if(product){

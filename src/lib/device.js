@@ -1,4 +1,5 @@
 const DEVICE_KEY = 'proqtrack_device_id_v1';
+const DEVICE_SECRET_KEY = 'proqtrack_device_secret_v1';
 export const SUPERADMIN_HOST_KEY = 'proqtrack_superadmin_host_v1';
 
 function randomId() {
@@ -6,12 +7,28 @@ function randomId() {
   return `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
+function readKey(key) {
+  try { return localStorage.getItem(key) || ''; } catch { return ''; }
+}
+
+function writeKey(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* ignore */ }
+}
+
+export function getDeviceSecret() {
+  let secret = readKey(DEVICE_SECRET_KEY);
+  if (!secret) {
+    secret = `SEC-${randomId()}${randomId()}`;
+    writeKey(DEVICE_SECRET_KEY, secret);
+  }
+  return secret;
+}
+
 export function getDeviceIdentity() {
-  let id = '';
-  try { id = localStorage.getItem(DEVICE_KEY) || ''; } catch { /* ignore */ }
+  let id = readKey(DEVICE_KEY);
   if (!id) {
     id = `DEV-${randomId()}`;
-    try { localStorage.setItem(DEVICE_KEY, id); } catch { /* ignore */ }
+    writeKey(DEVICE_KEY, id);
   }
   const nav = typeof navigator === 'undefined' ? {} : navigator;
   const screenObj = typeof screen === 'undefined' ? {} : screen;
@@ -23,6 +40,7 @@ export function getDeviceIdentity() {
   ].filter(Boolean).join(' · ');
   return {
     id,
+    secret: getDeviceSecret(),
     imei,
     label,
     userAgent: String(nav.userAgent || '').slice(0, 240),

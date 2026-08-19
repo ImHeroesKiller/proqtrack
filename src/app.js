@@ -23,7 +23,7 @@ import {
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
-  registerTestDevice,
+  registerTestDevice, getActor, resetDB as resetDatabase,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
@@ -36,18 +36,13 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
-import { getDeviceIdentity, markSuperadminHost, isSuperadminHostDevice } from './lib/device.js';
+import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
-
-try {
-  const hostDev = getDeviceIdentity();
-  if (isSuperadminHostDevice(hostDev.id)) registerTestDevice(hostDev, { email: 'superadmin-host' });
-} catch { /* ignore */ }
 
 // Make utils available globally for inline handlers
 window.FT = {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
-  calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge, resetDB,
+  calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
   compressImage, photoTypeLabel, getPromoTypeLabel,
   get state() { return state; }, get navigate() { return navigate; },
 };
@@ -76,11 +71,11 @@ const PROJECT_MANAGEMENT_ROUTES = new Set([
 ]);
 
 function isSuperadmin() {
-  return state.account && state.account.role === 'superadmin';
+  return getActor()?.role === 'superadmin';
 }
 
 function isManager() {
-  return state.account && state.account.role === 'manager';
+  return getActor()?.role === 'manager';
 }
 
 function isOrgAdmin() {
@@ -88,7 +83,7 @@ function isOrgAdmin() {
 }
 
 function isSupervisor() {
-  return state.account && state.account.role === 'supervisor';
+  return getActor()?.role === 'supervisor';
 }
 
 function canViewTeamOps() {
@@ -297,6 +292,17 @@ function render() {
   const app = document.getElementById('app');
   const sidebarScroll = document.querySelector('.sidebar-nav')?.scrollTop || state._sidebarScroll || 0;
   state._sidebarScroll = sidebarScroll;
+
+  if (state.loggedIn) {
+    const actor = getActor();
+    if (!actor) {
+      state.loggedIn = false;
+      state.account = null;
+    } else {
+      state.account = actor;
+      state.user = { name: actor.name, role: displayRole(actor), email: actor.email };
+    }
+  }
 
   if (!state.loggedIn) {
     app.innerHTML = renderLogin();
@@ -635,7 +641,10 @@ window.FT.handleLogin = function(e) {
     showToast('Email atau password salah', 'error');
     return;
   }
-  if (acc.role === 'superadmin') markSuperadminHost(getDeviceIdentity());
+  if (acc.role === 'superadmin') {
+    markSuperadminHost(getDeviceIdentity());
+    try { registerTestDevice(getDeviceIdentity(), acc); } catch { /* ignore */ }
+  }
   state.loggedIn = true;
   state.account = acc;
   state.user = { name: acc.name, role: displayRole(acc), email: acc.email };
@@ -648,6 +657,14 @@ window.FT.handleLogin = function(e) {
   issueUploadSession(acc).catch(error => {
     console.warn('upload_session_failed', error);
   });
+};
+
+window.FT.resetDB = function() {
+  if (state.loggedIn && getActor()?.role !== 'superadmin') {
+    showToast('Reset data hanya untuk superadmin.', 'error');
+    return null;
+  }
+  return resetDatabase();
 };
 
 window.FT.logout = function() {

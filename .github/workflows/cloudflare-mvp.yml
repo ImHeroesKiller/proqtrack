@@ -65,6 +65,20 @@ jobs:
       - name: Apply D1 migrations
         run: npx wrangler d1 migrations apply DB --remote
 
+      - name: Record D1 database id
+        shell: bash
+        run: |
+          set -euo pipefail
+          info="$(npx wrangler d1 info proqtrack-mvp --json 2>/dev/null || true)"
+          node -e '
+            const raw = process.argv[1] || "";
+            const start = raw.indexOf("{");
+            if (start < 0) { console.log("D1 info unavailable"); process.exit(0); }
+            const j = JSON.parse(raw.slice(start));
+            const id = j.uuid || j.id || j.database_id || "";
+            console.log(id ? ("D1 database_id=" + id) : "D1 database_id missing from info payload");
+          ' "$info"
+
       - name: Redeploy after migration
         run: npx wrangler deploy
 
