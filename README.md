@@ -24,14 +24,16 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
 
 ## Demo login
 
-| Role | Email | Password |
-|------|-------|----------|
-| Superadmin | `superadmin@proqtrack.id` | `Proqpay2026` |
-| Manager (1 org) | `manager@proqtrack.id` | `Proqpay2026` |
-| Supervisor | `rizky.supervisor@proqtrack.id` | `Proqpay2026` |
-| Field Sales | `budi.employee@proqtrack.id` | `Proqpay2026` |
+Akun prototype lokal (password **tidak** dipublikasikan di repo publik ini):
 
-Akun UAT lain: `siti.supervisor@`, `dewi.employee@` — password `Proqpay2026`. Password tidak ditampilkan di halaman login.
+| Role | Email |
+|------|-------|
+| Superadmin | `superadmin@proqtrack.id` |
+| Manager (1 org) | `manager@proqtrack.id` |
+| Supervisor | `rizky.supervisor@proqtrack.id` |
+| Field Sales | `budi.employee@proqtrack.id` |
+
+Minta password UAT ke pemilik repo. Setelah `git pull`, reset data demo jika login gagal — seed versi baru memakai hash yang berbeda. Password tidak ditampilkan di halaman login.
 
 ## Jalankan lokal
 
@@ -90,7 +92,7 @@ location.reload();
 - Upload dibatasi maksimal 2 MB per file dan total 500 MB pada level aplikasi.
 - `POST /api/auth/session` **tidak lagi** menerbitkan token dari `role`/`sub` yang dikirim klien (HTTP 410).
 - Token cloud hanya keluar dari `POST /api/auth/login` setelah email/password cocok dengan baris `auth_users` di D1. Role diambil dari database, bukan dari body request.
-- `API_AUTH_SECRET` wajib di-set lewat `wrangler secret put API_AUTH_SECRET` (minimal 32 karakter). Tidak ada fallback di source.
+- `API_AUTH_SECRET` wajib di-set lewat `wrangler secret put API_AUTH_SECRET` (minimal 32 karakter). Tidak ada fallback di source. Deploy workflow mengisi secret ini **hanya jika belum ada** (nilai tidak di-log).
 - Token hanya diterima di header `Authorization: Bearer`. Query `?access=` diabaikan.
 - Endpoint data tetap dikunci (`MVP_DATA_API_ENABLED=false`).
 - Endpoint publik: `GET /api/health`. Login: `POST /api/auth/login`.
@@ -103,7 +105,7 @@ location.reload();
 - **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
 - **Penyimpanan:** seluruh data operasional masih di localStorage browser, termasuk foto base64
 - Record lama memperoleh `projectId: null` dan tetap terlihat manager
-- Password demo plain text — hanya untuk prototype lokal
+- Password seed disimpan sebagai hash `sha256$…` — bukan plaintext di repo
 - Jika penyimpanan penuh saat upload foto, hapus foto lama atau reset data demo
 
 ## Struktur

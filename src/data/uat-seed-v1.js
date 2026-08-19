@@ -1,5 +1,5 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=4;
+const VERSION=5;
 const now='2026-07-29T08:30:00.000Z';
 const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
@@ -28,14 +28,14 @@ function buildUatDatabase(){
     {id:'EMP-UAT-008',employeeNumber:'UAT-0008',name:'Nadia Permata',email:'nadia.noaccount@proqtrack.id',phone:'0812-1000-0008',role:'Field Sales',jobRole:'Field Sales',area:'Depok',status:'active',supervisorId:'EMP-UAT-002',joinDate:'2026-07-01',photo:photo('NP','#D97706'),lat:-6.4,lng:106.82}
   ];
   const accounts=[
-    {id:'ACC-UAT-SA',email:'superadmin@proqtrack.id',password:'Proqpay2026',role:'superadmin',employeeId:null,organizationId:null,name:'Superadmin UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'Proqpay2026',role:'manager',employeeId:null,organizationId:'ORG-DEFAULT',name:'Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-001',email:'rizky.supervisor@proqtrack.id',password:'Proqpay2026',role:'supervisor',employeeId:'EMP-UAT-001',name:'Rizky Pratama',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-002',email:'siti.supervisor@proqtrack.id',password:'Proqpay2026',role:'supervisor',employeeId:'EMP-UAT-002',name:'Siti Maharani',status:'active',mustChangePassword:true,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-003',email:'budi.employee@proqtrack.id',password:'Proqpay2026',role:'employee',employeeId:'EMP-UAT-003',name:'Budi Santoso',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-004',email:'dewi.employee@proqtrack.id',password:'Proqpay2026',role:'employee',employeeId:'EMP-UAT-004',name:'Dewi Lestari',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-005',email:'ahmad.employee@proqtrack.id',password:'Proqpay2026',role:'employee',employeeId:'EMP-UAT-005',name:'Ahmad Wijaya',status:'suspended',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-006',email:'fajar.inactive@proqtrack.id',password:'Proqpay2026',role:'employee',employeeId:'EMP-UAT-007',name:'Fajar Nugroho',status:'inactive',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now}
+    {id:'ACC-UAT-SA',email:'superadmin@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'superadmin',employeeId:null,organizationId:null,name:'Superadmin UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'manager',employeeId:null,organizationId:'ORG-DEFAULT',name:'Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-001',email:'rizky.supervisor@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'supervisor',employeeId:'EMP-UAT-001',name:'Rizky Pratama',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-002',email:'siti.supervisor@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'supervisor',employeeId:'EMP-UAT-002',name:'Siti Maharani',status:'active',mustChangePassword:true,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-003',email:'budi.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-003',name:'Budi Santoso',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-004',email:'dewi.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-004',name:'Dewi Lestari',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-005',email:'ahmad.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-005',name:'Ahmad Wijaya',status:'suspended',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-006',email:'fajar.inactive@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-007',name:'Fajar Nugroho',status:'inactive',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now}
   ];
   const projectAssignments=[
     {id:'ASN-UAT-001',employeeId:'EMP-UAT-001',projectId:'PRJ-UAT-001',roleOnProject:'supervisor',startDate:'2026-01-01',endDate:'2026-12-31',status:'active'},
@@ -133,6 +133,7 @@ function buildUatDatabase(){
 }
 
 function apply(){
+  if(typeof window==='undefined'||typeof localStorage==='undefined')return;
   let current={};
   try{current=JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{}
   if(Number(current._uatSeedVersion||0)>=VERSION)return;
@@ -143,5 +144,5 @@ function apply(){
   window.dispatchEvent(new CustomEvent('proqtrack:db-updated',{detail:{reason:'uat-seed',version:VERSION}}));
 }
 
-apply();
-export {buildUatDatabase};
+if(typeof window!=='undefined')apply();
+export {buildUatDatabase,VERSION};
