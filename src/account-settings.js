@@ -231,10 +231,11 @@ export function renderSettings() {
         ${acc.role === 'employee' ? `
         <section ${pane('perangkat')}>
           <div class="card-title">Perangkat terpasang</div>
-          <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset IMEI.</div>
+          <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset perangkat.</div>
           ${acc.deviceId ? `
             <div class="detail-grid">
-              <div class="detail-label">IMEI / ID</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
+              <div class="detail-label">Device ID</div><div class="detail-value">${esc(acc.deviceId)}</div>
+              <div class="detail-label">Fingerprint</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
               <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || '—')}</div>
               <div class="detail-label">Dipasang</div><div class="detail-value">${acc.devicePairedAt ? formatDate(acc.devicePairedAt) : '—'}</div>
             </div>
@@ -249,7 +250,7 @@ export function renderSettings() {
             const host = isSuperadminHostDevice(dev.id) || isTestDevice(dev.id);
             return `<div class="card" style="margin:14px 0;padding:14px;border:1px solid ${host ? '#86efac' : 'var(--gray-200)'};background:${host ? '#f0fdf4' : 'var(--gray-50)'}">
               <div class="card-title">Superadmin test device</div>
-              <div class="card-subtitle">This Mac can sign in as any paired sales account without changing their IMEI lock.</div>
+              <div class="card-subtitle">This Mac can sign in as any paired sales account without changing their device lock.</div>
               <div class="detail-grid" style="margin-top:8px">
                 <div class="detail-label">Device ID</div><div class="detail-value">${esc(dev.id)}</div>
                 <div class="detail-label">Status</div><div class="detail-value">${host ? 'Registered host — bypass on' : 'Not registered'}</div>
@@ -306,7 +307,7 @@ export function renderAccounts() {
             ${rows.length ? rows.map(a => {
               const emp = employees.find(e => e.id === a.employeeId);
               const device = a.role === 'employee'
-                ? (a.deviceId ? `${esc(a.deviceImei || 'IMEI')} · ${esc(a.deviceLabel || 'Device')}<div class="am-muted">Login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
+                ? (a.deviceId ? `${esc(a.deviceId || 'Device')}<div class="am-muted">${esc(a.deviceLabel || 'Browser')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
                 : '—';
               return `<tr>
                 <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
@@ -316,7 +317,7 @@ export function renderAccounts() {
                 <td>${device}</td>
                 <td>
                   <button class="btn btn-secondary btn-sm" onclick="AM.openAccount('${a.id}')">Edit</button>
-                  ${a.role === 'employee' && a.deviceId ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset IMEI</button>` : ''}
+                  ${a.role === 'employee' && a.deviceId ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
                   ${a.status === 'active'
                     ? `<button class="btn btn-danger btn-sm" onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
                     : `<button class="btn btn-secondary btn-sm" onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
@@ -362,8 +363,8 @@ function accountForm(existing) {
       ${existing?.role === 'employee' ? `
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
-        ${existing.deviceId ? `<div class="am-muted">IMEI ${esc(existing.deviceImei || '—')} · ${esc(existing.deviceLabel || '—')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}<br>${esc((existing.deviceUserAgent || '').slice(0, 120))}</div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="AM.resetDevice('${existing.id}')">Reset IMEI</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
+        ${existing.deviceId ? `<div class="am-muted">Device ${esc(existing.deviceId || '—')} · ${esc(existing.deviceLabel || '—')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}<br>${esc((existing.deviceUserAgent || '').slice(0, 120))}</div>
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
       </div>` : ''}
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
@@ -545,11 +546,11 @@ window.AM = {
     }
   },
   resetDevice(id) {
-    if (!confirm('Reset IMEI akun ini? Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+    if (!confirm('Reset perangkat akun ini? Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
     try {
       resetSalesDevice(id);
       window.FT.closeModal?.();
-      toast('IMEI direset. Sales dapat pairing perangkat baru saat login.');
+      toast('Perangkat direset. Sales dapat pairing perangkat baru saat login.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');

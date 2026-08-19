@@ -21,6 +21,8 @@ const SOURCE_FILES = [
   'src/lib/db.js',
   'README.md',
   '.github/workflows/cloudflare-mvp.yml',
+  '.github/workflows/ci.yml',
+  '.github/dependabot.yml',
 ];
 
 function read(rel) {
@@ -62,10 +64,20 @@ test('public source does not contain published demo passwords or auto-mint', () 
   assert.doesNotMatch(db, /Superadmin ProQTrack/);
   assert.doesNotMatch(db, /const hasSuper/);
   assert.match(db, /rotateRetiredSeedPasswords/);
+  assert.match(db, /export function resumeSession/);
+  assert.match(db, /function deviceBindingOf/);
+  assert.match(db, /export \{ getActor \}/);
   const uat = read('src/data/uat-seed-v1.js');
   assert.match(uat, /typeof window==='undefined'/);
   const workflow = read('.github/workflows/cloudflare-mvp.yml');
   assert.match(workflow, /wrangler whoami/);
   assert.match(workflow, /secret put API_AUTH_SECRET/);
   assert.match(workflow, /already present/);
+  const ci = read('.github/workflows/ci.yml');
+  assert.match(ci, /npm test/);
+  const dependabot = read('.github/dependabot.yml');
+  assert.match(dependabot, /package-ecosystem: npm/);
+  for (const rel of ['tests/acl.test.mjs', 'tests/device.test.mjs', 'tests/schema.test.mjs']) {
+    assert.doesNotMatch(read(rel), /Pqt-UAT/);
+  }
 });

@@ -1,0 +1,124 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { installBrowserShim, setSession, device } from './helpers/memory-storage.mjs';
+import { hashPassword } from '../src/lib/utils.js';
+
+installBrowserShim();
+
+const {
+  getDB,
+  resetDB,
+  __resetForTests,
+  authenticate,
+  resumeSession,
+  getActor,
+  getEmployees,
+  getVisits,
+  getVisitsByEmployee,
+  getEmployee,
+  createEmployee,
+  createStock,
+  updateStock,
+  deleteStock,
+  updateAppSettings,
+  registerTestDevice,
+  updateLeave,
+  getLeaves,
+} = await import('../src/lib/db.js');
+
+const TEST_PASSWORD = 'test-pass-12';
+
+function prepare() {
+  __resetForTests();
+  resetDB();
+  for (const acc of getDB().accounts) acc.password = hashPassword(TEST_PASSWORD);
+}
+
+function login(email, dev = device('DEV-TEST-1')) {
+  const acc = authenticate(email, TEST_PASSWORD, dev);
+  assert.ok(acc, `login failed for ${email}`);
+  setSession(acc);
+  return acc;
+}
+
+test('fresh DB is version 14 and keeps eight seed employees', () => {
+  prepare();
+  const db = getDB();
+  assert.equal(db._version, 14);
+  assert.equal(db.employees.length, 8);
+});
+
+test('getActor re-reads role from the database, not from mutated state', () => {
+  prepare();
+  const sales = login('budi.santoso@proqtrack.id');
+  assert.equal(getActor().role, 'employee');
+  assert.equal(sales.password, undefined);
+  window.FT.state.account = { ...sales, role: 'superadmin' };
+  assert.equal(getActor().role, 'employee');
+  assert.throws(() => createEmployee({
+    name: 'Hacker',
+    email: 'hacker@proqtrack.id',
+    phone: '0812',
+    area: 'Jakarta',
+    password: 'password12',
+  }), /Akses ditolak/);
+});
+
+test('sales only see their own visits and cannot read another employee record', () => {
+  prepare();
+  login('budi.santoso@proqtrack.id');
+  const mine = getVisits();
+  assert.ok(mine.length > 0);
+  assert.ok(mine.every(v => v.employeeId === 'EMP001'));
+  assert.equal(getVisitsByEmployee('EMP002').length, 0);
+  assert.equal(getEmployee('EMP002'), null);
+  assert.deepEqual(getEmployees().map(e => e.id), ['EMP001']);
+});
+
+test('supervisor sees team members, not the whole org', () => {
+  prepare();
+  login('rizki.pratama@proqtrack.id');
+  const ids = getEmployees().map(e => e.id).sort();
+  assert.ok(ids.includes('EMP001'));
+  assert.ok(ids.includes('EMP005'));
+  assert.equal(ids.includes('EMP006'), false);
+});
+
+test('sales cannot write org settings, test devices, or delete stock', () => {
+  prepare();
+  login('budi.santoso@proqtrack.id');
+  assert.throws(() => updateAppSettings({ companyName: 'Hacked' }), /Akses ditolak/);
+  assert.throws(() => updateAppSettings({ testDevices: [{ id: 'x' }] }), /Akses ditolak/);
+  assert.throws(() => registerTestDevice(device('DEV-X')), /Akses ditolak/);
+  const stockId = getDB().stocks[0]?.id;
+  if (stockId) assert.throws(() => deleteStock(stockId), /Akses ditolak/);
+});
+
+test('stock mutations require a logged-in actor', () => {
+  prepare();
+  setSession(null);
+  assert.throws(() => createStock({ outletId: 'OUT001', productId: 'PRD001', quantity: 1, minStock: 0 }), /Akses ditolak/);
+  assert.throws(() => updateStock('missing', { quantity: 2 }), /Akses ditolak/);
+});
+
+test('superadmin can approve leave', () => {
+  prepare();
+  login('superadmin@proqtrack.id');
+  const pending = getLeaves().find(l => l.status === 'pending') || getDB().leaves.find(l => l.status === 'pending');
+  assert.ok(pending);
+  const updated = updateLeave(pending.id, { status: 'approved' });
+  assert.equal(updated.status, 'approved');
+});
+
+test('resumeSession never returns a password and rejects a foreign device', () => {
+  prepare();
+  const first = device('DEV-PHONE-A', 'alpha-secret');
+  const acc = authenticate('budi.santoso@proqtrack.id', TEST_PASSWORD, first);
+  assert.ok(acc);
+  setSession(null);
+  const ok = resumeSession(acc.id, first);
+  assert.ok(ok);
+  assert.equal(ok.password, undefined);
+  const other = resumeSession(acc.id, device('DEV-PHONE-B', 'beta-secret'));
+  assert.equal(other, null);
+});

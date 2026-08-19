@@ -63,8 +63,11 @@ function buildEmployees(existing) {
   return rows.slice(0,100);
 }
 function enrich() {
-  const db = readDB();
-  if (Number(db._uatSeedVersion || 0) > 0 || localStorage.getItem('proqtrack_uat_seed_active')) {
+  const raw = localStorage.getItem(DB_KEY);
+  if (!raw) return;
+  let db;
+  try { db = JSON.parse(raw); } catch { return; }
+  if (Number(db._version || 0) >= 13 || db._phase0DemoVersion || Number(db._uatSeedVersion || 0) > 0 || localStorage.getItem('proqtrack_uat_seed_active')) {
     return;
   }
   // Seed only when absent. Never overwrite Project Management v7 edits.

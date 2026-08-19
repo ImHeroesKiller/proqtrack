@@ -100,12 +100,13 @@ location.reload();
 
 ## Catatan teknis
 
-- **DB internal:** version 7
-- **Backward compatibility:** aplikasi inti tetap memakai `proqtrack_db_v6`; modul v7 memigrasikan dan mencerminkan data ke `proqtrack_db_v7`
+- **DB internal:** version 14
+- **Backward compatibility:** aplikasi inti memakai `proqtrack_db_v6`; `proqtrack_db_v7` hanya cermin otomatis dari v6 (bukan schema terpisah)
 - **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
 - **Penyimpanan:** seluruh data operasional masih di localStorage browser, termasuk foto base64
 - Record lama memperoleh `projectId: null` dan tetap terlihat manager
 - Password seed disimpan sebagai hash `sha256$…` — bukan plaintext di repo
+- Device lock sales memakai `deviceId` + hash `deviceBinding` (bukan IMEI sungguhan — browser tidak bisa baca IMEI)
 - Jika penyimpanan penuh saat upload foto, hapus foto lama atau reset data demo
 
 ## Struktur
@@ -132,8 +133,12 @@ proqtrack/
 
 - Belum ada sync multi-device untuk data operasional (masih localStorage)
 - Kapasitas foto terbatas kuota localStorage browser
-- Enforcement role di UI masih client-side; Worker menolak mint sesi dan menolak file API sampai diaktifkan sadar
+- Enforcement role di UI + `src/lib/db.js` adalah **konvensi client-side**. Siapa pun yang mengedit `localStorage` bisa mengubah data. Itu disengaja untuk prototype; jangan anggap ini batas keamanan multi-tenant.
+- Role di sesi selalu di-rejoin dari baris `accounts[]` — mengubah `FT.state.account.role` di console tidak menaikkan hak.
+- Kunci perangkat sales menolak copy `deviceId` saja; menyalin **kedua** key `proqtrack_device_id_v1` + `proqtrack_device_secret_v1` masih bisa meniru device (batas browser).
+- Mesin tempat superadmin login ditandai host dan boleh masuk sebagai sales untuk UAT, tanpa merusak pairing HP sales.
 - Tabel `auth_users` kosong secara default — tidak ada akun cloud sampai diisi terpisah dari seed demo
+- Dependabot mengirim PR mingguan untuk npm + GitHub Actions. Branch `main` dilindungi ruleset (wajib PR).
 
 ---
 ProQTrack — Field Team Monitoring prototype
