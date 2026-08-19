@@ -61,7 +61,7 @@ function tile(label, tone, icon, href) {
 
 function pageHead(title, back = '#/myday') {
   return `<header class="pq-subhead">
-    <button type="button" class="mq-icon-btn" onclick="location.hash='${back}'" aria-label="Kembali">
+    <button type="button" class="mq-icon-btn" onclick="location.hash='${back}'" aria-label="Back">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 6-6 6 6 6"/></svg>
     </button>
     <h1>${esc(title)}</h1>
@@ -131,17 +131,17 @@ export function renderHrHome() {
       </section>
 
       <section class="pq-grid">
-        ${tile('Cek Absensi', 'teal', 'attendance', '#/myattendance')}
-        ${tile('Ajukan Lembur', 'orange', 'overtime', '#/lembur')}
-        ${tile('Ajukan Izin', 'amber', 'edit', '#/izin')}
-        ${tile('Ajukan Cuti', 'green', 'leaves', '#/cuti')}
+        ${tile('Attendance', 'teal', 'attendance', '#/myattendance')}
+        ${tile('Request Overtime', 'orange', 'overtime', '#/lembur')}
+        ${tile('Request Time Off', 'amber', 'edit', '#/izin')}
+        ${tile('Request Leave', 'green', 'leaves', '#/cuti')}
         ${tile('Work From Home', 'blue', 'home', '#/wfh')}
-        ${tile('Laporan Harian', 'purple', 'accounts', '#/laporan-harian')}
-        ${tile('Kalender', 'cyan', 'calendar', '#/kalender')}
-        ${tile('Rekap Lembur', 'orange', 'chart', '#/rekap-lembur')}
-        ${tile('Rekap Absensi Bulanan', 'rose', 'analysis', '#/rekap-absensi')}
-        ${tile('Berita & Informasi', 'slate', 'news', '#/berita')}
-        ${tile('Hubungi HRD', 'brown', 'phone', '#/hubungi-hrd')}
+        ${tile('Daily Report', 'purple', 'accounts', '#/laporan-harian')}
+        ${tile('Calendar', 'cyan', 'calendar', '#/kalender')}
+        ${tile('Overtime Recap', 'orange', 'chart', '#/rekap-lembur')}
+        ${tile('Monthly Attendance', 'rose', 'analysis', '#/rekap-absensi')}
+        ${tile('News', 'slate', 'news', '#/berita')}
+        ${tile('Contact HR', 'brown', 'phone', '#/hubungi-hrd')}
       </section>
     </div>
   `;
@@ -155,17 +155,17 @@ export function renderPengajuanHub() {
   const pending = [...leaves, ...ots, ...wfhs].filter(r => r.status === 'pending').length;
   return `
     <div class="pq-page">
-      ${pageHead('Pengajuan')}
+      ${pageHead('Requests')}
       <div class="pq-stat-row">
-        <div><b>${pending}</b><span>Menunggu</span></div>
-        <div><b>${leaves.length}</b><span>Izin / Cuti</span></div>
-        <div><b>${ots.length}</b><span>Lembur</span></div>
+        <div><b>${pending}</b><span>Pending</span></div>
+        <div><b>${leaves.length}</b><span>Leave</span></div>
+        <div><b>${ots.length}</b><span>Overtime</span></div>
         <div><b>${wfhs.length}</b><span>WFH</span></div>
       </div>
       <div class="pq-grid pq-grid-2">
-        ${tile('Ajukan Lembur', 'orange', 'overtime', '#/lembur')}
-        ${tile('Ajukan Izin', 'amber', 'edit', '#/izin')}
-        ${tile('Ajukan Cuti', 'green', 'leaves', '#/cuti')}
+        ${tile('Request Overtime', 'orange', 'overtime', '#/lembur')}
+        ${tile('Request Time Off', 'amber', 'edit', '#/izin')}
+        ${tile('Request Leave', 'green', 'leaves', '#/cuti')}
         ${tile('Work From Home', 'blue', 'home', '#/wfh')}
       </div>
     </div>`;
@@ -174,14 +174,14 @@ export function renderPengajuanHub() {
 export function renderLaporanHub() {
   return `
     <div class="pq-page">
-      ${pageHead('Laporan')}
+      ${pageHead('Reports')}
       <div class="pq-grid pq-grid-2">
-        ${tile('Laporan Harian', 'purple', 'accounts', '#/laporan-harian')}
-        ${tile('Rekap Lembur', 'orange', 'chart', '#/rekap-lembur')}
-        ${tile('Rekap Absensi', 'rose', 'analysis', '#/rekap-absensi')}
-        ${tile('Kalender', 'cyan', 'calendar', '#/kalender')}
-        ${tile('Kunjungan Saya', 'teal', 'visits', '#/myvisits')}
-        ${tile('Foto Lapangan', 'slate', 'photos', '#/myphotos')}
+        ${tile('Daily Report', 'purple', 'accounts', '#/laporan-harian')}
+        ${tile('Overtime Recap', 'orange', 'chart', '#/rekap-lembur')}
+        ${tile('Attendance Recap', 'rose', 'analysis', '#/rekap-absensi')}
+        ${tile('Calendar', 'cyan', 'calendar', '#/kalender')}
+        ${tile('My Visits', 'teal', 'visits', '#/myvisits')}
+        ${tile('Field Photos', 'slate', 'photos', '#/myphotos')}
       </div>
     </div>`;
 }
@@ -194,18 +194,18 @@ export function renderAkunPage() {
   const photo = safePhotoUrl(emp?.photo);
   return `
     <div class="pq-page">
-      ${pageHead('Akun')}
+      ${pageHead('Account')}
       <section class="pq-att-card pq-profile">
         <div class="pq-avatar" style="background:${color}${photo ? `;background-image:url('${photo}');background-size:cover` : ''}">${photo ? '' : esc(getInitials(emp?.name || acc?.name || '?'))}</div>
-        <h2>${esc(emp?.name || acc?.name || 'Karyawan')}</h2>
+        <h2>${esc(emp?.name || acc?.name || 'Employee')}</h2>
         <p>${esc(emp?.role || 'Field Sales')} · ${esc(emp?.area || companyLabel())}</p>
         <p class="pq-att-note">${esc(emp?.email || acc?.email || '')}</p>
       </section>
       <div class="pq-list">
-        <a class="pq-list-card" href="#/settings" onclick="return FT.goNav(event,'#/settings')"><strong>Pengaturan akun</strong><span>›</span></a>
-        <a class="pq-list-card" href="#/myattendance" onclick="return FT.goNav(event,'#/myattendance')"><strong>Riwayat absensi</strong><span>›</span></a>
-        <a class="pq-list-card" href="#/myleaves" onclick="return FT.goNav(event,'#/myleaves')"><strong>Izin & cuti saya</strong><span>›</span></a>
-        <button type="button" class="pq-list-card pq-danger" onclick="FT.logout()"><strong>Keluar</strong></button>
+        <a class="pq-list-card" href="#/settings" onclick="return FT.goNav(event,'#/settings')"><strong>Account settings</strong><span>›</span></a>
+        <a class="pq-list-card" href="#/myattendance" onclick="return FT.goNav(event,'#/myattendance')"><strong>Attendance history</strong><span>›</span></a>
+        <a class="pq-list-card" href="#/myleaves" onclick="return FT.goNav(event,'#/myleaves')"><strong>My leave</strong><span>›</span></a>
+        <button type="button" class="pq-list-card pq-danger" onclick="FT.logout()"><strong>Sign out</strong></button>
       </div>
     </div>`;
 }
@@ -214,7 +214,7 @@ export function renderOvertimePage() {
   const rows = getOvertimesByEmployee(empId()).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   return `
     <div class="pq-page">
-      ${pageHead('Ajukan Lembur', '#/pengajuan')}
+      ${pageHead('Request Overtime', '#/pengajuan')}
       <form class="pq-form" onsubmit="HR.submitOvertime(event)">
         <label>Tanggal<input class="input" type="date" name="date" value="${todayISO()}" required></label>
         <div class="pq-form-row">
@@ -225,7 +225,7 @@ export function renderOvertimePage() {
         <label>Alasan<textarea class="textarea" name="reason" required placeholder="Kenapa perlu lembur?"></textarea></label>
         <button class="pq-btn-in" type="submit">Kirim pengajuan</button>
       </form>
-      <h3 class="pq-block-title">Riwayat lembur</h3>
+      <h3 class="pq-block-title">Overtime history</h3>
       ${requestRows(rows, {
         title: r => `${r.hours} jam · ${formatDateShort(r.date)}`,
         meta: r => `${r.startTime || '—'}–${r.endTime || '—'} · ${r.reason || ''}`,
@@ -241,7 +241,7 @@ function leaveForm(kind) {
   const rows = getLeavesByEmployee(empId())
     .filter(l => kind === 'cuti' ? /cuti/i.test(l.type) : !/cuti/i.test(l.type))
     .sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt)));
-  const title = kind === 'cuti' ? 'Ajukan Cuti' : 'Ajukan Izin';
+  const title = kind === 'cuti' ? 'Request Leave' : 'Request Time Off';
   return `
     <div class="pq-page">
       ${pageHead(title, '#/pengajuan')}
@@ -258,7 +258,7 @@ function leaveForm(kind) {
         <label>Alasan<textarea class="textarea" name="reason" required placeholder="Alasan pengajuan"></textarea></label>
         <button class="pq-btn-in" type="submit">Kirim pengajuan</button>
       </form>
-      <h3 class="pq-block-title">Riwayat</h3>
+      <h3 class="pq-block-title">History</h3>
       ${requestRows(rows, {
         title: r => r.type,
         meta: r => `${formatDateShort(r.startDate)} – ${formatDateShort(r.endDate)} · ${r.reason || ''}`,
@@ -279,7 +279,7 @@ export function renderWfhPage() {
         <label>Alasan / rencana kerja<textarea class="textarea" name="reason" required placeholder="Apa yang akan dikerjakan dari rumah?"></textarea></label>
         <button class="pq-btn-in" type="submit">Ajukan WFH</button>
       </form>
-      <h3 class="pq-block-title">Riwayat WFH</h3>
+      <h3 class="pq-block-title">WFH history</h3>
       ${requestRows(rows, {
         title: r => formatDateShort(r.date),
         meta: r => r.reason || '',
@@ -292,7 +292,7 @@ export function renderDailyReportPage() {
   const today = rows.find(r => r.date === todayISO());
   return `
     <div class="pq-page">
-      ${pageHead('Laporan Harian', '#/laporan')}
+      ${pageHead('Daily Report', '#/laporan')}
       ${today ? `<div class="pq-note">Laporan hari ini sudah terkirim pukul ${esc((today.submittedAt || '').slice(0, 10))}.</div>` : ''}
       <form class="pq-form" onsubmit="HR.submitDaily(event)">
         <label>Ringkasan hari ini<textarea class="textarea" name="summary" required placeholder="Apa yang sudah dikerjakan?"></textarea></label>
@@ -333,7 +333,7 @@ export function renderCalendarPage() {
   }
   return `
     <div class="pq-page">
-      ${pageHead('Kalender', '#/laporan')}
+      ${pageHead('Calendar', '#/laporan')}
       <section class="pq-att-card">
         <div class="pq-cal-week">${['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map(d => `<span>${d}</span>`).join('')}</div>
         <div class="pq-cal-grid">${cells.join('')}</div>
@@ -354,11 +354,11 @@ export function renderOvertimeRecap() {
   const hours = approved.reduce((s, r) => s + (Number(r.hours) || 0), 0);
   return `
     <div class="pq-page">
-      ${pageHead('Rekap Lembur', '#/laporan')}
+      ${pageHead('Overtime Recap', '#/laporan')}
       <div class="pq-stat-row">
-        <div><b>${hours}</b><span>Jam disetujui</span></div>
-        <div><b>${thisMonth.length}</b><span>Pengajuan bulan ini</span></div>
-        <div><b>${approved.length}</b><span>Disetujui</span></div>
+        <div><b>${hours}</b><span>Approved hours</span></div>
+        <div><b>${thisMonth.length}</b><span>This month</span></div>
+        <div><b>${approved.length}</b><span>Approved</span></div>
       </div>
       ${requestRows(rows.sort((a, b) => String(b.date).localeCompare(String(a.date))), {
         title: r => `${r.hours} jam · ${formatDateShort(r.date)}`,
@@ -372,11 +372,11 @@ export function renderMonthlyAttendance() {
   const month = monthAttendance(emp?.id);
   return `
     <div class="pq-page">
-      ${pageHead('Rekap Absensi Bulanan', '#/laporan')}
+      ${pageHead('Monthly Attendance', '#/laporan')}
       <div class="pq-stat-row">
-        <div><b>${month.hadir}</b><span>Hadir</span></div>
-        <div><b class="warn">${month.terlambat}</b><span>Terlambat</span></div>
-        <div><b class="bad">${month.tidakHadir}</b><span>Tidak Hadir</span></div>
+        <div><b>${month.hadir}</b><span>Present</span></div>
+        <div><b class="warn">${month.terlambat}</b><span>Late</span></div>
+        <div><b class="bad">${month.tidakHadir}</b><span>Absent</span></div>
       </div>
       ${requestRows(month.rows.sort((a, b) => String(b.date).localeCompare(String(a.date))), {
         title: r => formatDateShort(r.date),
@@ -389,7 +389,7 @@ export function renderNewsPage() {
   const items = getNewsItems();
   return `
     <div class="pq-page">
-      ${pageHead('Berita & Informasi')}
+      ${pageHead('News')}
       ${items.length ? items.map(n => `
         <article class="pq-news">
           ${n.pinned ? '<span class="pq-pin">Penting</span>' : ''}
@@ -404,7 +404,7 @@ export function renderContactHr() {
   const contacts = getHrContacts();
   return `
     <div class="pq-page">
-      ${pageHead('Hubungi HRD')}
+      ${pageHead('Contact HR')}
       ${contacts.map(c => `
         <section class="pq-att-card pq-contact">
           <h2>${esc(c.name)}</h2>

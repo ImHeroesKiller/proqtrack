@@ -1,6 +1,6 @@
 import { getDB, persistDB } from '../lib/db.js';
 const ROUTES=new Set(['#/reports','#/reports/attendance','#/reports/employees','#/reports/projects','#/reports/field','#/reports/supervisors','#/reports/stocks','#/reports/prices','#/reports/competitors','#/reports/custom','#/reports/audit']);
-const TAB_LINKS=[['#/reports','Ringkasan'],['#/reports/attendance','Kehadiran'],['#/reports/employees','Karyawan'],['#/reports/projects','Klien & Project'],['#/reports/field','Aktivitas Lapangan'],['#/reports/stocks','Stok'],['#/reports/prices','Harga'],['#/reports/competitors','Kompetitor'],['#/reports/supervisors','Supervisor'],['#/reports/custom','Custom'],['#/reports/audit','Audit'],['#/reports/templates','Template'],['#/reports/approvals','Approval'],['#/reports/schedules','Terjadwal']];
+const TAB_LINKS=[['#/reports','Summary'],['#/reports/attendance','Attendance'],['#/reports/employees','Employees'],['#/reports/projects','Clients & Projects'],['#/reports/field','Field Activity'],['#/reports/stocks','Stock'],['#/reports/prices','Prices'],['#/reports/competitors','Competitors'],['#/reports/supervisors','Supervisor'],['#/reports/custom','Custom'],['#/reports/audit','Audit'],['#/reports/templates','Templates'],['#/reports/approvals','Approvals'],['#/reports/schedules','Scheduled']];
 const SKIP_KEYS=new Set(['password','passwordHash','hash','dataUrl','photo','signatureImage','token','uploadToken','companyLogoFile']);
 const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const read=()=>getDB();

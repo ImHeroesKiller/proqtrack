@@ -269,25 +269,25 @@ const NAV_ITEMS_SUPERVISOR = [
 
 const NAV_ITEMS_EMPLOYEE = [
   { section: 'Main', items: [
-    { id: 'myday',    label: 'Hari Ini',        icon: 'calendar', route: '#/myday' },
+    { id: 'myday',    label: 'My Day',        icon: 'calendar', route: '#/myday' },
     { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
-    { id: 'myvisits', label: 'Kunjungan',      icon: 'visits', route: '#/myvisits' },
+    { id: 'myvisits', label: 'My Visits',      icon: 'visits', route: '#/myvisits' },
   ]},
   { section: 'Project', items: [
-    { id: 'my-projects', label: 'Project Saya', icon: 'briefcase', route: '#/my-projects' },
-    { id: 'new-outlet', label: 'Toko Baru', icon: 'store', route: '#/new-outlet' },
+    { id: 'my-projects', label: 'My Projects', icon: 'briefcase', route: '#/my-projects' },
+    { id: 'new-outlet', label: 'New Outlet', icon: 'store', route: '#/new-outlet' },
   ]},
   { section: 'Field', items: [
-    { id: 'mystocks',     label: 'Stok Outlet',     icon: 'stocks', route: '#/mystocks' },
-    { id: 'mysales',      label: 'Penjualan',    icon: 'chart', route: '#/mysales' },
-    { id: 'myprices',     label: 'Harga & Diskon',  icon: 'price', route: '#/myprices' },
-    { id: 'myintel',      label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
-    { id: 'myphotos',     label: 'Foto Lapangan',     icon: 'photos', route: '#/myphotos' },
-    { id: 'myattendance', label: 'Absensi Saya',    icon: 'attendance', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Izin & Cuti',            icon: 'leaves', route: '#/myleaves' },
+    { id: 'mystocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/mystocks' },
+    { id: 'mysales',      label: 'Product Sales',    icon: 'chart', route: '#/mysales' },
+    { id: 'myprices',     label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
+    { id: 'myintel',      label: 'Competitor Intel', icon: 'intel', route: '#/myintel' },
+    { id: 'myphotos',     label: 'Field Photos',     icon: 'photos', route: '#/myphotos' },
+    { id: 'myattendance', label: 'My Attendance',    icon: 'attendance', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Leave',            icon: 'leaves', route: '#/myleaves' },
   ]},
   { section: 'System', items: [
-    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
+    { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
   ]},
 ];
 
@@ -406,8 +406,8 @@ function render() {
       return;
     }
     pageTitle = 'Project Management';
-    pageSubtitle = 'Memuat data project dan klien';
-    pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
+    pageSubtitle = 'Loading projects and clients';
+    pageContent = '<div class="card"><div class="empty-state"><p>Loading Project Management…</p></div></div>';
   // Field personal routes (employee + supervisor)
   } else if (!manager && (
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
@@ -416,49 +416,49 @@ function render() {
     route === '#/mysales' || HR_EMPLOYEE_ROUTES.has(route)
   )) {
     if (route === '#/myday') {
-      pageTitle = 'Hari Ini'; pageSubtitle = 'Aktivitas lapangan hari ini';
+      pageTitle = 'My Day'; pageSubtitle = 'Today’s field activity';
       pageContent = renderMyDay();
     } else if (route === '#/pengajuan') {
-      pageTitle = 'Pengajuan'; pageSubtitle = 'Lembur, izin, cuti, dan WFH';
+      pageTitle = 'Requests'; pageSubtitle = 'Overtime, leave, and WFH';
       pageContent = renderPengajuanHub();
     } else if (route === '#/laporan') {
-      pageTitle = 'Laporan'; pageSubtitle = 'Laporan harian dan rekap';
+      pageTitle = 'Reports'; pageSubtitle = 'Daily notes and recaps';
       pageContent = renderLaporanHub();
     } else if (route === '#/akun') {
-      pageTitle = 'Akun'; pageSubtitle = 'Profil dan pengaturan';
+      pageTitle = 'Account'; pageSubtitle = 'Profile and settings';
       pageContent = renderAkunPage();
     } else if (route === '#/lembur') {
-      pageTitle = 'Ajukan Lembur'; pageSubtitle = 'Kirim dan lacak lembur';
+      pageTitle = 'Overtime'; pageSubtitle = 'Submit and track overtime';
       pageContent = renderOvertimePage();
     } else if (route === '#/izin') {
-      pageTitle = 'Ajukan Izin'; pageSubtitle = 'Izin pribadi, dinas, atau sakit';
+      pageTitle = 'Time off'; pageSubtitle = 'Personal, official, or sick leave';
       pageContent = renderIzinPage();
     } else if (route === '#/cuti') {
-      pageTitle = 'Ajukan Cuti'; pageSubtitle = 'Cuti tahunan dan cuti khusus';
+      pageTitle = 'Leave'; pageSubtitle = 'Annual and special leave';
       pageContent = renderCutiPage();
     } else if (route === '#/wfh') {
-      pageTitle = 'Work From Home'; pageSubtitle = 'Pengajuan kerja dari rumah';
+      pageTitle = 'Work From Home'; pageSubtitle = 'Work-from-home requests';
       pageContent = renderWfhPage();
     } else if (route === '#/laporan-harian') {
-      pageTitle = 'Laporan Harian'; pageSubtitle = 'Catatan kerja harian';
+      pageTitle = 'Daily Report'; pageSubtitle = 'Today’s field notes';
       pageContent = renderDailyReportPage();
     } else if (route === '#/kalender') {
-      pageTitle = 'Kalender'; pageSubtitle = 'Absensi dan cuti bulan ini';
+      pageTitle = 'Calendar'; pageSubtitle = 'Attendance and leave this month';
       pageContent = renderCalendarPage();
     } else if (route === '#/rekap-lembur') {
-      pageTitle = 'Rekap Lembur'; pageSubtitle = 'Jam lembur disetujui';
+      pageTitle = 'Overtime Recap'; pageSubtitle = 'Approved overtime hours';
       pageContent = renderOvertimeRecap();
     } else if (route === '#/rekap-absensi') {
-      pageTitle = 'Rekap Absensi Bulanan'; pageSubtitle = 'Ringkasan kehadiran';
+      pageTitle = 'Monthly Attendance'; pageSubtitle = 'Attendance summary';
       pageContent = renderMonthlyAttendance();
     } else if (route === '#/berita') {
-      pageTitle = 'Berita & Informasi'; pageSubtitle = 'Pengumuman HRD';
+      pageTitle = 'News'; pageSubtitle = 'HR announcements';
       pageContent = renderNewsPage();
     } else if (route === '#/hubungi-hrd') {
-      pageTitle = 'Hubungi HRD'; pageSubtitle = 'Kontak human resources';
+      pageTitle = 'Contact HR'; pageSubtitle = 'Human resources contacts';
       pageContent = renderContactHr();
     } else if (route === '#/last-location') {
-      pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
+      pageTitle = 'Last Location'; pageSubtitle = 'Store or workplace check-in location';
       pageContent = renderLastLocation();
     } else if (route === '#/myvisits') {
       pageTitle = 'My Visits'; pageSubtitle = 'Your visit history';
@@ -497,7 +497,7 @@ function render() {
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Operational summary';
     pageContent = (isProjectAdmin() || isManager()) ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
-    pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in terakhir tim di toko atau lokasi kerja';
+    pageTitle = 'Last Location'; pageSubtitle = 'Team last check-in at a store or work location';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
     pageTitle = 'Visits'; pageSubtitle = 'Outlet visits by the field team';
@@ -509,7 +509,7 @@ function render() {
     pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
     pageContent = renderOutletProposalForm();
   } else if (isProjectAdmin() && route === '#/outlets') {
-    pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
+    pageTitle = 'Outlets'; pageSubtitle = 'Manage outlet records';
     pageContent = renderOutlets();
   } else if (isProjectAdmin() && route === '#/products') {
     pageTitle = 'Products'; pageSubtitle = 'Product catalog';
@@ -538,11 +538,11 @@ function render() {
   } else if (isProjectAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
-    pageTitle = 'Detail Karyawan'; pageSubtitle = '';
+    pageTitle = 'Employee Detail'; pageSubtitle = '';
   } else if (isProjectAdmin() && route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
-    pageTitle = 'Detail Outlet'; pageSubtitle = '';
+    pageTitle = 'Outlet Detail'; pageSubtitle = '';
   } else if (route === '#/organizations' || route.startsWith('#/organizations/')) {
     if (!isSuperadmin()) {
       location.hash = defaultRouteFor(state.account);
@@ -553,7 +553,7 @@ function render() {
       pageContent = renderOrganizations();
     } else {
       const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
-      pageTitle = 'Workspace Organisasi'; pageSubtitle = 'Modul data milik organisasi ini';
+      pageTitle = 'Organization Workspace'; pageSubtitle = 'Data modules for this organization';
       pageContent = renderOrganizationHub(orgId);
     }
   } else if (route === '#/settings') {
@@ -562,7 +562,7 @@ function render() {
   } else if (isProjectAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
     pageTitle = 'Reports';
     pageSubtitle = 'Operational analytics and custom extracts';
-    pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
+    pageContent = '<div class="card"><div class="empty-state"><p>Loading reports…</p></div></div>';
   } else if (isOrgAdmin() && route === '#/accounts') {
     pageTitle = 'Accounts'; pageSubtitle = 'Logins, roles, and employee links';
     pageContent = renderAccounts();
@@ -570,7 +570,7 @@ function render() {
     location.hash = '#/myday';
     return;
   } else {
-    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${esc(route)}</p></div>`;
+    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Page not found</h3><p>Route: ${esc(route)}</p></div>`;
   }
 
   const fieldRole = !isProjectAdmin();
@@ -652,20 +652,20 @@ function renderSidebar() {
       <div class="sidebar-header">
         <div class="sidebar-logo">${getAppSettings().companyLogo ? `<img src="${esc(getAppSettings().companyLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
         <div class="sidebar-logo-text">${esc(getAppSettings().companyName || 'ProQTrack')}<small>Monitoring System</small></div>
-        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
+        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Expand menu' : 'Collapse menu'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
         </button>
       </div>
       ${orgSwitcherHtml()}
       <nav class="sidebar-nav">${navHTML}</nav>
       <div class="sidebar-footer">
-        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
+        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Account settings">
           <div class="sidebar-avatar">${getInitials(state.user.name)}</div>
           <div class="sidebar-user-info">
             <div class="name">${esc(state.user.name)}</div>
             <div class="role">${esc(state.user.role)}</div>
           </div>
-          <button class="logout-btn" onclick="FT.logout()" title="Keluar">
+          <button class="logout-btn" onclick="FT.logout()" title="Sign out">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -677,18 +677,18 @@ function renderSidebar() {
 function renderFieldDock(route) {
   const tabs = isSupervisor()
     ? [
-        { route: '#/', label: 'Beranda', icon: 'home' },
-        { route: '#/myday', label: 'Hari Ini', icon: 'calendar' },
-        { route: '#/tracking', label: 'Lokasi Tim', icon: 'pin' },
-        { route: '#/visits', label: 'Kunjungan', icon: 'visits' },
+        { route: '#/', label: 'Home', icon: 'home' },
+        { route: '#/myday', label: 'Today', icon: 'calendar' },
+        { route: '#/tracking', label: 'Team Loc', icon: 'pin' },
+        { route: '#/visits', label: 'Visits', icon: 'visits' },
       ]
     : [
-        { route: '#/myday', label: 'Hari Ini', icon: 'calendar' },
-        { route: '#/myvisits', label: 'Kunjungan', icon: 'visits' },
-        { route: '#/mystocks', label: 'Stok', icon: 'stocks' },
+        { route: '#/myday', label: 'Today', icon: 'calendar' },
+        { route: '#/myvisits', label: 'Visits', icon: 'visits' },
+        { route: '#/mystocks', label: 'Stock', icon: 'stocks' },
       ];
   return `
-    <nav class="field-dock" aria-label="Menu cepat">
+    <nav class="field-dock" aria-label="Quick menu">
       ${tabs.map(t => {
         const active = route === t.route
           || (t.route === '#/' && (route === '#' || route === '#/'))
@@ -805,23 +805,23 @@ function renderManagerDashboard() {
           <div class="card-subtitle">Workspace ${esc(org?.code || '-')} · ${employees.filter(e=>e.status==='active').length} tenaga aktif</div>
         </div>
         <div class="spacer"></div>
-        ${isSuperadmin() ? dashLink('#/organizations','Ganti organisasi') : ''}
+        ${isSuperadmin() ? dashLink('#/organizations','Switch organization') : ''}
         ${dashLink('#/tracking','Last Location')}
-        ${dashLink('#/outlet-approvals','Persetujuan toko')}
-        ${dashLink('#/reports','Laporan')}
+        ${dashLink('#/outlet-approvals','Outlet Approvals')}
+        ${dashLink('#/reports','Reports')}
       </div>
     </div>
     <div class="grid-4">
       ${[
-        ['Karyawan aktif', employees.filter(e=>e.status==='active').length, '#/employees'],
-        ['Kunjungan hari ini', stats.todayVisits, '#/visits'],
-        ['Stok menipis', stats.lowStocks, '#/stocks'],
-        ['Cuti pending', pendingLeaves, '#/leaves'],
+        ['Active employees', employees.filter(e=>e.status==='active').length, '#/employees'],
+        ['Visits today', stats.todayVisits, '#/visits'],
+        ['Low stock', stats.lowStocks, '#/stocks'],
+        ['Pending leave', pendingLeaves, '#/leaves'],
       ].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Aktivitas hari ini</div>
+        <div class="card-title">Today’s activity</div>
         ${todayVisits.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Waktu</th><th>Sales</th><th>Outlet</th><th>Status</th></tr></thead><tbody>${todayVisits.slice(0,8).map(v => {
           const emp = employees.find(e => e.id === v.employeeId);
           const out = getOutlets().find(o => o.id === v.outletId);
@@ -829,9 +829,9 @@ function renderManagerDashboard() {
         }).join('')}</tbody></table></div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Live Tracking atau buat kunjungan.</p></div>'}
       </div>
       <div class="card">
-        <div class="card-title">Pintasan workspace</div>
+        <div class="card-title">Workspace shortcuts</div>
         <div class="org-hub">
-          ${[['#/clients','Klien'],['#/projects','Project'],['#/employees','Karyawan'],['#/outlets','Toko'],['#/products','Produk'],['#/competitors','Kompetitor']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Data organisasi aktif</span></a>`).join('')}
+          ${[['#/clients','Clients'],['#/projects','Projects'],['#/employees','Employees'],['#/outlets','Outlets'],['#/products','Products'],['#/competitors','Competitors']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Active organization data</span></a>`).join('')}
         </div>
       </div>
     </div>
@@ -848,7 +848,7 @@ function renderSupervisorDashboard() {
   const active = visits.filter(v => v.status === 'checked-in');
   return `
     <div class="grid-4">
-      ${[['Anggota tim', team.length, '#/my-team'],['Kunjungan tim', visits.length, '#/visits'],['Sedang di lapangan', active.length, '#/tracking'],['Ijin menunggu', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
+      ${[['Team members', team.length, '#/my-team'],['Team visits', visits.length, '#/visits'],['In the field', active.length, '#/tracking'],['Pending leave', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
     <div class="grid-2">
       <div class="card">
@@ -860,7 +860,7 @@ function renderSupervisorDashboard() {
         ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : ''}
         ${pendingStores.length ? pendingStores.map(p => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || '')}</div></div>`).join('') : ''}
         ${!pending.length && !pendingStores.length ? '<p class="am-muted">Tidak ada pengajuan pending.</p>' : ''}
-        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/visits','Kunjungan tim')} ${dashLink('#/myday','Hari saya')}</div>
+        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Outlet Approvals')} ${dashLink('#/visits','Team Visits')} ${dashLink('#/myday','My Day')}</div>
       </div>
     </div>
   `;
@@ -1213,7 +1213,7 @@ window.FT.toggleCollapse = function() {
     const btn = sb.querySelector('.sidebar-toggle');
     if (btn) {
       btn.setAttribute('aria-expanded', state.sidebarCollapsed ? 'false' : 'true');
-      btn.title = state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu';
+      btn.title = state.sidebarCollapsed ? 'Expand menu' : 'Collapse menu';
       const path = btn.querySelector('path');
       if (path) path.setAttribute('d', state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6');
     }
@@ -1873,16 +1873,16 @@ function renderMyDay() {
       </header>
 
       <section class="mq-card mq-progress">
-        <div class="mq-card-kicker">${iconSvg('chart')} Progress Hari Ini</div>
+        <div class="mq-card-kicker">${iconSvg('chart')} Today's Progress</div>
         <div class="mq-progress-row">
           <div>
             <div class="mq-big">${progressed}<small> / ${targetVisits}</small></div>
-            <div class="mq-muted">Kunjungan</div>
+            <div class="mq-muted">Visits</div>
           </div>
           <div class="mq-pills">
-            <div><b class="ok">${completed.length}</b><span>Selesai</span></div>
-            <div><b class="warn">${activeV.length}</b><span>Berlangsung</span></div>
-            <div><b>${remaining}</b><span>Berikutnya</span></div>
+            <div><b class="ok">${completed.length}</b><span>Done</span></div>
+            <div><b class="warn">${activeV.length}</b><span>In progress</span></div>
+            <div><b>${remaining}</b><span>Next</span></div>
           </div>
         </div>
         <div class="mq-bar"><i style="width:${pct}%"></i></div>
@@ -1893,16 +1893,16 @@ function renderMyDay() {
         ${att ? `
           <div class="mq-att-status ${attLate ? 'late' : ''}">
             <span class="mq-dot"></span>
-            <div><small>Status Absensi</small><strong>${attLate ? 'Terlambat' : 'Hadir'}</strong></div>
+            <div><small>Attendance</small><strong>${attLate ? 'Late' : 'Present'}</strong></div>
           </div>
           <div class="mq-att-meta">Check-in <b>${esc(att.checkInTime || '—')}</b><br>${esc(att.checkInLocation || att.locationName || '—')}</div>
-          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} Lihat Lokasi</a>` : '<span></span>'}
+          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} View location</a>` : '<span></span>'}
         ` : `<div class="mq-att-form">${attendanceCheckinCard()}</div>`}
       </section>
 
       ${active && activeOut ? `
       <section class="mq-card mq-active">
-        <div class="mq-card-kicker">Sedang Dikunjungi</div>
+        <div class="mq-card-kicker">Currently visiting</div>
         <div class="mq-store">
           <div class="mq-store-ico">${iconSvg('store')}</div>
           <div>
@@ -1913,21 +1913,21 @@ function renderMyDay() {
           <span class="mq-live">checked-in</span>
         </div>
         <div class="mq-tiles">
-          ${tile('Stok', 'stocks', `FT.openVisitStockInput('${active.id}','${active.outletId}')`)}
-          ${tile('Harga', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
+          ${tile('Stock', 'stocks', `FT.openVisitStockInput('${active.id}','${active.outletId}')`)}
+          ${tile('Price', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
           ${tile('Intel', 'intel', `FT.openVisitIntelInput('${active.id}','${active.outletId}')`)}
-          ${tile('Foto', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
+          ${tile('Photo', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
           ${mapsDir(activeOut.lat, activeOut.lng)
-            ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></a>`
-            : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></span>`}
+            ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></a>`
+            : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></span>`}
         </div>
         <button type="button" class="mq-checkout" onclick="FT.mobileCheckOut('${active.id}')">CHECK OUT →</button>
       </section>` : ''}
 
       <section class="mq-card mq-next">
         <div class="mq-next-head">
-          <h3>Berikutnya</h3>
-          <a href="#/myvisits">Lihat Semua ›</a>
+          <h3>Up next</h3>
+          <a href="#/myvisits">See all ›</a>
         </div>
         ${planned.length ? planned.map(v => {
           const o = outletMap[v.outletId];
@@ -1939,11 +1939,11 @@ function renderMyDay() {
             <div>
               <strong>${esc(o.name)}</strong>
               <p>${esc(o.address || '')}</p>
-              <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Terjadwal'} ${km != null ? ` · ${km} km` : ''}</div>
+              <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Scheduled'} ${km != null ? ` · ${km} km` : ''}</div>
             </div>
-            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Rute</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
+            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Route</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
           </div>`;
-        }).join('') : `<div class="empty-state" style="padding:20px"><h3>Tidak ada jadwal berikutnya</h3></div>`}
+        }).join('') : `<div class="empty-state" style="padding:20px"><h3>No upcoming visits</h3></div>`}
       </section>
     </div>
   `;
@@ -4105,10 +4105,10 @@ function renderMobileSim() {
   const att = getAttendance().find(a => a.employeeId === current?.id && a.date === todayISO());
 
   const tabs = [
-    { id: 'home',   icon: '🏠', label: 'Beranda' },
-    { id: 'visits', icon: '📋', label: 'Kunjungan' },
-    { id: 'route',  icon: '🗺️', label: 'Rute' },
-    { id: 'profile', icon: '👤', label: 'Profil' },
+    { id: 'home',   icon: '🏠', label: 'Home' },
+    { id: 'visits', icon: '📋', label: 'Visits' },
+    { id: 'route',  icon: '🗺️', label: 'Route' },
+    { id: 'profile', icon: '👤', label: 'Profile' },
   ];
 
   let screenContent = '';
@@ -4264,7 +4264,7 @@ function renderMobileSim() {
             <div class="progress-bar"><div class="progress-fill" style="width:${current ? Math.round(current.todayVisits/current.targetVisits*100) : 0}%;"></div></div>
           </div>
         </div>
-        <button class="btn btn-danger" style="width:100%; justify-content:center;" onclick="FT.logout()">Keluar</button>
+        <button class="btn btn-danger" style="width:100%; justify-content:center;" onclick="FT.logout()">Sign out</button>
       </div>
     `;
   }
