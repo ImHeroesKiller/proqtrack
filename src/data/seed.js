@@ -77,14 +77,14 @@ export const seedAttendance = [
 export const seedAccounts = [
   { id: 'ACC-SUPER', email: 'superadmin@proqtrack.id', password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'superadmin', employeeId: null, organizationId: null, name: 'Superadmin Demo' },
   { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'manager',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Manager Demo' },
-  { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP001', name: 'Budi Santoso' },
-  { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP002', name: 'Siti Nurhaliza' },
-  { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP003', name: 'Ahmad Wijaya' },
-  { id: 'ACC004', email: 'dewi.lestari@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP004', name: 'Dewi Lestari' },
-  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'supervisor', employeeId: 'EMP005', name: 'Rizki Pratama' },
-  { id: 'ACC006', email: 'maya.sari@proqtrack.id',       password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP006', name: 'Maya Sari' },
-  { id: 'ACC007', email: 'fajar.nugroho@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP007', name: 'Fajar Nugroho' },
-  { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP008', name: 'Indah Permata' },
+  { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP001', organizationId: 'ORG-DEFAULT', name: 'Budi Santoso' },
+  { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP002', organizationId: 'ORG-DEFAULT', name: 'Siti Nurhaliza' },
+  { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP003', organizationId: 'ORG-DEFAULT', name: 'Ahmad Wijaya' },
+  { id: 'ACC004', email: 'dewi.lestari@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP004', organizationId: 'ORG-DEFAULT', name: 'Dewi Lestari' },
+  { id: 'ACC005', email: 'rizki.pratama@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'supervisor', employeeId: 'EMP005', organizationId: 'ORG-DEFAULT', name: 'Rizki Pratama' },
+  { id: 'ACC006', email: 'maya.sari@proqtrack.id',       password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP006', organizationId: 'ORG-DEFAULT', name: 'Maya Sari' },
+  { id: 'ACC007', email: 'fajar.nugroho@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP007', organizationId: 'ORG-DEFAULT', name: 'Fajar Nugroho' },
+  { id: 'ACC008', email: 'indah.permata@proqtrack.id',   password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP008', organizationId: 'ORG-DEFAULT', name: 'Indah Permata' },
 ];
 
 // Our catalog — Nestlé, Unilever, Indofood, Mayora, Wings + Semen Tiga Roda / Dulux-style lines

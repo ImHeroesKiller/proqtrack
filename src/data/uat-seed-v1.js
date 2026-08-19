@@ -103,13 +103,20 @@ function buildUatDatabase(){
     {id:'LV-UAT-002',employeeId:'EMP-UAT-004',type:'Sakit',startDate:'2026-07-28',endDate:'2026-07-28',days:1,reason:'Demam',status:'approved',submittedAt:'2026-07-27',approverId:'ACC-UAT-001',approvedAt:'2026-07-27'},
     {id:'LV-UAT-003',employeeId:'EMP-UAT-005',type:'Cuti Tahunan',startDate:'2026-08-10',endDate:'2026-08-12',days:3,reason:'Liburan',status:'rejected',submittedAt:'2026-07-25',approverId:'ACC-UAT-002',approvedAt:'2026-07-26'}
   ];
+  const org='ORG-DEFAULT';
+  for (const row of [...clients, ...projects, ...employees, ...projectAssignments, ...outlets]) {
+    if (row && !row.organizationId) row.organizationId = org;
+  }
+  for (const row of accounts) {
+    if (row && row.role !== 'superadmin' && !row.organizationId) row.organizationId = org;
+  }
   return {
     _version:11,_uatSeedVersion:VERSION,_seededAt:now,updatedAt:now,
     organizations:[{id:'ORG-DEFAULT',name:'Organisasi Demo',legalName:'ProQTrack Demo Tenant',code:'DEMO',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
     currentOrganizationId:'ORG-DEFAULT',
     clients,projects,employees,accounts,projectAssignments,outlets,stores:outlets,attendance,visits,products,stocks,priceObservations,competitors,competitorProducts,competitorIntel,
     promoTypes:[{code:'disc_pct',label:'Diskon %',strategic:false},{code:'bundle',label:'Bundle / Paket',strategic:true},{code:'trade_promo',label:'Trade Promo',strategic:true}],fieldPhotos,photos:fieldPhotos,leaveTypes,leaves,
-    projectSettings:projects.map(p=>({id:`PST-${p.id}`,projectId:p.id,modules:p.modules,updatedAt:now})),
+    projectSettings:projects.map(p=>({id:`PST-${p.id}`,projectId:p.id,organizationId:p.organizationId||org,modules:p.modules,updatedAt:now})),
     reportTemplates:[
       {id:'TPL-UAT-ATT',name:'Rekap Kehadiran UAT',type:'attendance',layout:'landscape',includeCompanyLogo:true,includeClientLogo:true,requireApproval:true,status:'active',columns:['Tanggal','Karyawan','Project','Status','Masuk','Pulang','Lokasi'],createdAt:now},
       {id:'TPL-UAT-EMP',name:'Laporan Individual Karyawan UAT',type:'individual',layout:'portrait',includeCompanyLogo:true,includeClientLogo:true,requireApproval:true,status:'active',columns:['Profil','Project','Kehadiran','Kunjungan','Foto'],createdAt:now},
