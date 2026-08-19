@@ -1,8 +1,12 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
+import { getDB, persistDB } from '../lib/db.js';
 const ROUTES=new Set(['#/reports/templates','#/reports/approvals','#/reports/schedules','#/reports/archive']);
 const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const read=()=>{try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')}catch{return{}}};
-const write=db=>{const text=JSON.stringify(db);DB_KEYS.forEach(k=>localStorage.setItem(k,text));window.dispatchEvent(new CustomEvent('proqtrack:db-updated'))};
+const read=()=>getDB();
+const write=db=>{
+  const live=getDB();
+  if(db&&db!==live)Object.assign(live,db);
+  persistDB('report-phase4');
+};
 const account=()=>window.FT?.state?.account||{};
 const role=()=>String(account().role||'employee').toLowerCase();
 const manager=()=>['manager','admin'].includes(role());

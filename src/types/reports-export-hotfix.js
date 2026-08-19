@@ -1,5 +1,7 @@
 // Phase 3 compatibility fixes loaded after reports-export.js.
 // Keeps print view writable while isolating the generated document from the app.
+import { getDB } from '../lib/db.js';
+
 const originalRun = window.ReportExport?.run;
 
 function readFilters() {
@@ -26,11 +28,7 @@ function statusOf(object) {
 }
 
 function readDB() {
-  try {
-    return JSON.parse(localStorage.getItem('proqtrack_db_v6') || localStorage.getItem('proqtrack_db_v7') || '{}');
-  } catch {
-    return {};
-  }
+  return getDB();
 }
 
 function printData(filters) {

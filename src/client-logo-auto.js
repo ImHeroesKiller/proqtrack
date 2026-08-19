@@ -1,6 +1,10 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-function read(){try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{return{};}}
-function write(db){const text=JSON.stringify(db);DB_KEYS.forEach(k=>localStorage.setItem(k,text));window.dispatchEvent(new CustomEvent('proqtrack:db-updated',{detail:{reason:'client-logo-auto'}}));}
+import { getDB, persistDB } from './lib/db.js';
+function read(){ return getDB(); }
+function write(db){
+  const live = getDB();
+  if (db && db !== live) Object.assign(live, db);
+  persistDB('client-logo-auto');
+}
 function normalizeWebsite(value){let raw=String(value||'').trim();if(!raw)return'';if(!/^https?:\/\//i.test(raw))raw=`https://${raw}`;try{const url=new URL(raw);if(!['http:','https:'].includes(url.protocol))return'';return url.href;}catch{return'';}}
 function logoUrlFor(website){const normalized=normalizeWebsite(website);if(!normalized)return'';return `https://www.google.com/s2/favicons?domain_url=${encodeURIComponent(normalized)}&sz=256`;}
 function initials(name){return String(name||'').split(/\s+/).map(x=>x[0]).slice(0,2).join('').toUpperCase();}

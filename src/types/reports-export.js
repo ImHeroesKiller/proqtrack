@@ -1,5 +1,5 @@
-const DB_KEY = 'proqtrack_db_v6';
-const DB_V7_KEY = 'proqtrack_db_v7';
+import { getDB, persistDB } from '../lib/db.js';
+
 const EXPORT_ROUTE = '#/reports/exports';
 
 const esc = (v='') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -7,8 +7,12 @@ const xml = (v='') => String(v ?? '').replace(/[<>&'"]/g, c => ({'<':'&lt;','>':
 const val = (o, keys, fallback='') => keys.map(k => o?.[k]).find(v => v !== undefined && v !== null && v !== '') ?? fallback;
 const dateOf = o => String(val(o,['date','attendanceDate','visitDate','createdAt','checkInAt','timestamp','updatedAt'],'')).slice(0,10);
 const statusOf = o => String(val(o,['status','attendanceStatus','visitStatus'],'-'));
-const readDB = () => { try { return JSON.parse(localStorage.getItem(DB_KEY) || localStorage.getItem(DB_V7_KEY) || '{}'); } catch { return {}; } };
-const writeDB = db => { const text=JSON.stringify(db); localStorage.setItem(DB_KEY,text); localStorage.setItem(DB_V7_KEY,text); window.dispatchEvent(new CustomEvent('proqtrack:db-updated')); };
+const readDB = () => getDB();
+const writeDB = db => {
+  const live = getDB();
+  if (db && db !== live) Object.assign(live, db);
+  persistDB('report-export');
+};
 const account = () => window.FT?.state?.account || null;
 const now = () => new Date().toISOString();
 const fmtDate = v => v ? new Intl.DateTimeFormat('id-ID',{day:'2-digit',month:'short',year:'numeric'}).format(new Date(v)) : '-';

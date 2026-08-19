@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { installBrowserShim } from './helpers/memory-storage.mjs';
 import { buildUatDatabase } from '../src/data/uat-seed-v1.js';
 
 installBrowserShim();
 
-const { getDB, __resetForTests, SCHEMA, DEFAULT_ORG_ID } = await import('../src/lib/db.js');
+const { getDB, persistDB, __resetForTests, SCHEMA, DEFAULT_ORG_ID } = await import('../src/lib/db.js');
 const { getLinkedProjectIds } = await import('../src/lib/db.js');
 
 test('migrateDB normalizes assignment roles and outlet projectIds', () => {
@@ -127,4 +130,40 @@ test('UAT seed migrates to v14 without dropping rows or rehashing passwords', ()
   assert.ok(db.accounts.filter(a => a.role !== 'superadmin').every(a => a.organizationId === DEFAULT_ORG_ID));
   assert.ok(db.reportTemplates.length >= 3);
   assert.equal(db.reportSettings.companyName, 'ProQTrack UAT');
+});
+
+test('persistDB writes the live cache and keeps it after notify', () => {
+  __resetForTests();
+  localStorage.removeItem('proqtrack_db_v6');
+  localStorage.removeItem('proqtrack_db_v7');
+  const db = getDB();
+  db.reportFilters = db.reportFilters || [];
+  db.reportFilters.push({ id: 'RPF-PERSIST', name: 'test-filter' });
+  persistDB('schema-test');
+  assert.equal(getDB().reportFilters.some(row => row.id === 'RPF-PERSIST'), true);
+  const v6 = JSON.parse(localStorage.getItem('proqtrack_db_v6'));
+  const v7 = JSON.parse(localStorage.getItem('proqtrack_db_v7'));
+  assert.equal(v6.reportFilters.some(row => row.id === 'RPF-PERSIST'), true);
+  assert.equal(v7.reportFilters.some(row => row.id === 'RPF-PERSIST'), true);
+});
+
+test('report, avatar, and logo addons no longer write localStorage themselves', () => {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const files = [
+    'src/employee-avatars.js',
+    'src/client-logo-auto.js',
+    'src/project-client-logos.js',
+    'src/types/reports-export.js',
+    'src/types/reports-export-hotfix.js',
+    'src/reports/index.js',
+    'src/reports/index-v2.js',
+    'src/reports/phase4.js',
+    'src/reports/phase4-fixed.js',
+    'src/reports/phase4-preview.js',
+  ];
+  for (const rel of files) {
+    const text = readFileSync(join(root, rel), 'utf8');
+    assert.doesNotMatch(text, /localStorage\.(get|set)Item/, `${rel} still touches localStorage`);
+    assert.match(text, /from ['"].*lib\/db\.js['"]/, `${rel} should import the shared db layer`);
+  }
 });
