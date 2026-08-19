@@ -1860,13 +1860,13 @@ function renderMyDay() {
   return `
     <div class="mq-home">
       <header class="mq-head">
-        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <div class="mq-hello">
           <h1>${greetingNow()}, ${esc(firstName(emp.name))}! 👋</h1>
           <p>${esc(longDateId())}</p>
         </div>
         <button type="button" class="mq-icon-btn" onclick="location.hash='#/myleaves'" aria-label="Notifikasi">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
           ${alerts ? `<span class="mq-badge">${alerts}</span>` : ''}
         </button>
         <button type="button" class="mq-avatar" style="background:${colors[cIdx]}" onclick="location.hash='#/settings'">${getInitials(emp.name)}</button>
