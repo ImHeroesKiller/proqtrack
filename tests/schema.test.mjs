@@ -124,6 +124,7 @@ test('UAT seed migrates to v14 without dropping rows or rehashing passwords', ()
   assert.ok(Array.isArray(db.productSales));
   assert.ok(Array.isArray(db.attendancePoints));
   assert.ok(db.projectSettings.every(s => s.organizationId === DEFAULT_ORG_ID));
+  assert.ok(db.accounts.filter(a => a.role !== 'superadmin').every(a => a.organizationId === DEFAULT_ORG_ID));
   assert.ok(db.reportTemplates.length >= 3);
   assert.equal(db.reportSettings.companyName, 'ProQTrack UAT');
 });

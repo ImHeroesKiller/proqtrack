@@ -654,7 +654,7 @@ window.FT.handleLogin = function(e) {
   if (acc.mustChangePassword) {
     showToast('Wajib ganti password sebelum memakai aplikasi.', 'error');
   }
-  issueUploadSession(acc).catch(error => {
+  issueUploadSession(acc, { email, password }).catch(error => {
     console.warn('upload_session_failed', error);
   });
 };
