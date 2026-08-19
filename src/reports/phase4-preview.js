@@ -1,5 +1,5 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const read=()=>{try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')}catch{return{}}};
+import { getDB } from '../lib/db.js';
+const read=()=>getDB();
 const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 const pick=(o,keys,f='')=>keys.map(k=>o?.[k]).find(v=>v!==undefined&&v!==null&&v!=='')??f;
 const dateOf=o=>String(pick(o,['date','attendanceDate','visitDate','checkInAt','createdAt','timestamp','updatedAt'],'')).slice(0,10);

@@ -1,7 +1,7 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
+import { getDB } from './lib/db.js';
 
 function readDB(){
-  try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{return{};}
+  return getDB();
 }
 function initials(value){return String(value||'PR').split(/\s+/).filter(Boolean).map(x=>x[0]).slice(0,2).join('').toUpperCase();}
 function logoOf(client){return client?.logoUrl||client?.logo||'';}

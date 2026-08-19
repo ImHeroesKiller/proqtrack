@@ -1,10 +1,14 @@
-const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
+import { getDB, persistDB } from '../lib/db.js';
 const ROUTES=new Set(['#/reports','#/reports/attendance','#/reports/employees','#/reports/projects','#/reports/field','#/reports/supervisors','#/reports/stocks','#/reports/prices','#/reports/competitors','#/reports/custom','#/reports/audit']);
 const TAB_LINKS=[['#/reports','Ringkasan'],['#/reports/attendance','Kehadiran'],['#/reports/employees','Karyawan'],['#/reports/projects','Klien & Project'],['#/reports/field','Aktivitas Lapangan'],['#/reports/stocks','Stok'],['#/reports/prices','Harga'],['#/reports/competitors','Kompetitor'],['#/reports/supervisors','Supervisor'],['#/reports/custom','Custom'],['#/reports/audit','Audit'],['#/reports/templates','Template'],['#/reports/approvals','Approval'],['#/reports/schedules','Terjadwal']];
 const SKIP_KEYS=new Set(['password','passwordHash','hash','dataUrl','photo','signatureImage','token','uploadToken','companyLogoFile']);
 const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const read=()=>{try{return JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')}catch{return{}}};
-const write=db=>{const s=JSON.stringify(db);DB_KEYS.forEach(k=>localStorage.setItem(k,s));window.dispatchEvent(new CustomEvent('proqtrack:db-updated'))};
+const read=()=>getDB();
+const write=db=>{
+  const live=getDB();
+  if(db&&db!==live)Object.assign(live,db);
+  persistDB('reports');
+};
 const acct=()=>window.FT?.state?.account||{};
 const role=()=>String(acct().role||'employee').toLowerCase();
 const eid=()=>acct().employeeId||'';

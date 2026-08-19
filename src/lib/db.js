@@ -621,7 +621,10 @@ function ensurePlatformAccounts(db) {
 
 let _cache = null;
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('proqtrack:db-updated', () => { _cache = null; });
+  window.addEventListener('proqtrack:db-updated', (event) => {
+    if (event?.detail?.fromCache) return;
+    _cache = null;
+  });
 }
 
 function readRawFromStorage() {
@@ -679,6 +682,19 @@ export function saveDB() {
     }
     return false;
   }
+}
+
+/** Persist the live cache and notify UI addons without dropping it. */
+export function persistDB(reason = 'persist') {
+  const ok = saveDB();
+  if (
+    typeof window !== 'undefined'
+    && typeof window.dispatchEvent === 'function'
+    && typeof CustomEvent === 'function'
+  ) {
+    window.dispatchEvent(new CustomEvent('proqtrack:db-updated', { detail: { reason, fromCache: true } }));
+  }
+  return ok;
 }
 
 export function resetDB() {
