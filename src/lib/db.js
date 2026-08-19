@@ -338,9 +338,10 @@ export function saveProjectStoreSettings(projectId, data) {
   db.projectSettings = db.projectSettings || [];
   let row = db.projectSettings.find(s => s.projectId === projectId);
   if (!row) {
-    row = { projectId, modules: { newOutlet: true } };
+    row = { projectId, organizationId: withOrg({}).organizationId, modules: { newOutlet: true } };
     db.projectSettings.push(row);
   }
+  if (!row.organizationId) row.organizationId = withOrg({}).organizationId;
   row.modules = { ...(row.modules || {}), newOutlet: data.allowNewOutlet !== false };
   row.storeCatalog = {
     allowNewOutlet: data.allowNewOutlet !== false,
@@ -1538,9 +1539,11 @@ export function updateVisit(id, data) {
 }
 
 export function deleteVisit(id) {
+  assertLoggedIn();
   const db = getDB();
-  const visit = db.visits.find(v => v.id === id);
-  if (visit) assertCanAccessEmployee(visit.employeeId);
+  const visit = (db.visits || []).find(v => v.id === id);
+  if (!visit) return;
+  assertCanAccessEmployee(visit.employeeId);
   db.visits = db.visits.filter(v => v.id !== id);
   saveDB();
 }
@@ -1739,7 +1742,7 @@ export function getProducts() {
 }
 
 export function getProduct(id) {
-  return getDB().products.find(p => p.id === id);
+  return getProducts().find(p => p.id === id);
 }
 
 export function createProduct(data) {
@@ -1838,11 +1841,13 @@ export function updateLeave(id, data) {
 }
 
 export function deleteLeave(id) {
+  assertLoggedIn();
   const db = getDB();
-  const leave = db.leaves.find(l => l.id === id);
-  if (leave) {
-    const actor = assertLoggedIn();
-    if (actor.role !== 'manager' && actor.role !== 'superadmin' && leave.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  const leave = (db.leaves || []).find(l => l.id === id);
+  if (!leave) return;
+  const actor = assertLoggedIn();
+  if (actor.role !== 'manager' && actor.role !== 'superadmin' && leave.employeeId !== actor.employeeId) {
+    throw new Error('Akses ditolak');
   }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
@@ -1853,11 +1858,11 @@ export function getStocks() {
 }
 
 export function getStocksByOutlet(outletId) {
-  return getDB().stocks.filter(s => s.outletId === outletId);
+  return getStocks().filter(s => s.outletId === outletId);
 }
 
 export function getStocksByProduct(productId) {
-  return getDB().stocks.filter(s => s.productId === productId);
+  return getStocks().filter(s => s.productId === productId);
 }
 
 export function createStock(data) {
@@ -1870,11 +1875,21 @@ export function createStock(data) {
 }
 
 export function updateStock(id, data) {
-  assertLoggedIn();
+  const actor = assertLoggedIn();
   const db = getDB();
+  const current = getStocks().find(s => s.id === id);
+  if (!current) return null;
   const idx = db.stocks.findIndex(s => s.id === id);
   if (idx === -1) return null;
-  db.stocks[idx] = { ...db.stocks[idx], ...data, lastUpdated: new Date().toISOString().slice(0,10) };
+  const owner = current.updatedBy || current.employeeId || current.recordedBy;
+  if (owner) assertCanAccessEmployee(owner);
+  else if (!isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
+  db.stocks[idx] = {
+    ...db.stocks[idx],
+    ...data,
+    lastUpdated: new Date().toISOString().slice(0, 10),
+    updatedBy: actor.employeeId || actor.id,
+  };
   saveDB();
   return db.stocks[idx];
 }
@@ -2078,10 +2093,15 @@ export function createCompetitorIntel(data) {
 }
 
 export function updateCompetitorIntel(id, data) {
-  assertLoggedIn();
+  const actor = assertLoggedIn();
   const db = getDB();
+  const current = getCompetitorIntel().find(i => i.id === id);
+  if (!current) return null;
   const idx = db.competitorIntel.findIndex(i => i.id === id);
   if (idx === -1) return null;
+  const owner = current.recordedBy || current.employeeId;
+  if (owner) assertCanAccessEmployee(owner);
+  else if (!isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
   const next = { ...db.competitorIntel[idx], ...data };
   if (next.ourPrice != null) next.ourPrice = Number(next.ourPrice);
   if (next.competitorPrice != null) next.competitorPrice = Number(next.competitorPrice);
@@ -2181,9 +2201,11 @@ export function updateFieldPhoto(id, data) {
 }
 
 export function deleteFieldPhoto(id) {
+  assertLoggedIn();
   const db = getDB();
   const photo = (db.fieldPhotos || []).find(p => p.id === id);
-  const owner = photo?.employeeId || photo?.recordedBy;
+  if (!photo) return;
+  const owner = photo.employeeId || photo.recordedBy;
   if (owner) assertCanAccessEmployee(owner);
   db.fieldPhotos = db.fieldPhotos.filter(p => p.id !== id);
   saveDB();

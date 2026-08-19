@@ -25,6 +25,13 @@ const {
   updateLeave,
   getLeaves,
   getAccounts,
+  deleteVisit,
+  deleteLeave,
+  deleteFieldPhoto,
+  getProduct,
+  getStocks,
+  getStocksByOutlet,
+  updateCompetitorIntel,
 } = await import('../src/lib/db.js');
 
 const TEST_PASSWORD = 'test-pass-12';
@@ -143,4 +150,62 @@ test('resumeSession never returns a password and rejects a foreign device', () =
   assert.equal(ok.password, undefined);
   const other = resumeSession(acc.id, device('DEV-PHONE-B', 'beta-secret'));
   assert.equal(other, null);
+});
+
+test('deletes require a logged-in actor and do not save when the row is missing', () => {
+  prepare();
+  setSession(null);
+  const visitId = getDB().visits[0].id;
+  const leaveId = getDB().leaves[0].id;
+  const photoId = getDB().fieldPhotos[0]?.id || 'PHO-MISSING';
+  const visitCount = getDB().visits.length;
+  const leaveCount = getDB().leaves.length;
+  assert.throws(() => deleteVisit(visitId), /Akses ditolak/);
+  assert.throws(() => deleteLeave(leaveId), /Akses ditolak/);
+  assert.throws(() => deleteFieldPhoto(photoId), /Akses ditolak/);
+  assert.equal(getDB().visits.length, visitCount);
+  assert.equal(getDB().leaves.length, leaveCount);
+  login('manager@proqtrack.id');
+  assert.equal(deleteVisit('VIS-DOES-NOT-EXIST'), undefined);
+  assert.equal(getDB().visits.length, visitCount);
+});
+
+test('sales cannot update another employee stock or cross-org intel', () => {
+  prepare();
+  login('manager@proqtrack.id');
+  const stock = createStock({
+    outletId: 'OUT001',
+    productId: 'PRD001',
+    quantity: 9,
+    minStock: 1,
+    updatedBy: 'EMP002',
+  });
+  const intel = getDB().competitorIntel[0];
+  assert.ok(intel);
+  intel.organizationId = 'ORG-OTHER';
+  intel.recordedBy = 'EMP-OTHER';
+  login('budi.santoso@proqtrack.id', device('DEV-SALES-STOCK'));
+  assert.throws(() => updateStock(stock.id, { quantity: 1 }), /Akses ditolak/);
+  assert.equal(updateCompetitorIntel(intel.id, { notes: 'hacked' }), null);
+  assert.notEqual(getStocks().find(s => s.id === stock.id)?.quantity, 1);
+});
+
+test('product and stock lookups stay inside the current org', () => {
+  prepare();
+  login('manager@proqtrack.id');
+  const foreign = getDB().products[0];
+  foreign.organizationId = 'ORG-OTHER';
+  assert.equal(getProduct(foreign.id), undefined);
+  const stock = getDB().stocks[0];
+  if (stock) {
+    stock.organizationId = 'ORG-OTHER';
+    assert.equal(getStocksByOutlet(stock.outletId).some(s => s.id === stock.id), false);
+  }
+});
+
+test('seeded non-superadmin accounts carry organizationId', () => {
+  prepare();
+  const accounts = getDB().accounts;
+  assert.ok(accounts.filter(a => a.role !== 'superadmin').every(a => a.organizationId === 'ORG-DEFAULT'));
+  assert.ok(accounts.filter(a => a.role === 'superadmin').every(a => a.organizationId == null));
 });
