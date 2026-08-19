@@ -97,8 +97,19 @@ function orgRows(list) {
 }
 function mergeOrgRows(all, next) {
   const orgId = currentOrgId();
-  const others = (all || []).filter((row) => row.organizationId && row.organizationId !== orgId);
-  return [...others, ...next.map((row) => ({ ...row, organizationId: orgId }))];
+  const nextIds = new Set((next || []).map((row) => row?.id).filter(Boolean));
+  const others = (all || []).filter((row) => {
+    if (!row) return false;
+    if (!row.organizationId) return !nextIds.has(row.id);
+    return row.organizationId !== orgId;
+  });
+  const keptUnstamped = others.filter((row) => !row.organizationId);
+  const otherOrgs = others.filter((row) => row.organizationId);
+  return [
+    ...otherOrgs,
+    ...keptUnstamped.map((row) => ({ ...row, organizationId: orgId })),
+    ...(next || []).map((row) => ({ ...row, organizationId: row.organizationId || orgId })),
+  ];
 }
 function viewDB() {
   const db = readDB();
@@ -122,7 +133,7 @@ function persistView(view) {
   // projectSettings is keyed by projectId (not org-sliced). viewDB returns the full
   // array, so a wholesale replace matches today's callers. Do not org-filter it
   // here unless viewDB starts slicing it the same way.
-  raw.projectSettings = view.projectSettings;
+  raw.projectSettings = view.projectSettings ?? raw.projectSettings;
   writeDB(raw);
 }
 function writeDB(db) {
@@ -137,17 +148,21 @@ function defaultModules() {
 function migrateV7() {
   const db = readDB();
   const stamp = now();
-  db.employees = Array.isArray(db.employees) ? db.employees : [];
-  db.accounts = Array.isArray(db.accounts) ? db.accounts : [];
-  db.clients = Array.isArray(db.clients) ? db.clients : [];
-  db.projects = Array.isArray(db.projects) ? db.projects : [];
-  db.projectAssignments = Array.isArray(db.projectAssignments)
-    ? db.projectAssignments
-    : [];
-  db.projectSettings = Array.isArray(db.projectSettings)
-    ? db.projectSettings
-    : [];
-  if (!db.clients.length)
+  let changed = false;
+  const ensureArray = (key) => {
+    if (!Array.isArray(db[key])) {
+      db[key] = [];
+      changed = true;
+    }
+  };
+  ensureArray("employees");
+  ensureArray("accounts");
+  ensureArray("clients");
+  ensureArray("projects");
+  ensureArray("projectAssignments");
+  ensureArray("projectSettings");
+  if (!db.clients.length) {
+    changed = true;
     db.clients = [
       {
         id: "CL001",
@@ -268,7 +283,9 @@ function migrateV7() {
         updatedAt: stamp,
       },
     ];
-  if (!db.projects.length)
+  }
+  if (!db.projects.length) {
+    changed = true;
     db.projects = [
       {
         id: "PRJ001",
@@ -377,13 +394,8 @@ function migrateV7() {
         updatedAt: stamp,
       },
     ];
+  }
   const emp = Object.fromEntries(db.employees.map((e) => [e.id, e]));
-  if (emp.EMP001 && !emp.EMP001.supervisorId) emp.EMP001.supervisorId = "EMP005";
-  if (emp.EMP002 && !emp.EMP002.supervisorId) emp.EMP002.supervisorId = "EMP005";
-  if (emp.EMP003 && !emp.EMP003.supervisorId) emp.EMP003.supervisorId = "EMP005";
-  if (emp.EMP004 && !emp.EMP004.supervisorId) emp.EMP004.supervisorId = "EMP005";
-  if (emp.EMP007 && !emp.EMP007.supervisorId) emp.EMP007.supervisorId = "EMP005";
-  if (emp.EMP008 && !emp.EMP008.supervisorId) emp.EMP008.supervisorId = "EMP005";
   if (!db.projectAssignments.length) {
     const rows = [];
     let n = 1;
@@ -412,6 +424,7 @@ function migrateV7() {
     add("PRJ004", "EMP005", "supervisor");
     add("PRJ004", "EMP003", "sales");
     db.projectAssignments = rows;
+    changed = true;
   }
   const assignmentCounts = db.projectAssignments
     .filter((a) => a.status === "active")
@@ -419,7 +432,7 @@ function migrateV7() {
       counts[a.employeeId] = (counts[a.employeeId] || 0) + 1;
       return counts;
     }, {});
-  db.projectAssignments = db.projectAssignments.map((assignment) => {
+  const nextAssignments = db.projectAssignments.map((assignment) => {
     const project = db.projects.find((p) => p.id === assignment.projectId);
     const assignedEmployee = db.employees.find(
       (employee) => employee.id === assignment.employeeId,
@@ -457,8 +470,12 @@ function migrateV7() {
     }
     return normalized;
   });
+  if (JSON.stringify(nextAssignments) !== JSON.stringify(db.projectAssignments)) {
+    db.projectAssignments = nextAssignments;
+    changed = true;
+  }
   db.projects.forEach((p) => {
-    if (!db.projectSettings.some((s) => s.projectId === p.id))
+    if (!db.projectSettings.some((s) => s.projectId === p.id)) {
       db.projectSettings.push({
         projectId: p.id,
         organizationId: p.organizationId || DEFAULT_ORG_ID,
@@ -466,6 +483,8 @@ function migrateV7() {
         updatedAt: stamp,
         updatedBy: "ACC001",
       });
+      changed = true;
+    }
   });
   [
     "visits",
@@ -474,22 +493,30 @@ function migrateV7() {
     "priceObservations",
     "stocks",
   ].forEach((k) => {
-    if (Array.isArray(db[k]))
-      db[k] = db[k].map((r) =>
+    if (Array.isArray(db[k])) {
+      const next = db[k].map((r) =>
         Object.prototype.hasOwnProperty.call(r, "projectId")
           ? r
           : { ...r, projectId: null },
       );
+      if (next.some((row, i) => row !== db[k][i])) {
+        db[k] = next;
+        changed = true;
+      }
+    }
   });
   ["clients", "projects", "projectAssignments"].forEach((key) => {
     if (Array.isArray(db[key])) {
-      db[key] = db[key].map((row) => ({
-        ...row,
-        organizationId: row.organizationId || DEFAULT_ORG_ID,
-      }));
+      const next = db[key].map((row) =>
+        row.organizationId ? row : { ...row, organizationId: DEFAULT_ORG_ID },
+      );
+      if (next.some((row, i) => row !== db[key][i])) {
+        db[key] = next;
+        changed = true;
+      }
     }
   });
-  writeDB(db);
+  if (changed) writeDB(db);
 }
 function state() {
   return window.FT?.state || {};
@@ -978,7 +1005,7 @@ window.PM = {
       cooperationEnd,
       createdAt: old?.createdAt || now(),
       updatedAt: now(),
-      organizationId: old?.organizationId || localStorage.getItem('proqtrack_current_org') || 'ORG-DEFAULT',
+      organizationId: old?.organizationId || currentOrgId(),
       logo: old?.logo || "",
       logoUrl: formValue(fd, "logoUrl") || old?.logoUrl || old?.logo || "",
       r2Key: old?.r2Key || "",
@@ -1121,9 +1148,10 @@ window.PM = {
     const db = viewDB();
     let s = db.projectSettings.find((x) => x.projectId === projectId);
     if (!s) {
-      s = { projectId, modules: defaultModules() };
+      s = { projectId, organizationId: currentOrgId(), modules: defaultModules() };
       db.projectSettings.push(s);
     }
+    if (!s.organizationId) s.organizationId = currentOrgId();
     s.modules = { ...defaultModules(), ...s.modules, [module]: value };
     s.updatedAt = now();
     s.updatedBy = account()?.id;
@@ -1270,6 +1298,7 @@ window.PM = {
         id: uid("ASN"),
         projectId,
         employeeId,
+        organizationId: currentOrgId(),
         ...assignmentData,
       });
     persistView(db);
