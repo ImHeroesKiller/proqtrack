@@ -84,13 +84,16 @@ location.reload();
 
 ## Cloudflare MVP foundation
 
-- Static application + API Worker dideploy melalui GitHub Actions.
-- D1 binding `DB` menyimpan snapshot aplikasi dan metadata file.
-- R2 binding `FILES` disiapkan untuk foto/lampiran.
+- Static application + API Worker dideploy melalui GitHub Actions (`npm test` wajib lulus sebelum deploy).
+- D1 binding `DB` menyimpan snapshot aplikasi, metadata file, dan tabel `auth_users`.
+- R2 binding `FILES` disiapkan untuk foto/lampiran, **tetapi file API dikunci** (`MVP_FILE_API_ENABLED=false`) sampai login server hidup.
 - Upload dibatasi maksimal 2 MB per file dan total 500 MB pada level aplikasi.
-- Endpoint data dikunci secara default melalui `MVP_DATA_API_ENABLED=false`
-  sampai autentikasi backend diaktifkan.
-- Endpoint operasional: `/api/health` dan `/api/usage`.
+- `POST /api/auth/session` **tidak lagi** menerbitkan token dari `role`/`sub` yang dikirim klien (HTTP 410).
+- Token cloud hanya keluar dari `POST /api/auth/login` setelah email/password cocok dengan baris `auth_users` di D1. Role diambil dari database, bukan dari body request.
+- `API_AUTH_SECRET` wajib di-set lewat `wrangler secret put API_AUTH_SECRET` (minimal 32 karakter). Tidak ada fallback di source.
+- Token hanya diterima di header `Authorization: Bearer`. Query `?access=` diabaikan.
+- Endpoint data tetap dikunci (`MVP_DATA_API_ENABLED=false`).
+- Endpoint publik: `GET /api/health`. Login: `POST /api/auth/login`.
 - Cloudflare Budget Alert tetap harus dibuat manual karena alert bukan spending cap.
 
 ## Catatan teknis
@@ -98,9 +101,9 @@ location.reload();
 - **DB internal:** version 7
 - **Backward compatibility:** aplikasi inti tetap memakai `proqtrack_db_v6`; modul v7 memigrasikan dan mencerminkan data ke `proqtrack_db_v7`
 - **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
-- **Penyimpanan:** seluruh data berada di localStorage browser, termasuk foto base64
+- **Penyimpanan:** seluruh data operasional masih di localStorage browser, termasuk foto base64
 - Record lama memperoleh `projectId: null` dan tetap terlihat manager
-- Password demo plain text — hanya untuk prototype
+- Password demo plain text — hanya untuk prototype lokal
 - Jika penyimpanan penuh saat upload foto, hapus foto lama atau reset data demo
 
 ## Struktur
@@ -109,6 +112,9 @@ location.reload();
 proqtrack/
 ├── index.html
 ├── README.md
+├── worker/index.js     # Cloudflare API + auth
+├── migrations/         # D1 schema
+├── tests/              # node:test (auth + password)
 ├── assets/             # branding, PWA, visual phase 0
 └── src/
     ├── app.js          # router + UI field existing
@@ -122,10 +128,10 @@ proqtrack/
 
 ## Batasan prototype
 
-- Belum ada backend / sync multi-device
+- Belum ada sync multi-device untuk data operasional (masih localStorage)
 - Kapasitas foto terbatas kuota localStorage browser
-- Belum ada CI/test otomatis
-- Enforcement role masih client-side dan bukan pengganti authorization server
+- Enforcement role di UI masih client-side; Worker menolak mint sesi dan menolak file API sampai diaktifkan sadar
+- Tabel `auth_users` kosong secara default — tidak ada akun cloud sampai diisi terpisah dari seed demo
 
 ---
 ProQTrack — Field Team Monitoring prototype

@@ -32,9 +32,10 @@
   "vars": {
     "ENVIRONMENT": "mvp",
     "MVP_DATA_API_ENABLED": "false",
-    "MVP_FILE_API_ENABLED": "true",
+    "MVP_FILE_API_ENABLED": "false",
     "API_AUTH_REQUIRED": "true",
     "API_RATE_LIMIT_PER_MINUTE": "120",
+    "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
     "MVP_MAX_FILE_BYTES": "2097152",
     "MVP_MAX_STORAGE_BYTES": "524288000",
     "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"

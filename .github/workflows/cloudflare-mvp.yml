@@ -35,6 +35,7 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
 
       - run: npm ci
+      - run: npm test
       - run: npm run build
 
       - name: Provision bindings and deploy

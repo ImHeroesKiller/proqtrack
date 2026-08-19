@@ -15,9 +15,7 @@ export function clearApiToken() {
 export function fileUrl(key) {
   if (!key) return '';
   if (/^https?:\/\//i.test(key) || key.startsWith('/api/files/') || key.startsWith('data:')) return key;
-  const token = getApiToken();
-  const path = `/api/files/${encodeURIComponent(key)}`;
-  return token ? `${path}?access=${encodeURIComponent(token)}` : path;
+  return `/api/files/${encodeURIComponent(key)}`;
 }
 
 export function authHeaders(extra = {}) {
@@ -25,42 +23,40 @@ export function authHeaders(extra = {}) {
   return token ? { authorization: `Bearer ${token}`, ...extra } : { ...extra };
 }
 
-export async function issueUploadSession(account) {
-  if (!account?.id) throw new Error('Sesi akun tidak valid.');
-  const assignments = (JSON.parse(localStorage.getItem('proqtrack_db_v6') || '{}').projectAssignments || [])
-    .filter(a => a.employeeId === account.employeeId && a.status === 'active')
-    .map(a => a.projectId)
-    .filter(Boolean);
-  const res = await fetch('/api/auth/session', {
+function rememberToken(token, exp, role) {
+  sessionStorage.setItem(TOKEN_KEY, token);
+  sessionStorage.setItem(TOKEN_META, JSON.stringify({ exp, role }));
+  return token;
+}
+
+/**
+ * Cloud tokens are issued only by POST /api/auth/login against D1 auth_users.
+ * Client-supplied role/sub claims are rejected (410). Local prototype logins
+ * therefore keep photos in the browser until a server user exists.
+ */
+export async function issueUploadSession(account, credentials = {}) {
+  if (!account?.id && !credentials.email) return null;
+  const email = credentials.email || account?.email;
+  const password = credentials.password;
+  if (!email || !password) return null;
+  const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({
-      sub: account.id,
-      email: account.email,
-      role: account.role,
-      projectIds: assignments,
-      clientIds: [],
-    }),
+    body: JSON.stringify({ email, password }),
   });
   const data = await res.json().catch(() => null);
   if (!data || typeof data !== 'object') return null;
   if (!res.ok) {
-    if ([400, 404, 405, 501, 503].includes(res.status)) return null;
+    if ([400, 401, 404, 405, 410, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   if (!data.token) return null;
-  sessionStorage.setItem(TOKEN_KEY, data.token);
-  sessionStorage.setItem(TOKEN_META, JSON.stringify({ exp: data.exp, role: account.role }));
-  return data.token;
+  return rememberToken(data.token, data.exp, data.account?.role || account?.role);
 }
 
 export async function uploadAsset(file, { category = 'attachment', projectId = '', clientId = '', name } = {}) {
   if (!file) throw new Error('File belum dipilih.');
-  if (!getApiToken()) {
-    const account = window.FT?.state?.account;
-    if (account) await issueUploadSession(account);
-  }
-  if (!getApiToken()) throw new Error('Sesi unggah cloud belum tersedia.');
+  if (!getApiToken()) throw new Error('Sesi unggah cloud belum tersedia. Login server diperlukan.');
   const params = new URLSearchParams({
     name: name || file.name || 'file',
     category,
@@ -131,7 +127,7 @@ export function bindAssetFields(root = document) {
 }
 
 function installStyles() {
-  if (document.getElementById('r2-upload-css')) return;
+  if (typeof document === 'undefined' || document.getElementById('r2-upload-css')) return;
   const style = document.createElement('style');
   style.id = 'r2-upload-css';
   style.textContent = `
@@ -145,5 +141,7 @@ function installStyles() {
 }
 
 installStyles();
-window.R2 = { uploadAsset, issueUploadSession, bindAssetFields, fileUrl, clearApiToken, getApiToken };
+if (typeof window !== 'undefined') {
+  window.R2 = { uploadAsset, issueUploadSession, bindAssetFields, fileUrl, clearApiToken, getApiToken };
+}
 export {};

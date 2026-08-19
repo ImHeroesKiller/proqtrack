@@ -1,63 +1,494 @@
-const json=(data,status=200,headers={})=>new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-content-type-options':'nosniff','referrer-policy':'no-referrer',...headers}});
-const safeKey=value=>String(value||'').replace(/[^a-zA-Z0-9._/-]/g,'-').replace(/\.{2,}/g,'.').replace(/^\/+/, '').slice(0,240);
-const encoder=new TextEncoder();
-const decoder=new TextDecoder();
-const b64urlDecode=value=>{const normalized=String(value||'').replace(/-/g,'+').replace(/_/g,'/');const padded=normalized+'='.repeat((4-normalized.length%4)%4);return Uint8Array.from(atob(padded),c=>c.charCodeAt(0));};
-const b64urlEncode=bytes=>btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
-export async function signClaims(claims,secret){const payload=b64urlEncode(encoder.encode(JSON.stringify(claims)));const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);const signature=await crypto.subtle.sign('HMAC',key,encoder.encode(payload));return `${payload}.${b64urlEncode(signature)}`;}
-export async function verifyToken(token,secret,nowSeconds=Math.floor(Date.now()/1000)){if(!token||!secret)throw new Error('AUTH_REQUIRED');const [payloadPart,signaturePart,...rest]=String(token).split('.');if(!payloadPart||!signaturePart||rest.length)throw new Error('INVALID_TOKEN');const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['verify']);const valid=await crypto.subtle.verify('HMAC',key,b64urlDecode(signaturePart),encoder.encode(payloadPart));if(!valid)throw new Error('INVALID_TOKEN');let claims;try{claims=JSON.parse(decoder.decode(b64urlDecode(payloadPart)));}catch{throw new Error('INVALID_TOKEN');}if(!claims.sub||!claims.role)throw new Error('INVALID_TOKEN');if(claims.exp&&Number(claims.exp)<nowSeconds)throw new Error('TOKEN_EXPIRED');if(claims.nbf&&Number(claims.nbf)>nowSeconds)throw new Error('TOKEN_NOT_ACTIVE');return claims;}
+export const MIN_SECRET_LENGTH = 32;
+export const FORBIDDEN_SECRETS = Object.freeze([
+  'proqtrack-mvp-session-secret-change-me',
+]);
+export const ALLOWED_ROLES = Object.freeze([
+  'superadmin',
+  'manager',
+  'supervisor',
+  'employee',
+  'admin',
+]);
 
-const bearer=request=>{const value=request.headers.get('authorization')||'';return value.startsWith('Bearer ')?value.slice(7).trim():'';};
-const roleOf=claims=>String(claims?.role||'').toLowerCase();
-const isSuperadmin=claims=>roleOf(claims)==='superadmin';
-const roleAllowed=(claims,roles)=>{const role=roleOf(claims);if(isSuperadmin(claims))return true;return roles.includes(role);};
-const projectAllowed=(claims,projectId)=>{if(isSuperadmin(claims)||roleAllowed(claims,['manager','admin']))return true;if(!projectId)return false;return Array.isArray(claims.projectIds)&&claims.projectIds.includes(projectId);};
-const clientAllowed=(claims,clientId)=>{if(!clientId||isSuperadmin(claims)||roleAllowed(claims,['manager','admin']))return true;return Array.isArray(claims.clientIds)&&claims.clientIds.includes(clientId);};
-const requestId=request=>request.headers.get('cf-ray')||crypto.randomUUID();
-const rateBuckets=new Map();
-function rateLimit(request,env,claims){const max=Number(env.API_RATE_LIMIT_PER_MINUTE||120);const key=`${claims?.sub||request.headers.get('cf-connecting-ip')||'anonymous'}:${Math.floor(Date.now()/60000)}`;const count=(rateBuckets.get(key)||0)+1;rateBuckets.set(key,count);if(rateBuckets.size>2000){const current=Math.floor(Date.now()/60000);for(const k of rateBuckets.keys())if(!k.endsWith(`:${current}`))rateBuckets.delete(k);}return count<=max;}
+const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
+  status,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+    ...headers,
+  },
+});
 
-async function audit(env,{requestId,actor,action,resourceType,resourceId='',projectId='',clientId='',outcome='success',detail=''}){try{await env.DB.prepare(`INSERT INTO security_audit_logs (request_id,actor_id,actor_role,action,resource_type,resource_id,project_id,client_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`).bind(requestId,actor?.sub||null,actor?.role||null,action,resourceType,resourceId||null,projectId||null,clientId||null,outcome,String(detail||'').slice(0,1000)).run();}catch(error){console.warn('audit_write_failed',error?.message||error);}}
-async function usage(env){const row=await env.DB.prepare('SELECT COALESCE(SUM(size_bytes),0) AS bytes, COUNT(*) AS files FROM file_metadata').first();const used=Number(row?.bytes||0),limit=Number(env.MVP_MAX_STORAGE_BYTES||0),percent=limit?Math.round((used/limit)*10000)/100:0;return{storage:{usedBytes:used,limitBytes:limit,percent},files:Number(row?.files||0),warning:percent>=95?'critical':percent>=85?'high':percent>=70?'medium':null,billingGuard:'Application storage is capped; Cloudflare budget alerts remain notification-only.'};}
-const sessionSecret=env=>env.API_AUTH_SECRET||(env.ENVIRONMENT==='mvp'?'proqtrack-mvp-session-secret-change-me':'');
-async function authenticate(request,env,url){if(env.API_AUTH_REQUIRED!=='true')return{sub:'development',role:'admin',projectIds:[],clientIds:[]};const queryToken=url?.searchParams?.get('access');const token=bearer(request)||queryToken||'';return verifyToken(token,sessionSecret(env));}
-const authError=(error,id)=>{const code=String(error?.message||error);const status=code==='AUTH_REQUIRED'?401:code.startsWith('TOKEN_')||code==='INVALID_TOKEN'?401:403;return json({error:code,requestId:id},status,{'www-authenticate':'Bearer'});};
-const fileApiOpen=env=>env.MVP_FILE_API_ENABLED==='true';
-const allowedType=(env,contentType)=>{const raw=String(contentType||'').split(';')[0].trim().toLowerCase();return String(env.ALLOWED_UPLOAD_TYPES||'').split(',').map(v=>v.trim().toLowerCase()).includes(raw);};
+const safeKey = value => String(value || '')
+  .replace(/[^a-zA-Z0-9._/-]/g, '-')
+  .replace(/\.{2,}/g, '.')
+  .replace(/^\/+/, '')
+  .slice(0, 240);
 
-async function handleApi(request,env,url){const id=requestId(request);
-  if(url.pathname==='/api/health'&&request.method==='GET'){const db=await env.DB.prepare('SELECT 1 AS ok').first();return json({ok:db?.ok===1,service:'ProQTrack',environment:env.ENVIRONMENT,requestId:id});}
-  if(url.pathname==='/api/auth/session'&&request.method==='POST'){
-    const secret=sessionSecret(env);if(!secret)return json({error:'SESSION_UNAVAILABLE',requestId:id},503);
-    if(!rateLimit(request,env,null))return json({error:'RATE_LIMITED',requestId:id},429,{'retry-after':'60'});
-    const body=await request.json().catch(()=>({}));
-    const role=String(body.role||'').toLowerCase();
-    const sub=String(body.sub||'').slice(0,80);
-    if(!sub||!['manager','supervisor','employee','admin','superadmin'].includes(role))return json({error:'INVALID_SESSION_CLAIMS',requestId:id},400);
-    const now=Math.floor(Date.now()/1000);
-    const claims={sub,role,email:String(body.email||'').slice(0,180),projectIds:Array.isArray(body.projectIds)?body.projectIds.slice(0,50):[],clientIds:Array.isArray(body.clientIds)?body.clientIds.slice(0,50):[],scope:'files',nbf:now,exp:now+12*60*60};
-    const token=await signClaims(claims,secret);
-    await audit(env,{requestId:id,actor:claims,action:'issue',resourceType:'session'});
-    return json({ok:true,token,exp:claims.exp,requestId:id});
-  }
-  let claims;try{claims=await authenticate(request,env,url);}catch(error){await audit(env,{requestId:id,action:'authenticate',resourceType:'api',outcome:'denied',detail:error?.message});return authError(error,id);}
-  if(!rateLimit(request,env,claims))return json({error:'RATE_LIMITED',requestId:id},429,{'retry-after':'60'});
-  const isFileRoute=url.pathname==='/api/files'||url.pathname.startsWith('/api/files/');
-  if(env.MVP_DATA_API_ENABLED!=='true'&&!(isFileRoute&&fileApiOpen(env)))return json({error:'DATA_API_LOCKED',message:'Cloud data API remains locked until production activation is explicitly enabled.',requestId:id},503);
+const b64urlDecode = value => {
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  return Uint8Array.from(atob(padded), c => c.charCodeAt(0));
+};
 
-  if(url.pathname==='/api/usage'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);return json({...await usage(env),requestId:id});}
-  if(url.pathname==='/api/state'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const row=await env.DB.prepare("SELECT payload,version,updated_at FROM app_snapshots WHERE id='primary'").first();await audit(env,{requestId:id,actor:claims,action:'read',resourceType:'state'});return json(row?{data:JSON.parse(row.payload),version:row.version,updatedAt:row.updated_at,requestId:id}:{data:null,version:0,updatedAt:null,requestId:id});}
-  if(url.pathname==='/api/state'&&request.method==='PUT'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const body=await request.json();const serialized=JSON.stringify(body.data);if(serialized.length>4_000_000)return json({error:'MVP_STATE_LIMIT_EXCEEDED',requestId:id},413);const current=await env.DB.prepare("SELECT version FROM app_snapshots WHERE id='primary'").first();const expected=Number(body.version||0);if(current&&Number(current.version)!==expected)return json({error:'VERSION_CONFLICT',version:current.version,requestId:id},409);const nextVersion=Number(current?.version||0)+1;await env.DB.prepare(`INSERT INTO app_snapshots(id,payload,version,updated_at) VALUES('primary',?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,version=excluded.version,updated_at=CURRENT_TIMESTAMP`).bind(serialized,nextVersion).run();await audit(env,{requestId:id,actor:claims,action:'update',resourceType:'state',resourceId:'primary'});return json({ok:true,version:nextVersion,requestId:id});}
+const b64urlEncode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/, '');
 
-  if(url.pathname==='/api/files'&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin','superadmin','supervisor','employee']))return json({error:'FORBIDDEN',requestId:id},403);const projectId=safeKey(url.searchParams.get('projectId')),clientId=safeKey(url.searchParams.get('clientId'));if((projectId&&projectId!=='general'&&!projectAllowed(claims,projectId))||!clientAllowed(claims,clientId)){await audit(env,{requestId:id,actor:claims,action:'upload',resourceType:'file',projectId,clientId,outcome:'denied'});return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);}const contentType=request.headers.get('content-type')||'application/octet-stream';if(!allowedType(env,contentType))return json({error:'FILE_TYPE_NOT_ALLOWED',requestId:id},415);const maxFile=Number(env.MVP_MAX_FILE_BYTES);const headerLength=Number(request.headers.get('content-length')||0);const payload=await request.arrayBuffer();const length=payload.byteLength||headerLength;if(!length||length>maxFile)return json({error:'FILE_SIZE_LIMIT',maxBytes:maxFile,requestId:id},413);const current=await usage(env);if(current.storage.usedBytes+length>current.storage.limitBytes)return json({error:'MVP_STORAGE_CAP_REACHED',usage:current,requestId:id},507);const name=safeKey(url.searchParams.get('name')||'file'),category=safeKey(url.searchParams.get('category')||'attachment'),key=`${projectId||'general'}/${crypto.randomUUID()}-${name}`;await env.FILES.put(key,payload,{httpMetadata:{contentType:contentType.split(';')[0].trim()},customMetadata:{projectId,clientId,ownerId:claims.sub,category}});await env.DB.prepare(`INSERT INTO file_metadata(object_key,owner_id,project_id,category,content_type,size_bytes) VALUES(?,?,?,?,?,?)`).bind(key,claims.sub,projectId||null,category,contentType.split(';')[0].trim(),length).run();await audit(env,{requestId:id,actor:claims,action:'upload',resourceType:'file',resourceId:key,projectId,clientId});return json({ok:true,key,url:`/api/files/${encodeURIComponent(key)}`,usage:await usage(env),requestId:id},201);}
-  if(url.pathname.startsWith('/api/files/')&&request.method==='GET'){const key=decodeURIComponent(url.pathname.slice('/api/files/'.length));const meta=await env.DB.prepare('SELECT object_key,owner_id,project_id FROM file_metadata WHERE object_key=?').bind(key).first();if(!meta)return json({error:'FILE_NOT_FOUND',requestId:id},404);if(!projectAllowed(claims,meta.project_id)&&meta.owner_id!==claims.sub){await audit(env,{requestId:id,actor:claims,action:'download',resourceType:'file',resourceId:key,projectId:meta.project_id,outcome:'denied'});return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);}const object=await env.FILES.get(key);if(!object)return json({error:'FILE_NOT_FOUND',requestId:id},404);await audit(env,{requestId:id,actor:claims,action:'download',resourceType:'file',resourceId:key,projectId:meta.project_id});return new Response(object.body,{headers:{'content-type':object.httpMetadata?.contentType||'application/octet-stream','cache-control':'private, max-age=60','content-disposition':`attachment; filename="${safeKey(key.split('/').pop())}"`,'x-request-id':id}});}
-
-  if(url.pathname==='/api/report-jobs'&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin','supervisor']))return json({error:'FORBIDDEN',requestId:id},403);const body=await request.json(),projectId=safeKey(body.projectId);if(!projectAllowed(claims,projectId))return json({error:'PROJECT_ACCESS_DENIED',requestId:id},403);const jobId=crypto.randomUUID();await env.DB.prepare(`INSERT INTO report_generation_jobs(id,report_type,format,project_id,requested_by,status,payload,attempts,max_attempts,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,0,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(jobId,safeKey(body.reportType),safeKey(body.format),projectId||null,claims.sub,JSON.stringify(body.payload||{})).run();await audit(env,{requestId:id,actor:claims,action:'create',resourceType:'report_job',resourceId:jobId,projectId});return json({ok:true,id:jobId,status:'queued',requestId:id},202);}
-  if(url.pathname==='/api/report-jobs'&&request.method==='GET'){const rows=await env.DB.prepare(roleAllowed(claims,['manager','admin'])?'SELECT * FROM report_generation_jobs ORDER BY created_at DESC LIMIT 100':'SELECT * FROM report_generation_jobs WHERE requested_by=? ORDER BY created_at DESC LIMIT 100').bind(...(roleAllowed(claims,['manager','admin'])?[]:[claims.sub])).all();return json({jobs:rows.results||[],requestId:id});}
-  const jobMatch=url.pathname.match(/^\/api\/report-jobs\/([^/]+)\/retry$/);if(jobMatch&&request.method==='POST'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const job=await env.DB.prepare('SELECT * FROM report_generation_jobs WHERE id=?').bind(jobMatch[1]).first();if(!job)return json({error:'JOB_NOT_FOUND',requestId:id},404);if(job.status!=='failed'||Number(job.attempts)>=Number(job.max_attempts))return json({error:'JOB_NOT_RETRYABLE',requestId:id},409);await env.DB.prepare("UPDATE report_generation_jobs SET status='queued',last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(job.id).run();await audit(env,{requestId:id,actor:claims,action:'retry',resourceType:'report_job',resourceId:job.id,projectId:job.project_id});return json({ok:true,id:job.id,status:'queued',requestId:id});}
-  if(url.pathname==='/api/monitoring/report-generation'&&request.method==='GET'){if(!roleAllowed(claims,['manager','admin']))return json({error:'FORBIDDEN',requestId:id},403);const summary=await env.DB.prepare(`SELECT status,COUNT(*) AS count FROM report_generation_jobs WHERE created_at>=datetime('now','-24 hours') GROUP BY status`).all();const recentFailures=await env.DB.prepare(`SELECT id,report_type,format,project_id,attempts,last_error,updated_at FROM report_generation_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 20`).all();return json({window:'24h',summary:summary.results||[],recentFailures:recentFailures.results||[],requestId:id});}
-  return json({error:'NOT_FOUND',requestId:id},404);
+export async function signClaims(claims, secret) {
+  const payload = b64urlEncode(encoder.encode(JSON.stringify(claims)));
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  return `${payload}.${b64urlEncode(signature)}`;
 }
 
-export default{async fetch(request,env){const url=new URL(request.url);try{if(url.pathname.startsWith('/api/'))return await handleApi(request,env,url);return env.ASSETS.fetch(request);}catch(error){const id=requestId(request);console.error('request_failed',{requestId:id,path:url.pathname,error:error?.stack||error});return json({error:'INTERNAL_ERROR',requestId:id},500);}},async scheduled(_event,env){try{await env.DB.prepare("UPDATE report_generation_jobs SET status='failed',last_error='JOB_TIMEOUT',updated_at=CURRENT_TIMESTAMP WHERE status='processing' AND updated_at<datetime('now','-15 minutes')").run();}catch(error){console.error('scheduled_hardening_failed',error);}}};
+export async function verifyToken(token, secret, nowSeconds = Math.floor(Date.now() / 1000)) {
+  if (!token || !secret) throw new Error('AUTH_REQUIRED');
+  const [payloadPart, signaturePart, ...rest] = String(token).split('.');
+  if (!payloadPart || !signaturePart || rest.length) throw new Error('INVALID_TOKEN');
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+  const valid = await crypto.subtle.verify('HMAC', key, b64urlDecode(signaturePart), encoder.encode(payloadPart));
+  if (!valid) throw new Error('INVALID_TOKEN');
+  let claims;
+  try {
+    claims = JSON.parse(decoder.decode(b64urlDecode(payloadPart)));
+  } catch {
+    throw new Error('INVALID_TOKEN');
+  }
+  if (!claims.sub || !claims.role) throw new Error('INVALID_TOKEN');
+  if (claims.exp && Number(claims.exp) < nowSeconds) throw new Error('TOKEN_EXPIRED');
+  if (claims.nbf && Number(claims.nbf) > nowSeconds) throw new Error('TOKEN_NOT_ACTIVE');
+  return claims;
+}
+
+export function resolveSessionSecret(env = {}) {
+  const secret = String(env.API_AUTH_SECRET || '');
+  if (secret.length < MIN_SECRET_LENGTH) throw new Error('SESSION_UNAVAILABLE');
+  if (FORBIDDEN_SECRETS.includes(secret)) throw new Error('SESSION_UNAVAILABLE');
+  return secret;
+}
+
+export function extractBearerToken(request) {
+  const value = request.headers.get('authorization') || '';
+  return value.startsWith('Bearer ') ? value.slice(7).trim() : '';
+}
+
+function timingSafeEqual(a, b) {
+  const left = encoder.encode(String(a));
+  const right = encoder.encode(String(b));
+  const len = Math.max(left.length, right.length);
+  const x = new Uint8Array(len);
+  const y = new Uint8Array(len);
+  x.set(left);
+  y.set(right);
+  let diff = left.length === right.length ? 0 : 1;
+  for (let i = 0; i < len; i += 1) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
+async function sha256Hex(message) {
+  const buf = await crypto.subtle.digest('SHA-256', encoder.encode(message));
+  return [...new Uint8Array(buf)].map(n => n.toString(16).padStart(2, '0')).join('');
+}
+
+async function pbkdf2Bits(password, salt, iterations) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
+    key,
+    256,
+  );
+  return new Uint8Array(bits);
+}
+
+export async function hashPassword(plain) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iterations = 100000;
+  const derived = await pbkdf2Bits(String(plain ?? ''), salt, iterations);
+  return `pbkdf2$sha256$${iterations}$${b64urlEncode(salt)}$${b64urlEncode(derived)}`;
+}
+
+export async function verifyPassword(stored, plain) {
+  const current = String(stored ?? '');
+  const incoming = String(plain ?? '');
+  if (!current || !incoming) return false;
+  if (current.startsWith('pbkdf2$sha256$')) {
+    const [, , iterRaw, saltPart, hashPart] = current.split('$');
+    const iterations = Number(iterRaw);
+    if (!iterations || !saltPart || !hashPart) return false;
+    const derived = await pbkdf2Bits(incoming, b64urlDecode(saltPart), iterations);
+    return timingSafeEqual(b64urlEncode(derived), hashPart);
+  }
+  if (current.startsWith('sha256$')) {
+    const digest = await sha256Hex(`${incoming}|proqtrack.v1`);
+    return timingSafeEqual(current, `sha256$${digest}`);
+  }
+  return false;
+}
+
+const roleOf = claims => String(claims?.role || '').toLowerCase();
+const isSuperadmin = claims => roleOf(claims) === 'superadmin';
+const roleAllowed = (claims, roles) => {
+  const role = roleOf(claims);
+  if (isSuperadmin(claims)) return true;
+  return roles.includes(role);
+};
+const projectAllowed = (claims, projectId) => {
+  if (isSuperadmin(claims) || roleAllowed(claims, ['manager', 'admin'])) return true;
+  if (!projectId) return false;
+  return Array.isArray(claims.projectIds) && claims.projectIds.includes(projectId);
+};
+const clientAllowed = (claims, clientId) => {
+  if (!clientId || isSuperadmin(claims) || roleAllowed(claims, ['manager', 'admin'])) return true;
+  return Array.isArray(claims.clientIds) && claims.clientIds.includes(clientId);
+};
+const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
+
+const rateBuckets = new Map();
+function rateLimit(request, env, claims, maxOverride) {
+  const max = Number(maxOverride ?? (env.API_RATE_LIMIT_PER_MINUTE || 120));
+  const key = `${claims?.sub || request.headers.get('cf-connecting-ip') || 'anonymous'}:${Math.floor(Date.now() / 60000)}`;
+  const count = (rateBuckets.get(key) || 0) + 1;
+  rateBuckets.set(key, count);
+  if (rateBuckets.size > 2000) {
+    const current = Math.floor(Date.now() / 60000);
+    for (const k of rateBuckets.keys()) if (!k.endsWith(`:${current}`)) rateBuckets.delete(k);
+  }
+  return count <= max;
+}
+
+export function __resetRateLimitForTests() {
+  rateBuckets.clear();
+}
+
+async function audit(env, {
+  requestId: id,
+  actor,
+  action,
+  resourceType,
+  resourceId = '',
+  projectId = '',
+  clientId = '',
+  outcome = 'success',
+  detail = '',
+}) {
+  try {
+    await env.DB.prepare(`INSERT INTO security_audit_logs (request_id,actor_id,actor_role,action,resource_type,resource_id,project_id,client_id,outcome,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`)
+      .bind(id, actor?.sub || null, actor?.role || null, action, resourceType, resourceId || null, projectId || null, clientId || null, outcome, String(detail || '').slice(0, 1000))
+      .run();
+  } catch (error) {
+    console.warn('audit_write_failed', error?.message || error);
+  }
+}
+
+async function usage(env) {
+  const row = await env.DB.prepare('SELECT COALESCE(SUM(size_bytes),0) AS bytes, COUNT(*) AS files FROM file_metadata').first();
+  const used = Number(row?.bytes || 0);
+  const limit = Number(env.MVP_MAX_STORAGE_BYTES || 0);
+  const percent = limit ? Math.round((used / limit) * 10000) / 100 : 0;
+  return {
+    storage: { usedBytes: used, limitBytes: limit, percent },
+    files: Number(row?.files || 0),
+    warning: percent >= 95 ? 'critical' : percent >= 85 ? 'high' : percent >= 70 ? 'medium' : null,
+    billingGuard: 'Application storage is capped; Cloudflare budget alerts remain notification-only.',
+  };
+}
+
+export async function authenticateRequest(request, env) {
+  const secret = resolveSessionSecret(env);
+  const token = extractBearerToken(request);
+  return verifyToken(token, secret);
+}
+
+const authError = (error, id) => {
+  const code = String(error?.message || error);
+  const status = code === 'SESSION_UNAVAILABLE' ? 503
+    : code === 'AUTH_REQUIRED' || code.startsWith('TOKEN_') || code === 'INVALID_TOKEN' ? 401
+      : 403;
+  return json({ error: code, requestId: id }, status, { 'www-authenticate': 'Bearer' });
+};
+
+const fileApiOpen = env => env.MVP_FILE_API_ENABLED === 'true';
+const allowedType = (env, contentType) => {
+  const raw = String(contentType || '').split(';')[0].trim().toLowerCase();
+  return String(env.ALLOWED_UPLOAD_TYPES || '').split(',').map(v => v.trim().toLowerCase()).includes(raw);
+};
+
+function parseJsonList(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.slice(0, 50).map(item => String(item)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function issueSessionForUser(user, secret, now = Math.floor(Date.now() / 1000)) {
+  const role = String(user.role || '').toLowerCase();
+  if (!user?.id || !ALLOWED_ROLES.includes(role)) throw new Error('INVALID_SESSION_CLAIMS');
+  const claims = {
+    sub: String(user.id).slice(0, 80),
+    role,
+    email: String(user.email || '').slice(0, 180),
+    projectIds: parseJsonList(user.project_ids),
+    clientIds: parseJsonList(user.client_ids),
+    scope: 'api',
+    nbf: now,
+    exp: now + 12 * 60 * 60,
+  };
+  return { token: await signClaims(claims, secret), claims };
+}
+
+async function findAuthUser(env, email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return null;
+  try {
+    return await env.DB.prepare(
+      'SELECT id, email, password_hash, role, status, project_ids, client_ids FROM auth_users WHERE lower(email)=? LIMIT 1',
+    ).bind(normalized).first();
+  } catch (error) {
+    console.warn('auth_user_lookup_failed', error?.message || error);
+    throw new Error('SESSION_UNAVAILABLE');
+  }
+}
+
+async function handleLogin(request, env, id) {
+  let secret;
+  try {
+    secret = resolveSessionSecret(env);
+  } catch (error) {
+    return json({ error: 'SESSION_UNAVAILABLE', requestId: id }, 503);
+  }
+  if (!rateLimit(request, env, null, Number(env.API_LOGIN_RATE_LIMIT_PER_MINUTE || 10))) {
+    return json({ error: 'RATE_LIMITED', requestId: id }, 429, { 'retry-after': '60' });
+  }
+  const body = await request.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = String(body.password || '');
+  if (!email || !password) {
+    return json({ error: 'INVALID_CREDENTIALS', requestId: id }, 400);
+  }
+  let user;
+  try {
+    user = await findAuthUser(env, email);
+  } catch (error) {
+    await audit(env, { requestId: id, action: 'login', resourceType: 'session', outcome: 'denied', detail: error.message });
+    return json({ error: 'SESSION_UNAVAILABLE', requestId: id }, 503);
+  }
+  const ok = user
+    && user.status === 'active'
+    && await verifyPassword(user.password_hash, password);
+  if (!ok) {
+    await audit(env, { requestId: id, action: 'login', resourceType: 'session', outcome: 'denied', detail: 'INVALID_CREDENTIALS' });
+    return json({ error: 'INVALID_CREDENTIALS', requestId: id }, 401);
+  }
+  const { token, claims } = await issueSessionForUser(user, secret);
+  try {
+    await env.DB.prepare('UPDATE auth_users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').bind(user.id).run();
+  } catch (error) {
+    console.warn('auth_user_touch_failed', error?.message || error);
+  }
+  await audit(env, { requestId: id, actor: claims, action: 'login', resourceType: 'session' });
+  return json({
+    ok: true,
+    token,
+    exp: claims.exp,
+    account: { id: claims.sub, email: claims.email, role: claims.role },
+    requestId: id,
+  });
+}
+
+export async function handleApi(request, env, url = new URL(request.url)) {
+  const id = requestId(request);
+
+  if (url.pathname === '/api/health' && request.method === 'GET') {
+    const db = await env.DB.prepare('SELECT 1 AS ok').first();
+    return json({ ok: db?.ok === 1, service: 'ProQTrack', environment: env.ENVIRONMENT, requestId: id });
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'POST') {
+    await audit(env, { requestId: id, action: 'issue', resourceType: 'session', outcome: 'denied', detail: 'SESSION_MINTING_DISABLED' });
+    return json({
+      error: 'SESSION_MINTING_DISABLED',
+      message: 'Client-supplied session claims are no longer accepted. Authenticate with POST /api/auth/login.',
+      requestId: id,
+    }, 410);
+  }
+
+  if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+    return handleLogin(request, env, id);
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+    try {
+      const claims = await authenticateRequest(request, env);
+      return json({
+        ok: true,
+        sub: claims.sub,
+        role: claims.role,
+        email: claims.email || '',
+        exp: claims.exp || null,
+        requestId: id,
+      });
+    } catch (error) {
+      return authError(error, id);
+    }
+  }
+
+  let claims;
+  try {
+    claims = await authenticateRequest(request, env);
+  } catch (error) {
+    await audit(env, { requestId: id, action: 'authenticate', resourceType: 'api', outcome: 'denied', detail: error?.message });
+    return authError(error, id);
+  }
+  if (!rateLimit(request, env, claims)) return json({ error: 'RATE_LIMITED', requestId: id }, 429, { 'retry-after': '60' });
+
+  const isFileRoute = url.pathname === '/api/files' || url.pathname.startsWith('/api/files/');
+  if (env.MVP_DATA_API_ENABLED !== 'true' && !(isFileRoute && fileApiOpen(env))) {
+    return json({
+      error: 'DATA_API_LOCKED',
+      message: 'Cloud data and file APIs remain locked until production activation is explicitly enabled.',
+      requestId: id,
+    }, 503);
+  }
+
+  if (url.pathname === '/api/usage' && request.method === 'GET') {
+    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    return json({ ...await usage(env), requestId: id });
+  }
+  if (url.pathname === '/api/state' && request.method === 'GET') {
+    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const row = await env.DB.prepare("SELECT payload,version,updated_at FROM app_snapshots WHERE id='primary'").first();
+    await audit(env, { requestId: id, actor: claims, action: 'read', resourceType: 'state' });
+    return json(row
+      ? { data: JSON.parse(row.payload), version: row.version, updatedAt: row.updated_at, requestId: id }
+      : { data: null, version: 0, updatedAt: null, requestId: id });
+  }
+  if (url.pathname === '/api/state' && request.method === 'PUT') {
+    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const body = await request.json();
+    const serialized = JSON.stringify(body.data);
+    if (serialized.length > 4_000_000) return json({ error: 'MVP_STATE_LIMIT_EXCEEDED', requestId: id }, 413);
+    const current = await env.DB.prepare("SELECT version FROM app_snapshots WHERE id='primary'").first();
+    const expected = Number(body.version || 0);
+    if (current && Number(current.version) !== expected) return json({ error: 'VERSION_CONFLICT', version: current.version, requestId: id }, 409);
+    const nextVersion = Number(current?.version || 0) + 1;
+    await env.DB.prepare(`INSERT INTO app_snapshots(id,payload,version,updated_at) VALUES('primary',?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,version=excluded.version,updated_at=CURRENT_TIMESTAMP`).bind(serialized, nextVersion).run();
+    await audit(env, { requestId: id, actor: claims, action: 'update', resourceType: 'state', resourceId: 'primary' });
+    return json({ ok: true, version: nextVersion, requestId: id });
+  }
+
+  if (url.pathname === '/api/files' && request.method === 'POST') {
+    if (!roleAllowed(claims, ['manager', 'admin', 'superadmin', 'supervisor', 'employee'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const projectId = safeKey(url.searchParams.get('projectId'));
+    const clientId = safeKey(url.searchParams.get('clientId'));
+    if ((projectId && projectId !== 'general' && !projectAllowed(claims, projectId)) || !clientAllowed(claims, clientId)) {
+      await audit(env, { requestId: id, actor: claims, action: 'upload', resourceType: 'file', projectId, clientId, outcome: 'denied' });
+      return json({ error: 'PROJECT_ACCESS_DENIED', requestId: id }, 403);
+    }
+    const contentType = request.headers.get('content-type') || 'application/octet-stream';
+    if (!allowedType(env, contentType)) return json({ error: 'FILE_TYPE_NOT_ALLOWED', requestId: id }, 415);
+    const maxFile = Number(env.MVP_MAX_FILE_BYTES);
+    const headerLength = Number(request.headers.get('content-length') || 0);
+    const payload = await request.arrayBuffer();
+    const length = payload.byteLength || headerLength;
+    if (!length || length > maxFile) return json({ error: 'FILE_SIZE_LIMIT', maxBytes: maxFile, requestId: id }, 413);
+    const current = await usage(env);
+    if (current.storage.usedBytes + length > current.storage.limitBytes) return json({ error: 'MVP_STORAGE_CAP_REACHED', usage: current, requestId: id }, 507);
+    const name = safeKey(url.searchParams.get('name') || 'file');
+    const category = safeKey(url.searchParams.get('category') || 'attachment');
+    const key = `${projectId || 'general'}/${crypto.randomUUID()}-${name}`;
+    await env.FILES.put(key, payload, {
+      httpMetadata: { contentType: contentType.split(';')[0].trim() },
+      customMetadata: { projectId, clientId, ownerId: claims.sub, category },
+    });
+    await env.DB.prepare(`INSERT INTO file_metadata(object_key,owner_id,project_id,category,content_type,size_bytes) VALUES(?,?,?,?,?,?)`).bind(key, claims.sub, projectId || null, category, contentType.split(';')[0].trim(), length).run();
+    await audit(env, { requestId: id, actor: claims, action: 'upload', resourceType: 'file', resourceId: key, projectId, clientId });
+    return json({ ok: true, key, url: `/api/files/${encodeURIComponent(key)}`, usage: await usage(env), requestId: id }, 201);
+  }
+  if (url.pathname.startsWith('/api/files/') && request.method === 'GET') {
+    const key = decodeURIComponent(url.pathname.slice('/api/files/'.length));
+    const meta = await env.DB.prepare('SELECT object_key,owner_id,project_id FROM file_metadata WHERE object_key=?').bind(key).first();
+    if (!meta) return json({ error: 'FILE_NOT_FOUND', requestId: id }, 404);
+    if (!projectAllowed(claims, meta.project_id) && meta.owner_id !== claims.sub) {
+      await audit(env, { requestId: id, actor: claims, action: 'download', resourceType: 'file', resourceId: key, projectId: meta.project_id, outcome: 'denied' });
+      return json({ error: 'PROJECT_ACCESS_DENIED', requestId: id }, 403);
+    }
+    const object = await env.FILES.get(key);
+    if (!object) return json({ error: 'FILE_NOT_FOUND', requestId: id }, 404);
+    await audit(env, { requestId: id, actor: claims, action: 'download', resourceType: 'file', resourceId: key, projectId: meta.project_id });
+    return new Response(object.body, {
+      headers: {
+        'content-type': object.httpMetadata?.contentType || 'application/octet-stream',
+        'cache-control': 'private, max-age=60',
+        'content-disposition': `attachment; filename="${safeKey(key.split('/').pop())}"`,
+        'x-request-id': id,
+      },
+    });
+  }
+
+  if (url.pathname === '/api/report-jobs' && request.method === 'POST') {
+    if (!roleAllowed(claims, ['manager', 'admin', 'supervisor'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const body = await request.json();
+    const projectId = safeKey(body.projectId);
+    if (!projectAllowed(claims, projectId)) return json({ error: 'PROJECT_ACCESS_DENIED', requestId: id }, 403);
+    const jobId = crypto.randomUUID();
+    await env.DB.prepare(`INSERT INTO report_generation_jobs(id,report_type,format,project_id,requested_by,status,payload,attempts,max_attempts,created_at,updated_at) VALUES(?,?,?,?,?,'queued',?,0,3,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).bind(jobId, safeKey(body.reportType), safeKey(body.format), projectId || null, claims.sub, JSON.stringify(body.payload || {})).run();
+    await audit(env, { requestId: id, actor: claims, action: 'create', resourceType: 'report_job', resourceId: jobId, projectId });
+    return json({ ok: true, id: jobId, status: 'queued', requestId: id }, 202);
+  }
+  if (url.pathname === '/api/report-jobs' && request.method === 'GET') {
+    const manager = roleAllowed(claims, ['manager', 'admin']);
+    const rows = await env.DB.prepare(manager
+      ? 'SELECT * FROM report_generation_jobs ORDER BY created_at DESC LIMIT 100'
+      : 'SELECT * FROM report_generation_jobs WHERE requested_by=? ORDER BY created_at DESC LIMIT 100')
+      .bind(...(manager ? [] : [claims.sub])).all();
+    return json({ jobs: rows.results || [], requestId: id });
+  }
+  const jobMatch = url.pathname.match(/^\/api\/report-jobs\/([^/]+)\/retry$/);
+  if (jobMatch && request.method === 'POST') {
+    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const job = await env.DB.prepare('SELECT * FROM report_generation_jobs WHERE id=?').bind(jobMatch[1]).first();
+    if (!job) return json({ error: 'JOB_NOT_FOUND', requestId: id }, 404);
+    if (job.status !== 'failed' || Number(job.attempts) >= Number(job.max_attempts)) return json({ error: 'JOB_NOT_RETRYABLE', requestId: id }, 409);
+    await env.DB.prepare("UPDATE report_generation_jobs SET status='queued',last_error=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(job.id).run();
+    await audit(env, { requestId: id, actor: claims, action: 'retry', resourceType: 'report_job', resourceId: job.id, projectId: job.project_id });
+    return json({ ok: true, id: job.id, status: 'queued', requestId: id });
+  }
+  if (url.pathname === '/api/monitoring/report-generation' && request.method === 'GET') {
+    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    const summary = await env.DB.prepare(`SELECT status,COUNT(*) AS count FROM report_generation_jobs WHERE created_at>=datetime('now','-24 hours') GROUP BY status`).all();
+    const recentFailures = await env.DB.prepare(`SELECT id,report_type,format,project_id,attempts,last_error,updated_at FROM report_generation_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 20`).all();
+    return json({ window: '24h', summary: summary.results || [], recentFailures: recentFailures.results || [], requestId: id });
+  }
+  return json({ error: 'NOT_FOUND', requestId: id }, 404);
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    try {
+      if (url.pathname.startsWith('/api/')) return await handleApi(request, env, url);
+      return env.ASSETS.fetch(request);
+    } catch (error) {
+      const id = requestId(request);
+      console.error('request_failed', { requestId: id, path: url.pathname, error: error?.stack || error });
+      return json({ error: 'INTERNAL_ERROR', requestId: id }, 500);
+    }
+  },
+  async scheduled(_event, env) {
+    try {
+      await env.DB.prepare("UPDATE report_generation_jobs SET status='failed',last_error='JOB_TIMEOUT',updated_at=CURRENT_TIMESTAMP WHERE status='processing' AND updated_at<datetime('now','-15 minutes')").run();
+    } catch (error) {
+      console.error('scheduled_hardening_failed', error);
+    }
+  },
+};
