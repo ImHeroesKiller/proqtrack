@@ -1,5 +1,5 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=6;
+const VERSION=7;
 const now='2026-07-29T08:30:00.000Z';
 const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
@@ -20,7 +20,7 @@ function buildUatDatabase(){
   const employees=[
     {id:'EMP-UAT-001',employeeNumber:'UAT-0001',name:'Rizky Pratama',email:'rizky.supervisor@proqtrack.id',phone:'0812-1000-0001',role:'Supervisor',jobRole:'Supervisor',area:'Jakarta',status:'active',supervisorId:null,joinDate:'2023-01-10',photo:photo('RP','#7C3AED'),lat:-6.2,lng:106.82},
     {id:'EMP-UAT-002',employeeNumber:'UAT-0002',name:'Siti Maharani',email:'siti.supervisor@proqtrack.id',phone:'0812-1000-0002',role:'Supervisor',jobRole:'Supervisor',area:'Tangerang',status:'active',supervisorId:null,joinDate:'2023-03-12',photo:photo('SM','#2563EB'),lat:-6.18,lng:106.63},
-    {id:'EMP-UAT-003',employeeNumber:'UAT-0003',name:'Budi Santoso',email:'budi.employee@proqtrack.id',phone:'0812-1000-0003',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Pusat',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-01-15',photo:photo('BS','#EF5000'),lat:-6.194,lng:106.823},
+    {id:'EMP-UAT-003',employeeNumber:'UAT-0003',name:'Budi Santoso',email:'budi.employee@proqtrack.id',phone:'0812-1000-0003',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Pusat',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-01-15',photo:photo('BS','#EF5000'),lat:-6.194,lng:106.823,targetVisits:6},
     {id:'EMP-UAT-004',employeeNumber:'UAT-0004',name:'Dewi Lestari',email:'dewi.employee@proqtrack.id',phone:'0812-1000-0004',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Selatan',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-02-20',photo:photo('DL','#DB2777'),lat:-6.261,lng:106.81},
     {id:'EMP-UAT-005',employeeNumber:'UAT-0005',name:'Ahmad Wijaya',email:'ahmad.employee@proqtrack.id',phone:'0812-1000-0005',role:'Field Sales',jobRole:'Field Sales',area:'Tangerang',status:'active',supervisorId:'EMP-UAT-002',joinDate:'2024-03-11',photo:photo('AW','#0F766E'),lat:-6.17,lng:106.64},
     {id:'EMP-UAT-006',employeeNumber:'UAT-0006',name:'Maya Putri',email:'maya.employee@proqtrack.id',phone:'0812-1000-0006',role:'Merchandiser',jobRole:'Field Sales',area:'Bekasi',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2025-01-09',photo:photo('MP','#16A34A'),lat:-6.23,lng:106.99},
@@ -70,7 +70,10 @@ function buildUatDatabase(){
     {id:'VIS-UAT-002',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-002',date:day,visitDate:day,checkInTime:'09:15',checkOutTime:null,status:'checked-in',visitStatus:'in_progress',notes:'Audit promo berjalan.',rating:0},
     {id:'VIS-UAT-003',employeeId:'EMP-UAT-004',projectId:'PRJ-UAT-003',outletId:'OUT-UAT-004',date:day,visitDate:day,checkInTime:'09:00',checkOutTime:'09:35',status:'completed',visitStatus:'completed',notes:'Planogram sesuai, dua SKU kosong.',rating:4},
     {id:'VIS-UAT-004',employeeId:'EMP-UAT-005',projectId:'PRJ-UAT-002',outletId:'OUT-UAT-005',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
-    {id:'VIS-UAT-005',employeeId:'EMP-UAT-006',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-007',date:'2026-07-28',visitDate:'2026-07-28',checkInTime:'10:10',checkOutTime:'10:20',status:'failed',visitStatus:'failed',notes:'Outlet tutup permanen.',rating:1}
+    {id:'VIS-UAT-005',employeeId:'EMP-UAT-006',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-007',date:'2026-07-28',visitDate:'2026-07-28',checkInTime:'10:10',checkOutTime:'10:20',status:'failed',visitStatus:'failed',notes:'Outlet tutup permanen.',rating:1},
+    {id:'VIS-UAT-006',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-005',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
+    {id:'VIS-UAT-007',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-003',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
+    {id:'VIS-UAT-008',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-006',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0}
   ];
   const products=[
     {id:'PRD-UAT-001',clientId:'CL-UAT-001',name:'FreshMilk UHT 1L',brand:'Nusantara Dairy',category:'Minuman',unit:'pcs',price:18500,cost:14500,sku:'NFS-FM-1L',status:'active'},
