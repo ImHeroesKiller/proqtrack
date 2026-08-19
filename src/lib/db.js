@@ -142,12 +142,19 @@ function syncEmployeeAccount(db, employee, password) {
     if (!password || String(password).length < 8) {
       throw new Error('Password login minimal 8 karakter.');
     }
-    account = { id: uid('ACC'), employeeId: employee.id };
+    account = {
+      id: uid('ACC'),
+      employeeId: employee.id,
+      organizationId: employee.organizationId || DEFAULT_ORG_ID,
+    };
     db.accounts.push(account);
   }
   account.email = employee.email;
   account.name = employee.name;
   account.role = accountRoleForEmployee(employee);
+  if (!account.organizationId && account.role !== 'superadmin') {
+    account.organizationId = employee.organizationId || DEFAULT_ORG_ID;
+  }
   applyEmployeeAccountStatus(account, employee);
   if (password) {
     if (String(password).length < 8) throw new Error('Password login minimal 8 karakter.');
