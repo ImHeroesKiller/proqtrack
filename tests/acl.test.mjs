@@ -24,6 +24,7 @@ const {
   registerTestDevice,
   updateLeave,
   getLeaves,
+  getAccounts,
 } = await import('../src/lib/db.js');
 
 const TEST_PASSWORD = 'test-pass-12';
@@ -108,6 +109,27 @@ test('superadmin can approve leave', () => {
   assert.ok(pending);
   const updated = updateLeave(pending.id, { status: 'approved' });
   assert.equal(updated.status, 'approved');
+});
+
+test('createEmployee stamps organizationId on the login account immediately', () => {
+  prepare();
+  login('manager@proqtrack.id');
+  const emp = createEmployee({
+    name: 'UAT New Sales',
+    email: 'newsales@proqtrack.id',
+    phone: '0812-0000-9999',
+    area: 'Depok',
+    role: 'Field Sales',
+    password: 'password12',
+  });
+  assert.equal(emp.organizationId, 'ORG-DEFAULT');
+  const raw = getDB().accounts.find(a => a.employeeId === emp.id);
+  assert.ok(raw);
+  assert.equal(raw.organizationId, emp.organizationId);
+  assert.equal(raw.role, 'employee');
+  const listed = getAccounts().find(a => a.employeeId === emp.id);
+  assert.ok(listed, 'new login must be visible before remigrate');
+  assert.equal(listed.organizationId, emp.organizationId);
 });
 
 test('resumeSession never returns a password and rejects a foreign device', () => {
