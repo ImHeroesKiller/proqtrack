@@ -15,16 +15,18 @@ const ALL_MODULES = [
   "attendance",
   "leaves",
   "newOutlet",
+  "productSales",
 ];
 const MODULE_LABELS = {
-  visits: "Kunjungan",
-  stocks: "Stok",
-  prices: "Harga & Diskon",
-  competitorIntel: "Intel Kompetitor",
-  photos: "Foto Lapangan",
-  attendance: "Absensi",
-  leaves: "Ijin & Cuti",
-  newOutlet: "Tambah Toko Baru",
+  visits: "Visits",
+  stocks: "Outlet Stock",
+  prices: "Price & Discount",
+  competitorIntel: "Competitor Intel",
+  photos: "Field Photos",
+  attendance: "Attendance",
+  leaves: "Leave",
+  newOutlet: "New Outlet",
+  productSales: "Product Sales",
 };
 const PROJECT_ROUTES = new Set([
   "#/clients",

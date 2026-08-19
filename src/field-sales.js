@@ -6,6 +6,7 @@ import {
   getOrganization, getCurrentOrgId, getDB,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
   canEmployeeAddStore, storeCatalogForEmployee, formatOutletLabel,
+  getAttendancePolicy, getEmployee,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
@@ -67,40 +68,82 @@ export function renderLastLocation() {
     </div>`;
 }
 
+export function outletNotesField(catalog) {
+  const mode = catalog?.notesMode === 'dropdown' ? 'dropdown' : 'freetext';
+  const options = catalog?.notesOptions || [];
+  if (mode === 'dropdown') {
+    return `<div class="form-group">
+      <label class="label">Notes</label>
+      <input type="hidden" name="notesKind" value="dropdown">
+      <select class="select" name="notesChoice" id="outletNotesSelect">
+        <option value="">Select notes</option>
+        ${options.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+  return `<div class="form-group">
+    <label class="label">Notes</label>
+    <input type="hidden" name="notesKind" value="freetext">
+    <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Optional notes"></textarea>
+  </div>`;
+}
+
 export function attendanceCheckinCard() {
   const id = empId();
   const today = todayISO();
   const att = getAttendance().find(a => a.employeeId === id && a.date === today);
-  const points = getAttendancePoints();
+  const policy = getAttendancePolicy();
+  const emp = getEmployee(id);
   const firstStore = getVisitsOnDate(today, id)[0];
   const store = firstStore ? getOutlets().find(o => o.id === firstStore.outletId) : null;
+  const assigned = emp?.attendancePointId
+    ? getAttendancePoints().find(p => p.id === emp.attendancePointId)
+    : null;
   if (att) {
     return `<div style="display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;background:#ecfdf5">
       ${appIcon('attendance')}
       <div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-600)">${esc(att.status === 'late' || att.status === 'terlambat' ? 'Terlambat' : 'Hadir')}</div>
+        <div style="font-size:18px;font-weight:800;color:var(--green-600)">${esc(att.status === 'late' || att.status === 'terlambat' ? 'Late' : 'Present')}</div>
         <div class="am-muted">Check in ${att.checkInTime || '-'} · ${esc(att.checkInLocation || att.locationName || '-')}${att.locationType ? ' · ' + locationTypeLabel(att.locationType) : ''}</div>
       </div>
     </div>`;
   }
+  let options = '';
+  let hint = '';
+  if (policy.mode === 'office') {
+    const name = policy.officeName || 'Office';
+    options = `<option value="office|office|${esc(name)}">${esc(name)} — Office</option>`;
+    hint = `Must check in at the office (radius ${policy.radiusM} m).`;
+  } else if (policy.mode === 'outlet') {
+    const outlets = getOutlets().filter(o => o.status !== 'inactive');
+    options = outlets.map(o => `<option value="${o.id}|store|${esc(o.name)}">${esc(formatOutletLabel(o))}</option>`).join('');
+    if (store) options = `<option value="${store.id}|store|${esc(store.name)}">${esc(store.name)} — today's first outlet</option>` + options;
+    hint = `Must check in at an outlet (radius ${policy.radiusM} m).`;
+  } else {
+    if (assigned) {
+      options = `<option value="${assigned.id}|${assigned.type}|${esc(assigned.name)}">${esc(assigned.name)}</option>`;
+    }
+    hint = assigned
+      ? `Assigned point: ${assigned.name} (radius ${policy.radiusM} m).`
+      : 'No attendance point assigned on your employee record. Ask a manager.';
+  }
   return `<div>
-    <p class="am-muted" style="margin:0 0 10px">Pilih lokasi check-in yang ditentukan supervisor/manager.</p>
-    <form onsubmit="FS.checkInAttendance(event)">
+    <p class="am-muted" style="margin:0 0 10px">${esc(hint)}</p>
+    ${options ? `<form onsubmit="FS.checkInAttendance(event)">
       <div class="form-group">
-        <label class="label">Lokasi absensi</label>
+        <label class="label">Check-in location</label>
         <select class="select" name="point" required>
-          <option value="">Pilih lokasi</option>
-          ${points.map(p => `<option value="${p.id}|${p.type}|${esc(p.name)}">${esc(p.name)} — ${locationTypeLabel(p.type)}</option>`).join('')}
-          ${store ? `<option value="${store.id}|store|${esc(store.name)}">${esc(store.name)} — Toko pertama hari ini</option>` : ''}
+          <option value="">Select location</option>
+          ${options}
         </select>
       </div>
-      <button class="btn btn-primary" type="submit">Check in absensi</button>
-    </form>
+      <button class="btn btn-primary" type="submit">Check in</button>
+    </form>` : ''}
   </div>`;
 }
 
 function locationTypeLabel(type) {
-  return { office: 'Kantor', store: 'Toko', meeting: 'Meeting point' }[type] || type || '—';
+  return { office: 'Office', store: 'Outlet', meeting: 'Meeting point', point: 'Point' }[type] || type || '—';
 }
 
 export function renderVisitDetailHtml(visitId) {
@@ -303,24 +346,8 @@ export function renderOutletProposalForm() {
           <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
           <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
         </div>
-        <div class="form-group">
-          <label class="label">Catatan</label>
-          <div class="filter-row" style="margin-bottom:8px">
-            <label class="am-check"><input type="radio" name="notesKind" value="freetext" checked onchange="FS.toggleNotesKind()"> Freetext</label>
-            <label class="am-check"><input type="radio" name="notesKind" value="dropdown" onchange="FS.toggleNotesKind()"> Dropdown</label>
-          </div>
-          <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Kenapa toko ini potensial, jam buka, dll."></textarea>
-          <select class="select" name="notesChoice" id="outletNotesSelect" style="display:none">
-            <option value="">Pilih catatan</option>
-            <option>Toko potensial, volume tinggi</option>
-            <option>Lokasi strategis / lalu lintas ramai</option>
-            <option>Request dari klien</option>
-            <option>Belum ada coverage di area ini</option>
-            <option>Kompetitor aktif di toko ini</option>
-            <option>Lainnya (isi di pengajuan berikutnya)</option>
-          </select>
-        </div>
-        <button class="btn btn-primary" type="submit">Kirim untuk persetujuan</button>
+        ${outletNotesField(catalog)}
+        <button class="btn btn-primary" type="submit">Submit for approval</button>
       </form>
     </div>` : ''}
     <div class="card" style="margin-top:16px">
@@ -475,13 +502,7 @@ window.FS.searchOutletMap = async function() {
   }
 };
 
-window.FS.toggleNotesKind = function() {
-  const kind = document.querySelector('input[name="notesKind"]:checked')?.value || 'freetext';
-  const text = document.getElementById('outletNotesText');
-  const sel = document.getElementById('outletNotesSelect');
-  if (text) text.style.display = kind === 'freetext' ? '' : 'none';
-  if (sel) sel.style.display = kind === 'dropdown' ? '' : 'none';
-};
+window.FS.toggleNotesKind = function() {};
 
 window.FS.captureOutletLocation = function() {
   const hint = document.getElementById('outletMapHint');

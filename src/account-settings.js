@@ -2,6 +2,7 @@ import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   createAccount, updateAccount, changePassword, updateOwnProfile, resetSalesDevice,
   getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
+  getAttendancePolicy, getAttendancePoints, createAttendancePoint,
 } from './lib/db.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
@@ -29,8 +30,8 @@ function renderProjectStoreSettings() {
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
   return `
-        <div class="card-title">Katalog toko per project</div>
-        <div class="card-subtitle">Aktifkan pengajuan toko baru dan atur opsi Segment, Type, dan Ownership untuk project itu.</div>
+        <div class="card-title">Outlet catalog per project</div>
+        <div class="card-subtitle">Enable New Outlet and set Segment, Type, Ownership, and Notes options for this project.</div>
         <form class="am-form" onsubmit="AM.saveStoreCatalog(event)">
           <div class="form-group">
             <label class="label">Project</label>
@@ -38,12 +39,65 @@ function renderProjectStoreSettings() {
               ${projects.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
             </select>
           </div>
-          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Izinkan sales menambah toko baru di project ini</label>
-          <div class="form-group"><label class="label">Segment (satu baris satu opsi)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
-          <div class="form-group"><label class="label">Type / tipe store</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
-          <div class="form-group"><label class="label">Akun / ownership store</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
-          <button class="btn btn-primary" type="submit">Simpan katalog project</button>
+          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Allow field sales to add a new outlet on this project</label>
+          <div class="form-group"><label class="label">Segment (one option per line)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
+          <div class="form-group"><label class="label">Outlet type</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
+          <div class="form-group"><label class="label">Ownership / account</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
+          <div class="form-group">
+            <label class="label">Notes field on New Outlet form</label>
+            <select class="select" name="notesMode">
+              <option value="freetext" ${cat.notesMode !== 'dropdown' ? 'selected' : ''}>Free text</option>
+              <option value="dropdown" ${cat.notesMode === 'dropdown' ? 'selected' : ''}>Dropdown</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="label">Notes dropdown options (one per line)</label><textarea class="textarea" name="notesOptions">${esc(lines(cat.notesOptions))}</textarea></div>
+          <button class="btn btn-primary" type="submit">Save outlet catalog</button>
         </form>`;
+}
+
+function renderAttendanceSettings() {
+  const policy = getAttendancePolicy();
+  const points = getAttendancePoints();
+  return `
+        <div class="card-title">Attendance policy</div>
+        <div class="card-subtitle">Set where people must check in. Assign a specific point on each employee record when mode is Specific point.</div>
+        <form class="am-form" onsubmit="AM.saveAttendancePolicy(event)">
+          <div class="form-group">
+            <label class="label">Required check-in location</label>
+            <select class="select" name="attendanceMode">
+              <option value="office" ${policy.mode === 'office' ? 'selected' : ''}>Office</option>
+              <option value="outlet" ${policy.mode === 'outlet' ? 'selected' : ''}>Outlet</option>
+              <option value="point" ${policy.mode === 'point' ? 'selected' : ''}>Specific point</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="label">Geofence radius (meters)</label><input class="input" type="number" name="attendanceRadiusM" min="20" value="${esc(policy.radiusM)}"></div>
+            <div class="form-group"><label class="label">Office name</label><input class="input" name="officeName" value="${esc(policy.officeName || '')}"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="label">Office latitude</label><input class="input" name="officeLat" value="${policy.officeLat ?? ''}" placeholder="-6.1944"></div>
+            <div class="form-group"><label class="label">Office longitude</label><input class="input" name="officeLng" value="${policy.officeLng ?? ''}" placeholder="106.8229"></div>
+          </div>
+          <button class="btn btn-primary" type="submit">Save attendance policy</button>
+        </form>
+        <hr style="margin:20px 0;border:0;border-top:1px solid var(--gray-200)">
+        <div class="card-title">Named points</div>
+        <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
+        <form class="am-form" onsubmit="AM.addAttendancePoint(event)">
+          <div class="form-row">
+            <div class="form-group"><label class="label">Name</label><input class="input" name="name" required></div>
+            <div class="form-group"><label class="label">Type</label>
+              <select class="select" name="type"><option value="point">Point</option><option value="office">Office</option><option value="store">Outlet</option><option value="meeting">Meeting</option></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="label">Latitude</label><input class="input" name="lat"></div>
+            <div class="form-group"><label class="label">Longitude</label><input class="input" name="lng"></div>
+          </div>
+          <div class="form-group"><label class="label">Address</label><input class="input" name="address"></div>
+          <button class="btn btn-secondary" type="submit">Add point</button>
+        </form>
+        <ul style="margin-top:12px">${points.map(p => `<li><strong>${esc(p.name)}</strong> · ${esc(p.type)}${p.lat != null ? ` · ${p.lat}, ${p.lng}` : ''}</li>`).join('') || '<li class="am-muted">No named points yet.</li>'}</ul>`;
 }
 
 function linkedEmployee(acc) {
@@ -76,12 +130,12 @@ export function renderSettings() {
   const canAccounts = isManager;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
-    ['profil', 'Profil'],
-    ['keamanan', 'Keamanan'],
-    ['tampilan', 'Tampilan'],
-    ...(isManager ? [['organisasi', 'Organisasi'], ['katalog', 'Katalog toko']] : []),
-    ...(acc.role === 'employee' ? [['perangkat', 'Perangkat']] : []),
-    ['sesi', 'Sesi'],
+    ['profil', 'Profile'],
+    ['keamanan', 'Security'],
+    ['tampilan', 'Display'],
+    ...(isManager ? [['organisasi', 'Organization'], ['katalog', 'Outlet catalog'], ['absensi', 'Attendance']] : []),
+    ...(acc.role === 'employee' ? [['perangkat', 'Device']] : []),
+    ['sesi', 'Session'],
   ];
   const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
   const pane = id => `class="am-pane ${tab === id ? 'active' : ''}"`;
@@ -169,6 +223,7 @@ export function renderSettings() {
           </form>
         </section>
         <section ${pane('katalog')}>${renderProjectStoreSettings()}</section>
+        <section ${pane('absensi')}>${renderAttendanceSettings()}</section>
         ` : ''}
 
         ${acc.role === 'employee' ? `
@@ -362,6 +417,34 @@ window.AM = {
       toast(error.message || error, 'error');
     }
   },
+  saveAttendancePolicy(event) {
+    event.preventDefault();
+    try {
+      const form = event.target;
+      updateAppSettings({
+        attendanceMode: form.attendanceMode.value,
+        attendanceRadiusM: Number(form.attendanceRadiusM.value) || 150,
+        officeName: form.officeName.value,
+        officeLat: form.officeLat.value === '' ? null : Number(form.officeLat.value),
+        officeLng: form.officeLng.value === '' ? null : Number(form.officeLng.value),
+      });
+      toast('Attendance policy saved');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
+  addAttendancePoint(event) {
+    event.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(event.target));
+      createAttendancePoint(data);
+      toast('Attendance point added');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    }
+  },
   pickStoreProject(id) {
     window.FT.state._storeProjectId = id;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -373,11 +456,13 @@ window.AM = {
       const split = name => String(form[name].value || '').split(/\n/).map(s => s.trim()).filter(Boolean);
       saveProjectStoreSettings(form.projectId.value, {
         allowNewOutlet: form.allowNewOutlet.checked,
+        notesMode: form.notesMode.value,
+        notesOptions: split('notesOptions'),
         segments: split('segments'),
         types: split('types'),
         ownerships: split('ownerships'),
       });
-      toast('Katalog toko project disimpan');
+      toast('Outlet catalog saved');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');

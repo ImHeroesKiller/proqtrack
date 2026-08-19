@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 11;
+const DB_VERSION = 12;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -132,6 +132,7 @@ function defaultDB() {
     competitorIntel: JSON.parse(JSON.stringify(seedCompetitorIntel)),
     promoTypes: JSON.parse(JSON.stringify(seedPromoTypes)),
     fieldPhotos: JSON.parse(JSON.stringify(seedFieldPhotos)),
+    productSales: [],
     appSettings: defaultAppSettings(),
     organizations: [defaultOrganization()],
     currentOrganizationId: DEFAULT_ORG_ID,
@@ -214,6 +215,11 @@ export function defaultAppSettings() {
     compactTables: false,
     notifyLeave: true,
     notifyLowStock: true,
+    attendanceMode: 'office',
+    attendanceRadiusM: 150,
+    officeLat: null,
+    officeLng: null,
+    officeName: 'Office',
     updatedAt: null,
   };
 }
@@ -221,8 +227,16 @@ export function defaultAppSettings() {
 export function defaultStoreCatalog() {
   return {
     allowNewOutlet: true,
+    notesMode: 'freetext',
+    notesOptions: [
+      'High potential, high volume',
+      'Strategic location / heavy traffic',
+      'Client request',
+      'No coverage in this area yet',
+      'Competitor is active here',
+    ],
     segments: ['GT', 'MT', 'Other'],
-    types: ['Toko Kelontong', 'Minimarket', 'Apotek', 'Toko Bangunan', 'Lainnya'],
+    types: ['Grocery', 'Minimarket', 'Pharmacy', 'Building Store', 'Other'],
     ownerships: ['Independent', 'Own Store', 'Franchise', 'Modern Chain', 'Third Party'],
   };
 }
@@ -262,6 +276,8 @@ export function saveProjectStoreSettings(projectId, data) {
   row.modules = { ...(row.modules || {}), newOutlet: data.allowNewOutlet !== false };
   row.storeCatalog = {
     allowNewOutlet: data.allowNewOutlet !== false,
+    notesMode: data.notesMode === 'dropdown' ? 'dropdown' : 'freetext',
+    notesOptions: (data.notesOptions || []).map(sanitizePlainText).filter(Boolean),
     segments: (data.segments || []).map(sanitizePlainText).filter(Boolean),
     types: (data.types || []).map(sanitizePlainText).filter(Boolean),
     ownerships: (data.ownerships || []).map(sanitizePlainText).filter(Boolean),
@@ -437,6 +453,7 @@ function migrateDB(parsed) {
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
   if (!Array.isArray(out.attendancePoints)) out.attendancePoints = [];
   if (!Array.isArray(out.outletProposals)) out.outletProposals = [];
+  if (!Array.isArray(out.productSales)) out.productSales = [];
   (out.priceObservations || []).forEach(row => {
     if (row && !row.organizationId) row.organizationId = row.organizationId || DEFAULT_ORG_ID;
   });
@@ -719,6 +736,18 @@ export function getAppSettings() {
   return db.appSettings;
 }
 
+export function getAttendancePolicy() {
+  const s = getAppSettings();
+  const mode = ['office', 'outlet', 'point'].includes(s.attendanceMode) ? s.attendanceMode : 'office';
+  return {
+    mode,
+    radiusM: Number(s.attendanceRadiusM) || 150,
+    officeLat: s.officeLat == null || s.officeLat === '' ? null : Number(s.officeLat),
+    officeLng: s.officeLng == null || s.officeLng === '' ? null : Number(s.officeLng),
+    officeName: s.officeName || 'Office',
+  };
+}
+
 export function updateAppSettings(partial) {
   const actor = assertLoggedIn();
   const orgOnly = ['companyName', 'companyLogo', 'timezone'];
@@ -903,7 +932,7 @@ export function createEmployee(data) {
   const db = getDB();
   const email = assertUniqueEmail(db, data.email);
   const emp = {
-    id: uid('EMP'), totalVisits: 0, todayVisits: 0, targetVisits: 6, status: 'active', photo: '',
+    id: uid('EMP'), totalVisits: 0, todayVisits: 0, targetVisits: 0, salesTargetAmount: 0, attendancePointId: data.attendancePointId || null, status: 'active', photo: '',
     ...withOrg(data),
     name: sanitizePlainText(data.name),
     phone: sanitizePlainText(data.phone),
@@ -1356,10 +1385,13 @@ export function createAttendancePoint(data) {
   if (!isOrgAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
   const point = {
     id: uid('APT'),
-    type: ['office', 'meeting', 'store'].includes(data.type) ? data.type : 'meeting',
+    type: ['office', 'meeting', 'store', 'point'].includes(data.type) ? data.type : 'point',
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address || ''),
     outletId: data.outletId || null,
+    lat: data.lat === '' || data.lat == null ? null : Number(data.lat),
+    lng: data.lng === '' || data.lng == null ? null : Number(data.lng),
+    radiusM: data.radiusM === '' || data.radiusM == null ? null : Number(data.radiusM),
     ...withOrg(data),
     createdBy: actor.id,
   };
@@ -1448,6 +1480,57 @@ export function getDashboardStats() {
     totalCompetitorIntel: intel.length,
     intelWithPromo: intel.filter(i => i.hasPromo).length,
   };
+}
+
+export function getProductSales() {
+  const rows = scoped(getDB().productSales || []);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(s => ids.has(s.employeeId));
+}
+
+export function createProductSale(data) {
+  assertCanAccessEmployee(data.employeeId);
+  const qty = Number(data.qty);
+  const unitPrice = Number(data.unitPrice);
+  if (!data.productId) throw new Error('Product is required');
+  if (!Number.isFinite(qty) || qty <= 0) throw new Error('Quantity must be greater than 0');
+  if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Unit price is required');
+  const sale = {
+    id: uid('SAL'),
+    employeeId: data.employeeId,
+    productId: data.productId,
+    outletId: data.outletId || null,
+    qty,
+    unitPrice,
+    amount: Math.round(qty * unitPrice),
+    date: data.date || todayISO(),
+    notes: sanitizePlainText(data.notes || ''),
+    ...withOrg(data),
+    createdAt: new Date().toISOString(),
+  };
+  const db = getDB();
+  db.productSales = db.productSales || [];
+  db.productSales.push(sale);
+  saveDB();
+  return sale;
+}
+
+export function deleteProductSale(id) {
+  const db = getDB();
+  const idx = (db.productSales || []).findIndex(s => s.id === id);
+  if (idx === -1) return null;
+  assertCanAccessEmployee(db.productSales[idx].employeeId);
+  const [removed] = db.productSales.splice(idx, 1);
+  saveDB();
+  return removed;
+}
+
+export function monthSalesAmount(employeeId, month = todayISO().slice(0, 7)) {
+  return getProductSales()
+    .filter(s => s.employeeId === employeeId && String(s.date || '').startsWith(month))
+    .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
 }
 
 export function getProducts() {

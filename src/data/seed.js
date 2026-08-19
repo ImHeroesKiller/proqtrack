@@ -1,7 +1,7 @@
 // Seed data for ProQTrack — realistic Indonesian field sales (FMCG + bangunan)
 
 export const seedEmployees = [
-  { id: 'EMP001', name: 'Budi Santoso',      email: 'budi.santoso@proqtrack.id',     phone: '0812-3456-7801', role: 'Field Sales', area: 'Jakarta Pusat',  status: 'active', lat: -6.1944, lng: 106.8229, joinDate: '2023-01-15', todayVisits: 4, targetVisits: 8, totalVisits: 156 },
+  { id: 'EMP001', name: 'Budi Santoso',      email: 'budi.santoso@proqtrack.id',     phone: '0812-3456-7801', role: 'Field Sales', area: 'Jakarta Pusat',  status: 'active', lat: -6.1944, lng: 106.8229, joinDate: '2023-01-15', todayVisits: 4, targetVisits: 0, salesTargetAmount: 50000000, totalVisits: 156 },
   { id: 'EMP002', name: 'Siti Nurhaliza',     email: 'siti.nurhaliza@proqtrack.id',   phone: '0812-3456-7802', role: 'Field Sales', area: 'Jakarta Selatan', status: 'active', lat: -6.2614, lng: 106.8106, joinDate: '2023-03-20', todayVisits: 3, targetVisits: 6, totalVisits: 132 },
   { id: 'EMP003', name: 'Ahmad Wijaya',        email: 'ahmad.wijaya@proqtrack.id',     phone: '0812-3456-7803', role: 'Field Sales', area: 'Jakarta Barat',  status: 'active', lat: -6.1701, lng: 106.7842, joinDate: '2022-11-10', todayVisits: 5, targetVisits: 8, totalVisits: 201 },
   { id: 'EMP004', name: 'Dewi Lestari',       email: 'dewi.lestari@proqtrack.id',     phone: '0812-3456-7804', role: 'Field Sales', area: 'Jakarta Timur',  status: 'active', lat: -6.2250, lng: 106.8986, joinDate: '2023-06-05', todayVisits: 2, targetVisits: 6, totalVisits: 89 },

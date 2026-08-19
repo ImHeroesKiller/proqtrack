@@ -22,8 +22,9 @@ import {
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
+  getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
 } from './lib/db.js';
-import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml } from './field-sales.js';
+import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
@@ -104,8 +105,8 @@ function visitsTodayCount(employeeId) {
   return getVisits().filter(v => v.employeeId === employeeId && v.date === todayISO()).length;
 }
 
-function targetOf(employee) {
-  return Number(employee?.targetVisits) || 6;
+function salesTargetOf(employee) {
+  return Number(employee?.salesTargetAmount) || 0;
 }
 
 function avatarStyle(person) {
@@ -150,88 +151,91 @@ function entityScopeFields(entity = {}) {
 }
 
 const NAV_ITEMS = [
-  { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda',         icon: 'home', route: '#/' },
+  { section: 'Main', items: [
+    { id: 'dashboard', label: 'Home',            icon: 'home', route: '#/' },
     { id: 'tracking',  label: 'Last Location',   icon: 'tracking', route: '#/tracking' },
-    { id: 'visits',    label: 'Lacak Kunjungan', icon: 'visits', route: '#/visits' },
+    { id: 'visits',    label: 'Visits',          icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
-    { id: 'clients',     label: 'Klien',      icon: 'clients', route: '#/clients' },
-    { id: 'projects',    label: 'Project',    icon: 'briefcase', route: '#/projects' },
-    { id: 'assignments', label: 'Assignment', icon: 'team', route: '#/assignments' },
+    { id: 'clients',     label: 'Clients',     icon: 'clients', route: '#/clients' },
+    { id: 'projects',    label: 'Projects',    icon: 'briefcase', route: '#/projects' },
+    { id: 'assignments', label: 'Assignments', icon: 'team', route: '#/assignments' },
   ]},
-  { section: 'Manajemen', items: [
-    { id: 'employees',  label: 'Karyawan',    icon: 'employees', route: '#/employees' },
-    { id: 'outlets',    label: 'Toko',        icon: 'outlets', route: '#/outlets' },
-    { id: 'outlet-approvals', label: 'Persetujuan Toko', icon: 'store', route: '#/outlet-approvals' },
-    { id: 'products',   label: 'Produk',      icon: 'products', route: '#/products' },
-    { id: 'stocks',     label: 'Stok Outlet', icon: 'stocks', route: '#/stocks' },
-    { id: 'attendance', label: 'Absensi',     icon: 'attendance', route: '#/attendance' },
-    { id: 'leaves',     label: 'Ijin & Cuti', icon: 'leaves', route: '#/leaves' },
+  { section: 'Management', items: [
+    { id: 'employees',  label: 'Employees',        icon: 'employees', route: '#/employees' },
+    { id: 'outlets',    label: 'Outlets',          icon: 'outlets', route: '#/outlets' },
+    { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
+    { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
+    { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
+    { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
+    { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
   ]},
-  { section: 'Kompetitor', items: [
-    { id: 'competitors',         label: 'Kompetitor',         icon: 'competitors', route: '#/competitors' },
-    { id: 'competitor-analysis', label: 'Analisa Kompetitor', icon: 'analysis', route: '#/competitor-analysis' },
+  { section: 'Competitors', items: [
+    { id: 'competitors',         label: 'Competitors',         icon: 'competitors', route: '#/competitors' },
+    { id: 'competitor-analysis', label: 'Competitor Analysis', icon: 'analysis', route: '#/competitor-analysis' },
   ]},
-  { section: 'Lapangan', items: [
-    { id: 'field-photos', label: 'Foto & Aset', icon: 'photos', route: '#/field-photos' },
+  { section: 'Field', items: [
+    { id: 'field-photos', label: 'Photos & Assets', icon: 'photos', route: '#/field-photos' },
   ]},
-  { section: 'Analitik', items: [
-    { id: 'reports', label: 'Laporan', icon: 'chart', route: '#/reports' },
+  { section: 'Analytics', items: [
+    { id: 'reports', label: 'Reports', icon: 'chart', route: '#/reports' },
   ]},
-  { section: 'Sistem', items: [
-    { id: 'organizations', label: 'Organisasi',     icon: 'organizations', route: '#/organizations' },
-    { id: 'accounts',      label: 'Manajemen Akun', icon: 'accounts', route: '#/accounts' },
-    { id: 'settings',      label: 'Pengaturan',     icon: 'settings', route: '#/settings' },
+  { section: 'System', items: [
+    { id: 'organizations', label: 'Organizations', icon: 'organizations', route: '#/organizations' },
+    { id: 'accounts',      label: 'Accounts',      icon: 'accounts', route: '#/accounts' },
+    { id: 'settings',      label: 'Settings',      icon: 'settings', route: '#/settings' },
   ]},
 ];
 
 const NAV_ITEMS_SUPERVISOR = [
-  { section: 'Menu Utama', items: [
-    { id: 'dashboard', label: 'Beranda Tim',    icon: 'home', route: '#/' },
-    { id: 'myday',     label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
-    { id: 'tracking',  label: 'Last Location Tim',  icon: 'tracking', route: '#/tracking' },
-    { id: 'visits',    label: 'Kunjungan Tim',  icon: 'visits', route: '#/visits' },
+  { section: 'Main', items: [
+    { id: 'dashboard', label: 'Team Home',          icon: 'home', route: '#/' },
+    { id: 'myday',     label: 'My Day',             icon: 'calendar', route: '#/myday' },
+    { id: 'tracking',  label: 'Team Last Location', icon: 'tracking', route: '#/tracking' },
+    { id: 'visits',    label: 'Team Visits',        icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
-    { id: 'my-projects',         label: 'Project Saya',           icon: 'briefcase', route: '#/my-projects' },
-    { id: 'my-team',             label: 'Tim Saya',               icon: 'team', route: '#/my-team' },
-    { id: 'supervisor-compare',  label: 'Komparasi Supervisor',   icon: 'compare', route: '#/supervisor-compare' },
+    { id: 'my-projects',         label: 'My Projects',          icon: 'briefcase', route: '#/my-projects' },
+    { id: 'my-team',             label: 'My Team',              icon: 'team', route: '#/my-team' },
+    { id: 'supervisor-compare',  label: 'Supervisor Compare',   icon: 'compare', route: '#/supervisor-compare' },
   ]},
-  { section: 'Lapangan', items: [
-    { id: 'mystocks',      label: 'Stok Outlet',      icon: 'stocks', route: '#/mystocks' },
-    { id: 'myprices',      label: 'Harga & Diskon',   icon: 'price', route: '#/myprices' },
-    { id: 'myintel',       label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
-    { id: 'field-photos',  label: 'Foto Lapangan',    icon: 'photos', route: '#/field-photos' },
-    { id: 'attendance',    label: 'Absensi Tim',      icon: 'attendance', route: '#/attendance' },
-    { id: 'leaves',        label: 'Ijin & Cuti',      icon: 'leaves', route: '#/leaves' },
-    { id: 'outlet-approvals', label: 'Persetujuan Toko', icon: 'store', route: '#/outlet-approvals' },
+  { section: 'Field', items: [
+    { id: 'mystocks',      label: 'Outlet Stock',      icon: 'stocks', route: '#/mystocks' },
+    { id: 'mysales',       label: 'Product Sales',     icon: 'chart', route: '#/mysales' },
+    { id: 'myprices',      label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
+    { id: 'myintel',       label: 'Competitor Intel',  icon: 'intel', route: '#/myintel' },
+    { id: 'field-photos',  label: 'Field Photos',      icon: 'photos', route: '#/field-photos' },
+    { id: 'attendance',    label: 'Team Attendance',   icon: 'attendance', route: '#/attendance' },
+    { id: 'leaves',        label: 'Leave',             icon: 'leaves', route: '#/leaves' },
+    { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
   ]},
-  { section: 'Sistem', items: [
-    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
   ]},
 ];
 
 const NAV_ITEMS_EMPLOYEE = [
-  { section: 'Menu Utama', items: [
-    { id: 'myday',    label: 'Hari Saya',      icon: 'calendar', route: '#/myday' },
+  { section: 'Main', items: [
+    { id: 'myday',    label: 'My Day',        icon: 'calendar', route: '#/myday' },
     { id: 'last-location', label: 'Last Location', icon: 'pin', route: '#/last-location' },
-    { id: 'myvisits', label: 'Kunjungan Saya', icon: 'visits', route: '#/myvisits' },
+    { id: 'myvisits', label: 'My Visits',      icon: 'visits', route: '#/myvisits' },
   ]},
   { section: 'Project', items: [
-    { id: 'my-projects', label: 'Project Saya', icon: 'briefcase', route: '#/my-projects' },
-    { id: 'new-outlet', label: 'Toko Baru', icon: 'store', route: '#/new-outlet' },
+    { id: 'my-projects', label: 'My Projects', icon: 'briefcase', route: '#/my-projects' },
+    { id: 'new-outlet', label: 'New Outlet', icon: 'store', route: '#/new-outlet' },
   ]},
-  { section: 'Lapangan', items: [
-    { id: 'mystocks',     label: 'Stok Outlet',      icon: 'stocks', route: '#/mystocks' },
-    { id: 'myprices',     label: 'Harga & Diskon',   icon: 'price', route: '#/myprices' },
-    { id: 'myintel',      label: 'Intel Kompetitor', icon: 'intel', route: '#/myintel' },
-    { id: 'myphotos',     label: 'Foto Lapangan',    icon: 'photos', route: '#/myphotos' },
-    { id: 'myattendance', label: 'Absensi Saya',     icon: 'attendance', route: '#/myattendance' },
-    { id: 'myleaves',     label: 'Ijin & Cuti',      icon: 'leaves', route: '#/myleaves' },
+  { section: 'Field', items: [
+    { id: 'mystocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/mystocks' },
+    { id: 'mysales',      label: 'Product Sales',    icon: 'chart', route: '#/mysales' },
+    { id: 'myprices',     label: 'Price & Discount', icon: 'price', route: '#/myprices' },
+    { id: 'myintel',      label: 'Competitor Intel', icon: 'intel', route: '#/myintel' },
+    { id: 'myphotos',     label: 'Field Photos',     icon: 'photos', route: '#/myphotos' },
+    { id: 'myattendance', label: 'My Attendance',    icon: 'attendance', route: '#/myattendance' },
+    { id: 'myleaves',     label: 'Leave',            icon: 'leaves', route: '#/myleaves' },
   ]},
-  { section: 'Sistem', items: [
-    { id: 'settings', label: 'Pengaturan', icon: 'settings', route: '#/settings' },
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
   ]},
 ];
 // ===== Router =====
@@ -327,10 +331,11 @@ function render() {
   } else if (!manager && (
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
-    route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet'
+    route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet' ||
+    route === '#/mysales'
   )) {
     if (route === '#/myday') {
-      pageTitle = 'Hari Saya'; pageSubtitle = 'Aktivitas kunjungan Anda hari ini';
+      pageTitle = 'My Day'; pageSubtitle = 'Today’s field activity';
       pageContent = renderMyDay();
     } else if (route === '#/last-location') {
       pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
@@ -360,8 +365,11 @@ function render() {
       pageTitle = 'Ijin & Cuti'; pageSubtitle = 'Ajukan dan pantau pengajuan ijin/cuti Anda';
       pageContent = renderMyLeaves();
     } else if (route === '#/new-outlet') {
-      pageTitle = 'Toko Baru'; pageSubtitle = 'Pengajuan toko baru menunggu persetujuan supervisor dan manager';
+      pageTitle = 'New Outlet'; pageSubtitle = 'New outlet submissions wait for supervisor and manager approval';
       pageContent = renderOutletProposalForm();
+    } else if (route === '#/mysales') {
+      pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
+      pageContent = renderProductSales({ mine: true });
     }
   } else if ((isOrgAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
@@ -378,14 +386,17 @@ function render() {
     pageTitle = 'Karyawan'; pageSubtitle = 'Kelola data karyawan lapangan';
     pageContent = renderEmployees();
   } else if ((isOrgAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
-    pageTitle = 'Persetujuan Toko'; pageSubtitle = 'Antrian pengajuan toko baru dari sales. Perlu persetujuan supervisor dan manager.';
+    pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
     pageContent = renderOutletProposalForm();
   } else if (isOrgAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
   } else if (isOrgAdmin() && route === '#/products') {
-    pageTitle = 'Produk'; pageSubtitle = 'Katalog produk distribusi FMCG & bangunan';
+    pageTitle = 'Products'; pageSubtitle = 'Product catalog';
     pageContent = renderProducts();
+  } else if (isOrgAdmin() && route === '#/sales') {
+    pageTitle = 'Product Sales'; pageSubtitle = 'Sales entries used to calculate monthly targets';
+    pageContent = renderProductSales({ mine: false });
   } else if (isOrgAdmin() && route === '#/stocks') {
     pageTitle = 'Stok Outlet'; pageSubtitle = 'Pantau stok produk di setiap outlet';
     pageContent = renderStocks();
@@ -426,7 +437,7 @@ function render() {
       pageContent = renderOrganizationHub(orgId);
     }
   } else if (route === '#/settings') {
-    pageTitle = 'Pengaturan'; pageSubtitle = 'Akun, keamanan, dan preferensi aplikasi';
+    pageTitle = 'Settings'; pageSubtitle = 'Account, security, and app preferences';
     pageContent = renderSettings();
   } else if (isOrgAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
     pageTitle = 'Laporan';
@@ -547,14 +558,14 @@ function renderFieldDock(route) {
   const tabs = isSupervisor()
     ? [
         { route: '#/', label: 'Beranda', icon: 'home' },
-        { route: '#/myday', label: 'Hari Saya', icon: 'calendar' },
-        { route: '#/tracking', label: 'Lokasi Tim', icon: 'pin' },
-        { route: '#/visits', label: 'Kunjungan', icon: 'visits' },
+        { route: '#/myday', label: 'My Day', icon: 'calendar' },
+        { route: '#/tracking', label: 'Team Loc', icon: 'pin' },
+        { route: '#/visits', label: 'Visits', icon: 'visits' },
       ]
     : [
-        { route: '#/myday', label: 'Hari Ini', icon: 'calendar' },
-        { route: '#/myvisits', label: 'Kunjungan', icon: 'visits' },
-        { route: '#/mystocks', label: 'Stok', icon: 'stocks' },
+        { route: '#/myday', label: 'Today', icon: 'calendar' },
+        { route: '#/myvisits', label: 'Visits', icon: 'visits' },
+        { route: '#/mysales', label: 'Sales', icon: 'chart' },
       ];
   return `
     <nav class="field-dock" aria-label="Menu cepat">
@@ -707,7 +718,7 @@ function renderSupervisorDashboard() {
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Tim hari ini</div>
-        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)}/${targetOf(e)}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" onclick="FT.focusEmployee('${e.id}')">Lacak</a></div>`).join('') || '<p class="am-muted">Belum ada anggota tim.</p>'}
+        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" onclick="FT.focusEmployee('${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">No team members yet.</p>'}
       </div>
       <div class="card">
         <div class="card-title">Perlu tindakan</div>
@@ -1135,7 +1146,7 @@ function renderEmployees() {
               <th>Role</th>
               <th>Area</th>
               <th>Telepon</th>
-              <th>Hari Ini</th>
+              <th>Sales / Target</th>
               <th>Total</th>
               <th>Status</th>
               <th></th>
@@ -1160,7 +1171,7 @@ function renderEmployees() {
                   <td>${roleBadge(e.role)}</td>
                   <td>${esc(e.area)}</td>
                   <td>${esc(e.phone)}</td>
-                  <td><span style="font-weight:600;">${visitsTodayCount(e.id)}</span>/${targetOf(e)}</td>
+                  <td><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
                   <td>${e.totalVisits}</td>
                   <td>${statusBadge(e.status)}</td>
                   <td>
@@ -1234,7 +1245,14 @@ window.FT.openEmployeeModal = function() {
         </div>
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" placeholder="Jakarta Pusat" required></div>
       </div>
-      <div class="form-group"><label class="label">Target Kunjungan Harian</label><input class="input" type="number" name="targetVisits" value="6" min="1" required></div>
+      <div class="form-group"><label class="label">Monthly product sales target (Rp)</label><input class="input" type="number" name="salesTargetAmount" value="0" min="0"></div>
+      <div class="form-group"><label class="label">Attendance point</label>
+        <select class="select" name="attendancePointId">
+          <option value="">— None —</option>
+          ${getAttendancePoints().map(p => `<option value="${p.id}">${esc(p.name)} (${esc(p.type)})</option>`).join('')}
+        </select>
+        <div class="am-muted" style="margin-top:4px">Used when Settings → Attendance mode is Specific point.</div>
+      </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -1248,7 +1266,8 @@ window.FT.createEmployee = async function(e) {
   if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
   const data = Object.fromEntries(new FormData(form));
-  data.targetVisits = parseInt(data.targetVisits, 10) || 6;
+  data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
+  data.attendancePointId = data.attendancePointId || null;
   data.joinDate = new Date().toISOString().slice(0, 10);
   try {
     data.photo = await photoFromEmployeeForm(form, '');
@@ -1300,7 +1319,7 @@ function renderEmployeeDetail(id) {
       </div>
       <div style="flex:1; min-width:300px;">
         <div class="grid-3" style="margin-bottom:20px;">
-          <div class="stat-card"><div class="stat-label">Kunjungan Hari Ini</div><div class="stat-value">${emp.todayVisits}</div><div style="font-size:12px; color:var(--gray-400); margin-top:4px;">Target: ${emp.targetVisits}</div></div>
+          <div class="stat-card"><div class="stat-label">Visits today</div><div class="stat-value">${emp.todayVisits}</div></div>
           <div class="stat-card"><div class="stat-label">Total Kunjungan</div><div class="stat-value">${emp.totalVisits}</div></div>
           <div class="stat-card"><div class="stat-label">Kehadiran</div><div class="stat-value">${attendance.length}</div><div style="font-size:12px; color:var(--gray-400); margin-top:4px;">catatan</div></div>
         </div>
@@ -1345,8 +1364,14 @@ window.FT.editEmployee = function(id) {
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Target Harian</label><input class="input" type="number" name="targetVisits" min="1" value="${emp.targetVisits || 6}" required></div>
+        <div class="form-group"><label class="label">Monthly sales target (Rp)</label><input class="input" type="number" name="salesTargetAmount" min="0" value="${emp.salesTargetAmount || 0}"></div>
         <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${emp.status==='active'?'selected':''}>Aktif</option><option value="inactive" ${emp.status==='inactive'?'selected':''}>Nonaktif</option></select></div>
+      </div>
+      <div class="form-group"><label class="label">Attendance point</label>
+        <select class="select" name="attendancePointId">
+          <option value="">— None —</option>
+          ${getAttendancePoints().map(p => `<option value="${p.id}" ${emp.attendancePointId === p.id ? 'selected' : ''}>${esc(p.name)} (${esc(p.type)})</option>`).join('')}
+        </select>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
@@ -1361,7 +1386,8 @@ window.FT.updateEmployee = async function(e, id) {
   const form = e.target;
   const current = getEmployees().find(x => x.id === id);
   const data = Object.fromEntries(new FormData(form));
-  data.targetVisits = parseInt(data.targetVisits, 10) || current?.targetVisits || 6;
+  data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
+  data.attendancePointId = data.attendancePointId || null;
   if (!data.password) delete data.password;
   delete data.lat;
   delete data.lng;
@@ -1445,11 +1471,13 @@ window.FT.syncManagerOutletCatalog = function(projectId) {
   fill('channel', cat.segments);
   fill('ownership', cat.ownerships);
   fill('type', cat.types);
+  const notesWrap = document.getElementById('outletNotesWrap');
+  if (notesWrap) notesWrap.outerHTML = `<div id="outletNotesWrap">${outletNotesField(cat)}</div>`;
 };
 
 window.FT.openOutletModal = function() {
   const cat = defaultStoreCatalog();
-  openModal('Tambah Outlet', `
+  openModal('New Outlet', `
     <form onsubmit="FT.createOutlet(event)">
       <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
       ${entityScopeFields().replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required onchange="FT.syncManagerOutletCatalog(this.value)">')}
@@ -1484,22 +1512,7 @@ window.FT.openOutletModal = function() {
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
         <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
       </div>
-      <div class="form-group">
-        <label class="label">Catatan</label>
-        <div class="filter-row" style="margin-bottom:8px">
-          <label class="am-check"><input type="radio" name="notesKind" value="freetext" checked onchange="FS.toggleNotesKind()"> Freetext</label>
-          <label class="am-check"><input type="radio" name="notesKind" value="dropdown" onchange="FS.toggleNotesKind()"> Dropdown</label>
-        </div>
-        <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Catatan toko"></textarea>
-        <select class="select" name="notesChoice" id="outletNotesSelect" style="display:none">
-          <option value="">Pilih catatan</option>
-          <option>Toko potensial, volume tinggi</option>
-          <option>Lokasi strategis / lalu lintas ramai</option>
-          <option>Request dari klien</option>
-          <option>Belum ada coverage di area ini</option>
-          <option>Kompetitor aktif di toko ini</option>
-        </select>
-      </div>
+      <div id="outletNotesWrap">${outletNotesField(cat)}</div>
       <div class="form-row">
         <div class="form-group"><label class="label">Frekuensi kunjungan</label>
           <select class="select" name="visitFrequency"><option>Mingguan</option><option>Bulanan</option></select>
@@ -1683,9 +1696,10 @@ function renderMyDay() {
   const completed = visits.filter(v => v.status === 'completed');
   const activeV = visits.filter(v => v.status === 'checked-in');
   const planned = visits.filter(v => v.status === 'planned');
-  const target = Number(emp.targetVisits) || Math.max(visits.length, 1);
+  const sold = monthSalesAmount(empId);
+  const target = salesTargetOf(emp);
   const doneCount = completed.length;
-  const pct = Math.min(100, Math.round((doneCount / target) * 100));
+  const pct = target > 0 ? Math.min(100, Math.round((sold / target) * 100)) : 0;
   const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
   const active = activeV[0];
   const activeOut = active ? outletMap[active.outletId] : null;
@@ -1710,11 +1724,11 @@ function renderMyDay() {
       </header>
 
       <section class="mq-card mq-progress">
-        <div class="mq-card-kicker">${iconSvg('chart')} Progress Hari Ini</div>
+        <div class="mq-card-kicker">${iconSvg('chart')} Sales target this month</div>
         <div class="mq-progress-row">
           <div>
-            <div class="mq-big">${doneCount}<small>/${target}</small></div>
-            <div class="mq-muted">Kunjungan</div>
+            <div class="mq-big" style="font-size:22px">${formatCurrency(sold)}<small>${target ? ' / ' + formatCurrency(target) : ''}</small></div>
+            <div class="mq-muted">${doneCount} visits today (not targeted)</div>
           </div>
           <div class="mq-pills">
             <div><b class="ok">${completed.length}</b><span>Selesai</span></div>
@@ -1853,6 +1867,107 @@ function productFormFields(p = null) {
     </div>
   `;
 }
+
+function renderProductSales({ mine } = {}) {
+  const empId = myEmployeeId();
+  const sales = getProductSales().filter(s => !mine || s.employeeId === empId);
+  const products = getProducts().filter(p => p.status === 'active');
+  const outlets = getOutlets();
+  const employees = getEmployees();
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+  const prodMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const outMap = Object.fromEntries(outlets.map(o => [o.id, o]));
+  const month = todayISO().slice(0, 7);
+  const monthRows = sales.filter(s => String(s.date || '').startsWith(month));
+  const monthTotal = monthRows.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  const myTarget = mine ? salesTargetOf(employees.find(e => e.id === empId) || {}) : 0;
+  const pct = myTarget > 0 ? Math.min(100, Math.round((monthTotal / myTarget) * 100)) : 0;
+  return `
+    ${mine ? `<div class="card" style="margin-bottom:16px">
+      <div class="card-title">Monthly target</div>
+      <div class="stat-value">${formatCurrency(monthTotal)}${myTarget ? ` <small>/ ${formatCurrency(myTarget)}</small>` : ''}</div>
+      <div class="mq-bar" style="margin-top:10px"><i style="width:${pct}%"></i></div>
+    </div>` : `<div class="grid-3" style="margin-bottom:14px">
+      <div class="stat-card"><div class="stat-label">Sales this month</div><div class="stat-value">${formatCurrency(monthTotal)}</div></div>
+      <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value">${monthRows.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Team target</div><div class="stat-value">${formatCurrency(employees.reduce((s, e) => s + salesTargetOf(e), 0))}</div></div>
+    </div>`}
+    <div class="card">
+      <div class="card-title">${mine ? 'Record a sale' : 'New sale'}</div>
+      <form onsubmit="FT.submitProductSale(event)">
+        ${!mine ? `<div class="form-group"><label class="label">Employee</label>
+          <select class="select" name="employeeId" required>${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="employeeId" value="${esc(empId || '')}">`}
+        <div class="form-row">
+          <div class="form-group"><label class="label">Product</label>
+            <select class="select" name="productId" required onchange="FT.fillSalePrice(this)">
+              <option value="">Select product</option>
+              ${products.map(p => `<option value="${p.id}" data-price="${p.price || 0}">${esc(p.name)} (${esc(p.sku || '-')})</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label class="label">Outlet</label>
+            <select class="select" name="outletId">
+              <option value="">Optional</option>
+              ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="label">Qty</label><input class="input" type="number" name="qty" min="1" value="1" required></div>
+          <div class="form-group"><label class="label">Unit price</label><input class="input" type="number" name="unitPrice" id="saleUnitPrice" min="0" required></div>
+          <div class="form-group"><label class="label">Date</label><input class="input" type="date" name="date" value="${todayISO()}" required></div>
+        </div>
+        <div class="form-group"><label class="label">Notes</label><input class="input" name="notes"></div>
+        <button class="btn btn-primary" type="submit">Save sale</button>
+      </form>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Sales log</div>
+      <div class="visits-table-wrapper"><table class="table">
+        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>Outlet</th><th>Qty</th><th>Amount</th><th></th></tr></thead>
+        <tbody>
+          ${sales.length ? sales.slice().sort((a,b)=>String(b.date).localeCompare(a.date)).map(s => `
+            <tr>
+              <td>${formatDateShort(s.date)}</td>
+              ${mine ? '' : `<td>${esc(empMap[s.employeeId]?.name || s.employeeId)}</td>`}
+              <td>${esc(prodMap[s.productId]?.name || s.productId)}</td>
+              <td>${esc(s.outletId ? formatOutletLabel(outMap[s.outletId]) : '—')}</td>
+              <td>${s.qty}</td>
+              <td>${formatCurrency(s.amount)}</td>
+              <td><button class="btn btn-danger btn-sm" onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
+            </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><h3>No sales yet</h3></div></td></tr>`}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+window.FT.fillSalePrice = function(sel) {
+  const price = sel.selectedOptions[0]?.dataset?.price;
+  const input = document.getElementById('saleUnitPrice');
+  if (input && price != null) input.value = price;
+};
+
+window.FT.submitProductSale = function(e) {
+  e.preventDefault();
+  try {
+    const data = Object.fromEntries(new FormData(e.target));
+    createProductSale(data);
+    showToast('Sale saved', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+};
+
+window.FT.removeProductSale = function(id) {
+  if (!confirm('Delete this sale?')) return;
+  try {
+    deleteProductSale(id);
+    showToast('Sale deleted', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+};
 
 function renderProducts() {
   const products = getProducts();
