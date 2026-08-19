@@ -97,7 +97,10 @@ function installCascadingSelects(form){
     const db=readDB();
     let projectId=project?.value||'';
     const selectedOutlet=(db.outlets||db.stores||[]).find(o=>o.id===outlet?.value);
-    if(!projectId&&selectedOutlet?.projectId){projectId=selectedOutlet.projectId;if(project)project.value=projectId;}
+    if(!projectId&&selectedOutlet){
+      const linked=getLinkedProjectIds(selectedOutlet);
+      if(linked[0]){projectId=linked[0];if(project)project.value=projectId;}
+    }
     const selectedProject=(db.projects||[]).find(p=>p.id===projectId);
     if(outlet){
       const rows=(db.outlets||db.stores||[]).filter(o=>{
