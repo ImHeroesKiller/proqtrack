@@ -102,6 +102,8 @@ location.reload();
 
 - **DB internal:** version 14
 - **Backward compatibility:** aplikasi inti memakai `proqtrack_db_v6`; `proqtrack_db_v7` hanya cermin otomatis dari v6 (bukan schema terpisah)
+- **Katalog dokumen:** `SCHEMA` di `src/lib/db.js` adalah daftar collection resmi. Tenant rows memakai `organizationId`; katalog global (`leaveTypes`, `promoTypes`, laporan) tidak di-scope per organisasi
+- **D1 bukan schema operasional:** tabel Worker (`app_snapshots`, `auth_users`, `file_metadata`, …) adalah sidecar. Jangan dinormalisasi ke tabel CRM
 - **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
 - **Penyimpanan:** seluruh data operasional masih di localStorage browser, termasuk foto base64
 - Record lama memperoleh `projectId: null` dan tetap terlihat manager

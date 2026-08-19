@@ -19,6 +19,40 @@ const DB_VERSION = 14;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
+/**
+ * Client document catalog (localStorage).
+ * Canonical key is proqtrack_db_v6; proqtrack_db_v7 is an automatic mirror.
+ * D1 is a Worker sidecar (auth/files/snapshots) and is not this schema.
+ *
+ * tenant   — rows get organizationId; scoped() hides unstamped rows
+ * global   — catalogs or project-keyed rows, not org-filtered
+ * document — top-level object or scalar
+ */
+export const SCHEMA = {
+  version: DB_VERSION,
+  key: DB_KEY,
+  mirrorKey: 'proqtrack_db_v7',
+  tenantCollections: [
+    'employees', 'outlets', 'visits', 'attendance', 'accounts', 'products',
+    'leaves', 'stocks', 'priceObservations', 'competitors', 'competitorProducts',
+    'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
+    'projectAssignments', 'outletProposals', 'attendancePoints',
+  ],
+  globalCollections: [
+    'leaveTypes', 'promoTypes', 'organizations', 'projectSettings',
+    'projectProducts', 'reportTemplates', 'reportJobs', 'reportExports',
+    'reportFilters', 'reportApprovals', 'reportSchedules', 'auditLogs',
+  ],
+  documentKeys: ['_version', 'appSettings', 'reportSettings', 'currentOrganizationId'],
+};
+
+const SEEDED_EMPTY_ARRAYS = [
+  'productSales', 'clients', 'projects', 'projectAssignments', 'projectSettings',
+  'outletProposals', 'attendancePoints', 'projectProducts',
+  'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
+  'reportApprovals', 'reportSchedules', 'auditLogs',
+];
+
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
 const accountRoleForEmployee = employee =>
   String(employee?.role || '').toLowerCase().includes('supervisor') ? 'supervisor' : 'employee';
@@ -108,12 +142,19 @@ function syncEmployeeAccount(db, employee, password) {
     if (!password || String(password).length < 8) {
       throw new Error('Password login minimal 8 karakter.');
     }
-    account = { id: uid('ACC'), employeeId: employee.id };
+    account = {
+      id: uid('ACC'),
+      employeeId: employee.id,
+      organizationId: employee.organizationId || DEFAULT_ORG_ID,
+    };
     db.accounts.push(account);
   }
   account.email = employee.email;
   account.name = employee.name;
   account.role = accountRoleForEmployee(employee);
+  if (!account.organizationId && account.role !== 'superadmin') {
+    account.organizationId = employee.organizationId || DEFAULT_ORG_ID;
+  }
   applyEmployeeAccountStatus(account, employee);
   if (password) {
     if (String(password).length < 8) throw new Error('Password login minimal 8 karakter.');
@@ -141,6 +182,20 @@ function rawDefaultDB() {
     promoTypes: JSON.parse(JSON.stringify(seedPromoTypes)),
     fieldPhotos: JSON.parse(JSON.stringify(seedFieldPhotos)),
     productSales: [],
+    clients: [],
+    projects: [],
+    projectAssignments: [],
+    projectSettings: [],
+    outletProposals: [],
+    attendancePoints: [],
+    projectProducts: [],
+    reportTemplates: [],
+    reportJobs: [],
+    reportExports: [],
+    reportFilters: [],
+    reportApprovals: [],
+    reportSchedules: [],
+    auditLogs: [],
     appSettings: defaultAppSettings(),
     organizations: [defaultOrganization()],
     currentOrganizationId: DEFAULT_ORG_ID,
@@ -342,16 +397,29 @@ function migrateCompetitorIntel(rows) {
   }));
 }
 
+function hydrateFromBase(out, base) {
+  for (const key of Object.keys(base)) {
+    if (key === '_version') continue;
+    const sample = base[key];
+    if (Array.isArray(sample)) {
+      if (!Array.isArray(out[key])) out[key] = JSON.parse(JSON.stringify(sample));
+      continue;
+    }
+    if (sample && typeof sample === 'object') {
+      if (!out[key] || typeof out[key] !== 'object' || Array.isArray(out[key])) {
+        out[key] = JSON.parse(JSON.stringify(sample));
+      }
+      continue;
+    }
+    if (out[key] == null || out[key] === '') out[key] = sample;
+  }
+}
+
 function migrateDB(parsed) {
   const base = rawDefaultDB();
   const out = { ...base, ...parsed, _version: DB_VERSION };
 
-  for (const key of Object.keys(base)) {
-    if (key === '_version') continue;
-    if (!out[key] || !Array.isArray(out[key])) {
-      out[key] = JSON.parse(JSON.stringify(base[key]));
-    }
-  }
+  hydrateFromBase(out, base);
 
   out.products = migrateProducts(out.products);
   out.competitorIntel = migrateCompetitorIntel(out.competitorIntel);
@@ -473,9 +541,9 @@ function migrateDB(parsed) {
     };
   });
   out.appSettings = { ...defaultAppSettings(), ...(out.appSettings || {}) };
-  if (!Array.isArray(out.attendancePoints)) out.attendancePoints = [];
-  if (!Array.isArray(out.outletProposals)) out.outletProposals = [];
-  if (!Array.isArray(out.productSales)) out.productSales = [];
+  for (const key of SEEDED_EMPTY_ARRAYS) {
+    if (!Array.isArray(out[key])) out[key] = [];
+  }
   (out.priceObservations || []).forEach(row => {
     if (row && !row.organizationId) row.organizationId = row.organizationId || DEFAULT_ORG_ID;
   });
@@ -495,9 +563,18 @@ function migrateDB(parsed) {
     if (o && !o.outletNumber && !o.code) o.outletNumber = `OUT-${String(i + 1).padStart(4, '0')}`;
     else if (o && !o.outletNumber) o.outletNumber = o.code;
   });
-  ['employees','outlets','visits','attendance','accounts','products','leaves','stocks','priceObservations','competitors','competitorProducts','competitorIntel','fieldPhotos','clients','projects','projectAssignments','outletProposals'].forEach(key => {
+  SCHEMA.tenantCollections.forEach(key => {
     if (Array.isArray(out[key])) out[key] = stamp(out[key]);
   });
+  if (Array.isArray(out.projectSettings)) {
+    const projectOrg = Object.fromEntries(
+      (out.projects || []).map(p => [p.id, p.organizationId || DEFAULT_ORG_ID])
+    );
+    out.projectSettings = out.projectSettings.map(row => ({
+      ...row,
+      organizationId: row.organizationId || projectOrg[row.projectId] || DEFAULT_ORG_ID,
+    }));
+  }
   const assignmentRoleMap = { field_sales: 'sales', merchandiser: 'sales' };
   (out.projectAssignments || []).forEach(row => {
     if (assignmentRoleMap[row.roleOnProject]) row.roleOnProject = assignmentRoleMap[row.roleOnProject];
