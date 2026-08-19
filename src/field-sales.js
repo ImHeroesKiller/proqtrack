@@ -268,36 +268,64 @@ export function renderOutletProposalForm() {
     ${role === 'employee' ? `
     <div class="card">
       <div class="card-title">Ajukan toko baru</div>
-      <div class="card-subtitle">Tandai lokasi di peta OpenStreetMap. Project mengikuti assignment Anda; supervisor/manager bisa mengubahnya saat menyetujui.</div>
+      <div class="card-subtitle">Ambil lokasi dari perangkat. Alamat terisi otomatis. Project mengikuti assignment Anda.</div>
       <form onsubmit="FS.submitOutlet(event)">
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
         <div class="form-group">
-          <label class="label">Lokasi di peta</label>
-          <div class="filter-row" style="margin-bottom:8px">
-            <input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan...">
-            <button type="button" class="btn btn-secondary" onclick="FS.searchOutletMap()">Cari</button>
-          </div>
-          <div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div>
-          <div class="am-muted" id="outletMapHint" style="margin-top:6px">Klik peta untuk menandai toko. Lat/lng tersimpan seperti outlet lain.</div>
+          <label class="label">Lokasi toko</label>
+          <button type="button" class="btn btn-primary" id="outletLocBtn" onclick="FS.captureOutletLocation()" style="width:100%">Ambil lokasi / buka peta</button>
+          <div class="am-muted" id="outletMapHint" style="margin-top:8px">Satu tombol: GPS perangkat, isi alamat otomatis, lalu buka aplikasi peta untuk konfirmasi.</div>
+          <a id="outletOpenMaps" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noreferrer" style="display:none;margin-top:8px">Buka aplikasi peta</a>
           <input type="hidden" name="lat" id="outletLat" required>
           <input type="hidden" name="lng" id="outletLng" required>
           <input type="hidden" name="mapLabel" id="outletMapLabel">
         </div>
-        <div class="form-group"><label class="label">Alamat (dari peta, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required></textarea></div>
+        <div class="form-group"><label class="label">Alamat (otomatis dari lokasi, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required placeholder="Terisi otomatis setelah ambil lokasi"></textarea></div>
         <div class="form-row">
-          <div class="form-group"><label class="label">Tipe</label>
+          <div class="form-group"><label class="label">Segment</label>
+            <select class="select" name="channel">
+              <option value="GT">GT — General Trade</option>
+              <option value="MT">MT — Modern Trade</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="form-group"><label class="label">Akun (ownership store)</label>
+            <select class="select" name="ownership">
+              <option value="Independent">Independent</option>
+              <option value="Own Store">Own Store</option>
+              <option value="Franchise">Franchise</option>
+              <option value="Modern Chain">Modern Chain</option>
+              <option value="Third Party">Third Party</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="label">Type (tipe store)</label>
             <select class="select" name="type"><option>Toko Kelontong</option><option>Minimarket</option><option>Apotek</option><option>Toko Bangunan</option><option>Lainnya</option></select>
           </div>
-          <div class="form-group"><label class="label">Channel</label>
-            <select class="select" name="channel"><option>General Trade</option><option>Modern Trade</option><option>Pharmacy</option><option>Building Material</option></select>
-          </div>
+          <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" value="${esc(emp?.area || '')}"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" value="${esc(emp?.area || '')}"></div>
           <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
+          <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
         </div>
-        <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
-        <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes" placeholder="Kenapa toko ini potensial, jam buka, dll."></textarea></div>
+        <div class="form-group">
+          <label class="label">Catatan</label>
+          <div class="filter-row" style="margin-bottom:8px">
+            <label class="am-check"><input type="radio" name="notesKind" value="freetext" checked onchange="FS.toggleNotesKind()"> Freetext</label>
+            <label class="am-check"><input type="radio" name="notesKind" value="dropdown" onchange="FS.toggleNotesKind()"> Dropdown</label>
+          </div>
+          <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Kenapa toko ini potensial, jam buka, dll."></textarea>
+          <select class="select" name="notesChoice" id="outletNotesSelect" style="display:none">
+            <option value="">Pilih catatan</option>
+            <option>Toko potensial, volume tinggi</option>
+            <option>Lokasi strategis / lalu lintas ramai</option>
+            <option>Request dari klien</option>
+            <option>Belum ada coverage di area ini</option>
+            <option>Kompetitor aktif di toko ini</option>
+            <option>Lainnya (isi di pengajuan berikutnya)</option>
+          </select>
+        </div>
         <button class="btn btn-primary" type="submit">Kirim untuk persetujuan</button>
       </form>
     </div>` : ''}
@@ -332,7 +360,9 @@ window.FS.submitOutlet = function(e) {
   e.preventDefault();
   try {
     const data = Object.fromEntries(new FormData(e.target).entries());
-    if (!data.lat || !data.lng) throw new Error('Tandai lokasi toko di peta dulu.');
+    if (!data.lat || !data.lng) throw new Error('Ambil lokasi toko dulu.');
+    if (data.notesKind === 'dropdown') data.notes = data.notesChoice || '';
+    delete data.notesChoice;
     createOutletProposal(data);
     window.showToast?.('Pengajuan toko terkirim. Menunggu supervisor dan manager.', 'success');
     e.target.reset();
@@ -353,8 +383,7 @@ window.FS.reviewOutlet = function(id, decision) {
   }
 };
 
-let _outletMap = null;
-let _outletMarker = null;
+
 
 async function reverseGeocode(lat, lng) {
   const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
@@ -382,58 +411,62 @@ function applyGeocode(data, lat, lng) {
   if (hint) hint.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)} · ${data?.display_name || 'Titik ditandai'}`;
 }
 
-function placeMarker(lat, lng) {
-  if (!_outletMap || typeof L === 'undefined') return;
-  if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
-  else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
-  _outletMap.panTo([lat, lng]);
+function mapsAppUrl(lat, lng, label = 'Toko baru') {
+  const q = encodeURIComponent(label);
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return `https://maps.apple.com/?ll=${lat},${lng}&q=${q}`;
+  if (/Android/i.test(ua)) return `geo:${lat},${lng}?q=${lat},${lng}(${q})`;
+  return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
-window.FS.initOutletMap = function() {
-  const el = document.getElementById('outletPickMap');
-  if (!el || typeof L === 'undefined') return;
-  if (_outletMap) {
-    _outletMap.remove();
-    _outletMap = null;
-    _outletMarker = null;
+function showMapsLink(lat, lng) {
+  const a = document.getElementById('outletOpenMaps');
+  if (!a) return;
+  a.href = mapsAppUrl(lat, lng);
+  a.style.display = 'inline-flex';
+}
+
+window.FS.initOutletMap = function() { /* lokasi sekarang via tombol GPS, bukan peta tertanam */ };
+
+window.FS.toggleNotesKind = function() {
+  const form = document.querySelector('form[onsubmit*="submitOutlet"]');
+  const kind = form?.notesKind?.value || 'freetext';
+  const text = document.getElementById('outletNotesText');
+  const sel = document.getElementById('outletNotesSelect');
+  if (text) text.style.display = kind === 'freetext' ? '' : 'none';
+  if (sel) sel.style.display = kind === 'dropdown' ? '' : 'none';
+};
+
+window.FS.captureOutletLocation = function() {
+  const hint = document.getElementById('outletMapHint');
+  const btn = document.getElementById('outletLocBtn');
+  if (!navigator.geolocation) {
+    window.showToast?.('GPS tidak tersedia di perangkat ini', 'error');
+    return;
   }
-  const emp = getEmployees().find(e => e.id === empId());
-  const start = [emp?.lat || -6.2, emp?.lng || 106.82];
-  _outletMap = L.map(el, { zoomControl: true }).setView(start, 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap',
-    maxZoom: 19,
-  }).addTo(_outletMap);
-  _outletMap.on('click', async ev => {
-    const { lat, lng } = ev.latlng;
-    placeMarker(lat, lng);
+  if (hint) hint.textContent = 'Mengambil lokasi GPS...';
+  if (btn) btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
     try {
       const geo = await reverseGeocode(lat, lng);
       applyGeocode(geo, lat, lng);
     } catch {
       applyGeocode(null, lat, lng);
     }
-  });
-  setTimeout(() => _outletMap?.invalidateSize(), 200);
+    showMapsLink(lat, lng);
+    if (btn) btn.disabled = false;
+    window.showToast?.('Lokasi diambil. Alamat terisi otomatis.', 'success');
+    const open = document.getElementById('outletOpenMaps');
+    if (open && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) setTimeout(() => open.click(), 280);
+  }, err => {
+    if (btn) btn.disabled = false;
+    if (hint) hint.textContent = 'Gagal mengambil GPS. Izinkan akses lokasi di browser.';
+    window.showToast?.(err.message || 'Izin lokasi ditolak', 'error');
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
 };
 
-window.FS.searchOutletMap = async function() {
-  const q = document.getElementById('outletMapSearch')?.value?.trim();
-  if (!q) return;
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    const rows = await res.json();
-    const hit = rows[0];
-    if (!hit) { window.showToast?.('Alamat tidak ditemukan', 'error'); return; }
-    const lat = Number(hit.lat);
-    const lng = Number(hit.lon);
-    placeMarker(lat, lng);
-    _outletMap?.setView([lat, lng], 16);
-    applyGeocode(hit, lat, lng);
-  } catch {
-    window.showToast?.('Gagal mencari di OpenStreetMap', 'error');
-  }
-};
+window.FS.searchOutletMap = async function() {};
 
 export { locationTypeLabel };

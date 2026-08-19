@@ -1058,6 +1058,8 @@ export function createOutletProposal(data) {
     address: sanitizePlainText(data.address || ''),
     type: sanitizePlainText(data.type || 'Toko'),
     channel: sanitizePlainText(data.channel || ''),
+    ownership: sanitizePlainText(data.ownership || ''),
+    notesKind: sanitizePlainText(data.notesKind || 'freetext'),
     area: sanitizePlainText(data.area || ''),
     city: sanitizePlainText(data.city || ''),
     phone: sanitizePlainText(data.phone || ''),
@@ -1078,7 +1080,7 @@ export function createOutletProposal(data) {
   };
   if (!proposal.name) throw new Error('Nama toko wajib diisi.');
   if (proposal.lat == null || proposal.lng == null || Number.isNaN(proposal.lat) || Number.isNaN(proposal.lng)) {
-    throw new Error('Tandai lokasi toko di peta.');
+    throw new Error('Ambil lokasi toko dari perangkat dulu.');
   }
   const db = getDB();
   db.outletProposals = db.outletProposals || [];
@@ -1128,6 +1130,7 @@ export function reviewOutletProposal(id, decision, note = '', projectId = null) 
       address: row.address,
       type: row.type,
       channel: row.channel,
+      ownership: row.ownership || '',
       area: row.area || row.city,
       phone: row.phone,
       owner: row.owner,
