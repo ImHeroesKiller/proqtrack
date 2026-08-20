@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 17;
+const DB_VERSION = 18;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -39,6 +39,7 @@ export const SCHEMA = {
     'projectAssignments', 'outletProposals', 'attendancePoints',
     'overtimes', 'wfhRequests', 'dailyReports',
     'attendanceEvents', 'activityEvidencePairs',
+    'surveyTemplates', 'surveyAssignments', 'surveyResponses',
   ],
   globalCollections: [
     'leaveTypes', 'promoTypes', 'organizations', 'projectSettings',
@@ -56,6 +57,7 @@ const SEEDED_EMPTY_ARRAYS = [
   'reportApprovals', 'reportSchedules', 'auditLogs',
   'overtimes', 'wfhRequests', 'dailyReports',
   'attendanceEvents', 'activityEvidencePairs',
+  'surveyTemplates', 'surveyAssignments', 'surveyResponses',
 ];
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
@@ -240,6 +242,9 @@ function rawDefaultDB() {
     dailyReports: [],
     attendanceEvents: [],
     activityEvidencePairs: [],
+    surveyTemplates: [],
+    surveyAssignments: [],
+    surveyResponses: [],
     newsItems: JSON.parse(JSON.stringify(defaultNewsItems())),
     hrContacts: JSON.parse(JSON.stringify(defaultHrContacts())),
     appSettings: defaultAppSettings(),
@@ -2028,6 +2033,10 @@ export function createProductSale(data) {
     amount: Math.round(qty * unitPrice),
     date: data.date || todayISO(),
     notes: sanitizePlainText(data.notes || ''),
+    sku: sanitizePlainText(data.sku || getProduct(data.productId)?.sku || ''),
+    visitId: data.visitId || null,
+    supervisorId: data.supervisorId || getEmployee(data.employeeId)?.supervisorId || null,
+    projectId: data.projectId || defaultProjectIdForEmployee(data.employeeId) || null,
     ...withOrg(data),
     createdAt: new Date().toISOString(),
   };
@@ -2826,4 +2835,317 @@ export function getStorageEstimate() {
   } catch (_) {
     return { usedBytes: 0, usedMB: '0' };
   }
+}
+
+export const SURVEY_QUESTION_TYPES = [
+  'short_text', 'long_text', 'number', 'currency',
+  'single_choice', 'multiple_choice', 'dropdown', 'yes_no',
+  'date', 'time', 'rating', 'photo', 'product', 'outlet',
+];
+
+const SURVEY_STATUS = ['draft', 'active', 'closed', 'archived'];
+
+function assertSurveyProject(projectId) {
+  const actor = assertLoggedIn();
+  const ids = actorProjectIds(actor);
+  if (projectId && !ids.has(projectId) && !isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
+  return actor;
+}
+
+export function getSurveyTemplates() {
+  const actor = assertLoggedIn();
+  const rows = scoped(getDB().surveyTemplates || []);
+  const pids = actorProjectIds(actor);
+  if (isOrgAdminRole(actor.role)) return rows;
+  return rows.filter(s => !s.projectId || pids.has(s.projectId));
+}
+
+export function getSurveyTemplate(id) {
+  return getSurveyTemplates().find(s => s.id === id) || null;
+}
+
+export function createSurveyTemplate(data = {}) {
+  const actor = assertProjectAdmin();
+  const projectId = data.projectId || actor.projectId || null;
+  assertSurveyProject(projectId);
+  const now = new Date().toISOString();
+  const row = {
+    id: uid('SRV'),
+    name: sanitizePlainText(data.name || 'Untitled survey'),
+    description: sanitizePlainText(data.description || ''),
+    projectId,
+    status: 'draft',
+    startDate: data.startDate || todayISO(),
+    endDate: data.endDate || '',
+    questions: Array.isArray(data.questions) ? data.questions : [],
+    createdBy: actor.id,
+    createdAt: now,
+    updatedAt: now,
+    ...withOrg(data),
+  };
+  const db = getDB();
+  db.surveyTemplates = db.surveyTemplates || [];
+  db.surveyTemplates.push(row);
+  saveDB();
+  return row;
+}
+
+export function updateSurveyTemplate(id, patch = {}) {
+  assertProjectAdmin();
+  const db = getDB();
+  const idx = (db.surveyTemplates || []).findIndex(s => s.id === id);
+  if (idx === -1) throw new Error('Survey not found');
+  const current = db.surveyTemplates[idx];
+  assertSurveyProject(current.projectId);
+  const nextStatus = patch.status || current.status;
+  if (!SURVEY_STATUS.includes(nextStatus)) throw new Error('Invalid status');
+  const order = { draft: 0, active: 1, closed: 2, archived: 3 };
+  if (order[nextStatus] < order[current.status]) throw new Error('Cannot reopen a survey to an earlier status');
+  const questions = Array.isArray(patch.questions) ? patch.questions.map((q, i) => ({
+    id: q.id || uid('Q'),
+    label: sanitizePlainText(q.label || `Question ${i + 1}`),
+    description: sanitizePlainText(q.description || ''),
+    type: SURVEY_QUESTION_TYPES.includes(q.type) ? q.type : 'short_text',
+    required: !!q.required,
+    options: Array.isArray(q.options) ? q.options.map(o => sanitizePlainText(o)).filter(Boolean) : [],
+    order: Number.isFinite(Number(q.order)) ? Number(q.order) : i,
+    validation: q.validation && typeof q.validation === 'object' ? q.validation : {},
+  })) : current.questions;
+  db.surveyTemplates[idx] = {
+    ...current,
+    name: patch.name != null ? sanitizePlainText(patch.name) : current.name,
+    description: patch.description != null ? sanitizePlainText(patch.description) : current.description,
+    projectId: patch.projectId != null ? patch.projectId : current.projectId,
+    startDate: patch.startDate != null ? patch.startDate : current.startDate,
+    endDate: patch.endDate != null ? patch.endDate : current.endDate,
+    status: nextStatus,
+    questions,
+    updatedAt: new Date().toISOString(),
+  };
+  saveDB();
+  return db.surveyTemplates[idx];
+}
+
+export function getSurveyAssignments(surveyId) {
+  assertLoggedIn();
+  return scoped(getDB().surveyAssignments || []).filter(a => !surveyId || a.surveyId === surveyId);
+}
+
+export function assignSurvey(data = {}) {
+  assertProjectAdmin();
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  assertSurveyProject(survey.projectId);
+  const row = {
+    id: uid('SVA'),
+    surveyId: survey.id,
+    projectId: data.projectId || survey.projectId,
+    supervisorId: data.supervisorId || null,
+    employeeId: data.employeeId || null,
+    outletId: data.outletId || null,
+    createdAt: new Date().toISOString(),
+    ...withOrg(data),
+  };
+  const db = getDB();
+  db.surveyAssignments = db.surveyAssignments || [];
+  const dup = db.surveyAssignments.some(a =>
+    a.surveyId === row.surveyId &&
+    a.employeeId === row.employeeId &&
+    a.supervisorId === row.supervisorId &&
+    a.outletId === row.outletId &&
+    a.projectId === row.projectId);
+  if (dup) throw new Error('Assignment already exists');
+  db.surveyAssignments.push(row);
+  saveDB();
+  return row;
+}
+
+export function surveysForField(employeeId = getActor()?.employeeId, ctx = {}) {
+  const actor = assertLoggedIn();
+  const empId = employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const emp = getEmployee(empId);
+  const pids = actorProjectIds(actor);
+  const assignments = scoped(getDB().surveyAssignments || []);
+  const templates = getSurveyTemplates().filter(s => s.status === 'active');
+  return templates.filter(s => {
+    if (s.startDate && s.startDate > today) return false;
+    if (s.endDate && s.endDate < today) return false;
+    if (s.projectId && !pids.has(s.projectId)) return false;
+    const mine = assignments.filter(a => a.surveyId === s.id);
+    if (!mine.length) return !s.projectId || pids.has(s.projectId);
+    return mine.some(a =>
+      (!a.employeeId || a.employeeId === empId) &&
+      (!a.supervisorId || a.supervisorId === empId || a.supervisorId === emp?.supervisorId) &&
+      (!a.projectId || pids.has(a.projectId)) &&
+      (!a.outletId || a.outletId === ctx.outletId || !ctx.outletId)
+    );
+  });
+}
+
+function validateSurveyAnswers(survey, answers = {}) {
+  const qs = (survey.questions || []).slice().sort((a, b) => a.order - b.order);
+  for (const q of qs) {
+    const v = answers[q.id];
+    const empty = v == null || v === '' || (Array.isArray(v) && !v.length);
+    if (q.required && empty) throw new Error(`${q.label} is required`);
+    if (empty) continue;
+    if (q.type === 'number' || q.type === 'currency' || q.type === 'rating') {
+      if (!Number.isFinite(Number(v))) throw new Error(`${q.label} must be a number`);
+    }
+    if (q.type === 'yes_no' && !['yes', 'no', 'true', 'false', true, false].includes(v)) {
+      throw new Error(`${q.label} must be yes or no`);
+    }
+  }
+}
+
+export function getSurveyResponses(filters = {}) {
+  const actor = assertLoggedIn();
+  let rows = scoped(getDB().surveyResponses || []);
+  const ids = visibleEmployeeIds(actor);
+  if (!isOrgAdminRole(actor.role)) rows = rows.filter(r => ids.has(r.employeeId));
+  if (filters.surveyId) rows = rows.filter(r => r.surveyId === filters.surveyId);
+  if (filters.employeeId) rows = rows.filter(r => r.employeeId === filters.employeeId);
+  if (filters.outletId) rows = rows.filter(r => r.outletId === filters.outletId);
+  if (filters.status) rows = rows.filter(r => r.status === filters.status);
+  return rows;
+}
+
+export function saveSurveyDraft(data = {}) {
+  const actor = assertLoggedIn();
+  const empId = data.employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  if (survey.status !== 'active') throw new Error('Survey is not active');
+  const today = todayISO();
+  if (survey.endDate && survey.endDate < today) throw new Error('Survey has expired');
+  const db = getDB();
+  db.surveyResponses = db.surveyResponses || [];
+  const existing = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'draft');
+  const now = new Date().toISOString();
+  if (existing) {
+    existing.answers = data.answers || existing.answers;
+    existing.visitId = data.visitId || existing.visitId;
+    existing.updatedAt = now;
+    saveDB();
+    return existing;
+  }
+  const row = {
+    id: uid('SVR'),
+    surveyId: survey.id,
+    employeeId: empId,
+    outletId: data.outletId || null,
+    visitId: data.visitId || null,
+    projectId: survey.projectId,
+    status: 'draft',
+    answers: data.answers || {},
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: null,
+    ...withOrg(data),
+  };
+  db.surveyResponses.push(row);
+  saveDB();
+  return row;
+}
+
+export function submitSurveyResponse(data = {}) {
+  const actor = assertLoggedIn();
+  const empId = data.employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  if (survey.status !== 'active') throw new Error('Survey is not active');
+  const today = todayISO();
+  if (survey.endDate && survey.endDate < today) throw new Error('Survey has expired');
+  validateSurveyAnswers(survey, data.answers || {});
+  const db = getDB();
+  db.surveyResponses = db.surveyResponses || [];
+  const dup = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'submitted');
+  if (dup) throw new Error('Already submitted');
+  const draft = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'draft');
+  const now = new Date().toISOString();
+  if (draft) {
+    draft.answers = data.answers || draft.answers;
+    draft.status = 'submitted';
+    draft.submittedAt = now;
+    draft.updatedAt = now;
+    draft.visitId = data.visitId || draft.visitId;
+    saveDB();
+    return draft;
+  }
+  const row = {
+    id: uid('SVR'),
+    surveyId: survey.id,
+    employeeId: empId,
+    outletId: data.outletId || null,
+    visitId: data.visitId || null,
+    projectId: survey.projectId,
+    status: 'submitted',
+    answers: data.answers || {},
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: now,
+    ...withOrg(data),
+  };
+  db.surveyResponses.push(row);
+  saveDB();
+  return row;
+}
+
+export function surveyMonitoring(surveyId) {
+  const survey = getSurveyTemplate(surveyId);
+  if (!survey) throw new Error('Survey not found');
+  const assigned = getSurveyAssignments(surveyId);
+  const responses = getSurveyResponses({ surveyId });
+  const submitted = responses.filter(r => r.status === 'submitted');
+  const pending = Math.max(0, (assigned.length || 0) - submitted.length);
+  const pct = assigned.length ? Math.round((submitted.length / assigned.length) * 100) : (submitted.length ? 100 : 0);
+  return { survey, assigned: assigned.length, completed: submitted.length, pending, pct, responses };
+}
+
+export function productSalesAnalytics({ month = todayISO().slice(0, 7) } = {}) {
+  const sales = getProductSales().filter(s => String(s.date || '').startsWith(month));
+  const employees = getEmployees();
+  const products = getProducts();
+  const outlets = getOutlets();
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+  const total = sales.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const target = employees.reduce((s, e) => s + (Number(e.salesTargetAmount) || 0), 0);
+  const group = (key, labelOf) => {
+    const map = {};
+    for (const r of sales) {
+      const k = r[key] || '—';
+      map[k] = (map[k] || 0) + (Number(r.amount) || 0);
+    }
+    return Object.entries(map).map(([id, amount]) => ({ id, label: labelOf(id), amount }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+  const daily = {};
+  for (const r of sales) {
+    const d = String(r.date || '').slice(0, 10);
+    daily[d] = (daily[d] || 0) + (Number(r.amount) || 0);
+  }
+  return {
+    month,
+    total,
+    target,
+    achievement: target ? Math.round((total / target) * 100) : 0,
+    byProduct: group('productId', id => products.find(p => p.id === id)?.name || id),
+    byOutlet: group('outletId', id => outlets.find(o => o.id === id)?.name || id),
+    byEmployee: group('employeeId', id => empMap[id]?.name || id),
+    bySupervisor: group('supervisorId', id => empMap[id]?.name || id),
+    daily: Object.entries(daily).sort((a, b) => a[0].localeCompare(b[0])).map(([date, amount]) => ({ date, amount })),
+  };
 }

@@ -26,9 +26,10 @@ import {
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
   detectAreaAttendance, startRackEvidence, attachRackPhoto, getActivityEvidencePairs, rackPairStatus,
-  getEmployee,
+  getEmployee, productSalesAnalytics,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
+import { renderSurveyList, renderSurveyBuilder, renderSurveyFill, renderSurveyMonitor } from './surveys.js';
 import {
   renderHrHome, renderPengajuanHub, renderLaporanHub, renderAkunPage,
   renderOvertimePage, renderIzinPage, renderCutiPage, renderWfhPage,
@@ -186,6 +187,7 @@ const NAV_ITEMS = [
     { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
     { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
     { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'surveys',    label: 'Surveys',          icon: 'chart', route: '#/surveys' },
     { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
     { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
     { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
@@ -223,6 +225,7 @@ const NAV_ITEMS_PM = [
     { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
     { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
     { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'surveys',    label: 'Surveys',          icon: 'chart', route: '#/surveys' },
     { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
     { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
     { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
@@ -257,6 +260,7 @@ const NAV_ITEMS_SUPERVISOR = [
   { section: 'Field', items: [
     { id: 'mystocks',      label: 'Outlet Stock',      icon: 'stocks', route: '#/mystocks' },
     { id: 'mysales',       label: 'Product Sales',     icon: 'chart', route: '#/mysales' },
+    { id: 'surveys',       label: 'Surveys',            icon: 'chart', route: '#/surveys' },
     { id: 'myprices',      label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
     { id: 'myintel',       label: 'Competitor Intel',  icon: 'intel', route: '#/myintel' },
     { id: 'field-photos',  label: 'Field Photos',      icon: 'photos', route: '#/field-photos' },
@@ -282,6 +286,7 @@ const NAV_ITEMS_EMPLOYEE = [
   { section: 'Field', items: [
     { id: 'mystocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/mystocks' },
     { id: 'mysales',      label: 'Product Sales',    icon: 'chart', route: '#/mysales' },
+    { id: 'mysurveys',    label: 'Surveys',          icon: 'chart', route: '#/mysurveys' },
     { id: 'myprices',     label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
     { id: 'myintel',      label: 'Competitor Intel', icon: 'intel', route: '#/myintel' },
     { id: 'myphotos',     label: 'Field Photos',     icon: 'photos', route: '#/myphotos' },
@@ -415,7 +420,7 @@ function render() {
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
     route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet' ||
-    route === '#/mysales' || HR_EMPLOYEE_ROUTES.has(route)
+    route === '#/mysales' || route === '#/mysurveys' || route.startsWith('#/surveys/fill') || HR_EMPLOYEE_ROUTES.has(route)
   )) {
     if (route === '#/myday') {
       pageTitle = 'My Day'; pageSubtitle = 'Today’s field activity';
@@ -492,6 +497,14 @@ function render() {
     } else if (route === '#/mysales') {
       pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
       pageContent = renderProductSales({ mine: true });
+    } else if (route === '#/mysurveys') {
+      pageTitle = 'Surveys'; pageSubtitle = 'Assigned field surveys';
+      pageContent = renderSurveyList({ field: true });
+    } else if (route.startsWith('#/surveys/fill/')) {
+      const id = route.replace('#/surveys/fill/', '').split('?')[0];
+      const q = new URLSearchParams(route.split('?')[1] || '');
+      pageTitle = 'Complete survey'; pageSubtitle = 'Required answers must be filled before submit';
+      pageContent = renderSurveyFill(id, { visitId: q.get('v') || '', outletId: q.get('o') || '' });
     }
   } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
@@ -519,6 +532,20 @@ function render() {
   } else if (isProjectAdmin() && route === '#/sales') {
     pageTitle = 'Product Sales'; pageSubtitle = 'Sales entries used to calculate monthly targets';
     pageContent = renderProductSales({ mine: false });
+  } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/surveys' || route.startsWith('#/surveys/'))) {
+    if (route === '#/surveys/new') {
+      pageTitle = 'Survey builder'; pageSubtitle = 'Dynamic questions and validation';
+      pageContent = renderSurveyBuilder('');
+    } else if (route.startsWith('#/surveys/edit/')) {
+      pageTitle = 'Survey builder'; pageSubtitle = 'Edit template';
+      pageContent = renderSurveyBuilder(route.replace('#/surveys/edit/', ''));
+    } else if (route.startsWith('#/surveys/monitor/')) {
+      pageTitle = 'Survey monitoring'; pageSubtitle = 'Assigned, completed, pending';
+      pageContent = renderSurveyMonitor(route.replace('#/surveys/monitor/', ''));
+    } else {
+      pageTitle = 'Surveys'; pageSubtitle = isSupervisor() ? 'Team survey completion' : 'Templates, assignment, and monitoring';
+      pageContent = isSupervisor() ? renderSurveyList({ field: false }) : renderSurveyList({ field: false });
+    }
   } else if (isProjectAdmin() && route === '#/stocks') {
     pageTitle = 'Outlet Stock'; pageSubtitle = 'Stock levels at each outlet';
     pageContent = renderStocks();
@@ -1936,6 +1963,7 @@ function renderMyDay() {
           ${tile('Intel', 'intel', `FT.openVisitIntelInput('${active.id}','${active.outletId}')`)}
           ${tile('Photo', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
           ${tile('Rack', 'store', `FT.openRackEvidence('${active.id}','${active.outletId}')`)}
+          ${tile('Survey', 'chart', `location.hash='#/mysurveys'`)}
           ${mapsDir(activeOut.lat, activeOut.lng)
             ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></a>`
             : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></span>`}
@@ -2050,16 +2078,23 @@ function renderProductSales({ mine } = {}) {
   const monthTotal = monthRows.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
   const myTarget = mine ? salesTargetOf(employees.find(e => e.id === empId) || {}) : 0;
   const pct = myTarget > 0 ? Math.min(100, Math.round((monthTotal / myTarget) * 100)) : 0;
+  const analytics = productSalesAnalytics({ month });
+  const rankList = mine ? analytics.byProduct : analytics.byEmployee;
   return `
     ${mine ? `<div class="card" style="margin-bottom:16px">
-      <div class="card-title">Monthly target</div>
+      <div class="card-title">My sales</div>
       <div class="stat-value">${formatCurrency(monthTotal)}${myTarget ? ` <small>/ ${formatCurrency(myTarget)}</small>` : ''}</div>
+      <div class="mq-muted">Achievement ${pct}%</div>
       <div class="mq-bar" style="margin-top:10px"><i style="width:${pct}%"></i></div>
     </div>` : `<div class="grid-3" style="margin-bottom:14px">
-      <div class="stat-card"><div class="stat-label">Sales this month</div><div class="stat-value">${formatCurrency(monthTotal)}</div></div>
-      <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value">${monthRows.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Team target</div><div class="stat-value">${formatCurrency(employees.reduce((s, e) => s + salesTargetOf(e), 0))}</div></div>
-    </div>`}
+      <div class="stat-card"><div class="stat-label">Total sales</div><div class="stat-value">${formatCurrency(analytics.total)}</div></div>
+      <div class="stat-card"><div class="stat-label">Sales vs target</div><div class="stat-value">${formatCurrency(analytics.target)}</div></div>
+      <div class="stat-card"><div class="stat-label">Achievement</div><div class="stat-value">${analytics.achievement}%</div></div>
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="card-title">${isSupervisor() && !isProjectAdmin() ? 'Team ranking' : 'By employee / product / outlet'}</div>
+      <div class="visits-table-wrapper"><table class="table"><thead><tr><th>Breakdown</th><th>Amount</th></tr></thead><tbody>
+        ${rankList.slice(0, 8).map(r => `<tr><td>${esc(r.label)}</td><td>${formatCurrency(r.amount)}</td></tr>`).join('') || '<tr><td colspan="2">No sales this month</td></tr>'}
+      </tbody></table></div></div>`}
     <div class="card">
       <div class="card-title">${mine ? 'Record a sale' : 'New sale'}</div>
       <form onsubmit="FT.submitProductSale(event)">
@@ -2091,15 +2126,17 @@ function renderProductSales({ mine } = {}) {
     <div class="card" style="margin-top:16px">
       <div class="card-title">Sales log</div>
       <div class="visits-table-wrapper"><table class="table">
-        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>Outlet</th><th>Qty</th><th>Amount</th><th></th></tr></thead>
+        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>SKU</th><th>Outlet</th><th>Qty</th><th>Unit</th><th>Amount</th><th></th></tr></thead>
         <tbody>
           ${sales.length ? sales.slice().sort((a,b)=>String(b.date).localeCompare(a.date)).map(s => `
             <tr>
               <td>${formatDateShort(s.date)}</td>
               ${mine ? '' : `<td>${esc(empMap[s.employeeId]?.name || s.employeeId)}</td>`}
               <td>${esc(prodMap[s.productId]?.name || s.productId)}</td>
+              <td>${esc(s.sku || prodMap[s.productId]?.sku || '—')}</td>
               <td>${esc(s.outletId ? formatOutletLabel(outMap[s.outletId]) : '—')}</td>
               <td>${s.qty}</td>
+              <td>${formatCurrency(s.unitPrice)}</td>
               <td>${formatCurrency(s.amount)}</td>
               <td><button class="btn btn-danger btn-sm" onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
             </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><h3>No sales yet</h3></div></td></tr>`}
@@ -4397,6 +4434,8 @@ function openModal(title, content) {
 }
 function closeModal() { const root = document.getElementById('modalRoot'); if (root) root.innerHTML = ''; }
 window.FT.closeModal = closeModal;
+window.FT.openHtmlModal = openModal;
+window.FT.showToast = showToast;
 
 // ===== Page-specific handler attachments =====
 function attachPageHandlers() {

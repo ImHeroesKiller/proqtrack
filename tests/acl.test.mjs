@@ -49,10 +49,10 @@ function login(email, dev = device('DEV-TEST-1')) {
   return acc;
 }
 
-test('fresh DB is version 17 and keeps eight seed employees', () => {
+test('fresh DB is version 18 and keeps eight seed employees', () => {
   prepare();
   const db = getDB();
-  assert.equal(db._version, 17);
+  assert.equal(db._version, 18);
   assert.equal(db.employees.length, 8);
 });
 

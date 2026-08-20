@@ -106,10 +106,10 @@ test('rack pair requires before before after and binds to one visit', () => {
   assert.throws(() => attachRackPhoto(other.id, 'before', before.id), /another visit/);
 });
 
-test('schema v17 catalogs attendanceEvents and activityEvidencePairs', () => {
+test('schema catalogs attendanceEvents and activityEvidencePairs', () => {
   prepare();
   const db = getDB();
-  assert.equal(db._version, 17);
+  assert.equal(db._version, 18);
   assert.ok(Array.isArray(db.attendanceEvents));
   assert.ok(Array.isArray(db.activityEvidencePairs));
 });

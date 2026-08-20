@@ -24,7 +24,7 @@ test('migrateDB normalizes assignment roles and outlet projectIds', () => {
     ],
   }));
   const db = getDB();
-  assert.equal(db._version, 17);
+  assert.equal(db._version, 18);
   assert.deepEqual(db.outlets.find(o => o.id === 'OUT-X').projectIds, ['PRJ001']);
   assert.equal(db.outlets.find(o => o.id === 'OUT-X').projectId, undefined);
   const sales = db.projectAssignments.find(a => a.id === 'ASN1');
@@ -107,7 +107,7 @@ test('UAT seed migrates to v17 without dropping rows or rehashing passwords', ()
   const uatVisitCount = seed.visits.length;
   localStorage.setItem('proqtrack_db_v6', JSON.stringify(seed));
   const db = getDB();
-  assert.equal(db._version, 17);
+  assert.equal(db._version, 18);
   assert.equal(db.employees.length, uatEmployeeCount);
   assert.equal(db.outlets.length, uatOutletCount);
   assert.equal(db.visits.length, uatVisitCount);
