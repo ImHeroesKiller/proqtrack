@@ -9,13 +9,13 @@ import {
 } from '../data/seed.js';
 import {
   uid, sanitizePlainText, todayISO, normalizeAttendanceStatus,
-  hashPassword, passwordMatches, publicAccount,
+  hashPassword, passwordMatches, publicAccount, distanceMeters,
 } from './utils.js';
 import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 15;
+const DB_VERSION = 18;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -37,11 +37,15 @@ export const SCHEMA = {
     'leaves', 'stocks', 'priceObservations', 'competitors', 'competitorProducts',
     'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
     'projectAssignments', 'outletProposals', 'attendancePoints',
+    'overtimes', 'wfhRequests', 'dailyReports',
+    'attendanceEvents', 'activityEvidencePairs',
+    'surveyTemplates', 'surveyAssignments', 'surveyResponses',
   ],
   globalCollections: [
     'leaveTypes', 'promoTypes', 'organizations', 'projectSettings',
     'projectProducts', 'reportTemplates', 'reportJobs', 'reportExports',
     'reportFilters', 'reportApprovals', 'reportSchedules', 'auditLogs',
+    'newsItems', 'hrContacts',
   ],
   documentKeys: ['_version', 'appSettings', 'reportSettings', 'currentOrganizationId'],
 };
@@ -51,6 +55,9 @@ const SEEDED_EMPTY_ARRAYS = [
   'outletProposals', 'attendancePoints', 'projectProducts',
   'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
   'reportApprovals', 'reportSchedules', 'auditLogs',
+  'overtimes', 'wfhRequests', 'dailyReports',
+  'attendanceEvents', 'activityEvidencePairs',
+  'surveyTemplates', 'surveyAssignments', 'surveyResponses',
 ];
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
@@ -88,6 +95,21 @@ export function isOrgAdminRole(role) {
 
 export function isProjectAdminRole(role) {
   return isOrgAdminRole(role) || role === 'manager';
+}
+
+export function actorProjectIds(actor = getActor(), db = getDB()) {
+  if (!actor) return new Set();
+  const orgId = getCurrentOrgId();
+  const projects = (db.projects || []).filter(p => !p.organizationId || p.organizationId === orgId);
+  if (isOrgAdminRole(actor.role)) return new Set(projects.map(p => p.id));
+  if (actor.role === 'manager' && actor.projectId) return new Set([actor.projectId]);
+  const mine = actor.employeeId;
+  return new Set(
+    (db.projectAssignments || [])
+      .filter(a => a.employeeId === mine && a.status === 'active')
+      .map(a => a.projectId)
+      .filter(Boolean),
+  );
 }
 
 function assertOrgAdmin() {
@@ -215,6 +237,16 @@ function rawDefaultDB() {
     reportApprovals: [],
     reportSchedules: [],
     auditLogs: [],
+    overtimes: [],
+    wfhRequests: [],
+    dailyReports: [],
+    attendanceEvents: [],
+    activityEvidencePairs: [],
+    surveyTemplates: [],
+    surveyAssignments: [],
+    surveyResponses: [],
+    newsItems: JSON.parse(JSON.stringify(defaultNewsItems())),
+    hrContacts: JSON.parse(JSON.stringify(defaultHrContacts())),
     appSettings: defaultAppSettings(),
     organizations: [defaultOrganization()],
     currentOrganizationId: DEFAULT_ORG_ID,
@@ -228,9 +260,9 @@ function defaultDB() {
 export function defaultOrganization() {
   return {
     id: DEFAULT_ORG_ID,
-    name: 'Organisasi Demo',
-    legalName: 'ProQTrack Demo Tenant',
-    code: 'DEMO',
+    name: 'ProQ Indonesia',
+    legalName: 'PT. ProQ Indonesia',
+    code: 'PROQ',
     industry: 'Field Services',
     status: 'active',
     city: 'Jakarta',
@@ -295,7 +327,7 @@ export function withOrg(data = {}) {
 
 export function defaultAppSettings() {
   return {
-    companyName: 'ProQTrack',
+    companyName: 'PT. ProQ Indonesia',
     companyLogo: './assets/logo-light.svg',
     timezone: 'Asia/Jakarta',
     compactTables: false,
@@ -305,10 +337,52 @@ export function defaultAppSettings() {
     attendanceRadiusM: 150,
     officeLat: null,
     officeLng: null,
-    officeName: 'Office',
+    officeName: 'Kantor',
+    autoAreaAttendance: true,
+    geofenceRadiusM: 50,
     testDevices: [],
     updatedAt: null,
   };
+}
+
+function defaultNewsItems() {
+  return [
+    {
+      id: 'NWS001',
+      title: 'Jam operasional Ramadan',
+      body: 'Selama Ramadan, jam kerja menjadi 08.00–16.00 WIB. Absen pulang lebih awal tetap dihitung penuh bila sudah 7 jam efektif.',
+      publishedAt: '2026-08-12',
+      pinned: true,
+    },
+    {
+      id: 'NWS002',
+      title: 'Pengajuan lembur lewat aplikasi',
+      body: 'Mulai bulan ini pengajuan lembur hanya diterima di ProQTrack. Lampiran foto atau nota tidak wajib, tetapi alasan harus jelas.',
+      publishedAt: '2026-08-05',
+      pinned: false,
+    },
+    {
+      id: 'NWS003',
+      title: 'Kontak HRD darurat',
+      body: 'Untuk keperluan surat keterangan kerja atau BPJS, hubungi HRD di menu Hubungi HRD. Respon di hari kerja pukul 09.00–17.00.',
+      publishedAt: '2026-07-28',
+      pinned: false,
+    },
+  ];
+}
+
+function defaultHrContacts() {
+  return [
+    {
+      id: 'HRC001',
+      name: 'Dewi HRD',
+      role: 'Human Resources',
+      phone: '021-5794-0101',
+      whatsapp: '6281210000101',
+      email: 'hrd@proqtrack.id',
+      hours: 'Senin–Jumat, 09.00–17.00 WIB',
+    },
+  ];
 }
 
 export function defaultStoreCatalog() {
@@ -620,9 +694,9 @@ function migrateDB(parsed) {
 }
 
 const RETIRED_SEED_PASSWORD_HASHES = new Set([
-  'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',
+  'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',
 ]);
-const LOCAL_SEED_PASSWORD_HASH = 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c';
+const LOCAL_SEED_PASSWORD_HASH = 'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3';
 
 function rotateRetiredSeedPasswords(accounts) {
   (accounts || []).forEach(account => {
@@ -973,6 +1047,8 @@ export function getAttendancePolicy() {
   return {
     mode,
     radiusM: Number(s.attendanceRadiusM) || 150,
+    geofenceRadiusM: Number(s.geofenceRadiusM) > 0 ? Number(s.geofenceRadiusM) : 50,
+    autoAreaAttendance: s.autoAreaAttendance !== false,
     officeLat: s.officeLat == null || s.officeLat === '' ? null : Number(s.officeLat),
     officeLng: s.officeLng == null || s.officeLng === '' ? null : Number(s.officeLng),
     officeName: s.officeName || 'Office',
@@ -984,6 +1060,7 @@ export function updateAppSettings(partial) {
   const privileged = [
     'companyName', 'companyLogo', 'timezone', 'attendanceMode', 'attendanceRadiusM',
     'officeLat', 'officeLng', 'officeName', 'testDevices', 'notifyLeave', 'notifyLowStock',
+    'autoAreaAttendance', 'geofenceRadiusM',
   ];
   if (privileged.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
     if (!isOrgAdminRole(actor.role)) {
@@ -1584,7 +1661,8 @@ export function getVisits() {
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
-  return rows.filter(v => ids.has(v.employeeId));
+  const pids = actorProjectIds(actor);
+  return rows.filter(v => ids.has(v.employeeId) && (!v.projectId || pids.has(v.projectId)));
 }
 
 export function getVisitsByEmployee(empId) {
@@ -1702,10 +1780,134 @@ export function getAttendanceByEmployee(empId) {
 
 export function createAttendance(data) {
   assertCanAccessEmployee(data.employeeId);
-  const att = { id: uid('ATT'), ...withOrg(data) };
+  const att = {
+    id: uid('ATT'),
+    source: data.source || 'manual',
+    ...withOrg(data),
+  };
   getDB().attendance.push(att);
   saveDB();
   return att;
+}
+
+function pushAudit(db, { action, entityType, entityId, description, extra = {} }) {
+  const actor = getActor();
+  db.auditLogs = db.auditLogs || [];
+  db.auditLogs.push({
+    id: uid('AUD'),
+    createdAt: new Date().toISOString(),
+    actorId: actor?.id || null,
+    actorName: actor?.email || actor?.name || '',
+    action,
+    entityType,
+    entityId,
+    description,
+    ...extra,
+  });
+}
+
+export function getAttendanceEvents() {
+  const rows = scoped(getDB().attendanceEvents || []);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(e => ids.has(e.employeeId));
+}
+
+export function detectAreaAttendance(fix = {}) {
+  const actor = assertLoggedIn();
+  if (actor.role !== 'employee' || !actor.employeeId) throw new Error('Akses ditolak');
+  const policy = getAttendancePolicy();
+  if (policy.autoAreaAttendance === false) return { skipped: true, reason: 'disabled' };
+  const lat = Number(fix.lat);
+  const lng = Number(fix.lng);
+  const accuracy = fix.accuracy == null || fix.accuracy === '' ? null : Number(fix.accuracy);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Invalid GPS');
+  if (Number.isFinite(accuracy) && accuracy > 100) throw new Error('GPS accuracy too low');
+  if (fix.capturedAt) {
+    const age = Date.now() - new Date(fix.capturedAt).getTime();
+    if (Number.isFinite(age) && age > 60_000) throw new Error('Stale location');
+  }
+  const radius = policy.geofenceRadiusM || 50;
+  const projectIds = actorProjectIds(actor);
+  const outlets = getOutlets().filter(o => Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lng)));
+  const inProject = outlets.filter(o => {
+    const ids = o.projectIds || [];
+    if (!ids.length) return projectIds.size === 0 || true;
+    return [...projectIds].some(id => ids.includes(id));
+  });
+  const ranked = inProject
+    .map(o => ({ o, m: distanceMeters(lat, lng, Number(o.lat), Number(o.lng)) }))
+    .filter(x => x.m <= radius)
+    .sort((a, b) => a.m - b.m);
+  const db = getDB();
+  db.attendanceEvents = db.attendanceEvents || [];
+  const today = todayISO();
+  if (!ranked.length) {
+    const open = db.attendanceEvents.filter(e => e.employeeId === actor.employeeId && e.date === today && e.inside !== false);
+    if (open.length) {
+      open.forEach(e => { e.inside = false; e.exitedAt = new Date().toISOString(); });
+      saveDB();
+    }
+    return { skipped: true, reason: 'outside', radiusM: radius };
+  }
+  const hit = ranked[0];
+  const lastSame = db.attendanceEvents
+    .filter(e => e.employeeId === actor.employeeId && e.outletId === hit.o.id && e.date === today)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(a.createdAt || ''))[0];
+  if (lastSame && lastSame.inside !== false) {
+    return { skipped: true, reason: 'still_inside', outletId: hit.o.id, meters: Math.round(hit.m) };
+  }
+  const projectId = (hit.o.projectIds || []).find(id => projectIds.has(id)) || hit.o.projectIds?.[0] || [...projectIds][0] || null;
+  const event = {
+    id: uid('AEV'),
+    organizationId: getCurrentOrgId(),
+    projectId,
+    employeeId: actor.employeeId,
+    outletId: hit.o.id,
+    date: today,
+    source: 'auto_geofence',
+    lat,
+    lng,
+    accuracy,
+    meters: Math.round(hit.m * 10) / 10,
+    inside: true,
+    createdAt: new Date().toISOString(),
+  };
+  db.attendanceEvents.push(event);
+  const existing = getAttendance().find(a => a.employeeId === actor.employeeId && a.date === today);
+  let attendance = existing;
+  if (!existing?.checkInTime) {
+    const now = new Date();
+    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(now));
+    const payload = {
+      employeeId: actor.employeeId,
+      date: today,
+      checkInTime: now.toTimeString().slice(0, 5),
+      checkOutTime: null,
+      status: hour >= 9 ? 'terlambat' : 'hadir',
+      checkInLocation: formatOutletLabel(hit.o),
+      locationType: 'outlet',
+      locationId: hit.o.id,
+      outletId: hit.o.id,
+      source: 'auto_geofence',
+      lat,
+      lng,
+      accuracy,
+      projectId,
+    };
+    if (existing) attendance = updateAttendance(existing.id, payload);
+    else attendance = createAttendance(payload);
+  }
+  pushAudit(db, {
+    action: 'auto_geofence',
+    entityType: 'attendance',
+    entityId: attendance?.id || event.id,
+    description: `Entered ${hit.o.name} (${Math.round(hit.m)} m)`,
+    extra: { outletId: hit.o.id, projectId },
+  });
+  saveDB();
+  return { event, attendance, meters: event.meters, outlet: hit.o };
 }
 
 export function updateAttendance(id, data) {
@@ -1716,6 +1918,50 @@ export function updateAttendance(id, data) {
   db.attendance[idx] = { ...db.attendance[idx], ...data };
   saveDB();
   return db.attendance[idx];
+}
+
+export function clockInAttendance(employeeId) {
+  assertCanAccessEmployee(employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && actor.employeeId !== employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const existing = getAttendance().find(a => a.employeeId === employeeId && a.date === today);
+  if (existing?.checkInTime) throw new Error('Sudah absen masuk hari ini');
+  const policy = getAttendancePolicy();
+  const now = new Date();
+  const time = now.toTimeString().slice(0, 5);
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false,
+  }).format(now));
+  if (existing) {
+    return updateAttendance(existing.id, {
+      checkInTime: time,
+      status: hour >= 9 ? 'terlambat' : 'hadir',
+      checkInLocation: existing.checkInLocation || policy.officeName || 'Kantor',
+      locationType: existing.locationType || policy.mode || 'office',
+    });
+  }
+  return createAttendance({
+    employeeId,
+    date: today,
+    checkInTime: time,
+    checkOutTime: null,
+    status: hour >= 9 ? 'terlambat' : 'hadir',
+    checkInLocation: policy.officeName || 'Kantor',
+    locationType: policy.mode || 'office',
+  });
+}
+
+export function clockOutAttendance(employeeId) {
+  assertCanAccessEmployee(employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && actor.employeeId !== employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const existing = getAttendance().find(a => a.employeeId === employeeId && a.date === today);
+  if (!existing?.checkInTime) throw new Error('Belum absen masuk');
+  if (existing.checkOutTime) throw new Error('Sudah absen pulang');
+  const time = new Date().toTimeString().slice(0, 5);
+  return updateAttendance(existing.id, { checkOutTime: time });
 }
 
 export function getDashboardStats() {
@@ -1795,6 +2041,10 @@ export function createProductSale(data) {
     amount: Math.round(qty * unitPrice),
     date: data.date || todayISO(),
     notes: sanitizePlainText(data.notes || ''),
+    sku: sanitizePlainText(data.sku || getProduct(data.productId)?.sku || ''),
+    visitId: data.visitId || null,
+    supervisorId: data.supervisorId || getEmployee(data.employeeId)?.supervisorId || null,
+    projectId: data.projectId || defaultProjectIdForEmployee(data.employeeId) || null,
     ...withOrg(data),
     createdAt: new Date().toISOString(),
   };
@@ -1935,6 +2185,128 @@ export function deleteLeave(id) {
   }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
+}
+
+function scopedEmployeeRows(key) {
+  const rows = scoped(getDB()[key] || []);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(row => ids.has(row.employeeId));
+}
+
+function createEmployeeRequest(key, prefix, data, extra = {}) {
+  assertCanAccessEmployee(data.employeeId);
+  const actor = getActor();
+  if (actor.role === 'employee' && data.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  const row = {
+    id: uid(prefix),
+    status: extra.status || 'pending',
+    submittedAt: new Date().toISOString().slice(0, 10),
+    approverId: null,
+    approvedAt: null,
+    reason: sanitizePlainText(data.reason || ''),
+    employeeId: data.employeeId,
+    ...extra,
+    ...withOrg({ employeeId: data.employeeId }),
+  };
+  const db = getDB();
+  db[key] = db[key] || [];
+  db[key].push(row);
+  saveDB();
+  return row;
+}
+
+function updateEmployeeRequest(key, id, data) {
+  const db = getDB();
+  const list = db[key] || [];
+  const idx = list.findIndex(row => row.id === id);
+  if (idx === -1) return null;
+  const actor = assertLoggedIn();
+  const current = list[idx];
+  assertCanAccessEmployee(current.employeeId);
+  const nextStatus = data.status || current.status;
+  if (nextStatus !== current.status && !isProjectAdminRole(actor.role) && actor.role !== 'supervisor') {
+    throw new Error('Akses ditolak');
+  }
+  list[idx] = { ...current, ...data };
+  saveDB();
+  return list[idx];
+}
+
+export function getOvertimes() {
+  return scopedEmployeeRows('overtimes');
+}
+
+export function getOvertimesByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getOvertimes().filter(row => row.employeeId === empId);
+}
+
+export function createOvertime(data) {
+  const hours = Number(data.hours);
+  if (!data.date) throw new Error('Tanggal lembur wajib diisi');
+  if (!Number.isFinite(hours) || hours <= 0) throw new Error('Jam lembur harus lebih dari 0');
+  return createEmployeeRequest('overtimes', 'OT', data, {
+    date: data.date,
+    startTime: data.startTime || '',
+    endTime: data.endTime || '',
+    hours,
+  });
+}
+
+export function updateOvertime(id, data) {
+  return updateEmployeeRequest('overtimes', id, data);
+}
+
+export function getWfhRequests() {
+  return scopedEmployeeRows('wfhRequests');
+}
+
+export function getWfhRequestsByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getWfhRequests().filter(row => row.employeeId === empId);
+}
+
+export function createWfhRequest(data) {
+  if (!data.date) throw new Error('Tanggal WFH wajib diisi');
+  return createEmployeeRequest('wfhRequests', 'WFH', data, { date: data.date });
+}
+
+export function updateWfhRequest(id, data) {
+  return updateEmployeeRequest('wfhRequests', id, data);
+}
+
+export function getDailyReports() {
+  return scopedEmployeeRows('dailyReports');
+}
+
+export function getDailyReportsByEmployee(empId) {
+  if (!canAccessEmployee(empId)) return [];
+  return getDailyReports().filter(row => row.employeeId === empId);
+}
+
+export function createDailyReport(data) {
+  if (!data.summary) throw new Error('Isi laporan harian');
+  return createEmployeeRequest('dailyReports', 'DR', data, {
+    date: data.date || todayISO(),
+    summary: sanitizePlainText(data.summary || ''),
+    blockers: sanitizePlainText(data.blockers || ''),
+    planTomorrow: sanitizePlainText(data.planTomorrow || ''),
+    status: 'submitted',
+  });
+}
+
+export function getNewsItems() {
+  return [...(getDB().newsItems || [])].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return String(b.publishedAt || '').localeCompare(String(a.publishedAt || ''));
+  });
+}
+
+export function getHrContacts() {
+  return getDB().hrContacts || [];
 }
 
 export function getStocks() {
@@ -2213,10 +2585,12 @@ export function getPromoTypeLabel(code, customNote = '') {
 }
 
 export const FIELD_PHOTO_TYPES = [
-  { code: 'location',   label: 'Lokasi (tampak toko)' },
-  { code: 'product',    label: 'Produk' },
-  { code: 'shelf',      label: 'Rak / Display' },
-  { code: 'competitor', label: 'Kompetitor' },
+  { code: 'location',     label: 'Location' },
+  { code: 'product',      label: 'Product' },
+  { code: 'shelf',        label: 'Shelf / display' },
+  { code: 'rack_before',  label: 'Rack before' },
+  { code: 'rack_after',   label: 'Rack after' },
+  { code: 'competitor',   label: 'Competitor' },
 ];
 
 export function getFieldPhotos() {
@@ -2250,7 +2624,7 @@ export function createFieldPhoto(data) {
   const owner = data.employeeId || data.recordedBy || actor.employeeId;
   if (actor.role === 'employee') {
     if (owner !== actor.employeeId) throw new Error('Akses ditolak');
-  } else if (actor.role !== 'manager') {
+  } else if (!isProjectAdminRole(actor.role)) {
     assertCanAccessEmployee(owner);
   }
   assertOperationalContext(getDB(), data, { product: !!data.productId });
@@ -2258,11 +2632,15 @@ export function createFieldPhoto(data) {
     id: uid('PHO'),
     visitId: null,
     outletId: '',
-    type: 'location',
+    type: data.type || data.photoType || 'location',
+    photoType: data.photoType || data.type || 'location',
     caption: '',
     productId: null,
     competitorId: null,
     dataUrl: null,
+    lat: data.lat == null || data.lat === '' ? null : Number(data.lat),
+    lng: data.lng == null || data.lng === '' ? null : Number(data.lng),
+    employeeId: owner,
     recordedAt: new Date().toISOString(),
     ...withOrg(data),
   };
@@ -2282,6 +2660,76 @@ export function updateFieldPhoto(id, data) {
   db.fieldPhotos[idx] = { ...db.fieldPhotos[idx], ...data };
   saveDB();
   return db.fieldPhotos[idx];
+}
+
+export function getActivityEvidencePairs(visitId = null) {
+  const rows = scoped(getDB().activityEvidencePairs || []);
+  const actor = getActor();
+  const visible = !actor || isOrgAdminRole(actor.role)
+    ? rows
+    : rows.filter(p => visibleEmployeeIds(actor).has(p.employeeId));
+  return visitId ? visible.filter(p => p.visitId === visitId) : visible;
+}
+
+export function startRackEvidence(visitId) {
+  const actor = assertLoggedIn();
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) throw new Error('Visit not found');
+  assertCanAccessEmployee(visit.employeeId);
+  if (actor.role === 'employee' && visit.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  const existing = getActivityEvidencePairs(visitId).find(p => p.status !== 'completed');
+  if (existing) return existing;
+  const pair = {
+    id: uid('AEP'),
+    organizationId: visit.organizationId || getCurrentOrgId(),
+    projectId: visit.projectId || null,
+    visitId,
+    outletId: visit.outletId,
+    employeeId: visit.employeeId,
+    beforePhotoId: null,
+    afterPhotoId: null,
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  };
+  const db = getDB();
+  db.activityEvidencePairs = db.activityEvidencePairs || [];
+  db.activityEvidencePairs.push(pair);
+  saveDB();
+  return pair;
+}
+
+export function attachRackPhoto(visitId, side, photoId) {
+  if (!['before', 'after'].includes(side)) throw new Error('Invalid side');
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) throw new Error('Visit not found');
+  const photo = getFieldPhotos().find(p => p.id === photoId);
+  if (!photo) throw new Error('Photo not found');
+  if (photo.visitId && photo.visitId !== visitId) throw new Error('Photo belongs to another visit');
+  if (photo.outletId && visit.outletId && photo.outletId !== visit.outletId) throw new Error('Outlet mismatch');
+  let pair = getActivityEvidencePairs(visitId).find(p => p.status !== 'completed') || startRackEvidence(visitId);
+  if (side === 'after' && !pair.beforePhotoId) throw new Error('Capture before photo first');
+  const db = getDB();
+  const idx = (db.activityEvidencePairs || []).findIndex(p => p.id === pair.id);
+  const next = { ...pair };
+  if (side === 'before') {
+    next.beforePhotoId = photoId;
+    next.status = 'waiting_after';
+  } else {
+    next.afterPhotoId = photoId;
+    next.status = 'completed';
+    next.completedAt = new Date().toISOString();
+  }
+  db.activityEvidencePairs[idx] = next;
+  saveDB();
+  return next;
+}
+
+export function rackPairStatus(pair) {
+  if (!pair) return 'open';
+  if (pair.afterPhotoId) return 'completed';
+  if (pair.beforePhotoId) return 'waiting_after';
+  return 'open';
 }
 
 export function deleteFieldPhoto(id) {
@@ -2395,4 +2843,317 @@ export function getStorageEstimate() {
   } catch (_) {
     return { usedBytes: 0, usedMB: '0' };
   }
+}
+
+export const SURVEY_QUESTION_TYPES = [
+  'short_text', 'long_text', 'number', 'currency',
+  'single_choice', 'multiple_choice', 'dropdown', 'yes_no',
+  'date', 'time', 'rating', 'photo', 'product', 'outlet',
+];
+
+const SURVEY_STATUS = ['draft', 'active', 'closed', 'archived'];
+
+function assertSurveyProject(projectId) {
+  const actor = assertLoggedIn();
+  const ids = actorProjectIds(actor);
+  if (projectId && !ids.has(projectId) && !isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
+  return actor;
+}
+
+export function getSurveyTemplates() {
+  const actor = assertLoggedIn();
+  const rows = scoped(getDB().surveyTemplates || []);
+  const pids = actorProjectIds(actor);
+  if (isOrgAdminRole(actor.role)) return rows;
+  return rows.filter(s => !s.projectId || pids.has(s.projectId));
+}
+
+export function getSurveyTemplate(id) {
+  return getSurveyTemplates().find(s => s.id === id) || null;
+}
+
+export function createSurveyTemplate(data = {}) {
+  const actor = assertProjectAdmin();
+  const projectId = data.projectId || actor.projectId || null;
+  assertSurveyProject(projectId);
+  const now = new Date().toISOString();
+  const row = {
+    id: uid('SRV'),
+    name: sanitizePlainText(data.name || 'Untitled survey'),
+    description: sanitizePlainText(data.description || ''),
+    projectId,
+    status: 'draft',
+    startDate: data.startDate || todayISO(),
+    endDate: data.endDate || '',
+    questions: Array.isArray(data.questions) ? data.questions : [],
+    createdBy: actor.id,
+    createdAt: now,
+    updatedAt: now,
+    ...withOrg(data),
+  };
+  const db = getDB();
+  db.surveyTemplates = db.surveyTemplates || [];
+  db.surveyTemplates.push(row);
+  saveDB();
+  return row;
+}
+
+export function updateSurveyTemplate(id, patch = {}) {
+  assertProjectAdmin();
+  const db = getDB();
+  const idx = (db.surveyTemplates || []).findIndex(s => s.id === id);
+  if (idx === -1) throw new Error('Survey not found');
+  const current = db.surveyTemplates[idx];
+  assertSurveyProject(current.projectId);
+  const nextStatus = patch.status || current.status;
+  if (!SURVEY_STATUS.includes(nextStatus)) throw new Error('Invalid status');
+  const order = { draft: 0, active: 1, closed: 2, archived: 3 };
+  if (order[nextStatus] < order[current.status]) throw new Error('Cannot reopen a survey to an earlier status');
+  const questions = Array.isArray(patch.questions) ? patch.questions.map((q, i) => ({
+    id: q.id || uid('Q'),
+    label: sanitizePlainText(q.label || `Question ${i + 1}`),
+    description: sanitizePlainText(q.description || ''),
+    type: SURVEY_QUESTION_TYPES.includes(q.type) ? q.type : 'short_text',
+    required: !!q.required,
+    options: Array.isArray(q.options) ? q.options.map(o => sanitizePlainText(o)).filter(Boolean) : [],
+    order: Number.isFinite(Number(q.order)) ? Number(q.order) : i,
+    validation: q.validation && typeof q.validation === 'object' ? q.validation : {},
+  })) : current.questions;
+  db.surveyTemplates[idx] = {
+    ...current,
+    name: patch.name != null ? sanitizePlainText(patch.name) : current.name,
+    description: patch.description != null ? sanitizePlainText(patch.description) : current.description,
+    projectId: patch.projectId != null ? patch.projectId : current.projectId,
+    startDate: patch.startDate != null ? patch.startDate : current.startDate,
+    endDate: patch.endDate != null ? patch.endDate : current.endDate,
+    status: nextStatus,
+    questions,
+    updatedAt: new Date().toISOString(),
+  };
+  saveDB();
+  return db.surveyTemplates[idx];
+}
+
+export function getSurveyAssignments(surveyId) {
+  assertLoggedIn();
+  return scoped(getDB().surveyAssignments || []).filter(a => !surveyId || a.surveyId === surveyId);
+}
+
+export function assignSurvey(data = {}) {
+  assertProjectAdmin();
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  assertSurveyProject(survey.projectId);
+  const row = {
+    id: uid('SVA'),
+    surveyId: survey.id,
+    projectId: data.projectId || survey.projectId,
+    supervisorId: data.supervisorId || null,
+    employeeId: data.employeeId || null,
+    outletId: data.outletId || null,
+    createdAt: new Date().toISOString(),
+    ...withOrg(data),
+  };
+  const db = getDB();
+  db.surveyAssignments = db.surveyAssignments || [];
+  const dup = db.surveyAssignments.some(a =>
+    a.surveyId === row.surveyId &&
+    a.employeeId === row.employeeId &&
+    a.supervisorId === row.supervisorId &&
+    a.outletId === row.outletId &&
+    a.projectId === row.projectId);
+  if (dup) throw new Error('Assignment already exists');
+  db.surveyAssignments.push(row);
+  saveDB();
+  return row;
+}
+
+export function surveysForField(employeeId = getActor()?.employeeId, ctx = {}) {
+  const actor = assertLoggedIn();
+  const empId = employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const today = todayISO();
+  const emp = getEmployee(empId);
+  const pids = actorProjectIds(actor);
+  const assignments = scoped(getDB().surveyAssignments || []);
+  const templates = getSurveyTemplates().filter(s => s.status === 'active');
+  return templates.filter(s => {
+    if (s.startDate && s.startDate > today) return false;
+    if (s.endDate && s.endDate < today) return false;
+    if (s.projectId && !pids.has(s.projectId)) return false;
+    const mine = assignments.filter(a => a.surveyId === s.id);
+    if (!mine.length) return !s.projectId || pids.has(s.projectId);
+    return mine.some(a =>
+      (!a.employeeId || a.employeeId === empId) &&
+      (!a.supervisorId || a.supervisorId === empId || a.supervisorId === emp?.supervisorId) &&
+      (!a.projectId || pids.has(a.projectId)) &&
+      (!a.outletId || a.outletId === ctx.outletId || !ctx.outletId)
+    );
+  });
+}
+
+function validateSurveyAnswers(survey, answers = {}) {
+  const qs = (survey.questions || []).slice().sort((a, b) => a.order - b.order);
+  for (const q of qs) {
+    const v = answers[q.id];
+    const empty = v == null || v === '' || (Array.isArray(v) && !v.length);
+    if (q.required && empty) throw new Error(`${q.label} is required`);
+    if (empty) continue;
+    if (q.type === 'number' || q.type === 'currency' || q.type === 'rating') {
+      if (!Number.isFinite(Number(v))) throw new Error(`${q.label} must be a number`);
+    }
+    if (q.type === 'yes_no' && !['yes', 'no', 'true', 'false', true, false].includes(v)) {
+      throw new Error(`${q.label} must be yes or no`);
+    }
+  }
+}
+
+export function getSurveyResponses(filters = {}) {
+  const actor = assertLoggedIn();
+  let rows = scoped(getDB().surveyResponses || []);
+  const ids = visibleEmployeeIds(actor);
+  if (!isOrgAdminRole(actor.role)) rows = rows.filter(r => ids.has(r.employeeId));
+  if (filters.surveyId) rows = rows.filter(r => r.surveyId === filters.surveyId);
+  if (filters.employeeId) rows = rows.filter(r => r.employeeId === filters.employeeId);
+  if (filters.outletId) rows = rows.filter(r => r.outletId === filters.outletId);
+  if (filters.status) rows = rows.filter(r => r.status === filters.status);
+  return rows;
+}
+
+export function saveSurveyDraft(data = {}) {
+  const actor = assertLoggedIn();
+  const empId = data.employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  if (survey.status !== 'active') throw new Error('Survey is not active');
+  const today = todayISO();
+  if (survey.endDate && survey.endDate < today) throw new Error('Survey has expired');
+  const db = getDB();
+  db.surveyResponses = db.surveyResponses || [];
+  const existing = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'draft');
+  const now = new Date().toISOString();
+  if (existing) {
+    existing.answers = data.answers || existing.answers;
+    existing.visitId = data.visitId || existing.visitId;
+    existing.updatedAt = now;
+    saveDB();
+    return existing;
+  }
+  const row = {
+    id: uid('SVR'),
+    surveyId: survey.id,
+    employeeId: empId,
+    outletId: data.outletId || null,
+    visitId: data.visitId || null,
+    projectId: survey.projectId,
+    status: 'draft',
+    answers: data.answers || {},
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: null,
+    ...withOrg(data),
+  };
+  db.surveyResponses.push(row);
+  saveDB();
+  return row;
+}
+
+export function submitSurveyResponse(data = {}) {
+  const actor = assertLoggedIn();
+  const empId = data.employeeId || actor.employeeId;
+  if (actor.role === 'employee' && empId !== actor.employeeId) throw new Error('Akses ditolak');
+  const survey = getSurveyTemplate(data.surveyId);
+  if (!survey) throw new Error('Survey not found');
+  if (survey.status !== 'active') throw new Error('Survey is not active');
+  const today = todayISO();
+  if (survey.endDate && survey.endDate < today) throw new Error('Survey has expired');
+  validateSurveyAnswers(survey, data.answers || {});
+  const db = getDB();
+  db.surveyResponses = db.surveyResponses || [];
+  const dup = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'submitted');
+  if (dup) throw new Error('Already submitted');
+  const draft = db.surveyResponses.find(r =>
+    r.surveyId === survey.id && r.employeeId === empId &&
+    (r.outletId || null) === (data.outletId || null) &&
+    r.status === 'draft');
+  const now = new Date().toISOString();
+  if (draft) {
+    draft.answers = data.answers || draft.answers;
+    draft.status = 'submitted';
+    draft.submittedAt = now;
+    draft.updatedAt = now;
+    draft.visitId = data.visitId || draft.visitId;
+    saveDB();
+    return draft;
+  }
+  const row = {
+    id: uid('SVR'),
+    surveyId: survey.id,
+    employeeId: empId,
+    outletId: data.outletId || null,
+    visitId: data.visitId || null,
+    projectId: survey.projectId,
+    status: 'submitted',
+    answers: data.answers || {},
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: now,
+    ...withOrg(data),
+  };
+  db.surveyResponses.push(row);
+  saveDB();
+  return row;
+}
+
+export function surveyMonitoring(surveyId) {
+  const survey = getSurveyTemplate(surveyId);
+  if (!survey) throw new Error('Survey not found');
+  const assigned = getSurveyAssignments(surveyId);
+  const responses = getSurveyResponses({ surveyId });
+  const submitted = responses.filter(r => r.status === 'submitted');
+  const pending = Math.max(0, (assigned.length || 0) - submitted.length);
+  const pct = assigned.length ? Math.round((submitted.length / assigned.length) * 100) : (submitted.length ? 100 : 0);
+  return { survey, assigned: assigned.length, completed: submitted.length, pending, pct, responses };
+}
+
+export function productSalesAnalytics({ month = todayISO().slice(0, 7) } = {}) {
+  const sales = getProductSales().filter(s => String(s.date || '').startsWith(month));
+  const employees = getEmployees();
+  const products = getProducts();
+  const outlets = getOutlets();
+  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
+  const total = sales.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  const target = employees.reduce((s, e) => s + (Number(e.salesTargetAmount) || 0), 0);
+  const group = (key, labelOf) => {
+    const map = {};
+    for (const r of sales) {
+      const k = r[key] || '—';
+      map[k] = (map[k] || 0) + (Number(r.amount) || 0);
+    }
+    return Object.entries(map).map(([id, amount]) => ({ id, label: labelOf(id), amount }))
+      .sort((a, b) => b.amount - a.amount);
+  };
+  const daily = {};
+  for (const r of sales) {
+    const d = String(r.date || '').slice(0, 10);
+    daily[d] = (daily[d] || 0) + (Number(r.amount) || 0);
+  }
+  return {
+    month,
+    total,
+    target,
+    achievement: target ? Math.round((total / target) * 100) : 0,
+    byProduct: group('productId', id => products.find(p => p.id === id)?.name || id),
+    byOutlet: group('outletId', id => outlets.find(o => o.id === id)?.name || id),
+    byEmployee: group('employeeId', id => empMap[id]?.name || id),
+    bySupervisor: group('supervisorId', id => empMap[id]?.name || id),
+    daily: Object.entries(daily).sort((a, b) => a[0].localeCompare(b[0])).map(([date, amount]) => ({ date, amount })),
+  };
 }

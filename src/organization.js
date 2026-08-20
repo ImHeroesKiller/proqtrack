@@ -26,18 +26,18 @@ function counts(orgId) {
 }
 
 const HUB_LINKS = [
-  ['#/clients', 'Klien', 'Brand / pemilik project'],
-  ['#/projects', 'Project', 'SoW, periode, assignment'],
-  ['#/employees', 'Karyawan', 'Tim lapangan organisasi'],
-  ['#/accounts', 'Akun', 'Login dan role'],
-  ['#/outlets', 'Toko / Outlet', 'Titik kunjungan'],
-  ['#/products', 'Produk', 'SKU organisasi'],
-  ['#/competitors', 'Kompetitor', 'Intel merek lawan'],
-  ['#/field-photos', 'Aset & Foto', 'Bukti lapangan di R2'],
-  ['#/reports', 'Reporting', 'Analitik organisasi'],
-  ['#/visits', 'Kunjungan', 'Aktivitas harian'],
-  ['#/attendance', 'Absensi', 'Kehadiran tim'],
-  ['#/stocks', 'Stok', 'Ketersediaan outlet'],
+  ['#/clients', 'Clients', 'Brands / project owners'],
+  ['#/projects', 'Projects', 'SoW, period, assignment'],
+  ['#/employees', 'Employees', 'Organization field team'],
+  ['#/accounts', 'Accounts', 'Logins and roles'],
+  ['#/outlets', 'Outlets', 'Visit points'],
+  ['#/products', 'Products', 'Organization SKUs'],
+  ['#/competitors', 'Competitors', 'Rival brand intel'],
+  ['#/field-photos', 'Photos & Assets', 'Field proof on R2'],
+  ['#/reports', 'Reports', 'Organization analytics'],
+  ['#/visits', 'Visits', 'Daily activity'],
+  ['#/attendance', 'Attendance', 'Team presence'],
+  ['#/stocks', 'Stock', 'Outlet availability'],
 ];
 
 export function renderOrganizations() {
@@ -109,7 +109,7 @@ export function renderOrganizationHub(id) {
       </a>`).join('')}
     </div>
     <div class="grid-4" style="margin-top:14px">
-      ${[['Klien', c.clients],['Project', c.projects],['Karyawan', c.employees],['Akun', c.accounts],['Toko', c.outlets],['Produk', c.products],['Kompetitor', c.competitors],['Kunjungan', c.visits]].map(([l,v]) => `<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div>`).join('')}
+      ${[['Clients', c.clients],['Projects', c.projects],['Employees', c.employees],['Accounts', c.accounts],['Outlets', c.outlets],['Products', c.products],['Competitors', c.competitors],['Visits', c.visits]].map(([l,v]) => `<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div>`).join('')}
     </div>
   `;
 }

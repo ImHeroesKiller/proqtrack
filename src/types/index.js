@@ -16,6 +16,7 @@ const ALL_MODULES = [
   "leaves",
   "newOutlet",
   "productSales",
+  "surveys",
 ];
 const MODULE_LABELS = {
   visits: "Visits",
@@ -27,6 +28,7 @@ const MODULE_LABELS = {
   leaves: "Leave",
   newOutlet: "New Outlet",
   productSales: "Product Sales",
+  surveys: "Surveys",
 };
 const PROJECT_ROUTES = new Set([
   "#/clients",
