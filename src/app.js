@@ -25,6 +25,8 @@ import {
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
+  detectAreaAttendance, startRackEvidence, attachRackPhoto, getActivityEvidencePairs, rackPairStatus,
+  getEmployee,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
 import {
@@ -39,7 +41,7 @@ import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
-  normalizeAttendanceStatus,
+  normalizeAttendanceStatus, stampPhotoEvidence, formatEvidenceStamp,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
@@ -609,6 +611,7 @@ function render() {
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
+  if (state.account?.role === 'employee') window.FS?.startAreaWatch?.();
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -1239,9 +1242,24 @@ window.FT.closeSidebar = function() {
 };
 
 window.FT.checkInVisit = function(id) {
+  const apply = extra => {
+    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5), ...extra });
+    closeModal(); showToast('Checked in', 'success'); render();
+  };
   try {
-    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-    closeModal(); showToast('Berhasil check in', 'success'); render();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        try {
+          apply({ checkInLat: pos.coords.latitude, checkInLng: pos.coords.longitude, checkInAccuracy: pos.coords.accuracy });
+          detectAreaAttendance({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            capturedAt: new Date().toISOString(),
+          });
+        } catch (error) { showToast(error.message || 'Check-in saved without area attendance', 'error'); render(); }
+      }, () => apply({}), { enableHighAccuracy: true, timeout: 8000 });
+    } else apply({});
   } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
 window.FT.checkOutVisit = function(id) {
@@ -1917,6 +1935,7 @@ function renderMyDay() {
           ${tile('Price', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
           ${tile('Intel', 'intel', `FT.openVisitIntelInput('${active.id}','${active.outletId}')`)}
           ${tile('Photo', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
+          ${tile('Rack', 'store', `FT.openRackEvidence('${active.id}','${active.outletId}')`)}
           ${mapsDir(activeOut.lat, activeOut.lng)
             ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></a>`
             : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></span>`}
@@ -3890,7 +3909,7 @@ function renderFieldPhotosGallery({ managerView }) {
             const emp = empMap[p.recordedBy || p.employeeId];
             const prod = p.productId ? productMap[p.productId] : null;
             const comp = p.competitorId ? compMap[p.competitorId] : null;
-            const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
+            const imageSrc = safePhotoUrl(p.watermarkUrl || p.dataUrl || p.photoUrl);
             const thumb = imageSrc
               ? `<img src="${imageSrc}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
               : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
@@ -3921,6 +3940,40 @@ function renderFieldPhotosGallery({ managerView }) {
 window.FT.setPhotoFilter = function(type) {
   state._photoFilterType = type || '';
   render();
+};
+
+window.FT.openRackEvidence = function(visitId, outletId) {
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) { showToast('Visit not found', 'error'); return; }
+  if (visit.outletId !== outletId) { showToast('Outlet mismatch', 'error'); return; }
+  const pair = startRackEvidence(visitId);
+  const status = rackPairStatus(pair);
+  const nextType = status === 'waiting_after' ? 'rack_after' : 'rack_before';
+  const label = nextType === 'rack_after' ? 'Capture AFTER' : 'Capture BEFORE';
+  openModal('Rack execution', `
+    <p class="am-muted">${status === 'completed' ? 'Evidence complete' : status === 'waiting_after' ? 'Before captured → waiting after' : 'Capture before, then after'}</p>
+    ${status === 'completed' ? '<p>This visit already has a completed pair.</p>' : `
+    <form onsubmit="FT.saveFieldPhoto(event,'${visitId}','${outletId}')">
+      <input type="hidden" name="type" value="${nextType}">
+      <div class="form-group"><label class="label">${label}</label>
+        <input class="input" type="file" name="photoFile" accept="image/*" capture="environment" required onchange="FT.onPhotoFileSelected(event)">
+      </div>
+      <div id="photoPreview" style="margin-top:10px;display:none;"><img id="photoPreviewImg" alt="" style="max-width:100%;max-height:200px;border-radius:10px"></div>
+      <input type="hidden" name="dataUrl" id="photoDataUrl">
+      <input type="hidden" name="lat" id="photoLat">
+      <input type="hidden" name="lng" id="photoLng">
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">Save ${nextType === 'rack_after' ? 'after' : 'before'}</button></div>
+    </form>`}
+  `);
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const lat = document.getElementById('photoLat');
+      const lng = document.getElementById('photoLng');
+      if (lat) lat.value = pos.coords.latitude;
+      if (lng) lng.value = pos.coords.longitude;
+    }, () => {}, { enableHighAccuracy: true, timeout: 8000 });
+  }
 };
 
 window.FT.openVisitPhotoInput = function(visitId, outletId) {
@@ -4057,20 +4110,43 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
     return;
   }
   const type = fd.get('type') || 'location';
-  createFieldPhoto({
+  const emp = getEmployees().find(e => e.id === empId);
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const stampLines = [
+    formatEvidenceStamp(new Date()),
+    `Outlet: ${outlet ? formatOutletLabel(outlet) : outletId || '—'}`,
+    `Sales: ${emp?.name || state.account?.name || '—'}`,
+  ];
+  let watermarkUrl = dataUrl;
+  try {
+    if (dataUrl) watermarkUrl = await stampPhotoEvidence(dataUrl, stampLines);
+  } catch { /* keep original */ }
+  const photo = createFieldPhoto({
     projectId: fd.get('projectId') || null,
     visitId: visitId || null,
     outletId,
     type,
+    photoType: type,
     caption: fd.get('caption') || '',
     productId: fd.get('productId') || null,
     competitorId: type === 'competitor' ? (fd.get('competitorId') || null) : (fd.get('competitorId') || null),
     dataUrl,
-    photoUrl: photoUrl || dataUrl,
+    watermarkUrl,
+    photoUrl: photoUrl || watermarkUrl || dataUrl,
     r2Key,
+    employeeId: empId || null,
     recordedBy: empId || state.account?.id || 'manager',
     recordedAt: new Date().toISOString(),
+    lat: fd.get('lat') || null,
+    lng: fd.get('lng') || null,
   });
+  if (visitId && (type === 'rack_before' || type === 'rack_after')) {
+    try {
+      attachRackPhoto(visitId, type === 'rack_before' ? 'before' : 'after', photo.id);
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  }
   closeModal();
   showToast(r2Key ? 'Foto tersimpan di R2' : 'Foto lapangan tersimpan lokal', 'success');
   render();

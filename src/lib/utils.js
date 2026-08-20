@@ -31,14 +31,53 @@ export function getInitials(name) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
+export function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = deg => (Number(deg) * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export function calculateDistance(lat1, lng1, lat2, lng2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLng / 2) ** 2;
-  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) * 10) / 10;
+  return Math.round((distanceMeters(lat1, lng1, lat2, lng2) / 1000) * 10) / 10;
+}
+
+export function formatEvidenceStamp(date = new Date(), timeZone = dateTimeZone()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone });
+  const timePart = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
+  const tz = timeZone === 'Asia/Jakarta' ? 'WIB' : timeZone;
+  return `${datePart} · ${timePart} ${tz}`;
+}
+
+export function stampPhotoEvidence(dataUrl, lines = []) {
+  if (typeof document === 'undefined' || !dataUrl) return Promise.resolve(dataUrl);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const pad = Math.max(12, Math.round(img.width * 0.02));
+      const lineH = Math.max(16, Math.round(img.width * 0.028));
+      const boxH = pad * 2 + lines.length * lineH;
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.62)';
+      ctx.fillRect(0, img.height - boxH, img.width, boxH);
+      ctx.fillStyle = '#fff';
+      ctx.font = `${Math.max(13, Math.round(img.width * 0.024))}px Inter, system-ui, sans-serif`;
+      lines.forEach((line, i) => {
+        ctx.fillText(String(line || ''), pad, img.height - boxH + pad + (i + 0.75) * lineH);
+      });
+      resolve(canvas.toDataURL('image/jpeg', 0.86));
+    };
+    img.onerror = () => reject(new Error('Failed to stamp photo'));
+    img.src = dataUrl;
+  });
 }
 
 export function timeAgo(timeStr) {
@@ -188,10 +227,12 @@ export function compressImage(file, opts = {}) {
 }
 
 export const PHOTO_TYPE_LABELS = {
-  location: 'Lokasi',
-  product: 'Produk',
-  shelf: 'Rak / Display',
-  competitor: 'Kompetitor',
+  location: 'Location',
+  product: 'Product',
+  shelf: 'Shelf / display',
+  rack_before: 'Rack before',
+  rack_after: 'Rack after',
+  competitor: 'Competitor',
 };
 
 export function photoTypeLabel(type) {

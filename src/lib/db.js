@@ -9,13 +9,13 @@ import {
 } from '../data/seed.js';
 import {
   uid, sanitizePlainText, todayISO, normalizeAttendanceStatus,
-  hashPassword, passwordMatches, publicAccount,
+  hashPassword, passwordMatches, publicAccount, distanceMeters,
 } from './utils.js';
 import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 16;
+const DB_VERSION = 17;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -38,6 +38,7 @@ export const SCHEMA = {
     'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
     'projectAssignments', 'outletProposals', 'attendancePoints',
     'overtimes', 'wfhRequests', 'dailyReports',
+    'attendanceEvents', 'activityEvidencePairs',
   ],
   globalCollections: [
     'leaveTypes', 'promoTypes', 'organizations', 'projectSettings',
@@ -54,6 +55,7 @@ const SEEDED_EMPTY_ARRAYS = [
   'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
   'reportApprovals', 'reportSchedules', 'auditLogs',
   'overtimes', 'wfhRequests', 'dailyReports',
+  'attendanceEvents', 'activityEvidencePairs',
 ];
 
 const normalizeEmail = value => String(value || '').trim().toLowerCase();
@@ -91,6 +93,21 @@ export function isOrgAdminRole(role) {
 
 export function isProjectAdminRole(role) {
   return isOrgAdminRole(role) || role === 'manager';
+}
+
+export function actorProjectIds(actor = getActor(), db = getDB()) {
+  if (!actor) return new Set();
+  const orgId = getCurrentOrgId();
+  const projects = (db.projects || []).filter(p => !p.organizationId || p.organizationId === orgId);
+  if (isOrgAdminRole(actor.role)) return new Set(projects.map(p => p.id));
+  if (actor.role === 'manager' && actor.projectId) return new Set([actor.projectId]);
+  const mine = actor.employeeId;
+  return new Set(
+    (db.projectAssignments || [])
+      .filter(a => a.employeeId === mine && a.status === 'active')
+      .map(a => a.projectId)
+      .filter(Boolean),
+  );
 }
 
 function assertOrgAdmin() {
@@ -221,6 +238,8 @@ function rawDefaultDB() {
     overtimes: [],
     wfhRequests: [],
     dailyReports: [],
+    attendanceEvents: [],
+    activityEvidencePairs: [],
     newsItems: JSON.parse(JSON.stringify(defaultNewsItems())),
     hrContacts: JSON.parse(JSON.stringify(defaultHrContacts())),
     appSettings: defaultAppSettings(),
@@ -314,6 +333,8 @@ export function defaultAppSettings() {
     officeLat: null,
     officeLng: null,
     officeName: 'Kantor',
+    autoAreaAttendance: true,
+    geofenceRadiusM: 50,
     testDevices: [],
     updatedAt: null,
   };
@@ -1021,6 +1042,8 @@ export function getAttendancePolicy() {
   return {
     mode,
     radiusM: Number(s.attendanceRadiusM) || 150,
+    geofenceRadiusM: Number(s.geofenceRadiusM) > 0 ? Number(s.geofenceRadiusM) : 50,
+    autoAreaAttendance: s.autoAreaAttendance !== false,
     officeLat: s.officeLat == null || s.officeLat === '' ? null : Number(s.officeLat),
     officeLng: s.officeLng == null || s.officeLng === '' ? null : Number(s.officeLng),
     officeName: s.officeName || 'Office',
@@ -1032,6 +1055,7 @@ export function updateAppSettings(partial) {
   const privileged = [
     'companyName', 'companyLogo', 'timezone', 'attendanceMode', 'attendanceRadiusM',
     'officeLat', 'officeLng', 'officeName', 'testDevices', 'notifyLeave', 'notifyLowStock',
+    'autoAreaAttendance', 'geofenceRadiusM',
   ];
   if (privileged.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
     if (!isOrgAdminRole(actor.role)) {
@@ -1750,10 +1774,127 @@ export function getAttendanceByEmployee(empId) {
 
 export function createAttendance(data) {
   assertCanAccessEmployee(data.employeeId);
-  const att = { id: uid('ATT'), ...withOrg(data) };
+  const att = {
+    id: uid('ATT'),
+    source: data.source || 'manual',
+    ...withOrg(data),
+  };
   getDB().attendance.push(att);
   saveDB();
   return att;
+}
+
+function pushAudit(db, { action, entityType, entityId, description, extra = {} }) {
+  const actor = getActor();
+  db.auditLogs = db.auditLogs || [];
+  db.auditLogs.push({
+    id: uid('AUD'),
+    createdAt: new Date().toISOString(),
+    actorId: actor?.id || null,
+    actorName: actor?.email || actor?.name || '',
+    action,
+    entityType,
+    entityId,
+    description,
+    ...extra,
+  });
+}
+
+export function getAttendanceEvents() {
+  const rows = scoped(getDB().attendanceEvents || []);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  const ids = visibleEmployeeIds(actor);
+  return rows.filter(e => ids.has(e.employeeId));
+}
+
+export function detectAreaAttendance(fix = {}) {
+  const actor = assertLoggedIn();
+  if (actor.role !== 'employee' || !actor.employeeId) throw new Error('Akses ditolak');
+  const policy = getAttendancePolicy();
+  if (policy.autoAreaAttendance === false) return { skipped: true, reason: 'disabled' };
+  const lat = Number(fix.lat);
+  const lng = Number(fix.lng);
+  const accuracy = fix.accuracy == null || fix.accuracy === '' ? null : Number(fix.accuracy);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error('Invalid GPS');
+  if (Number.isFinite(accuracy) && accuracy > 100) throw new Error('GPS accuracy too low');
+  if (fix.capturedAt) {
+    const age = Date.now() - new Date(fix.capturedAt).getTime();
+    if (Number.isFinite(age) && age > 60_000) throw new Error('Stale location');
+  }
+  const radius = policy.geofenceRadiusM || 50;
+  const projectIds = actorProjectIds(actor);
+  const outlets = getOutlets().filter(o => Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lng)));
+  const inProject = outlets.filter(o => {
+    const ids = o.projectIds || [];
+    if (!ids.length) return projectIds.size === 0 || true;
+    return [...projectIds].some(id => ids.includes(id));
+  });
+  const ranked = inProject
+    .map(o => ({ o, m: distanceMeters(lat, lng, Number(o.lat), Number(o.lng)) }))
+    .filter(x => x.m <= radius)
+    .sort((a, b) => a.m - b.m);
+  if (!ranked.length) return { skipped: true, reason: 'outside', radiusM: radius };
+  const hit = ranked[0];
+  const db = getDB();
+  db.attendanceEvents = db.attendanceEvents || [];
+  const today = todayISO();
+  const lastSame = db.attendanceEvents
+    .filter(e => e.employeeId === actor.employeeId && e.outletId === hit.o.id && e.date === today)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(a.createdAt || ''))[0];
+  if (lastSame && lastSame.inside !== false) {
+    return { skipped: true, reason: 'still_inside', outletId: hit.o.id, meters: Math.round(hit.m) };
+  }
+  const projectId = (hit.o.projectIds || []).find(id => projectIds.has(id)) || hit.o.projectIds?.[0] || [...projectIds][0] || null;
+  const event = {
+    id: uid('AEV'),
+    organizationId: getCurrentOrgId(),
+    projectId,
+    employeeId: actor.employeeId,
+    outletId: hit.o.id,
+    date: today,
+    source: 'auto_geofence',
+    lat,
+    lng,
+    accuracy,
+    meters: Math.round(hit.m * 10) / 10,
+    inside: true,
+    createdAt: new Date().toISOString(),
+  };
+  db.attendanceEvents.push(event);
+  const existing = getAttendance().find(a => a.employeeId === actor.employeeId && a.date === today);
+  let attendance = existing;
+  if (!existing?.checkInTime) {
+    const now = new Date();
+    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(now));
+    const payload = {
+      employeeId: actor.employeeId,
+      date: today,
+      checkInTime: now.toTimeString().slice(0, 5),
+      checkOutTime: null,
+      status: hour >= 9 ? 'terlambat' : 'hadir',
+      checkInLocation: formatOutletLabel(hit.o),
+      locationType: 'outlet',
+      locationId: hit.o.id,
+      outletId: hit.o.id,
+      source: 'auto_geofence',
+      lat,
+      lng,
+      accuracy,
+      projectId,
+    };
+    if (existing) attendance = updateAttendance(existing.id, payload);
+    else attendance = createAttendance(payload);
+  }
+  pushAudit(db, {
+    action: 'auto_geofence',
+    entityType: 'attendance',
+    entityId: attendance?.id || event.id,
+    description: `Entered ${hit.o.name} (${Math.round(hit.m)} m)`,
+    extra: { outletId: hit.o.id, projectId },
+  });
+  saveDB();
+  return { event, attendance, meters: event.meters, outlet: hit.o };
 }
 
 export function updateAttendance(id, data) {
@@ -2427,10 +2568,12 @@ export function getPromoTypeLabel(code, customNote = '') {
 }
 
 export const FIELD_PHOTO_TYPES = [
-  { code: 'location',   label: 'Lokasi (tampak toko)' },
-  { code: 'product',    label: 'Produk' },
-  { code: 'shelf',      label: 'Rak / Display' },
-  { code: 'competitor', label: 'Kompetitor' },
+  { code: 'location',     label: 'Location' },
+  { code: 'product',      label: 'Product' },
+  { code: 'shelf',        label: 'Shelf / display' },
+  { code: 'rack_before',  label: 'Rack before' },
+  { code: 'rack_after',   label: 'Rack after' },
+  { code: 'competitor',   label: 'Competitor' },
 ];
 
 export function getFieldPhotos() {
@@ -2464,7 +2607,7 @@ export function createFieldPhoto(data) {
   const owner = data.employeeId || data.recordedBy || actor.employeeId;
   if (actor.role === 'employee') {
     if (owner !== actor.employeeId) throw new Error('Akses ditolak');
-  } else if (actor.role !== 'manager') {
+  } else if (!isProjectAdminRole(actor.role)) {
     assertCanAccessEmployee(owner);
   }
   assertOperationalContext(getDB(), data, { product: !!data.productId });
@@ -2472,11 +2615,15 @@ export function createFieldPhoto(data) {
     id: uid('PHO'),
     visitId: null,
     outletId: '',
-    type: 'location',
+    type: data.type || data.photoType || 'location',
+    photoType: data.photoType || data.type || 'location',
     caption: '',
     productId: null,
     competitorId: null,
     dataUrl: null,
+    lat: data.lat == null || data.lat === '' ? null : Number(data.lat),
+    lng: data.lng == null || data.lng === '' ? null : Number(data.lng),
+    employeeId: owner,
     recordedAt: new Date().toISOString(),
     ...withOrg(data),
   };
@@ -2496,6 +2643,76 @@ export function updateFieldPhoto(id, data) {
   db.fieldPhotos[idx] = { ...db.fieldPhotos[idx], ...data };
   saveDB();
   return db.fieldPhotos[idx];
+}
+
+export function getActivityEvidencePairs(visitId = null) {
+  const rows = scoped(getDB().activityEvidencePairs || []);
+  const actor = getActor();
+  const visible = !actor || isOrgAdminRole(actor.role)
+    ? rows
+    : rows.filter(p => visibleEmployeeIds(actor).has(p.employeeId));
+  return visitId ? visible.filter(p => p.visitId === visitId) : visible;
+}
+
+export function startRackEvidence(visitId) {
+  const actor = assertLoggedIn();
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) throw new Error('Visit not found');
+  assertCanAccessEmployee(visit.employeeId);
+  if (actor.role === 'employee' && visit.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
+  const existing = getActivityEvidencePairs(visitId).find(p => p.status !== 'completed');
+  if (existing) return existing;
+  const pair = {
+    id: uid('AEP'),
+    organizationId: visit.organizationId || getCurrentOrgId(),
+    projectId: visit.projectId || null,
+    visitId,
+    outletId: visit.outletId,
+    employeeId: visit.employeeId,
+    beforePhotoId: null,
+    afterPhotoId: null,
+    status: 'open',
+    createdAt: new Date().toISOString(),
+    completedAt: null,
+  };
+  const db = getDB();
+  db.activityEvidencePairs = db.activityEvidencePairs || [];
+  db.activityEvidencePairs.push(pair);
+  saveDB();
+  return pair;
+}
+
+export function attachRackPhoto(visitId, side, photoId) {
+  if (!['before', 'after'].includes(side)) throw new Error('Invalid side');
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) throw new Error('Visit not found');
+  const photo = getFieldPhotos().find(p => p.id === photoId);
+  if (!photo) throw new Error('Photo not found');
+  if (photo.visitId && photo.visitId !== visitId) throw new Error('Photo belongs to another visit');
+  if (photo.outletId && visit.outletId && photo.outletId !== visit.outletId) throw new Error('Outlet mismatch');
+  let pair = getActivityEvidencePairs(visitId).find(p => p.status !== 'completed') || startRackEvidence(visitId);
+  if (side === 'after' && !pair.beforePhotoId) throw new Error('Capture before photo first');
+  const db = getDB();
+  const idx = (db.activityEvidencePairs || []).findIndex(p => p.id === pair.id);
+  const next = { ...pair };
+  if (side === 'before') {
+    next.beforePhotoId = photoId;
+    next.status = 'waiting_after';
+  } else {
+    next.afterPhotoId = photoId;
+    next.status = 'completed';
+    next.completedAt = new Date().toISOString();
+  }
+  db.activityEvidencePairs[idx] = next;
+  saveDB();
+  return next;
+}
+
+export function rackPairStatus(pair) {
+  if (!pair) return 'open';
+  if (pair.afterPhotoId) return 'completed';
+  if (pair.beforePhotoId) return 'waiting_after';
+  return 'open';
 }
 
 export function deleteFieldPhoto(id) {

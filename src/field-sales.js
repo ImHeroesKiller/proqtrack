@@ -7,10 +7,12 @@ import {
   createOutletProposal, getOutletProposals, reviewOutletProposal,
   canEmployeeAddStore, storeCatalogForEmployee, formatOutletLabel,
   getAttendancePolicy, getEmployee,
+  detectAreaAttendance, getActivityEvidencePairs, rackPairStatus,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
+  formatEvidenceStamp,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
 
@@ -173,11 +175,32 @@ export function renderVisitDetailHtml(visitId) {
     ${intel.length ? `<ul>${intel.map(i => `<li>${esc(products[i.productId]?.name || 'Produk')} vs kompetitor · shelf ${i.shelfShare || 0}%</li>`).join('')}</ul>` : '<p class="am-muted">Belum ada intel.</p>'}
     <h4>Foto</h4>
     ${photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${photos.map(p => {
-      const src = safePhotoUrl(p.dataUrl || p.photoUrl);
-      return src ? `<img src="${src}" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:8px">` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
-    }).join('')}</div>` : '<p class="am-muted">Belum ada foto.</p>'}
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="FT.closeModal()">Tutup</button></div>
+      const src = safePhotoUrl(p.watermarkUrl || p.dataUrl || p.photoUrl);
+      const stamp = formatEvidenceStamp(p.recordedAt);
+      return src ? `<figure style="margin:0"><img src="${src}" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px"><figcaption class="am-muted" style="font-size:10px">${esc(stamp)}</figcaption></figure>` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
+    }).join('')}</div>` : '<p class="am-muted">No photos yet.</p>'}
+    ${rackComparisonHtml(visitId)}
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="FT.closeModal()">Close</button></div>`
   `;
+}
+
+export function rackComparisonHtml(visitId) {
+  const pairs = getActivityEvidencePairs(visitId).filter(p => p.beforePhotoId || p.afterPhotoId);
+  if (!pairs.length) return '';
+  const photos = Object.fromEntries(getFieldPhotos().map(p => [p.id, p]));
+  return `<h4>Rack before / after</h4>
+    ${pairs.map(pair => {
+      const before = photos[pair.beforePhotoId];
+      const after = photos[pair.afterPhotoId];
+      const status = rackPairStatus(pair);
+      const cell = (photo, label) => photo
+        ? `<div style="flex:1;min-width:140px"><strong>${label}</strong><img src="${esc(safePhotoUrl(photo.watermarkUrl || photo.dataUrl || photo.photoUrl))}" alt="${label}" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;margin-top:6px"><div class="am-muted" style="font-size:11px">${esc(formatEvidenceStamp(photo.recordedAt))}</div></div>`
+        : `<div style="flex:1;min-width:140px"><strong>${label}</strong><p class="am-muted">Not captured</p></div>`;
+      return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:12px;margin-bottom:10px">
+        <div class="am-muted" style="margin-bottom:8px">${status === 'completed' ? 'Completed' : status === 'waiting_after' ? 'Waiting after' : 'Before captured'}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">${cell(before, 'BEFORE')}${cell(after, 'AFTER')}</div>
+      </div>`;
+    }).join('')}`;
 }
 
 export function photoFilterBar(managerView) {
@@ -240,7 +263,37 @@ function productRow(kind, products, existing, idx) {
   </div>`;
 }
 
+let _geoWatch = null;
+
 window.FS = {
+  startAreaWatch() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
+    const role = window.FT?.state?.account?.role;
+    if (role !== 'employee') return;
+    if (_geoWatch != null) return;
+    _geoWatch = navigator.geolocation.watchPosition(pos => {
+      try {
+        const result = detectAreaAttendance({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          capturedAt: new Date(pos.timestamp).toISOString(),
+        });
+        if (result?.event && !result.skipped) {
+          window.showToast?.(`Area attendance: ${result.outlet?.name || 'outlet'} (${result.meters} m)`, 'success');
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        }
+      } catch (error) {
+        if (!/outside|still_inside|disabled|Akses/i.test(error.message || '')) {
+          window.showToast?.(error.message, 'error');
+        }
+      }
+    }, () => {}, { enableHighAccuracy: true, maximumAge: 10_000, timeout: 20_000 });
+  },
+  stopAreaWatch() {
+    if (_geoWatch != null && navigator.geolocation) navigator.geolocation.clearWatch(_geoWatch);
+    _geoWatch = null;
+  },
   checkInAttendance(e) {
     e.preventDefault();
     const raw = new FormData(e.target).get('point') || '';
@@ -258,6 +311,7 @@ window.FS = {
       checkInLocation: locationName,
       locationType,
       locationId,
+      source: locationType === 'office' ? 'office' : locationType === 'store' || locationType === 'outlet' ? 'outlet' : 'specific_point',
     });
     window.showToast?.('Absensi tercatat', 'success');
     window.FT?.state && (location.hash = '#/myday');
