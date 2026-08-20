@@ -57,7 +57,14 @@ const CARD_ROUTES={
   'Total Karyawan':'#/employees',
   'Kunjungan Hari Ini':'#/visits',
   'Stok Menipis':'#/stocks',
-  'Ijin/Cuti Pending':'#/leaves'
+  'Ijin/Cuti Pending':'#/leaves',
+  'Active employees':'#/employees',
+  'Visits today':'#/visits',
+  'Low stock':'#/stocks',
+  'Pending leave':'#/leaves',
+  'Team members':'#/my-team',
+  'Team visits':'#/visits',
+  'In the field':'#/tracking'
 };
 function makeDashboardCardsInteractive(root=document){
   root.querySelectorAll('.stat-card').forEach(card=>{

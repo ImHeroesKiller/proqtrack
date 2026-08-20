@@ -1,5 +1,5 @@
 const DB_KEYS=['proqtrack_db_v6','proqtrack_db_v7'];
-const VERSION=5;
+const VERSION=7;
 const now='2026-07-29T08:30:00.000Z';
 const day=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Jakarta'});
 const svg=(label,color='#EF5000')=>`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" rx="28" fill="${color}"/><text x="80" y="92" text-anchor="middle" font-family="Arial" font-size="34" font-weight="700" fill="white">${label}</text></svg>`)}`;
@@ -20,7 +20,7 @@ function buildUatDatabase(){
   const employees=[
     {id:'EMP-UAT-001',employeeNumber:'UAT-0001',name:'Rizky Pratama',email:'rizky.supervisor@proqtrack.id',phone:'0812-1000-0001',role:'Supervisor',jobRole:'Supervisor',area:'Jakarta',status:'active',supervisorId:null,joinDate:'2023-01-10',photo:photo('RP','#7C3AED'),lat:-6.2,lng:106.82},
     {id:'EMP-UAT-002',employeeNumber:'UAT-0002',name:'Siti Maharani',email:'siti.supervisor@proqtrack.id',phone:'0812-1000-0002',role:'Supervisor',jobRole:'Supervisor',area:'Tangerang',status:'active',supervisorId:null,joinDate:'2023-03-12',photo:photo('SM','#2563EB'),lat:-6.18,lng:106.63},
-    {id:'EMP-UAT-003',employeeNumber:'UAT-0003',name:'Budi Santoso',email:'budi.employee@proqtrack.id',phone:'0812-1000-0003',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Pusat',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-01-15',photo:photo('BS','#EF5000'),lat:-6.194,lng:106.823},
+    {id:'EMP-UAT-003',employeeNumber:'UAT-0003',name:'Budi Santoso',email:'budi.employee@proqtrack.id',phone:'0812-1000-0003',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Pusat',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-01-15',photo:photo('BS','#EF5000'),lat:-6.194,lng:106.823,targetVisits:6},
     {id:'EMP-UAT-004',employeeNumber:'UAT-0004',name:'Dewi Lestari',email:'dewi.employee@proqtrack.id',phone:'0812-1000-0004',role:'Field Sales',jobRole:'Field Sales',area:'Jakarta Selatan',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2024-02-20',photo:photo('DL','#DB2777'),lat:-6.261,lng:106.81},
     {id:'EMP-UAT-005',employeeNumber:'UAT-0005',name:'Ahmad Wijaya',email:'ahmad.employee@proqtrack.id',phone:'0812-1000-0005',role:'Field Sales',jobRole:'Field Sales',area:'Tangerang',status:'active',supervisorId:'EMP-UAT-002',joinDate:'2024-03-11',photo:photo('AW','#0F766E'),lat:-6.17,lng:106.64},
     {id:'EMP-UAT-006',employeeNumber:'UAT-0006',name:'Maya Putri',email:'maya.employee@proqtrack.id',phone:'0812-1000-0006',role:'Merchandiser',jobRole:'Field Sales',area:'Bekasi',status:'active',supervisorId:'EMP-UAT-001',joinDate:'2025-01-09',photo:photo('MP','#16A34A'),lat:-6.23,lng:106.99},
@@ -28,16 +28,16 @@ function buildUatDatabase(){
     {id:'EMP-UAT-008',employeeNumber:'UAT-0008',name:'Nadia Permata',email:'nadia.noaccount@proqtrack.id',phone:'0812-1000-0008',role:'Field Sales',jobRole:'Field Sales',area:'Depok',status:'active',supervisorId:'EMP-UAT-002',joinDate:'2026-07-01',photo:photo('NP','#D97706'),lat:-6.4,lng:106.82}
   ];
   const accounts=[
-    {id:'ACC-UAT-SA',email:'superadmin@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'superadmin',employeeId:null,organizationId:null,name:'Superadmin UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'head',employeeId:null,organizationId:'ORG-DEFAULT',name:'Head UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-HEAD',email:'head@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'head',employeeId:null,organizationId:'ORG-DEFAULT',name:'Head UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-PM',email:'pm@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'manager',employeeId:null,organizationId:'ORG-DEFAULT',projectId:'PRJ-UAT-001',name:'Project Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-001',email:'rizky.supervisor@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'supervisor',employeeId:'EMP-UAT-001',name:'Rizky Pratama',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-002',email:'siti.supervisor@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'supervisor',employeeId:'EMP-UAT-002',name:'Siti Maharani',status:'active',mustChangePassword:true,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-003',email:'budi.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-003',name:'Budi Santoso',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-004',email:'dewi.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-004',name:'Dewi Lestari',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-005',email:'ahmad.employee@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-005',name:'Ahmad Wijaya',status:'suspended',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
-    {id:'ACC-UAT-006',email:'fajar.inactive@proqtrack.id',password:'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',role:'employee',employeeId:'EMP-UAT-007',name:'Fajar Nugroho',status:'inactive',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now}
+    {id:'ACC-UAT-SA',email:'superadmin@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'superadmin',employeeId:null,organizationId:null,name:'Superadmin UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-000',email:'manager@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'head',employeeId:null,organizationId:'ORG-DEFAULT',name:'Head UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-HEAD',email:'head@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'head',employeeId:null,organizationId:'ORG-DEFAULT',name:'Head UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-PM',email:'pm@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'manager',employeeId:null,organizationId:'ORG-DEFAULT',projectId:'PRJ-UAT-001',name:'Project Manager UAT',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-001',email:'rizky.supervisor@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'supervisor',employeeId:'EMP-UAT-001',name:'Rizky Pratama',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-002',email:'siti.supervisor@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'supervisor',employeeId:'EMP-UAT-002',name:'Siti Maharani',status:'active',mustChangePassword:true,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-003',email:'budi.employee@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'employee',employeeId:'EMP-UAT-003',name:'Budi Santoso',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-004',email:'dewi.employee@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'employee',employeeId:'EMP-UAT-004',name:'Dewi Lestari',status:'active',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-005',email:'ahmad.employee@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'employee',employeeId:'EMP-UAT-005',name:'Ahmad Wijaya',status:'suspended',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now},
+    {id:'ACC-UAT-006',email:'fajar.inactive@proqtrack.id',password:'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',role:'employee',employeeId:'EMP-UAT-007',name:'Fajar Nugroho',status:'inactive',mustChangePassword:false,lastLoginAt:null,createdAt:now,updatedAt:now}
   ];
   const projectAssignments=[
     {id:'ASN-UAT-001',employeeId:'EMP-UAT-001',projectId:'PRJ-UAT-001',roleOnProject:'supervisor',startDate:'2026-01-01',endDate:'2026-12-31',status:'active'},
@@ -70,7 +70,10 @@ function buildUatDatabase(){
     {id:'VIS-UAT-002',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-002',date:day,visitDate:day,checkInTime:'09:15',checkOutTime:null,status:'checked-in',visitStatus:'in_progress',notes:'Audit promo berjalan.',rating:0},
     {id:'VIS-UAT-003',employeeId:'EMP-UAT-004',projectId:'PRJ-UAT-003',outletId:'OUT-UAT-004',date:day,visitDate:day,checkInTime:'09:00',checkOutTime:'09:35',status:'completed',visitStatus:'completed',notes:'Planogram sesuai, dua SKU kosong.',rating:4},
     {id:'VIS-UAT-004',employeeId:'EMP-UAT-005',projectId:'PRJ-UAT-002',outletId:'OUT-UAT-005',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
-    {id:'VIS-UAT-005',employeeId:'EMP-UAT-006',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-007',date:'2026-07-28',visitDate:'2026-07-28',checkInTime:'10:10',checkOutTime:'10:20',status:'failed',visitStatus:'failed',notes:'Outlet tutup permanen.',rating:1}
+    {id:'VIS-UAT-005',employeeId:'EMP-UAT-006',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-007',date:'2026-07-28',visitDate:'2026-07-28',checkInTime:'10:10',checkOutTime:'10:20',status:'failed',visitStatus:'failed',notes:'Outlet tutup permanen.',rating:1},
+    {id:'VIS-UAT-006',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-005',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
+    {id:'VIS-UAT-007',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-003',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0},
+    {id:'VIS-UAT-008',employeeId:'EMP-UAT-003',projectId:'PRJ-UAT-001',outletId:'OUT-UAT-006',date:day,visitDate:day,checkInTime:null,checkOutTime:null,status:'planned',visitStatus:'planned',notes:'',rating:0}
   ];
   const products=[
     {id:'PRD-UAT-001',clientId:'CL-UAT-001',name:'FreshMilk UHT 1L',brand:'Nusantara Dairy',category:'Minuman',unit:'pcs',price:18500,cost:14500,sku:'NFS-FM-1L',status:'active'},
@@ -114,7 +117,7 @@ function buildUatDatabase(){
   }
   return {
     _version:11,_uatSeedVersion:VERSION,_seededAt:now,updatedAt:now,
-    organizations:[{id:'ORG-DEFAULT',name:'Organisasi Demo',legalName:'ProQTrack Demo Tenant',code:'DEMO',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
+    organizations:[{id:'ORG-DEFAULT',name:'ProQ Indonesia',legalName:'PT. ProQ Indonesia',code:'PROQ',industry:'Field Services',status:'active',city:'Jakarta',province:'DKI Jakarta',website:'',notes:'Tenant demo UAT',createdAt:now,updatedAt:now}],
     currentOrganizationId:'ORG-DEFAULT',
     clients,projects,employees,accounts,projectAssignments,outlets,stores:outlets,attendance,visits,products,stocks,priceObservations,competitors,competitorProducts,competitorIntel,
     promoTypes:[{code:'disc_pct',label:'Diskon %',strategic:false},{code:'bundle',label:'Bundle / Paket',strategic:true},{code:'trade_promo',label:'Trade Promo',strategic:true}],fieldPhotos,photos:fieldPhotos,leaveTypes,leaves,
@@ -147,6 +150,8 @@ function apply(){
   try{current=JSON.parse(localStorage.getItem(DB_KEYS[0])||localStorage.getItem(DB_KEYS[1])||'{}')||{};}catch{}
   if(Number(current._uatSeedVersion||0)>=VERSION)return;
   const db=buildUatDatabase();
+  db._uatSeedVersion = VERSION;
+  db._version = 15;
   const text=JSON.stringify(db);
   DB_KEYS.forEach(key=>localStorage.setItem(key,text));
   localStorage.setItem('proqtrack_uat_seed_active',String(VERSION));

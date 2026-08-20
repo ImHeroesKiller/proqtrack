@@ -152,7 +152,7 @@ export function renderSettings() {
         <div class="card-title">Wajib ganti password</div>
         <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
-      <nav class="am-tabs" aria-label="Pengaturan">
+      <nav class="am-tabs" aria-label="Settings">
         ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
       </nav>
       <div class="card am-tab-body">
@@ -263,7 +263,7 @@ export function renderSettings() {
           })() : ''}
           ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
           <div class="am-actions">
-            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
+            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Sign out</button>
           </div>
         </section>
       </div>
