@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 15;
+const DB_VERSION = 16;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -668,9 +668,9 @@ function migrateDB(parsed) {
 }
 
 const RETIRED_SEED_PASSWORD_HASHES = new Set([
-  'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3',
+  'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',
 ]);
-const LOCAL_SEED_PASSWORD_HASH = 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c';
+const LOCAL_SEED_PASSWORD_HASH = 'sha256$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3';
 
 function rotateRetiredSeedPasswords(accounts) {
   (accounts || []).forEach(account => {
@@ -2068,7 +2068,7 @@ function updateEmployeeRequest(key, id, data) {
   const current = list[idx];
   assertCanAccessEmployee(current.employeeId);
   const nextStatus = data.status || current.status;
-  if (nextStatus !== current.status && !['manager', 'supervisor', 'superadmin'].includes(actor.role)) {
+  if (nextStatus !== current.status && !isProjectAdminRole(actor.role) && actor.role !== 'supervisor') {
     throw new Error('Akses ditolak');
   }
   list[idx] = { ...current, ...data };
