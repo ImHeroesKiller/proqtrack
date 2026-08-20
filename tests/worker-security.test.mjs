@@ -186,6 +186,27 @@ test('login rejects unknown users, bad passwords, and plaintext hashes', async (
   assert.equal(plaintext.status, 401);
 });
 
+test('PUT /api/state rejects malformed JSON without a stack trace', async () => {
+  const { token } = await issueSessionForUser({
+    id: 'ACC-H',
+    email: 'head@proqtrack.id',
+    role: 'head',
+    project_ids: '[]',
+    client_ids: '[]',
+  }, secret);
+  const env = createEnv({ dataApi: 'true' });
+  const res = await handleApi(request('/api/state', {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    rawBody: '{not-json',
+  }), env);
+  assert.equal(res.status, 400);
+  const payload = await res.json();
+  assert.equal(payload.error, 'INVALID_JSON');
+  assert.equal(payload.stack, undefined);
+  assert.equal(String(JSON.stringify(payload)).includes('at '), false);
+});
+
 test('file and data APIs stay locked even with a valid token', async () => {
   const { token } = await issueSessionForUser({
     id: 'ACC-1',

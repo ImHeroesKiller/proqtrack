@@ -1840,11 +1840,18 @@ export function detectAreaAttendance(fix = {}) {
     .map(o => ({ o, m: distanceMeters(lat, lng, Number(o.lat), Number(o.lng)) }))
     .filter(x => x.m <= radius)
     .sort((a, b) => a.m - b.m);
-  if (!ranked.length) return { skipped: true, reason: 'outside', radiusM: radius };
-  const hit = ranked[0];
   const db = getDB();
   db.attendanceEvents = db.attendanceEvents || [];
   const today = todayISO();
+  if (!ranked.length) {
+    const open = db.attendanceEvents.filter(e => e.employeeId === actor.employeeId && e.date === today && e.inside !== false);
+    if (open.length) {
+      open.forEach(e => { e.inside = false; e.exitedAt = new Date().toISOString(); });
+      saveDB();
+    }
+    return { skipped: true, reason: 'outside', radiusM: radius };
+  }
+  const hit = ranked[0];
   const lastSame = db.attendanceEvents
     .filter(e => e.employeeId === actor.employeeId && e.outletId === hit.o.id && e.date === today)
     .sort((a, b) => String(b.createdAt || '').localeCompare(a.createdAt || ''))[0];
