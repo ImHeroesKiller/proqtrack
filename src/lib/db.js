@@ -1661,7 +1661,8 @@ export function getVisits() {
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
-  return rows.filter(v => ids.has(v.employeeId));
+  const pids = actorProjectIds(actor);
+  return rows.filter(v => ids.has(v.employeeId) && (!v.projectId || pids.has(v.projectId)));
 }
 
 export function getVisitsByEmployee(empId) {

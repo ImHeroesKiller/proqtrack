@@ -375,7 +375,8 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   }
   if (url.pathname === '/api/state' && request.method === 'PUT') {
     if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
-    const body = await request.json();
+    let body;
+    try { body = await request.json(); } catch { return json({ error: 'INVALID_JSON', requestId: id }, 400); }
     const serialized = JSON.stringify(body.data);
     if (serialized.length > 4_000_000) return json({ error: 'MVP_STATE_LIMIT_EXCEEDED', requestId: id }, 413);
     const current = await env.DB.prepare("SELECT version FROM app_snapshots WHERE id='primary'").first();
@@ -438,7 +439,8 @@ export async function handleApi(request, env, url = new URL(request.url)) {
 
   if (url.pathname === '/api/report-jobs' && request.method === 'POST') {
     if (!roleAllowed(claims, ['head', 'manager', 'admin', 'supervisor'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
-    const body = await request.json();
+    let body;
+    try { body = await request.json(); } catch { return json({ error: 'INVALID_JSON', requestId: id }, 400); }
     const projectId = safeKey(body.projectId);
     if (!projectAllowed(claims, projectId)) return json({ error: 'PROJECT_ACCESS_DENIED', requestId: id }, 403);
     const jobId = crypto.randomUUID();

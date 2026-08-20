@@ -2153,6 +2153,9 @@ window.FT.fillSalePrice = function(sel) {
 
 window.FT.submitProductSale = function(e) {
   e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+  if (btn?.dataset.busy === '1') return;
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
   try {
     const data = Object.fromEntries(new FormData(e.target));
     createProductSale(data);
@@ -2160,6 +2163,7 @@ window.FT.submitProductSale = function(e) {
     render();
   } catch (error) {
     showToast(error.message, 'error');
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
   }
 };
 
