@@ -811,7 +811,9 @@ window.FT.logout = function() {
   clearApiToken();
   state.loggedIn = false;
   state.account = null;
+  state.user = null;
   state.route = '#/login';
+  try { sessionStorage.removeItem('proqtrack_active_session_v1'); } catch { /* ignore */ }
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
   render();
 };
