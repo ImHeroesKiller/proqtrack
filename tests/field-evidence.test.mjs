@@ -106,6 +106,15 @@ test('rack pair requires before before after and binds to one visit', () => {
   assert.throws(() => attachRackPhoto(other.id, 'before', before.id), /another visit/);
 });
 
+test('rackComparisonHtml renders missing photos without throwing', async () => {
+  prepare();
+  login('budi.santoso@proqtrack.id');
+  const { rackComparisonHtml } = await import('../src/field-sales.js');
+  assert.equal(rackComparisonHtml('VISIT-NONE'), '');
+  const html = rackComparisonHtml(undefined);
+  assert.equal(typeof html, 'string');
+});
+
 test('schema catalogs attendanceEvents and activityEvidencePairs', () => {
   prepare();
   const db = getDB();

@@ -180,27 +180,37 @@ export function renderVisitDetailHtml(visitId) {
       return src ? `<figure style="margin:0"><img src="${src}" alt="" style="width:120px;height:120px;object-fit:cover;border-radius:8px"><figcaption class="am-muted" style="font-size:10px">${esc(stamp)}</figcaption></figure>` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
     }).join('')}</div>` : '<p class="am-muted">No photos yet.</p>'}
     ${rackComparisonHtml(visitId)}
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="FT.closeModal()">Close</button></div>`
+    <div class="modal-footer"><button class="btn btn-secondary" onclick="FT.closeModal()">Close</button></div>
   `;
+}
+
+function rackPhotoCell(photo, label) {
+  if (!photo) {
+    return `<div style="flex:1;min-width:140px"><strong>${esc(label)}</strong><p class="am-muted">Not captured</p></div>`;
+  }
+  const src = safePhotoUrl(photo.watermarkUrl || photo.dataUrl || photo.photoUrl);
+  const stamp = formatEvidenceStamp(photo.recordedAt);
+  const img = src
+    ? `<img src="${esc(src)}" alt="${esc(label)}" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;margin-top:6px">`
+    : '<p class="am-muted">Image unavailable</p>';
+  return `<div style="flex:1;min-width:140px"><strong>${esc(label)}</strong>${img}<div class="am-muted" style="font-size:11px">${esc(stamp)}</div></div>`;
 }
 
 export function rackComparisonHtml(visitId) {
   const pairs = getActivityEvidencePairs(visitId).filter(p => p.beforePhotoId || p.afterPhotoId);
   if (!pairs.length) return '';
   const photos = Object.fromEntries(getFieldPhotos().map(p => [p.id, p]));
-  return `<h4>Rack before / after</h4>
-    ${pairs.map(pair => {
-      const before = photos[pair.beforePhotoId];
-      const after = photos[pair.afterPhotoId];
-      const status = rackPairStatus(pair);
-      const cell = (photo, label) => photo
-        ? `<div style="flex:1;min-width:140px"><strong>${label}</strong><img src="${esc(safePhotoUrl(photo.watermarkUrl || photo.dataUrl || photo.photoUrl))}" alt="${label}" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;margin-top:6px"><div class="am-muted" style="font-size:11px">${esc(formatEvidenceStamp(photo.recordedAt))}</div></div>`
-        : `<div style="flex:1;min-width:140px"><strong>${label}</strong><p class="am-muted">Not captured</p></div>`;
-      return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:12px;margin-bottom:10px">
-        <div class="am-muted" style="margin-bottom:8px">${status === 'completed' ? 'Completed' : status === 'waiting_after' ? 'Waiting after' : 'Before captured'}</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap">${cell(before, 'BEFORE')}${cell(after, 'AFTER')}</div>
+  const blocks = pairs.map(pair => {
+    const beforePhoto = photos[pair.beforePhotoId];
+    const afterPhoto = photos[pair.afterPhotoId];
+    const status = rackPairStatus(pair);
+    const statusLabel = status === 'completed' ? 'Completed' : status === 'waiting_after' ? 'Waiting After' : 'Before Captured';
+    return `<div style="border:1px solid var(--gray-200);border-radius:12px;padding:12px;margin-bottom:10px">
+        <div class="am-muted" style="margin-bottom:8px">${statusLabel}</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">${rackPhotoCell(beforePhoto, 'BEFORE')}${rackPhotoCell(afterPhoto, 'AFTER')}</div>
       </div>`;
-    }).join('')}`;
+  }).join('');
+  return `<h4>Rack Before / After</h4>${blocks}`;
 }
 
 export function photoFilterBar(managerView) {

@@ -46,7 +46,8 @@ export function calculateDistance(lat1, lng1, lat2, lng2) {
 }
 
 export function formatEvidenceStamp(date = new Date(), timeZone = dateTimeZone()) {
-  const d = date instanceof Date ? date : new Date(date);
+  const d = date instanceof Date ? date : new Date(date || Date.now());
+  if (Number.isNaN(d.getTime())) return '—';
   const datePart = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone });
   const timePart = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone });
   const tz = timeZone === 'Asia/Jakarta' ? 'WIB' : timeZone;
