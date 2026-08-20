@@ -24,6 +24,7 @@ import {
   canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
+  isOrgAdminRole, isProjectAdminRole,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
@@ -74,12 +75,20 @@ function isSuperadmin() {
   return getActor()?.role === 'superadmin';
 }
 
+function isHead() {
+  return getActor()?.role === 'head';
+}
+
 function isManager() {
   return getActor()?.role === 'manager';
 }
 
 function isOrgAdmin() {
-  return isManager() || isSuperadmin();
+  return isOrgAdminRole(getActor()?.role);
+}
+
+function isProjectAdmin() {
+  return isProjectAdminRole(getActor()?.role);
 }
 
 function isSupervisor() {
@@ -87,18 +96,19 @@ function isSupervisor() {
 }
 
 function canViewTeamOps() {
-  return isOrgAdmin() || isSupervisor();
+  return isProjectAdmin() || isSupervisor();
 }
 
 function displayRole(account) {
   if (account?.role === 'superadmin') return 'Superadmin';
+  if (account?.role === 'head') return 'Head';
   if (account?.role === 'manager') return 'Manager';
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 }
 
 function defaultRouteFor(account) {
-  if (account?.role === 'superadmin' || account?.role === 'manager' || account?.role === 'supervisor') return '#/';
+  if (['superadmin', 'head', 'manager', 'supervisor'].includes(account?.role)) return '#/';
   return '#/myday';
 }
 
@@ -124,7 +134,7 @@ function myEmployeeId() {
 }
 
 function teamFieldView() {
-  return isSupervisor() || isOrgAdmin();
+  return isSupervisor() || isProjectAdmin();
 }
 
 function visitedOutletIdsForView() {
@@ -186,6 +196,41 @@ const NAV_ITEMS = [
     { id: 'organizations', label: 'Organizations', icon: 'organizations', route: '#/organizations' },
     { id: 'accounts',      label: 'Accounts',      icon: 'accounts', route: '#/accounts' },
     { id: 'settings',      label: 'Settings',      icon: 'settings', route: '#/settings' },
+  ]},
+];
+
+const NAV_ITEMS_PM = [
+  { section: 'Main', items: [
+    { id: 'dashboard', label: 'Project Home',   icon: 'home', route: '#/' },
+    { id: 'tracking',  label: 'Last Location',  icon: 'tracking', route: '#/tracking' },
+    { id: 'visits',    label: 'Visits',         icon: 'visits', route: '#/visits' },
+  ]},
+  { section: 'Project', items: [
+    { id: 'projects',    label: 'My Project',   icon: 'briefcase', route: '#/projects' },
+    { id: 'assignments', label: 'Assignments',  icon: 'team', route: '#/assignments' },
+  ]},
+  { section: 'Management', items: [
+    { id: 'employees',  label: 'Employees',        icon: 'employees', route: '#/employees' },
+    { id: 'outlets',    label: 'Outlets',          icon: 'outlets', route: '#/outlets' },
+    { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
+    { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
+    { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
+    { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
+    { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
+  ]},
+  { section: 'Competitors', items: [
+    { id: 'competitors',         label: 'Competitors',         icon: 'competitors', route: '#/competitors' },
+    { id: 'competitor-analysis', label: 'Competitor Analysis', icon: 'analysis', route: '#/competitor-analysis' },
+  ]},
+  { section: 'Field', items: [
+    { id: 'field-photos', label: 'Photos & Assets', icon: 'photos', route: '#/field-photos' },
+  ]},
+  { section: 'Analytics', items: [
+    { id: 'reports', label: 'Reports', icon: 'chart', route: '#/reports' },
+  ]},
+  { section: 'System', items: [
+    { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
   ]},
 ];
 
@@ -318,7 +363,7 @@ function render() {
   let pageContent = '';
   let pageTitle = '';
   let pageSubtitle = '';
-  const manager = isOrgAdmin();
+  const manager = isProjectAdmin();
   const teamOps = canViewTeamOps();
   if (route === '#/photos') {
     location.hash = '#/field-photos';
@@ -333,7 +378,7 @@ function render() {
   // application shell exists. This prevents false redirects and 404 states.
   if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
     const managerOnlyPm = route === '#/clients' || route === '#/projects' || route === '#/assignments';
-    if (managerOnlyPm && !isOrgAdmin()) {
+    if (managerOnlyPm && !isProjectAdmin()) {
       location.hash = defaultRouteFor(state.account);
       return;
     }
@@ -384,36 +429,36 @@ function render() {
       pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
       pageContent = renderProductSales({ mine: true });
     }
-  } else if ((isOrgAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
+  } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
-    pageTitle = isOrgAdmin() ? 'Organization Home' : 'Team Home';
-    pageSubtitle = org ? `${org.name} · ${org.code}` : 'Ringkasan operasional';
-    pageContent = isOrgAdmin() ? renderManagerDashboard() : renderSupervisorDashboard();
+    pageTitle = isOrgAdmin() ? 'Organization Home' : isManager() ? 'Project Home' : 'Team Home';
+    pageSubtitle = org ? `${org.name} · ${org.code}` : 'Operational summary';
+    pageContent = (isProjectAdmin() || isManager()) ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
     pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in terakhir tim di toko atau lokasi kerja';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
     pageTitle = 'Visits'; pageSubtitle = 'Outlet visits by the field team';
     pageContent = renderVisits();
-  } else if (isOrgAdmin() && route === '#/employees') {
+  } else if (isProjectAdmin() && route === '#/employees') {
     pageTitle = 'Employees'; pageSubtitle = 'Field employee records';
     pageContent = renderEmployees();
-  } else if ((isOrgAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
+  } else if ((isProjectAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
     pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
     pageContent = renderOutletProposalForm();
-  } else if (isOrgAdmin() && route === '#/outlets') {
+  } else if (isProjectAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
     pageContent = renderOutlets();
-  } else if (isOrgAdmin() && route === '#/products') {
+  } else if (isProjectAdmin() && route === '#/products') {
     pageTitle = 'Products'; pageSubtitle = 'Product catalog';
     pageContent = renderProducts();
-  } else if (isOrgAdmin() && route === '#/sales') {
+  } else if (isProjectAdmin() && route === '#/sales') {
     pageTitle = 'Product Sales'; pageSubtitle = 'Sales entries used to calculate monthly targets';
     pageContent = renderProductSales({ mine: false });
-  } else if (isOrgAdmin() && route === '#/stocks') {
+  } else if (isProjectAdmin() && route === '#/stocks') {
     pageTitle = 'Outlet Stock'; pageSubtitle = 'Stock levels at each outlet';
     pageContent = renderStocks();
-  } else if (isOrgAdmin() && route === '#/competitors') {
+  } else if (isProjectAdmin() && route === '#/competitors') {
     pageTitle = 'Competitors'; pageSubtitle = 'Competitor brands and catalog';
     pageContent = renderCompetitors();
   } else if (teamOps && route === '#/competitor-analysis') {
@@ -428,11 +473,11 @@ function render() {
   } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Leave'; pageSubtitle = 'Leave and time-off requests';
     pageContent = renderLeavesManager();
-  } else if (isOrgAdmin() && route.startsWith('#/employee/')) {
+  } else if (isProjectAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
     pageTitle = 'Detail Karyawan'; pageSubtitle = '';
-  } else if (isOrgAdmin() && route.startsWith('#/outlet/')) {
+  } else if (isProjectAdmin() && route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
     pageTitle = 'Detail Outlet'; pageSubtitle = '';
@@ -452,21 +497,21 @@ function render() {
   } else if (route === '#/settings') {
     pageTitle = 'Settings'; pageSubtitle = 'Account, security, and app preferences';
     pageContent = renderSettings();
-  } else if (isOrgAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
+  } else if (isProjectAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
     pageTitle = 'Reports';
     pageSubtitle = 'Operational analytics and custom extracts';
     pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
   } else if (isOrgAdmin() && route === '#/accounts') {
     pageTitle = 'Accounts'; pageSubtitle = 'Logins, roles, and employee links';
     pageContent = renderAccounts();
-  } else if (!isOrgAdmin()) {
+  } else if (!isProjectAdmin()) {
     location.hash = '#/myday';
     return;
   } else {
     pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${esc(route)}</p></div>`;
   }
 
-  const fieldRole = !isOrgAdmin();
+  const fieldRole = !isProjectAdmin();
   const roleSkin = fieldRole ? `role-field ${isSupervisor() ? 'role-supervisor' : 'role-sales'}` : 'role-desk';
   app.innerHTML = `
     <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${roleSkin}">
@@ -509,7 +554,7 @@ function render() {
 // ===== Sidebar =====
 function renderSidebar() {
   const currentRoute = state.route;
-  const navSource = isOrgAdmin() ? NAV_ITEMS : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
+  const navSource = isOrgAdmin() ? NAV_ITEMS : isManager() ? NAV_ITEMS_PM : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
   let navHTML = '';
   for (const section of navSource) {
     navHTML += `<div class="nav-section-label">${section.section}</div>`;
@@ -528,7 +573,7 @@ function renderSidebar() {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
         if (pending > 0) badge = `<span class="nav-badge" style="background:var(--amber-500);">${pending}</span>`;
       }
-      if (isOrgAdmin() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
+      if (isProjectAdmin() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
@@ -1077,7 +1122,7 @@ window.FT.viewVisit = function(id) {
   }
   const emp = getEmployees().find(e => e.id === v.employeeId);
   const mine = myEmployeeId();
-  const canAct = !mine || v.employeeId === mine || isOrgAdmin();
+  const canAct = !mine || v.employeeId === mine || isProjectAdmin();
   openModal('Detail Kunjungan', `
     <div class="detail-grid" style="margin-bottom:8px">
       <div class="detail-label">Sales</div><div class="detail-value">${esc(emp?.name || '-')}</div>
@@ -1289,7 +1334,7 @@ window.FT.openEmployeeModal = function() {
 
 window.FT.createEmployee = async function(e) {
   e.preventDefault();
-  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
@@ -1304,7 +1349,7 @@ window.FT.createEmployee = async function(e) {
 };
 
 window.FT.deleteEmployee = function(id) {
-  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus karyawan ini?')) return;
   const result = deleteEmployee(id);
   showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
@@ -1558,7 +1603,7 @@ window.FT.openOutletModal = function() {
 
 window.FT.createOutlet = function(e) {
   e.preventDefault();
-  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd);
   if (!data.lat || !data.lng) { showToast('Tandai titik toko di peta atau cari lokasi dulu.', 'error'); return; }
@@ -1570,7 +1615,7 @@ window.FT.createOutlet = function(e) {
 };
 
 window.FT.deleteOutlet = function(id) {
-  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   if (!confirm('Hapus outlet ini?')) return;
   deleteOutlet(id);
   showToast('Outlet dihapus', 'success'); render();
@@ -2104,7 +2149,7 @@ window.FT.openProductModal = function() {
 
 window.FT.createProduct = function(e) {
   e.preventDefault();
-  if (!isOrgAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const data = Object.fromEntries(new FormData(e.target));
   try {
     createProduct(data);
@@ -2113,7 +2158,7 @@ window.FT.createProduct = function(e) {
 };
 
 window.FT.editProduct = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const p = getProducts().find(x => x.id === id);
   if (!p) return;
   openModal('Edit Produk', `
@@ -2129,7 +2174,7 @@ window.FT.editProduct = function(id) {
 
 window.FT.updateProduct = function(e, id) {
   e.preventDefault();
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   try {
     updateProduct(id, data);
@@ -2138,7 +2183,7 @@ window.FT.updateProduct = function(e, id) {
 };
 
 window.FT.deleteProductConfirm = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   if (!confirm('Hapus produk ini?')) return;
   deleteProduct(id);
   showToast('Produk dihapus', 'success'); render();
@@ -3060,7 +3105,7 @@ function renderCompetitors() {
 }
 
 window.FT.openCompetitorModal = function() {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   openModal('Tambah Merek Kompetitor', `
     <form onsubmit="FT.saveCompetitor(event)">
       <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" required placeholder="Danone, P&G..."></div>
@@ -3079,14 +3124,14 @@ window.FT.openCompetitorModal = function() {
 
 window.FT.saveCompetitor = function(e) {
   e.preventDefault();
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   createCompetitor(data);
   closeModal(); showToast('Kompetitor ditambahkan', 'success'); render();
 };
 
 window.FT.editCompetitor = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const c = getCompetitors().find(x => x.id === id);
   if (!c) return;
   openModal('Edit Kompetitor', `
@@ -3113,20 +3158,20 @@ window.FT.editCompetitor = function(id) {
 
 window.FT.updateCompetitorForm = function(e, id) {
   e.preventDefault();
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   updateCompetitor(id, Object.fromEntries(new FormData(e.target)));
   closeModal(); showToast('Kompetitor diperbarui', 'success'); render();
 };
 
 window.FT.deleteCompetitorConfirm = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   if (!confirm('Hapus kompetitor dan semua produknya?')) return;
   deleteCompetitor(id);
   showToast('Kompetitor dihapus', 'success'); render();
 };
 
 window.FT.openCompetitorProductModal = function(competitorId) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const competitors = getCompetitors().filter(c => c.status === 'active');
   openModal('Tambah Produk Kompetitor', `
     <form onsubmit="FT.saveCompetitorProduct(event)">
@@ -3152,14 +3197,14 @@ window.FT.openCompetitorProductModal = function(competitorId) {
 
 window.FT.saveCompetitorProduct = function(e) {
   e.preventDefault();
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const data = Object.fromEntries(new FormData(e.target));
   createCompetitorProduct(data);
   closeModal(); showToast('Produk kompetitor ditambahkan', 'success'); render();
 };
 
 window.FT.editCompetitorProduct = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   const p = getCompetitorProducts().find(x => x.id === id);
   if (!p) return;
   const competitors = getCompetitors();
@@ -3194,13 +3239,13 @@ window.FT.editCompetitorProduct = function(id) {
 
 window.FT.updateCompetitorProductForm = function(e, id) {
   e.preventDefault();
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   updateCompetitorProduct(id, Object.fromEntries(new FormData(e.target)));
   closeModal(); showToast('Produk kompetitor diperbarui', 'success'); render();
 };
 
 window.FT.deleteCompetitorProductConfirm = function(id) {
-  if (!isOrgAdmin()) return;
+  if (!isProjectAdmin()) return;
   if (!confirm('Hapus produk kompetitor ini?')) return;
   deleteCompetitorProduct(id);
   showToast('Dihapus', 'success'); render();
@@ -3624,12 +3669,12 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
-  if (!empId && !isOrgAdmin()) {
+  if (!empId && !isProjectAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
   let outId = outletId || fd.get('outletId');
-  if (!isOrgAdmin()) {
+  if (!isProjectAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outId)) {
       showToast('Outlet tidak diizinkan (belum dikunjungi)', 'error');
@@ -3782,7 +3827,7 @@ function renderFieldPhotosGallery({ managerView }) {
                   ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${esc(prod.name)}</div>` : ''}
                   ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${esc(comp.name)}</div>` : ''}
                   <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || p.createdAt || '').slice(0, 10))}</div>
-                  ${(!managerView || isOrgAdmin()) ? `
+                  ${(!managerView || isProjectAdmin()) ? `
                     <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
                   ` : ''}
                 </div>
@@ -3803,11 +3848,11 @@ window.FT.setPhotoFilter = function(type) {
 window.FT.openVisitPhotoInput = function(visitId, outletId) {
   const outlet = getOutlets().find(o => o.id === outletId);
   const empId = myEmployeeId();
-  if (!empId && !isOrgAdmin()) {
+  if (!empId && !isProjectAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
-  if (empId && !isOrgAdmin()) {
+  if (empId && !isProjectAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outletId)) {
       showToast('Outlet belum pernah dikunjungi', 'error');
@@ -3901,11 +3946,11 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
   e.preventDefault();
   const fd = new FormData(e.target);
   const empId = myEmployeeId();
-  if (!empId && !isOrgAdmin()) {
+  if (!empId && !isProjectAdmin()) {
     showToast('Akses ditolak', 'error');
     return;
   }
-  if (empId && !isOrgAdmin()) {
+  if (empId && !isProjectAdmin()) {
     const visited = getVisitedOutletIds(empId);
     if (!visited.includes(outletId)) {
       showToast('Outlet tidak diizinkan', 'error');
@@ -3958,7 +4003,7 @@ window.FT.deleteFieldPhotoConfirm = function(id) {
   const p = photos.find(x => x.id === id);
   if (!p) return;
   const empId = myEmployeeId();
-  if (!isOrgAdmin() && p.recordedBy !== empId) {
+  if (!isProjectAdmin() && p.recordedBy !== empId) {
     showToast('Hanya bisa hapus foto sendiri', 'error');
     return;
   }
@@ -3972,7 +4017,7 @@ window.FT.deleteFieldPhotoConfirm = function(id) {
 function renderMobileSim() {
   const employees = getEmployees().filter(e => e.role === 'Field Sales');
   const myId = myEmployeeId();
-  if (!isOrgAdmin() && myId) {
+  if (!isProjectAdmin() && myId) {
     state.selectedMobileEmp = myId;
   }
   const current = employees.find(e => e.id === state.selectedMobileEmp) || employees[0];

@@ -46,7 +46,7 @@ function installSessionContinuity(){
   if(!account){sessionStorage.removeItem(SESSION_KEY);return;}
   window.FT.state.loggedIn=true;
   window.FT.state.account=account;
-  window.FT.state.user={name:account.name||account.email,role:account.role==='superadmin'?'Superadmin':account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};
+  window.FT.state.user={name:account.name||account.email,role:account.role==='superadmin'?'Superadmin':account.role==='head'?'Head':account.role==='manager'?'Manager':account.role==='supervisor'?'Supervisor':'Field Sales',email:account.email};
   window.FT.state.route=saved.route&&saved.route!=='#/login'?saved.route:defaultRouteFor(account);
   if(location.hash!==window.FT.state.route)location.hash=window.FT.state.route;
   else window.dispatchEvent(new HashChangeEvent('hashchange'));

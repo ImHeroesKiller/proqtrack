@@ -15,7 +15,7 @@ import { defaultPortrait } from './avatars.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const LEGACY_KEYS = ['proqtrack_db_v5', 'proqtrack_db_v4', 'proqtrack_db_v3', 'proqtrack_db_v2', 'proqtrack_db_v1'];
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 const ORG_KEY = 'proqtrack_current_org';
 export const DEFAULT_ORG_ID = 'ORG-DEFAULT';
 
@@ -82,20 +82,39 @@ function assertSuperadmin() {
   return actor;
 }
 
+export function isOrgAdminRole(role) {
+  return role === 'head' || role === 'superadmin';
+}
+
+export function isProjectAdminRole(role) {
+  return isOrgAdminRole(role) || role === 'manager';
+}
+
 function assertOrgAdmin() {
   const actor = assertLoggedIn();
-  if (actor.role !== 'manager' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
+  if (!isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
   return actor;
 }
 
-function isOrgAdminRole(role) {
-  return role === 'manager' || role === 'superadmin';
+function assertProjectAdmin() {
+  const actor = assertLoggedIn();
+  if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
+  return actor;
 }
 
 function visibleEmployeeIds(actor = getActor(), db = getDB()) {
   const orgId = getCurrentOrgId();
   const inOrg = (db.employees || []).filter(e => !e.organizationId || e.organizationId === orgId);
   if (!actor || isOrgAdminRole(actor.role)) return new Set(inOrg.map(e => e.id));
+  if (actor.role === 'manager') {
+    const pid = actor.projectId;
+    const ids = new Set(
+      (db.projectAssignments || [])
+        .filter(a => a.projectId === pid && a.status === 'active')
+        .map(a => a.employeeId),
+    );
+    return new Set(inOrg.filter(e => ids.has(e.id)).map(e => e.id));
+  }
   if (actor.role === 'supervisor') {
     return new Set(inOrg.filter(e => e.id === actor.employeeId || e.supervisorId === actor.employeeId).map(e => e.id));
   }
@@ -333,7 +352,8 @@ export function getProjectStoreSettings(projectId) {
 }
 
 export function saveProjectStoreSettings(projectId, data) {
-  const actor = assertOrgAdmin();
+  const actor = assertProjectAdmin();
+  if (actor.role === 'manager' && actor.projectId !== projectId) throw new Error('Akses ditolak');
   const db = getDB();
   db.projectSettings = db.projectSettings || [];
   let row = db.projectSettings.find(s => s.projectId === projectId);
@@ -537,7 +557,12 @@ function migrateDB(parsed) {
       lastLoginAt: null,
       mustChangePassword: false,
       ...account,
-      role: ['superadmin', 'manager'].includes(account.role) ? account.role : syncedRole,
+      role: (() => {
+        let role = account.role;
+        if (role === 'manager' && !account.projectId) role = 'head';
+        if (['superadmin', 'head', 'manager'].includes(role)) return role;
+        return syncedRole;
+      })(),
       email: normalizeEmail(account.email),
     };
   });
@@ -718,8 +743,17 @@ export function getAccounts() {
     const orgId = getCurrentOrgId();
     return all.filter(a => a.role === 'superadmin' || a.organizationId === orgId);
   }
-  if (actor.role === 'manager') {
+  if (actor.role === 'head') {
     return all.filter(a => a.organizationId === actor.organizationId && a.role !== 'superadmin');
+  }
+  if (actor.role === 'manager') {
+    const ids = visibleEmployeeIds(actor);
+    return all.filter(a =>
+      a.organizationId === actor.organizationId &&
+      a.role !== 'superadmin' &&
+      a.role !== 'head' &&
+      (a.id === actor.id || (a.role === 'manager' && a.projectId === actor.projectId) || (a.employeeId && ids.has(a.employeeId)))
+    );
   }
   return all.filter(a => a.id === actor.id);
 }
@@ -747,7 +781,7 @@ export function createOrganization(data) {
 
 export function updateOrganization(id, data) {
   const actor = assertOrgAdmin();
-  if (actor.role === 'manager' && actor.organizationId !== id) throw new Error('Akses ditolak');
+  if (actor.role === 'head' && actor.organizationId !== id) throw new Error('Akses ditolak');
   const db = getDB();
   const idx = (db.organizations || []).findIndex(o => o.id === id);
   if (idx === -1) throw new Error('Organisasi tidak ditemukan.');
@@ -833,12 +867,16 @@ function assertSalesDevice(db, acc, device) {
 }
 
 export function resetSalesDevice(accountId) {
-  const actor = assertOrgAdmin();
+  const actor = assertProjectAdmin();
   const db = getDB();
   const acc = db.accounts.find(a => a.id === accountId);
   if (!acc) throw new Error('Akun tidak ditemukan.');
   if (acc.role !== 'employee') throw new Error('Reset IMEI hanya untuk akun sales.');
-  if (actor.role === 'manager' && (acc.organizationId || DEFAULT_ORG_ID) !== actor.organizationId) throw new Error('Akses ditolak');
+  if (actor.role === 'head' && (acc.organizationId || DEFAULT_ORG_ID) !== actor.organizationId) throw new Error('Akses ditolak');
+  if (actor.role === 'manager') {
+    const ids = visibleEmployeeIds(actor);
+    if (acc.id !== actor.id && !ids.has(acc.employeeId)) throw new Error('Akses ditolak');
+  }
   acc.deviceId = null;
   acc.deviceImei = '';
   acc.deviceLabel = '';
@@ -858,7 +896,7 @@ export function authenticate(email, password, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (acc.role !== 'superadmin' && acc.role !== 'manager') {
+    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
@@ -883,7 +921,7 @@ export function resumeSession(accountId, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (acc.role !== 'superadmin' && acc.role !== 'manager') {
+    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
@@ -898,7 +936,7 @@ export function resumeSession(accountId, device = null) {
 
 function countActiveManagers(db, exceptId = null, orgId = null) {
   return db.accounts.filter(a =>
-    a.role === 'manager' &&
+    a.role === 'head' &&
     a.status === 'active' &&
     a.id !== exceptId &&
     (!orgId || a.organizationId === orgId)
@@ -948,7 +986,7 @@ export function updateAppSettings(partial) {
     'officeLat', 'officeLng', 'officeName', 'testDevices', 'notifyLeave', 'notifyLowStock',
   ];
   if (privileged.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
-    if (actor.role !== 'manager' && actor.role !== 'superadmin') {
+    if (!isOrgAdminRole(actor.role)) {
       throw new Error('Akses ditolak');
     }
   }
@@ -976,10 +1014,14 @@ export function createAccount(data) {
     throw new Error('Password login minimal 8 karakter.');
   }
   const allowed = actor.role === 'superadmin'
-    ? ['superadmin', 'manager', 'supervisor', 'employee']
-    : ['supervisor', 'employee'];
-  const role = allowed.includes(data.role) ? data.role : (actor.role === 'superadmin' ? 'manager' : 'employee');
+    ? ['superadmin', 'head', 'manager', 'supervisor', 'employee']
+    : actor.role === 'head'
+      ? ['manager', 'supervisor', 'employee']
+      : ['supervisor', 'employee'];
+  const role = allowed.includes(data.role) ? data.role : (actor.role === 'superadmin' ? 'head' : 'employee');
   if (role === 'superadmin' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
+  if (role === 'head' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
+  if (role === 'manager' && !data.projectId) throw new Error('Project manager must be assigned to one project.');
   let employeeId = data.employeeId || null;
   if (employeeId) {
     const employee = db.employees.find(e => e.id === employeeId);
@@ -990,7 +1032,8 @@ export function createAccount(data) {
   }
   const account = {
     id: uid('ACC'),
-    organizationId: role === 'superadmin' ? null : (actor.role === 'manager' ? actor.organizationId : (data.organizationId || getCurrentOrgId())),
+    organizationId: role === 'superadmin' ? null : (actor.organizationId || data.organizationId || getCurrentOrgId()),
+    projectId: role === 'manager' ? data.projectId : null,
     email,
     name: sanitizePlainText(data.name) || email,
     password: hashPassword(data.password),
@@ -1019,18 +1062,20 @@ export function updateAccount(id, data) {
   const actor = getActor();
   const current = db.accounts[idx];
   const allowed = actor?.role === 'superadmin'
-    ? ['superadmin', 'manager', 'supervisor', 'employee']
-    : ['manager', 'supervisor', 'employee'];
+    ? ['superadmin', 'head', 'manager', 'supervisor', 'employee']
+    : actor?.role === 'head'
+      ? ['manager', 'supervisor', 'employee']
+      : ['supervisor', 'employee'];
   const nextRole = allowed.includes(data.role) ? data.role : current.role;
   const nextStatus = data.status || current.status;
-  if (actor?.role === 'manager') {
+  if (actor?.role === 'head') {
     if (current.organizationId !== actor.organizationId || current.role === 'superadmin') throw new Error('Akses ditolak');
-    if (nextRole === 'superadmin') throw new Error('Akses ditolak');
+    if (nextRole === 'superadmin' || nextRole === 'head') throw new Error('Akses ditolak');
   }
   if (current.role === 'superadmin' && (nextRole !== 'superadmin' || nextStatus !== 'active')) {
     if (countActiveSuperadmins(db, id) < 1) throw new Error('Tidak bisa menonaktifkan superadmin terakhir.');
   }
-  if (current.role === 'manager' && (nextRole !== 'manager' || nextStatus !== 'active')) {
+  if (current.role === 'head' && (nextRole !== 'head' || nextStatus !== 'active')) {
     if (countActiveManagers(db, id, current.organizationId) < 1) {
       throw new Error('Tidak bisa menonaktifkan atau menurunkan manager terakhir di organisasi ini.');
     }
@@ -1051,9 +1096,10 @@ export function updateAccount(id, data) {
     ...current,
     email,
     name: sanitizePlainText(data.name ?? current.name),
-    role: ['superadmin', 'manager', 'supervisor', 'employee'].includes(nextRole) ? nextRole : current.role,
+    role: ['superadmin', 'head', 'manager', 'supervisor', 'employee'].includes(nextRole) ? nextRole : current.role,
     status: ['active', 'inactive', 'suspended'].includes(nextStatus) ? nextStatus : current.status,
     organizationId: nextRole === 'superadmin' ? null : (current.organizationId || actor?.organizationId || getCurrentOrgId()),
+    projectId: nextRole === 'manager' ? (data.projectId || current.projectId || null) : null,
     employeeId,
     mustChangePassword: data.mustChangePassword ?? current.mustChangePassword,
     updatedAt: new Date().toISOString(),
@@ -1070,7 +1116,7 @@ export function updateAccount(id, data) {
 
 export function changePassword(accountId, currentPassword, nextPassword) {
   const actor = assertLoggedIn();
-  if (actor.id !== accountId && actor.role !== 'manager' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
+  if (actor.id !== accountId && !isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
   const db = getDB();
   const account = db.accounts.find(a => a.id === accountId);
   if (!account) throw new Error('Akun tidak ditemukan.');
@@ -1132,7 +1178,7 @@ export function getEmployee(id) {
 }
 
 export function createEmployee(data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const email = assertUniqueEmail(db, data.email);
   const emp = {
@@ -1152,12 +1198,25 @@ export function createEmployee(data) {
     db.employees.pop();
     throw error;
   }
+  const actor = getActor();
+  if (actor?.role === 'manager' && actor.projectId) {
+    db.projectAssignments = db.projectAssignments || [];
+    db.projectAssignments.push({
+      id: uid('ASN'),
+      employeeId: emp.id,
+      projectId: actor.projectId,
+      roleOnProject: 'sales',
+      status: 'active',
+      startDate: new Date().toISOString().slice(0, 10),
+      organizationId: actor.organizationId || getCurrentOrgId(),
+    });
+  }
   saveDB();
   return emp;
 }
 
 export function updateEmployee(id, data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const idx = db.employees.findIndex(e => e.id === id);
   if (idx === -1) return null;
@@ -1188,7 +1247,7 @@ export function updateEmployee(id, data) {
 }
 
 export function deleteEmployee(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const referenced = [
     db.visits, db.attendance, db.leaves, db.projectAssignments,
@@ -1207,7 +1266,16 @@ export function deleteEmployee(id) {
 }
 
 export function getOutlets() {
-  return scoped(getDB().outlets);
+  const rows = scoped(getDB().outlets);
+  const actor = getActor();
+  if (!actor || isOrgAdminRole(actor.role)) return rows;
+  if (actor.role === 'manager' && actor.projectId) {
+    return rows.filter(o =>
+      (o.projectIds || []).includes(actor.projectId) ||
+      !(o.projectIds || []).length
+    );
+  }
+  return rows;
 }
 
 export function getOutlet(id) {
@@ -1304,7 +1372,7 @@ function assertOperationalContext(db, data, { product = false } = {}) {
 }
 
 export function createOutlet(data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
   const outletNumber = data.outletNumber || nextOutletNumber(db);
@@ -1335,7 +1403,7 @@ export function createOutlet(data) {
 }
 
 export function updateOutlet(id, data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const idx = db.outlets.findIndex(o => o.id === id);
   if (idx === -1) return null;
@@ -1354,7 +1422,7 @@ export function updateOutlet(id, data) {
 }
 
 export function deleteOutlet(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.outlets = db.outlets.filter(o => o.id !== id);
   saveDB();
@@ -1463,7 +1531,7 @@ export function reviewOutletProposal(id, decision, note = '', projectId = null) 
     row.supervisorId = actor.id;
     row.supervisorAt = new Date().toISOString();
     row.supervisorNote = sanitizePlainText(note);
-  } else if (actor.role === 'manager' || actor.role === 'superadmin') {
+  } else if (isProjectAdminRole(actor.role)) {
     row.managerStatus = ok;
     row.managerId = actor.id;
     row.managerAt = new Date().toISOString();
@@ -1594,7 +1662,7 @@ export function getAttendancePoints() {
 
 export function createAttendancePoint(data) {
   const actor = assertLoggedIn();
-  if (!isOrgAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
+  if (!isProjectAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
   const point = {
     id: uid('APT'),
     type: ['office', 'meeting', 'store', 'point'].includes(data.type) ? data.type : 'point',
@@ -1762,7 +1830,7 @@ export function getProduct(id) {
 }
 
 export function createProduct(data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const scope = normalizeEntityScope(db, data);
   const product = {
@@ -1786,7 +1854,7 @@ export function createProduct(data) {
 }
 
 export function updateProduct(id, data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const idx = db.products.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -1807,7 +1875,7 @@ export function updateProduct(id, data) {
 }
 
 export function deleteProduct(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.products = db.products.filter(p => p.id !== id);
   saveDB();
@@ -1848,7 +1916,7 @@ export function updateLeave(id, data) {
   const current = db.leaves[idx];
   assertCanAccessEmployee(current.employeeId);
   const nextStatus = data.status || current.status;
-  if (nextStatus !== current.status && !['manager', 'supervisor', 'superadmin'].includes(actor.role)) {
+  if (nextStatus !== current.status && !isProjectAdminRole(actor.role) && actor.role !== 'supervisor') {
     throw new Error('Akses ditolak');
   }
   db.leaves[idx] = { ...current, ...data };
@@ -1862,7 +1930,7 @@ export function deleteLeave(id) {
   const leave = (db.leaves || []).find(l => l.id === id);
   if (!leave) return;
   const actor = assertLoggedIn();
-  if (actor.role !== 'manager' && actor.role !== 'superadmin' && leave.employeeId !== actor.employeeId) {
+  if (!isProjectAdminRole(actor.role) && leave.employeeId !== actor.employeeId) {
     throw new Error('Akses ditolak');
   }
   db.leaves = db.leaves.filter(l => l.id !== id);
@@ -1899,7 +1967,7 @@ export function updateStock(id, data) {
   if (idx === -1) return null;
   const owner = current.updatedBy || current.employeeId || current.recordedBy;
   if (owner) assertCanAccessEmployee(owner);
-  else if (!isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
+  else if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
   db.stocks[idx] = {
     ...db.stocks[idx],
     ...data,
@@ -1911,7 +1979,7 @@ export function updateStock(id, data) {
 }
 
 export function deleteStock(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.stocks = db.stocks.filter(s => s.id !== id);
   saveDB();
@@ -1961,7 +2029,7 @@ export function updatePriceObservation(id, data) {
 }
 
 export function deletePriceObservation(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.priceObservations = db.priceObservations.filter(p => p.id !== id);
   saveDB();
@@ -1976,7 +2044,7 @@ export function getCompetitor(id) {
 }
 
 export function createCompetitor(data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const c = {
     id: uid('CMP'),
     status: 'active',
@@ -1991,7 +2059,7 @@ export function createCompetitor(data) {
 }
 
 export function updateCompetitor(id, data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const idx = db.competitors.findIndex(c => c.id === id);
   if (idx === -1) return null;
@@ -2001,7 +2069,7 @@ export function updateCompetitor(id, data) {
 }
 
 export function deleteCompetitor(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.competitors = db.competitors.filter(c => c.id !== id);
   db.competitorProducts = (db.competitorProducts || []).filter(p => p.competitorId !== id);
@@ -2017,7 +2085,7 @@ export function getCompetitorProductsByCompetitor(competitorId) {
 }
 
 export function createCompetitorProduct(data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const p = {
     id: uid('CPD'),
     status: 'active',
@@ -2033,7 +2101,7 @@ export function createCompetitorProduct(data) {
 }
 
 export function updateCompetitorProduct(id, data) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   const idx = db.competitorProducts.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -2045,7 +2113,7 @@ export function updateCompetitorProduct(id, data) {
 }
 
 export function deleteCompetitorProduct(id) {
-  assertOrgAdmin();
+  assertProjectAdmin();
   const db = getDB();
   db.competitorProducts = db.competitorProducts.filter(p => p.id !== id);
   saveDB();
@@ -2117,7 +2185,7 @@ export function updateCompetitorIntel(id, data) {
   if (idx === -1) return null;
   const owner = current.recordedBy || current.employeeId;
   if (owner) assertCanAccessEmployee(owner);
-  else if (!isOrgAdminRole(actor.role)) throw new Error('Akses ditolak');
+  else if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
   const next = { ...db.competitorIntel[idx], ...data };
   if (next.ourPrice != null) next.ourPrice = Number(next.ourPrice);
   if (next.competitorPrice != null) next.competitorPrice = Number(next.competitorPrice);

@@ -8,7 +8,7 @@ const write=db=>{
   persistDB('report-phase4');
 };
 const account=()=>window.FT?.state?.account||{};
-const manager=()=>['superadmin','manager','admin'].includes(String(account().role||'').toLowerCase());
+const manager=()=>['superadmin','head','manager','admin'].includes(String(account().role||'').toLowerCase());
 const now=()=>new Date().toISOString();
 const uid=p=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
 const fmt=v=>v?new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v)):'-';
