@@ -532,7 +532,8 @@ function employee() {
 function role() {
   const a = account(),
     e = employee();
-  if (a?.role === "superadmin" || a?.role === "manager") return "manager";
+  if (a?.role === "superadmin" || a?.role === "head") return "manager";
+  if (a?.role === "manager") return "project-manager";
   if (
     a?.role === "supervisor" ||
     String(e?.role || "")
@@ -553,6 +554,10 @@ function activeAssignments(employeeId) {
 function accessibleProjectIds() {
   if (role() === "manager")
     return new Set((viewDB().projects || []).map((p) => p.id));
+  if (role() === "project-manager") {
+    const pid = account()?.projectId;
+    return new Set(pid ? [pid] : []);
+  }
   return new Set(
     activeAssignments(account()?.employeeId).map((a) => a.projectId),
   );
@@ -568,13 +573,18 @@ function projectModules() {
   );
 }
 function canManage() {
-  return role() === "manager";
+  return role() === "manager" || role() === "project-manager";
 }
 function scopedEmployees(projectId = null) {
   const db = viewDB(),
     r = role(),
     me = employee();
   if (r === "manager") return db.employees || [];
+  if (r === "project-manager") {
+    const pid = account()?.projectId;
+    const ids = new Set((db.projectAssignments || []).filter((a) => a.projectId === pid && a.status === "active").map((a) => a.employeeId));
+    return (db.employees || []).filter((e) => ids.has(e.id));
+  }
   if (r === "supervisor")
     return (db.employees || [])
       .filter((e) => e.id === me?.id || e.supervisorId === me?.id)

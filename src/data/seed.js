@@ -76,7 +76,9 @@ export const seedAttendance = [
 
 export const seedAccounts = [
   { id: 'ACC-SUPER', email: 'superadmin@proqtrack.id', password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'superadmin', employeeId: null, organizationId: null, name: 'Superadmin Demo' },
-  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'manager',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Manager Demo' },
+  { id: 'ACC000', email: 'manager@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'head',  employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Head Demo' },
+  { id: 'ACC-HEAD', email: 'head@proqtrack.id', password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'head', employeeId: null, organizationId: 'ORG-DEFAULT', name: 'Head Demo' },
+  { id: 'ACC-PM', email: 'pm@proqtrack.id', password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c', role: 'manager', employeeId: null, organizationId: 'ORG-DEFAULT', projectId: 'PRJ001', name: 'Project Manager Demo' },
   { id: 'ACC001', email: 'budi.santoso@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP001', organizationId: 'ORG-DEFAULT', name: 'Budi Santoso' },
   { id: 'ACC002', email: 'siti.nurhaliza@proqtrack.id',  password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',    role: 'employee', employeeId: 'EMP002', organizationId: 'ORG-DEFAULT', name: 'Siti Nurhaliza' },
   { id: 'ACC003', email: 'ahmad.wijaya@proqtrack.id',    password: 'sha256$899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c',   role: 'employee', employeeId: 'EMP003', organizationId: 'ORG-DEFAULT', name: 'Ahmad Wijaya' },

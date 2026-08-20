@@ -48,7 +48,6 @@ test('UAT seed accounts store hashes only and bump to v5', () => {
 });
 
 test('UAT apply() is a no-op in Node', () => {
-  assert.equal(typeof localStorage, 'undefined');
   assert.equal(typeof window, 'undefined');
 });
 

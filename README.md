@@ -2,6 +2,9 @@
 
 Sistem monitoring lapangan untuk **tim field sales / supervisor** di Indonesia.
 
+- User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
+- Update 19 Agustus 2026: [docs/UPDATES-2026-08-19.md](docs/UPDATES-2026-08-19.md)
+
 Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project management, dan dashboard manager — prototype client-side berbasis localStorage.
 
 ## Fitur
@@ -20,7 +23,7 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
   - module flags per project
   - menu Project Saya, Tim Saya, dan Komparasi Supervisor
   - tagging `projectId` untuk visit, intel, foto, harga, dan stok baru
-- Role: Superadmin | Manager (1 organisasi) | Supervisor | Field Sales
+- Role: Superadmin | Head (1 organisasi) | Manager (1 project) | Supervisor | Field Sales
 
 ## Demo login
 
@@ -29,9 +32,10 @@ Akun prototype lokal (password **tidak** dipublikasikan di repo publik ini):
 | Role | Email |
 |------|-------|
 | Superadmin | `superadmin@proqtrack.id` |
-| Manager (1 org) | `manager@proqtrack.id` |
-| Supervisor | `rizky.supervisor@proqtrack.id` |
-| Field Sales | `budi.employee@proqtrack.id` |
+| Head (1 org) | `head@proqtrack.id` or `manager@proqtrack.id` |
+| Manager (1 project) | `pm@proqtrack.id` |
+| Supervisor | `rizki.pratama@proqtrack.id` |
+| Field Sales | `budi.santoso@proqtrack.id` |
 
 Minta password UAT ke pemilik repo. Setelah `git pull`, reset data demo jika login gagal — seed versi baru memakai hash yang berbeda. Password tidak ditampilkan di halaman login.
 

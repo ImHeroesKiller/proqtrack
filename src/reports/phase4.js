@@ -9,7 +9,7 @@ const write=db=>{
 };
 const account=()=>window.FT?.state?.account||{};
 const role=()=>String(account().role||'employee').toLowerCase();
-const manager=()=>['manager','admin'].includes(role());
+const manager=()=>['head','manager','admin','superadmin'].includes(role());
 const now=()=>new Date().toISOString();
 const uid=p=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
 const fmt=v=>v?new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v)):'-';

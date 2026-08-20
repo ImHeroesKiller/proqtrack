@@ -7,6 +7,7 @@ export const FORBIDDEN_SECRETS = Object.freeze([
 ]);
 export const ALLOWED_ROLES = Object.freeze([
   'superadmin',
+  'head',
   'manager',
   'supervisor',
   'employee',
@@ -141,12 +142,12 @@ const roleAllowed = (claims, roles) => {
   return roles.includes(role);
 };
 const projectAllowed = (claims, projectId) => {
-  if (isSuperadmin(claims) || roleAllowed(claims, ['manager', 'admin'])) return true;
+  if (isSuperadmin(claims) || roleAllowed(claims, ['head', 'admin'])) return true;
   if (!projectId) return false;
   return Array.isArray(claims.projectIds) && claims.projectIds.includes(projectId);
 };
 const clientAllowed = (claims, clientId) => {
-  if (!clientId || isSuperadmin(claims) || roleAllowed(claims, ['manager', 'admin'])) return true;
+  if (!clientId || isSuperadmin(claims) || roleAllowed(claims, ['head', 'admin'])) return true;
   return Array.isArray(claims.clientIds) && claims.clientIds.includes(clientId);
 };
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
@@ -361,11 +362,11 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   }
 
   if (url.pathname === '/api/usage' && request.method === 'GET') {
-    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     return json({ ...await usage(env), requestId: id });
   }
   if (url.pathname === '/api/state' && request.method === 'GET') {
-    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const row = await env.DB.prepare("SELECT payload,version,updated_at FROM app_snapshots WHERE id='primary'").first();
     await audit(env, { requestId: id, actor: claims, action: 'read', resourceType: 'state' });
     return json(row
@@ -373,7 +374,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
       : { data: null, version: 0, updatedAt: null, requestId: id });
   }
   if (url.pathname === '/api/state' && request.method === 'PUT') {
-    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const body = await request.json();
     const serialized = JSON.stringify(body.data);
     if (serialized.length > 4_000_000) return json({ error: 'MVP_STATE_LIMIT_EXCEEDED', requestId: id }, 413);
@@ -387,7 +388,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   }
 
   if (url.pathname === '/api/files' && request.method === 'POST') {
-    if (!roleAllowed(claims, ['manager', 'admin', 'superadmin', 'supervisor', 'employee'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'manager', 'admin', 'superadmin', 'supervisor', 'employee'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const projectId = safeKey(url.searchParams.get('projectId'));
     const clientId = safeKey(url.searchParams.get('clientId'));
     if ((projectId && projectId !== 'general' && !projectAllowed(claims, projectId)) || !clientAllowed(claims, clientId)) {
@@ -436,7 +437,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   }
 
   if (url.pathname === '/api/report-jobs' && request.method === 'POST') {
-    if (!roleAllowed(claims, ['manager', 'admin', 'supervisor'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'manager', 'admin', 'supervisor'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const body = await request.json();
     const projectId = safeKey(body.projectId);
     if (!projectAllowed(claims, projectId)) return json({ error: 'PROJECT_ACCESS_DENIED', requestId: id }, 403);
@@ -446,7 +447,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
     return json({ ok: true, id: jobId, status: 'queued', requestId: id }, 202);
   }
   if (url.pathname === '/api/report-jobs' && request.method === 'GET') {
-    const manager = roleAllowed(claims, ['manager', 'admin']);
+    const manager = roleAllowed(claims, ['head', 'admin']);
     const rows = await env.DB.prepare(manager
       ? 'SELECT * FROM report_generation_jobs ORDER BY created_at DESC LIMIT 100'
       : 'SELECT * FROM report_generation_jobs WHERE requested_by=? ORDER BY created_at DESC LIMIT 100')
@@ -455,7 +456,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
   }
   const jobMatch = url.pathname.match(/^\/api\/report-jobs\/([^/]+)\/retry$/);
   if (jobMatch && request.method === 'POST') {
-    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const job = await env.DB.prepare('SELECT * FROM report_generation_jobs WHERE id=?').bind(jobMatch[1]).first();
     if (!job) return json({ error: 'JOB_NOT_FOUND', requestId: id }, 404);
     if (job.status !== 'failed' || Number(job.attempts) >= Number(job.max_attempts)) return json({ error: 'JOB_NOT_RETRYABLE', requestId: id }, 409);
@@ -464,7 +465,7 @@ export async function handleApi(request, env, url = new URL(request.url)) {
     return json({ ok: true, id: job.id, status: 'queued', requestId: id });
   }
   if (url.pathname === '/api/monitoring/report-generation' && request.method === 'GET') {
-    if (!roleAllowed(claims, ['manager', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
+    if (!roleAllowed(claims, ['head', 'admin'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);
     const summary = await env.DB.prepare(`SELECT status,COUNT(*) AS count FROM report_generation_jobs WHERE created_at>=datetime('now','-24 hours') GROUP BY status`).all();
     const recentFailures = await env.DB.prepare(`SELECT id,report_type,format,project_id,attempts,last_error,updated_at FROM report_generation_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 20`).all();
     return json({ window: '24h', summary: summary.results || [], recentFailures: recentFailures.results || [], requestId: id });

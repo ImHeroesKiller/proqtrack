@@ -49,11 +49,20 @@ function login(email, dev = device('DEV-TEST-1')) {
   return acc;
 }
 
-test('fresh DB is version 14 and keeps eight seed employees', () => {
+test('fresh DB is version 15 and keeps eight seed employees', () => {
   prepare();
   const db = getDB();
-  assert.equal(db._version, 14);
+  assert.equal(db._version, 15);
   assert.equal(db.employees.length, 8);
+});
+
+test('legacy manager@ is Head and pm@ is a one-project Manager', () => {
+  prepare();
+  login('manager@proqtrack.id');
+  assert.equal(getActor().role, 'head');
+  login('pm@proqtrack.id');
+  assert.equal(getActor().role, 'manager');
+  assert.equal(getActor().projectId, 'PRJ001');
 });
 
 test('getActor re-reads role from the database, not from mutated state', () => {

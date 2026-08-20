@@ -22,7 +22,8 @@ function ensureArrays(db){ for(const key of ['reportJobs','reportExports','audit
 function filters(){ const form=document.getElementById('rptFilterForm'); return form ? Object.fromEntries(new FormData(form).entries()) : {}; }
 function scope(db){
   const r=String(account()?.role||'employee').toLowerCase();
-  if(r==='manager'||r==='admin') return {employeeIds:null,projectIds:null};
+  if(r==='head'||r==='admin'||r==='superadmin') return {employeeIds:null,projectIds:null};
+  if(r==='manager') return {employeeIds:null,projectIds:account()?.projectId?[account().projectId]:[]};
   const me=account()?.employeeId;
   const assignments=db.projectAssignments||[];
   const own=assignments.filter(a=>a.employeeId===me&&a.status==='active').map(a=>a.projectId);

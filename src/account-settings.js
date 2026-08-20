@@ -18,7 +18,7 @@ function toast(msg, type = 'success') {
 }
 
 function roleLabel(role) {
-  return { superadmin: 'Superadmin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
+  return { superadmin: 'Superadmin', head: 'Head', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
 
 function statusLabel(status) {
@@ -27,8 +27,10 @@ function statusLabel(status) {
 
 function renderProjectStoreSettings() {
   const db = getDB();
-  const projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
-  const selected = window.FT.state._storeProjectId || projects[0]?.id || '';
+  const acc = account();
+  let projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
+  if (acc?.role === 'manager' && acc.projectId) projects = projects.filter(p => p.id === acc.projectId);
+  const selected = acc?.role === 'manager' && acc.projectId ? acc.projectId : (window.FT.state._storeProjectId || projects[0]?.id || '');
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
   return `
@@ -128,14 +130,15 @@ export function renderSettings() {
   if (!acc) return '<div class="card"><p>Sesi tidak ditemukan. Silakan masuk ulang.</p></div>';
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
-  const isManager = acc.role === 'manager' || acc.role === 'superadmin';
-  const canAccounts = isManager;
+  const isOrgAdmin = acc.role === 'head' || acc.role === 'superadmin';
+  const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
     ['profil', 'Profile'],
     ['keamanan', 'Security'],
     ['tampilan', 'Display'],
-    ...(isManager ? [['organisasi', 'Organization'], ['katalog', 'Outlet catalog'], ['absensi', 'Attendance']] : []),
+    ...(isOrgAdmin ? [['organisasi', 'Organization'], ['katalog', 'Outlet catalog'], ['absensi', 'Attendance']] : []),
+    ...(acc.role === 'manager' ? [['katalog', 'Outlet catalog']] : []),
     ...(acc.role === 'employee' ? [['perangkat', 'Device']] : []),
     ['sesi', 'Session'],
   ];
@@ -204,7 +207,7 @@ export function renderSettings() {
           </form>
         </section>
 
-        ${isManager ? `
+        ${isOrgAdmin ? `
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
           <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
@@ -227,6 +230,7 @@ export function renderSettings() {
         <section ${pane('katalog')}>${renderProjectStoreSettings()}</section>
         <section ${pane('absensi')}>${renderAttendanceSettings()}</section>
         ` : ''}
+        ${acc.role === 'manager' ? `<section ${pane('katalog')}>${renderProjectStoreSettings()}</section>` : ''}
 
         ${acc.role === 'employee' ? `
         <section ${pane('perangkat')}>
@@ -269,8 +273,8 @@ export function renderSettings() {
 
 export function renderAccounts() {
   const acc = account();
-  if (acc?.role !== 'manager' && acc?.role !== 'superadmin') {
-    return '<div class="card"><p>Hanya superadmin dan manager yang dapat mengelola akun.</p></div>';
+  if (acc?.role !== 'head' && acc?.role !== 'superadmin') {
+    return '<div class="card"><p>Only Superadmin and Head can manage organization accounts.</p></div>';
   }
   const q = (window.FT.state._accountQuery || '').toLowerCase();
   const roleFilter = window.FT.state._accountRole || '';
@@ -287,6 +291,7 @@ export function renderAccounts() {
         <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" oninput="AM.filterAccounts(this.value)">
         <select class="select" style="width:auto" onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
+          <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
           <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
@@ -335,6 +340,7 @@ function accountForm(existing) {
   const employees = getEmployees().filter(e => e.status === 'active');
   const used = new Set(getAccounts().filter(a => a.id !== existing?.id && a.employeeId).map(a => a.employeeId));
   const options = employees.filter(e => !used.has(e.id) || e.id === existing?.employeeId);
+  const projects = (getDB().projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
   return `
     <form onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
@@ -342,7 +348,7 @@ function accountForm(existing) {
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
           <select class="select" name="role">
-            ${(account()?.role === 'superadmin' ? ['superadmin', 'manager', 'supervisor', 'employee'] : ['supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+            ${(account()?.role === 'superadmin' ? ['superadmin', 'head', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="label">Status</label>
@@ -350,6 +356,12 @@ function accountForm(existing) {
             ${['active', 'suspended', 'inactive'].map(s => `<option value="${s}" ${existing?.status === s ? 'selected' : ''}>${esc(statusLabel(s))}</option>`).join('')}
           </select>
         </div>
+      </div>
+      <div class="form-group"><label class="label">Project (required for Manager)</label>
+        <select class="select" name="projectId">
+          <option value="">—</option>
+          ${projects.map(p => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
+        </select>
       </div>
       <div class="form-group"><label class="label">Tautkan karyawan</label>
         <select class="select" name="employeeId">
