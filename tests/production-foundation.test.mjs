@@ -5,13 +5,14 @@ import { readFileSync } from 'node:fs';
 const migration = readFileSync(new URL('../migrations/0005_production_foundation.sql', import.meta.url), 'utf8');
 const wrangler = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
 
-function tableBody(name) {
-  const match = migration.match(new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${name}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i'));
-  assert.ok(match, `missing production table: ${name}`);
+function coreTableBody(name) {
+  const table = `core_${name}`;
+  const match = migration.match(new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${table}\\s*\\(([\\s\\S]*?)\\n\\);`, 'i'));
+  assert.ok(match, `missing production table: ${table}`);
   return match[1];
 }
 
-test('production schema defines the normalized operational foundation', () => {
+test('production schema defines the normalized namespaced operational foundation', () => {
   const expected = [
     'organizations',
     'organization_users',
@@ -29,17 +30,16 @@ test('production schema defines the normalized operational foundation', () => {
     'survey_templates',
     'survey_questions',
     'survey_responses',
-    'survey_answers',
     'field_evidence',
     'operational_audit_logs',
     'api_idempotency_keys',
     'legacy_import_batches'
   ];
 
-  for (const table of expected) tableBody(table);
+  for (const table of expected) coreTableBody(table);
 });
 
-test('every tenant-owned production table carries organization_id', () => {
+test('every tenant-owned core table carries organization_id', () => {
   const tenantTables = [
     'organization_users',
     'clients',
@@ -56,7 +56,6 @@ test('every tenant-owned production table carries organization_id', () => {
     'survey_templates',
     'survey_questions',
     'survey_responses',
-    'survey_answers',
     'field_evidence',
     'operational_audit_logs',
     'api_idempotency_keys',
@@ -64,27 +63,44 @@ test('every tenant-owned production table carries organization_id', () => {
   ];
 
   for (const table of tenantTables) {
-    assert.match(tableBody(table), /\borganization_id\b/i, `${table} is missing organization_id`);
+    assert.match(coreTableBody(table), /\borganization_id\b/i, `${table} is missing organization_id`);
   }
 });
 
 test('cross-tenant relationships use organization-scoped foreign keys', () => {
-  for (const table of ['projects', 'project_memberships', 'employee_project_assignments', 'visits', 'attendance', 'product_sales', 'survey_responses', 'field_evidence']) {
+  for (const table of [
+    'projects',
+    'project_memberships',
+    'employee_project_assignments',
+    'visits',
+    'attendance',
+    'product_sales',
+    'survey_responses',
+    'field_evidence'
+  ]) {
     assert.match(
-      tableBody(table),
-      /FOREIGN KEY\s*\([^)]*organization_id[^)]*\)[\s\S]*?REFERENCES\s+\w+\s*\([^)]*organization_id[^)]*\)/i,
+      coreTableBody(table),
+      /FOREIGN KEY\s*\([^)]*organization_id[^)]*\)[\s\S]*?REFERENCES\s+core_\w+\s*\([^)]*organization_id[^)]*\)/i,
       `${table} lacks an organization-scoped relationship`
     );
   }
 });
 
-test('foundation migration is additive to legacy auth and state tables', () => {
+test('foundation migration never mutates or collides with legacy operational tables', () => {
   assert.doesNotMatch(migration, /DROP\s+TABLE/i);
-  assert.doesNotMatch(migration, /ALTER\s+TABLE\s+auth_users/i);
-  assert.doesNotMatch(migration, /ALTER\s+TABLE\s+app_snapshots/i);
-  assert.match(migration, /ALTER TABLE file_metadata ADD COLUMN organization_id TEXT/i);
-  assert.match(migration, /ALTER TABLE security_audit_logs ADD COLUMN organization_id TEXT/i);
-  assert.match(migration, /ALTER TABLE report_generation_jobs ADD COLUMN organization_id TEXT/i);
+  assert.doesNotMatch(migration, /ALTER\s+TABLE/i);
+
+  for (const legacyName of ['organizations', 'clients', 'projects', 'employees', 'outlets', 'attendance', 'products']) {
+    assert.doesNotMatch(
+      migration,
+      new RegExp(`CREATE TABLE IF NOT EXISTS\\s+${legacyName}\\s*\\(`, 'i'),
+      `foundation must not create/reuse legacy table name: ${legacyName}`
+    );
+  }
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS\s+core_organizations/i);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS\s+core_clients/i);
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS\s+core_projects/i);
 });
 
 test('Cloudflare environments are isolated and production APIs stay locked', () => {
