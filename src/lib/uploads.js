@@ -23,35 +23,64 @@ export function authHeaders(extra = {}) {
   return token ? { authorization: `Bearer ${token}`, ...extra } : { ...extra };
 }
 
-function rememberToken(token, exp, role) {
+function rememberToken(token, exp, role, organizationId = null) {
   sessionStorage.setItem(TOKEN_KEY, token);
-  sessionStorage.setItem(TOKEN_META, JSON.stringify({ exp, role }));
+  sessionStorage.setItem(TOKEN_META, JSON.stringify({ exp, role, organizationId }));
   return token;
 }
 
 /**
  * Cloud tokens are issued only by POST /api/auth/login against D1 auth_users.
- * Client-supplied role/sub claims are rejected (410). Local prototype logins
- * therefore keep photos in the browser until a server user exists.
+ * Milestone 2 binds them to an authoritative server session and organization.
+ * Local prototype login remains separate until operational data moves to D1.
  */
 export async function issueUploadSession(account, credentials = {}) {
   if (!account?.id && !credentials.email) return null;
   const email = credentials.email || account?.email;
   const password = credentials.password;
+  const organizationId = credentials.organizationId || account?.organizationId || '';
   if (!email || !password) return null;
   const res = await fetch('/api/auth/login', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password, ...(organizationId ? { organizationId } : {}) }),
   });
   const data = await res.json().catch(() => null);
   if (!data || typeof data !== 'object') return null;
   if (!res.ok) {
-    if ([400, 401, 404, 405, 410, 501, 503].includes(res.status)) return null;
+    if (res.status === 409 && data.error === 'ORGANIZATION_REQUIRED') {
+      const error = new Error('Pilih organisasi sebelum membuat sesi cloud.');
+      error.code = data.error;
+      error.organizations = data.organizations || [];
+      throw error;
+    }
+    if ([400, 401, 403, 404, 405, 410, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   if (!data.token) return null;
-  return rememberToken(data.token, data.exp, data.account?.role || account?.role);
+  return rememberToken(
+    data.token,
+    data.exp,
+    data.account?.role || account?.role,
+    data.account?.organizationId || organizationId || null,
+  );
+}
+
+export async function revokeApiSession({ all = false } = {}) {
+  const token = getApiToken();
+  if (!token) {
+    clearApiToken();
+    return true;
+  }
+  try {
+    await fetch(all ? '/api/auth/logout-all' : '/api/auth/logout', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+    });
+  } finally {
+    clearApiToken();
+  }
+  return true;
 }
 
 export async function uploadAsset(file, { category = 'attachment', projectId = '', clientId = '', name } = {}) {
@@ -142,6 +171,14 @@ function installStyles() {
 
 installStyles();
 if (typeof window !== 'undefined') {
-  window.R2 = { uploadAsset, issueUploadSession, bindAssetFields, fileUrl, clearApiToken, getApiToken };
+  window.R2 = {
+    uploadAsset,
+    issueUploadSession,
+    revokeApiSession,
+    bindAssetFields,
+    fileUrl,
+    clearApiToken,
+    getApiToken,
+  };
 }
 export {};
