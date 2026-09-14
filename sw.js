@@ -21,6 +21,7 @@ const SHELL = [
   './src/lib/cloud-data.js',
   './src/lib/offline-store.js',
   './src/lib/offline-engine.js',
+  './src/lib/offline-login.js',
   './src/lib/evidence-client.js',
   './src/lib/uploads.js',
   './src/data/seed.js',
