@@ -41,6 +41,10 @@ function sniffImage(buffer) {
   return null;
 }
 
+function objectSegment(value) {
+  return str(value).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'unknown';
+}
+
 async function writeAudit(env, claims, action, entityId, projectId, outcome = 'success', detail = {}) {
   try {
     await env.DB.prepare(`
@@ -135,6 +139,7 @@ function metadataRow(row) {
     latitude: row.latitude == null ? null : Number(row.latitude),
     longitude: row.longitude == null ? null : Number(row.longitude),
     contentSha256: row.content_sha256 || null,
+    storageStatus: row.storage_status || 'ready',
     metadata,
     createdAt: row.created_at,
     updatedAt: row.updated_at || row.created_at,
@@ -144,6 +149,21 @@ function metadataRow(row) {
 async function authorizeExisting(env, claims, row) {
   if (!row || row.organization_id !== claims.organizationId || !projectAllowed(claims, row.project_id)) return false;
   return !!(await resolveEmployeeAccess(env, claims, row.project_id, row.employee_id));
+}
+
+async function findEvidence(env, organizationId, evidenceId, idempotencyKey) {
+  return env.DB.prepare(`
+    SELECT * FROM core_field_evidence
+    WHERE organization_id=? AND (id=? OR idempotency_key=?)
+    LIMIT 1
+  `).bind(organizationId, evidenceId, idempotencyKey).first();
+}
+
+function duplicateResponse(row, contentSha256, evidenceId) {
+  if (!row) return null;
+  if (row.content_sha256 !== contentSha256) return json({ error: 'EVIDENCE_IDEMPOTENCY_CONFLICT', evidenceId }, 409);
+  if (row.storage_status !== 'ready') return json({ error: 'EVIDENCE_UPLOAD_IN_PROGRESS', evidenceId }, 425);
+  return json({ ok: true, idempotent: true, evidence: metadataRow(row) });
 }
 
 async function handleUpload(request, env, claims, url) {
@@ -163,6 +183,7 @@ async function handleUpload(request, env, claims, url) {
   const idempotencyKey = str(request.headers.get('idempotency-key') || evidenceId).slice(0, 160);
 
   if (!organizationId || !projectId || !evidenceId || !projectAllowed(claims, projectId)) return json({ error: 'EVIDENCE_SCOPE_DENIED' }, 403);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,119}$/.test(evidenceId)) return json({ error: 'INVALID_EVIDENCE_ID' }, 400);
   if ((latitude != null && (!Number.isFinite(latitude) || latitude < -90 || latitude > 90))
     || (longitude != null && (!Number.isFinite(longitude) || longitude < -180 || longitude > 180))) {
     return json({ error: 'INVALID_COORDINATES' }, 400);
@@ -188,49 +209,60 @@ async function handleUpload(request, env, claims, url) {
   if (!allowed.includes(sniffed.contentType)) return json({ error: 'UNSUPPORTED_EVIDENCE_TYPE' }, 415);
 
   const contentSha256 = await sha256(payload);
-  const existing = await env.DB.prepare(`
-    SELECT * FROM core_field_evidence
-    WHERE organization_id=? AND (id=? OR idempotency_key=?)
-    LIMIT 1
-  `).bind(organizationId, evidenceId, idempotencyKey).first();
-  if (existing) {
-    if (existing.content_sha256 === contentSha256) return json({ ok: true, idempotent: true, evidence: metadataRow(existing) });
-    return json({ error: 'EVIDENCE_IDEMPOTENCY_CONFLICT', evidenceId }, 409);
-  }
+  const existing = await findEvidence(env, organizationId, evidenceId, idempotencyKey);
+  if (existing) return duplicateResponse(existing, contentSha256, evidenceId);
 
-  const objectKey = `evidence/${organizationId}/${projectId}/${evidenceId}.${sniffed.ext}`;
+  const objectKey = `evidence/${objectSegment(organizationId)}/${objectSegment(projectId)}/${objectSegment(evidenceId)}.${sniffed.ext}`;
   const name = str(url.searchParams.get('name') || `${evidenceId}.${sniffed.ext}`).slice(0, 180);
   const metadata = { name, source: 'offline-first', uploaderUserId: claims.sub };
-
-  await env.FILES.put(objectKey, payload, {
-    httpMetadata: { contentType: sniffed.contentType, cacheControl: 'private, max-age=0, no-store' },
-    customMetadata: {
-      organizationId,
-      projectId,
-      employeeId: employee.id,
-      outletId: outletId || '',
-      visitId: visitId || '',
-      evidenceType,
-      sha256: contentSha256,
-    },
-  });
 
   try {
     await env.DB.prepare(`
       INSERT INTO core_field_evidence(
         id,organization_id,project_id,outlet_id,employee_id,visit_id,evidence_type,object_key,
         content_type,size_bytes,captured_at,latitude,longitude,content_sha256,metadata_json,
-        uploader_user_id,idempotency_key,row_version,updated_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+        uploader_user_id,idempotency_key,row_version,updated_at,storage_status
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP,'uploading')
     `).bind(
       evidenceId, organizationId, projectId, outletId, employee.id, visitId, evidenceType, objectKey,
       sniffed.contentType, payload.byteLength, capturedAt, latitude, longitude, contentSha256,
       JSON.stringify(metadata), claims.sub, idempotencyKey,
     ).run();
   } catch (error) {
-    try { await env.FILES.delete(objectKey); } catch { /* compensation best effort */ }
-    console.error('evidence_metadata_write_failed', error?.message || error);
+    const concurrent = await findEvidence(env, organizationId, evidenceId, idempotencyKey);
+    if (concurrent) return duplicateResponse(concurrent, contentSha256, evidenceId);
+    console.error('evidence_reservation_failed', error?.message || error);
     return json({ error: 'EVIDENCE_METADATA_WRITE_FAILED' }, 500);
+  }
+
+  try {
+    await env.FILES.put(objectKey, payload, {
+      httpMetadata: { contentType: sniffed.contentType, cacheControl: 'private, max-age=0, no-store' },
+      customMetadata: {
+        organizationId,
+        projectId,
+        employeeId: employee.id,
+        outletId: outletId || '',
+        visitId: visitId || '',
+        evidenceType,
+        sha256: contentSha256,
+      },
+    });
+    await env.DB.prepare(`
+      UPDATE core_field_evidence
+      SET storage_status='ready',updated_at=CURRENT_TIMESTAMP,row_version=row_version+1
+      WHERE organization_id=? AND id=? AND content_sha256=? AND storage_status='uploading'
+    `).bind(organizationId, evidenceId, contentSha256).run();
+  } catch (error) {
+    try { await env.FILES.delete(objectKey); } catch { /* best effort */ }
+    try {
+      await env.DB.prepare(`
+        DELETE FROM core_field_evidence
+        WHERE organization_id=? AND id=? AND content_sha256=? AND storage_status='uploading'
+      `).bind(organizationId, evidenceId, contentSha256).run();
+    } catch { /* best effort */ }
+    console.error('evidence_storage_write_failed', error?.message || error);
+    return json({ error: 'EVIDENCE_STORAGE_WRITE_FAILED' }, 503);
   }
 
   const row = await env.DB.prepare('SELECT * FROM core_field_evidence WHERE organization_id=? AND id=?').bind(organizationId, evidenceId).first();
@@ -244,8 +276,8 @@ async function handleList(env, claims, url) {
   if (!organizationId || (projectId && !projectAllowed(claims, projectId))) return json({ error: 'EVIDENCE_SCOPE_DENIED' }, 403);
   const limit = Math.min(MAX_LIST, Math.max(1, Number(url.searchParams.get('limit') || 50)));
   const rows = projectId
-    ? await env.DB.prepare('SELECT * FROM core_field_evidence WHERE organization_id=? AND project_id=? ORDER BY created_at DESC LIMIT ?').bind(organizationId, projectId, limit).all()
-    : await env.DB.prepare('SELECT * FROM core_field_evidence WHERE organization_id=? ORDER BY created_at DESC LIMIT ?').bind(organizationId, limit).all();
+    ? await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND project_id=? AND storage_status='ready' ORDER BY created_at DESC LIMIT ?").bind(organizationId, projectId, limit).all()
+    : await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND storage_status='ready' ORDER BY created_at DESC LIMIT ?").bind(organizationId, limit).all();
   const visible = [];
   for (const row of rows?.results || []) {
     if (await authorizeExisting(env, claims, row)) visible.push(metadataRow(row));
@@ -257,6 +289,7 @@ async function handleRead(env, claims, evidenceId, metadataOnly = false) {
   const row = await env.DB.prepare('SELECT * FROM core_field_evidence WHERE organization_id=? AND id=? LIMIT 1').bind(claims.organizationId, evidenceId).first();
   if (!row) return json({ error: 'EVIDENCE_NOT_FOUND' }, 404);
   if (!(await authorizeExisting(env, claims, row))) return json({ error: 'EVIDENCE_SCOPE_DENIED' }, 403);
+  if (row.storage_status !== 'ready') return json({ error: 'EVIDENCE_UPLOAD_IN_PROGRESS' }, 425);
   if (metadataOnly) return json({ ok: true, evidence: metadataRow(row) });
   const object = await env.FILES.get(row.object_key);
   if (!object) return json({ error: 'EVIDENCE_OBJECT_NOT_FOUND' }, 404);
@@ -290,4 +323,4 @@ export async function handleEvidenceRoute(request, env, claims, url = new URL(re
   return json({ error: 'METHOD_NOT_ALLOWED' }, 405);
 }
 
-export const __test = { sniffImage, projectAllowed };
+export const __test = { sniffImage, projectAllowed, objectSegment };
