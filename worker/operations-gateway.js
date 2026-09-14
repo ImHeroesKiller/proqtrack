@@ -52,8 +52,16 @@ function sanitizeImportBody(body = {}) {
   for (const entity of ['clients','projects','projectAssignments','surveyTemplates']) {
     if (Array.isArray(snapshot[entity])) next[entity] = snapshot[entity].map(row => sanitizeOperationalRow(entity, row));
   }
+  // User identity can be created before operational parents, but employee/project
+  // links are reconciled only after employees/projects/assignments exist.
   next.accounts = Array.isArray(snapshot.accounts)
-    ? snapshot.accounts.map(account => ({ ...account, legacyProjectId: account.projectId || account.legacyProjectId || null, projectId: null }))
+    ? snapshot.accounts.map(account => ({
+        ...account,
+        legacyEmployeeId: account.employeeId || account.legacyEmployeeId || null,
+        legacyProjectId: account.projectId || account.legacyProjectId || null,
+        employeeId: null,
+        projectId: null,
+      }))
     : [];
   return { ...body, snapshot: next };
 }
@@ -118,7 +126,56 @@ function compatibilityBootstrap(payload = {}) {
   return { ...payload, data };
 }
 
-async function repairManagerMemberships(env, organizationId, originalSnapshot = {}) {
+async function reconcileNormalizedMemberships(env, organizationId) {
+  // Link employees to server users using email only after both sides and the
+  // organization membership exist. This keeps the import FK-safe.
+  await env.DB.prepare(`
+    UPDATE core_employees
+    SET auth_user_id = (
+      SELECT u.id
+      FROM auth_users u
+      JOIN core_organization_users ou
+        ON ou.user_id=u.id AND ou.organization_id=core_employees.organization_id AND ou.status='active'
+      WHERE lower(u.email)=lower(core_employees.email)
+      LIMIT 1
+    ), updated_at=CURRENT_TIMESTAMP
+    WHERE organization_id=?
+      AND email IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM auth_users u
+        JOIN core_organization_users ou
+          ON ou.user_id=u.id AND ou.organization_id=core_employees.organization_id AND ou.status='active'
+        WHERE lower(u.email)=lower(core_employees.email)
+      )
+  `).bind(organizationId).run();
+
+  // Project memberships are derived from the now-existing normalized
+  // assignments. The WHERE clause also makes SQLite's SELECT+UPSERT grammar
+  // unambiguous.
+  await env.DB.prepare(`
+    INSERT INTO core_project_memberships(organization_id,project_id,user_id,role,status,updated_at)
+    SELECT
+      a.organization_id,
+      a.project_id,
+      e.auth_user_id,
+      CASE WHEN ou.role IN ('manager','supervisor') THEN ou.role ELSE 'employee' END,
+      CASE WHEN a.status='active' THEN 'active' ELSE 'inactive' END,
+      CURRENT_TIMESTAMP
+    FROM core_employee_project_assignments a
+    JOIN core_employees e
+      ON e.organization_id=a.organization_id AND e.id=a.employee_id AND e.auth_user_id IS NOT NULL
+    JOIN core_organization_users ou
+      ON ou.organization_id=e.organization_id AND ou.user_id=e.auth_user_id AND ou.status='active'
+    JOIN core_projects p
+      ON p.organization_id=a.organization_id AND p.id=a.project_id
+    WHERE a.organization_id=?
+    ON CONFLICT(organization_id,project_id,user_id)
+    DO UPDATE SET role=excluded.role,status=excluded.status,updated_at=CURRENT_TIMESTAMP
+  `).bind(organizationId).run();
+}
+
+async function repairDirectManagerMemberships(env, organizationId, originalSnapshot = {}) {
   const accounts = Array.isArray(originalSnapshot.accounts) ? originalSnapshot.accounts : [];
   for (const account of accounts) {
     if (str(account.role).toLowerCase() !== 'manager') continue;
@@ -142,6 +199,9 @@ export async function handleOperationalGateway(request, env, claims, url = new U
   if (!url.pathname.startsWith('/api/core/')) return null;
 
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') {
+    // Idempotent self-healing in case a prior browser/import was interrupted
+    // after operational rows committed but before identity linking completed.
+    await reconcileNormalizedMemberships(env, claims.organizationId);
     const response = await handleOperationalRoute(request, env, claims, url);
     if (!response || !response.ok) return response;
     const payload = await response.json();
@@ -153,7 +213,8 @@ export async function handleOperationalGateway(request, env, claims, url = new U
     const sanitized = sanitizeImportBody(original);
     const response = await handleOperationalRoute(jsonBodyRequest(request, sanitized), env, claims, url);
     if (response?.status === 201 && original.dryRun !== true) {
-      await repairManagerMemberships(env, claims.organizationId, original.snapshot || {});
+      await reconcileNormalizedMemberships(env, claims.organizationId);
+      await repairDirectManagerMemberships(env, claims.organizationId, original.snapshot || {});
     }
     return response;
   }
