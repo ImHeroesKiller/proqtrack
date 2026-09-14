@@ -1,12 +1,13 @@
 import './lib/offline-engine.js';
 import './lib/evidence-client.js';
+import './lib/offline-login.js';
 
 function installStatusBridge() {
   if (typeof window === 'undefined') return;
   let last = '';
   window.addEventListener('proqtrack:offline-status', event => {
     const status = event.detail?.status;
-    if (status === 'queued-offline' && last !== status) {
+    if ((status === 'queued-offline' || status === 'offline-session') && last !== status) {
       last = status;
       window.showToast?.('Mode offline aktif. Perubahan operasional aman di perangkat.', 'success');
     } else if (status === 'conflict-rebased' && last !== status) {
