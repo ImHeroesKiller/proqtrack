@@ -197,8 +197,7 @@ async function handleUpload(request, env, claims, url) {
     });
     await env.DB.prepare(`UPDATE core_field_evidence SET storage_status='ready',updated_at=CURRENT_TIMESTAMP,row_version=row_version+1 WHERE organization_id=? AND id=? AND content_sha256=? AND storage_status='uploading'`).bind(organizationId, evidenceId, contentSha256).run();
   } catch (error) {
-    try { await env.FILES.delete(objectKey); } catch { /* best effort */ }
-    try { await env.DB.prepare(`DELETE FROM core_field_evidence WHERE organization_id=? AND id=? AND content_sha256=? AND storage_status='uploading'`).bind(organizationId, evidenceId, contentSha256).run(); } catch { /* best effort */ }
+    await writeAudit(env, claims, 'upload_evidence', evidenceId, projectId, 'failed', { error: 'EVIDENCE_STORAGE_WRITE_FAILED' });
     console.error('evidence_storage_write_failed', error?.message || error);
     return json({ error: 'EVIDENCE_STORAGE_WRITE_FAILED' }, 503);
   }
