@@ -1,5 +1,5 @@
-import { authenticate, getCurrentOrgId, getDB, registerTestDevice } from './db.js';
-import { getDeviceIdentity, markSuperadminHost } from './device.js';
+import { authenticate, getCurrentOrgId, getDB } from './db.js';
+import { getDeviceIdentity } from './device.js';
 import { clearApiToken } from './uploads.js';
 import { isCloudCutoverRemembered } from './cloud-data.js';
 
@@ -17,11 +17,6 @@ const defaultRouteFor = account => ['superadmin','head','manager','supervisor'].
 
 function activateOfflineSession(account) {
   clearApiToken();
-  const device = getDeviceIdentity();
-  if (account.role === 'superadmin') {
-    markSuperadminHost(device);
-    try { registerTestDevice(device, account); } catch { /* local device registry best effort */ }
-  }
   const state = window.FT.state;
   state.loggedIn = true;
   state.account = { ...account, offlineSession: true };
@@ -55,7 +50,7 @@ async function offlineLogin(event, original) {
     window.showToast?.(error.message || 'Perangkat tidak diizinkan untuk offline login.', 'error');
     return;
   }
-  if (!account || account.id !== candidate.id || account.status === 'inactive') {
+  if (!account || account.id !== candidate.id || (account.status && account.status !== 'active')) {
     window.showToast?.('Offline login ditolak. Gunakan kredensial terakhir yang tervalidasi pada device ini.', 'error');
     return;
   }
