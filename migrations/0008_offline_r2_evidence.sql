@@ -4,7 +4,8 @@
 ALTER TABLE core_field_evidence ADD COLUMN uploader_user_id TEXT;
 ALTER TABLE core_field_evidence ADD COLUMN idempotency_key TEXT;
 ALTER TABLE core_field_evidence ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
-ALTER TABLE core_field_evidence ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE core_field_evidence ADD COLUMN updated_at TEXT;
+UPDATE core_field_evidence SET updated_at=created_at WHERE updated_at IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_core_field_evidence_idempotency
   ON core_field_evidence(organization_id, idempotency_key)
