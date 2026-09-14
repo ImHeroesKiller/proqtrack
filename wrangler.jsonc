@@ -39,5 +39,82 @@
     "MVP_MAX_FILE_BYTES": "2097152",
     "MVP_MAX_STORAGE_BYTES": "524288000",
     "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
+  },
+  "env": {
+    "development": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "proqtrack-development"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "proqtrack-development-files"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "development",
+        "MVP_DATA_API_ENABLED": "false",
+        "MVP_FILE_API_ENABLED": "false",
+        "API_AUTH_REQUIRED": "true",
+        "API_RATE_LIMIT_PER_MINUTE": "120",
+        "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "MVP_MAX_FILE_BYTES": "2097152",
+        "MVP_MAX_STORAGE_BYTES": "524288000",
+        "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
+      }
+    },
+    "staging": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "proqtrack-staging"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "proqtrack-staging-files"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "MVP_DATA_API_ENABLED": "false",
+        "MVP_FILE_API_ENABLED": "false",
+        "API_AUTH_REQUIRED": "true",
+        "API_RATE_LIMIT_PER_MINUTE": "120",
+        "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "MVP_MAX_FILE_BYTES": "2097152",
+        "MVP_MAX_STORAGE_BYTES": "524288000",
+        "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
+      }
+    },
+    "production": {
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "proqtrack-production"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "FILES",
+          "bucket_name": "proqtrack-production-files"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "MVP_DATA_API_ENABLED": "false",
+        "MVP_FILE_API_ENABLED": "false",
+        "API_AUTH_REQUIRED": "true",
+        "API_RATE_LIMIT_PER_MINUTE": "120",
+        "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "MVP_MAX_FILE_BYTES": "2097152",
+        "MVP_MAX_STORAGE_BYTES": "524288000",
+        "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
+      }
+    }
   }
 }
