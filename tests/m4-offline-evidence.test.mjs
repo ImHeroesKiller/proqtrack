@@ -39,6 +39,7 @@ test('M4 migration adds evidence idempotency and conflict receipts', async () =>
   assert.match(sql, /CREATE TABLE IF NOT EXISTS core_sync_conflicts/i);
   assert.match(sql, /client_revision/i);
   assert.match(sql, /server_revision/i);
+  assert.doesNotMatch(sql, /ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP/i);
 });
 
 test('offline outbox contains operational collections only and never account credentials', async () => {
@@ -52,11 +53,21 @@ test('offline outbox contains operational collections only and never account cre
   assert.match(source, /recoverCloudConflict/);
 });
 
+test('offline login requires prior cloud identity and remembered cutover', async () => {
+  const source = await read('src/lib/offline-login.js');
+  assert.match(source, /candidate\?\.cloudIdentity/);
+  assert.match(source, /isCloudCutoverRemembered/);
+  assert.match(source, /authenticate\(email, password, getDeviceIdentity\(\)\)/);
+  assert.match(source, /clearApiToken\(\)/);
+  assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*password/i);
+});
+
 test('service worker never caches API traffic', async () => {
   const source = await read('sw.js');
   assert.match(source, /pathname\.startsWith\('\/api\/'\)/);
   assert.match(source, /if \(isPrivateApi\(url\)\) return/);
   assert.match(source, /proqtrack-v4/);
+  assert.match(source, /offline-login\.js/);
 });
 
 test('R2 evidence API is separate from locked legacy file API', async () => {
@@ -82,4 +93,20 @@ test('evidence client persists blob before network upload', async () => {
   assert.ok(fetchIndex > putIndex);
   assert.match(source, /navigator\.onLine/);
   assert.match(source, /idempotency-key/);
+});
+
+test('revision conflicts are recorded before client replay', async () => {
+  const [main, sync] = await Promise.all([read('worker/main.js'), read('worker/m4-sync.js')]);
+  assert.match(main, /handleM4Sync/);
+  assert.match(sync, /core_sync_conflicts/);
+  assert.match(sync, /REVISION_CONFLICT/);
+  assert.match(sync, /client_replay/);
+});
+
+test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {
+  const [logo, bootstrap] = await Promise.all([read('assets/logo.js'), read('src/m4-bootstrap.js')]);
+  assert.match(logo, /m4-bootstrap\.js/);
+  assert.match(bootstrap, /offline-engine\.js/);
+  assert.match(bootstrap, /evidence-client\.js/);
+  assert.match(bootstrap, /offline-login\.js/);
 });
