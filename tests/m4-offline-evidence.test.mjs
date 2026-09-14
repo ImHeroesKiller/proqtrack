@@ -23,6 +23,7 @@ test('evidence sniffing trusts bytes, not declared MIME', () => {
   assert.equal(evidenceTest.sniffImage(bytes([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]))?.contentType, 'image/png');
   assert.equal(evidenceTest.sniffImage(bytes([0x52,0x49,0x46,0x46,0,0,0,0,0x57,0x45,0x42,0x50]))?.contentType, 'image/webp');
   assert.equal(evidenceTest.sniffImage(bytes([1,2,3,4,5])), null);
+  assert.equal(evidenceTest.objectSegment('ORG/a:b'), 'ORG_a_b');
 });
 
 test('project evidence authorization follows authoritative project scope', () => {
@@ -32,9 +33,10 @@ test('project evidence authorization follows authoritative project scope', () =>
   assert.equal(evidenceTest.projectAllowed({ role: 'head', projectIds: [] }, 'P9'), true);
 });
 
-test('M4 migration adds evidence idempotency and conflict receipts', async () => {
+test('M4 migration adds evidence idempotency, upload reservation and conflict receipts', async () => {
   const sql = await read('migrations/0008_offline_r2_evidence.sql');
   assert.match(sql, /ALTER TABLE core_field_evidence ADD COLUMN idempotency_key/i);
+  assert.match(sql, /ADD COLUMN storage_status TEXT NOT NULL DEFAULT 'ready'/i);
   assert.match(sql, /uq_core_field_evidence_idempotency/i);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS core_sync_conflicts/i);
   assert.match(sql, /client_revision/i);
@@ -53,12 +55,14 @@ test('offline outbox contains operational collections only and never account cre
   assert.match(source, /recoverCloudConflict/);
 });
 
-test('offline login requires prior cloud identity and remembered cutover', async () => {
+test('offline login requires prior cloud identity, remembered cutover and never enrolls a privileged device', async () => {
   const source = await read('src/lib/offline-login.js');
   assert.match(source, /candidate\?\.cloudIdentity/);
   assert.match(source, /isCloudCutoverRemembered/);
   assert.match(source, /authenticate\(email, password, getDeviceIdentity\(\)\)/);
   assert.match(source, /clearApiToken\(\)/);
+  assert.doesNotMatch(source, /markSuperadminHost/);
+  assert.doesNotMatch(source, /registerTestDevice/);
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*password/i);
 });
 
@@ -70,7 +74,7 @@ test('service worker never caches API traffic', async () => {
   assert.match(source, /offline-login\.js/);
 });
 
-test('R2 evidence API is separate from locked legacy file API', async () => {
+test('R2 evidence API is separate from locked legacy file API and uses resumable reservation state', async () => {
   const [main, evidence, wrangler] = await Promise.all([
     read('worker/main.js'),
     read('worker/evidence.js'),
@@ -81,7 +85,9 @@ test('R2 evidence API is separate from locked legacy file API', async () => {
   assert.match(evidence, /env\.FILES\.put/);
   assert.match(evidence, /core_field_evidence/);
   assert.match(evidence, /SHA-256/);
-  assert.match(evidence, /env\.FILES\.delete/);
+  assert.match(evidence, /storage_status='uploading'/);
+  assert.match(evidence, /storage_status='ready'/);
+  assert.doesNotMatch(evidence, /env\.FILES\.delete/);
   assert.match(wrangler, /"MVP_FILE_API_ENABLED": "false"/);
 });
 
