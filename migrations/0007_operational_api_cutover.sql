@@ -61,7 +61,6 @@ CREATE TABLE IF NOT EXISTS core_sync_mutations (
 CREATE INDEX IF NOT EXISTS idx_core_sync_mutations_revision
   ON core_sync_mutations(organization_id, applied_revision DESC);
 
-INSERT INTO core_sync_state(organization_id, revision, cutover_mode, updated_at)
+INSERT OR IGNORE INTO core_sync_state(organization_id, revision, cutover_mode, updated_at)
 SELECT id, 0, 'pending', CURRENT_TIMESTAMP
-FROM core_organizations
-ON CONFLICT(organization_id) DO NOTHING;
+FROM core_organizations;
