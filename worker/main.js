@@ -6,6 +6,7 @@ import {
 } from './authz.js';
 import { handleOperationalGateway } from './operations-gateway.js';
 import { handleEvidenceRoute } from './evidence.js';
+import { handleM4Sync } from './m4-sync.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 
@@ -52,6 +53,11 @@ export default {
         claims = await authenticateAuthoritatively(request, env);
       } catch (error) {
         return authErrorResponse(error, id);
+      }
+
+      if (url.pathname === '/api/core/sync' && request.method === 'POST') {
+        const sync = await handleM4Sync(request, env, claims, url);
+        if (sync) return sync;
       }
 
       if (url.pathname.startsWith('/api/core/')) {
