@@ -1,12 +1,12 @@
 # Milestone 1 — Production Foundation
 
-Status: implementation branch `feat/production-foundation-m1`.
+Status: implemented on `main`; production foundation remains dark/unused by application CRUD until Milestone 2/3.
 
 ## Goal
 
-Build the server-side production foundation without changing the current ProQTrack UI or switching operational traffic away from the existing MVP/localStorage flow yet.
+Build a server-side production foundation without changing the current ProQTrack UI or switching operational traffic away from the existing MVP/localStorage flow yet.
 
-Milestone 1 is intentionally additive. The existing MVP Worker endpoints and browser data model remain functional while later milestones migrate authorization and CRUD to the new model.
+Milestone 1 is intentionally additive. Existing browser data, MVP Worker endpoints, and legacy D1 tables remain untouched while later milestones migrate authorization and CRUD to the new model.
 
 ## Source-of-truth target
 
@@ -16,47 +16,59 @@ The target architecture is:
 
 Browser localStorage must eventually be reduced to preferences/legacy migration input. Offline operational caching will move to IndexedDB/outbox in Milestone 4.
 
-## Production D1 foundation
+## Namespaced production core
 
-Migration `0005_production_foundation.sql` introduces tenant-aware normalized tables for:
+Migration `0005_production_foundation.sql` introduces a dedicated `core_*` namespace. This is deliberate: the remote MVP database contains legacy/unmanaged operational table names that are not fully represented by the current migration history. Reusing generic names such as `clients`, `projects`, or `employees` can collide with those tables.
 
-- organizations and organization membership
-- clients and projects
-- project membership
-- employees and project assignments
-- outlets and project-outlet mapping
-- visits and attendance
-- products and product sales
-- survey templates/questions/responses/answers
-- field evidence metadata
-- operational audit logs
-- API idempotency keys
-- legacy import batches
+Milestone 1 therefore follows a zero-touch-legacy rule:
 
-Every tenant-owned production table carries `organization_id`. Composite foreign keys are used on domain relationships so a row from one organization cannot be attached to a parent row from another organization.
+- no `DROP TABLE`
+- no `ALTER TABLE`
+- no reuse of generic legacy operational table names
+- all new production indexes are also namespaced
 
-The schema prefers soft status transitions and restrictive parent deletion for core business records. This avoids accidental tenant-wide data deletion.
+The normalized foundation includes:
 
-## Legacy bridge
+- `core_organizations`
+- `core_organization_users`
+- `core_clients`
+- `core_projects`
+- `core_project_memberships`
+- `core_employees`
+- `core_employee_project_assignments`
+- `core_outlets`
+- `core_project_outlets`
+- `core_visits`
+- `core_attendance`
+- `core_products`
+- `core_product_sales`
+- `core_survey_templates`
+- `core_survey_questions`
+- `core_survey_responses`
+- `core_field_evidence`
+- `core_operational_audit_logs`
+- `core_api_idempotency_keys`
+- `core_legacy_import_batches`
 
-The existing MVP tables are not removed in this milestone.
+Every tenant-owned core table carries `organization_id`. Composite foreign keys are used on tenant-owned domain relationships so a row from one organization cannot be attached to a parent row from another organization.
 
-The following existing sidecar tables receive nullable tenant fields so Milestone 2/3 can migrate them safely:
+Core business records prefer status transitions and restrictive parent deletion. This reduces accidental tenant-wide deletion risk.
 
-- `file_metadata.organization_id`
-- `file_metadata.client_id`
-- `security_audit_logs.organization_id`
-- `report_generation_jobs.organization_id`
+## Legacy isolation
 
-`app_snapshots` remains untouched and must be treated as legacy. Do not make `app_snapshots('primary')` the production source of truth.
+Existing tables including `app_snapshots`, `file_metadata`, `security_audit_logs`, `report_generation_jobs`, `auth_users`, and any unmanaged legacy operational tables remain unchanged in Milestone 1.
 
-`auth_users` also remains untouched in M1. Organization membership is represented by `organization_users`. Milestone 2 will make server-side membership/role resolution authoritative.
+`app_snapshots('primary')` remains legacy and must not become the production source of truth.
+
+`auth_users` remains the current global authentication directory. `core_organization_users` supplies the future tenant membership boundary. Milestone 2 will make server-side membership and role resolution authoritative before operational CRUD is moved to the core schema.
+
+Before legacy data is migrated, Milestone 2/3 must inventory the actual remote schema and map each legacy/localStorage collection explicitly into the appropriate `core_*` table.
 
 ## Environment isolation
 
-`wrangler.jsonc` now defines named Cloudflare environments:
+`wrangler.jsonc` defines named Cloudflare environments:
 
-| Environment | D1 | R2 | Data API | File API |
+| Environment | D1 target | R2 target | Data API | File API |
 | --- | --- | --- | --- | --- |
 | development | `proqtrack-development` | `proqtrack-development-files` | OFF | OFF |
 | staging | `proqtrack-staging` | `proqtrack-staging-files` | OFF | OFF |
@@ -64,9 +76,7 @@ The following existing sidecar tables receive nullable tenant fields so Mileston
 
 The top-level `proqtrack-mvp` configuration remains in place for backward compatibility with the current deployment workflow.
 
-Cloudflare bindings/vars are environment-specific, so each named environment explicitly declares its D1, R2, and vars.
-
-Remote resources must exist before deploying a named environment. Do not point staging or production at the MVP database/bucket as a shortcut.
+Named remote resources must exist before deploying those environments. Do not point staging or production at the MVP database/bucket as a shortcut.
 
 ## Secrets
 
@@ -90,28 +100,39 @@ npm run deploy:staging
 npm run deploy:production
 ```
 
-Do not run the named remote migration/deploy commands until their D1/R2 resources and `API_AUTH_SECRET` are provisioned.
+Do not run named remote migration/deploy commands until their D1/R2 resources and `API_AUTH_SECRET` are provisioned.
 
-## Safety gates
+## CI safety gates
 
-Before Milestone 2 begins:
+CI validates:
 
-1. `npm test` must pass, including `production-foundation.test.mjs`.
-2. `npm run build` must pass.
-3. Wrangler dry-run must pass.
-4. Migration 0005 must apply successfully to a disposable/local D1 database.
-5. The application must continue to work with `MVP_DATA_API_ENABLED=false` and `MVP_FILE_API_ENABLED=false`.
-6. No production traffic should use the new normalized tables yet.
+1. all D1 migrations on a fresh local D1 database
+2. production-foundation schema guards
+3. existing application test suite
+4. application build
+5. Wrangler Worker dry-run
+
+The foundation tests additionally reject destructive migration statements and generic operational table names in migration 0005.
+
+## Milestone 1 exit criteria
+
+Milestone 1 is complete when:
+
+1. CI passes on `main`.
+2. Migration 0005 applies successfully to the current remote MVP D1 without modifying legacy tables.
+3. Worker deployment succeeds after migration.
+4. `MVP_DATA_API_ENABLED=false` and `MVP_FILE_API_ENABLED=false` remain in effect.
+5. No application traffic reads/writes the new `core_*` tables yet.
 
 ## Milestone 2 handoff
 
-Milestone 2 should implement one authoritative server authentication and authorization path:
+Milestone 2 must implement one authoritative server authentication and authorization path:
 
-- resolve user from `auth_users`
-- resolve organization role from `organization_users`
-- resolve project access from `project_memberships`
+- resolve identity from `auth_users`
+- resolve organization membership/role from `core_organization_users`
+- resolve project access from `core_project_memberships`
 - derive tenant scope on the server, never from browser-supplied organization/project claims alone
 - add session/revocation controls
 - add negative tests proving cross-organization access returns 403
 
-Only after that gate passes should operational CRUD begin moving from localStorage to D1.
+Only after those gates pass should operational CRUD begin moving from localStorage to D1.
