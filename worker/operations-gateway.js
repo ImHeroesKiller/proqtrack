@@ -1,5 +1,14 @@
 import { handleOperationalRoute } from './operations.js';
 
+const json = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  },
+});
+
 const jsonBodyRequest = (request, body) => {
   const headers = new Headers(request.headers);
   headers.set('content-type', 'application/json');
@@ -21,30 +30,92 @@ function sanitizeSurveyRow(row = {}) {
   };
 }
 
+function sanitizeOperationalRow(entity, row = {}) {
+  if (!row || typeof row !== 'object') return row;
+  if (entity === 'surveyTemplates') return sanitizeSurveyRow(row);
+  if (entity === 'clients' && row.status === 'prospect') {
+    return { ...row, legacyStatus: row.legacyStatus || row.status, status: 'active' };
+  }
+  if (entity === 'projects') {
+    const mapped = { on_hold: 'paused', completed: 'closed', cancelled: 'closed' }[row.status];
+    if (mapped) return { ...row, legacyStatus: row.legacyStatus || row.status, status: mapped };
+  }
+  if (entity === 'projectAssignments' && row.status === 'removed') {
+    return { ...row, legacyStatus: row.legacyStatus || row.status, status: 'ended' };
+  }
+  return row;
+}
+
 function sanitizeImportBody(body = {}) {
   const snapshot = body.snapshot && typeof body.snapshot === 'object' ? body.snapshot : {};
-  return {
-    ...body,
-    snapshot: {
-      ...snapshot,
-      accounts: Array.isArray(snapshot.accounts)
-        ? snapshot.accounts.map(account => ({ ...account, legacyProjectId: account.projectId || account.legacyProjectId || null, projectId: null }))
-        : [],
-      surveyTemplates: Array.isArray(snapshot.surveyTemplates)
-        ? snapshot.surveyTemplates.map(sanitizeSurveyRow)
-        : [],
-    },
-  };
+  const next = { ...snapshot };
+  for (const entity of ['clients','projects','projectAssignments','surveyTemplates']) {
+    if (Array.isArray(snapshot[entity])) next[entity] = snapshot[entity].map(row => sanitizeOperationalRow(entity, row));
+  }
+  next.accounts = Array.isArray(snapshot.accounts)
+    ? snapshot.accounts.map(account => ({ ...account, legacyProjectId: account.projectId || account.legacyProjectId || null, projectId: null }))
+    : [];
+  return { ...body, snapshot: next };
 }
 
 function sanitizeSyncBody(body = {}) {
   if (!Array.isArray(body.changes)) return body;
   return {
     ...body,
-    changes: body.changes.map(change => change?.entity === 'surveyTemplates' && change?.row
-      ? { ...change, row: sanitizeSurveyRow(change.row) }
+    changes: body.changes.map(change => change?.row
+      ? { ...change, row: sanitizeOperationalRow(change.entity, change.row) }
       : change),
   };
+}
+
+function compatibilityBootstrap(payload = {}) {
+  const data = payload.data && typeof payload.data === 'object' ? { ...payload.data } : {};
+  if (Array.isArray(data.clients)) {
+    data.clients = data.clients.map(row => ({ ...row, status: row.legacyStatus || row.status }));
+  }
+  if (Array.isArray(data.projects)) {
+    data.projects = data.projects.map(row => ({
+      ...row,
+      status: row.legacyStatus || ({ paused: 'on_hold', closed: 'completed' }[row.status] || row.status),
+    }));
+  }
+  if (Array.isArray(data.projectAssignments)) {
+    data.projectAssignments = data.projectAssignments.map(row => ({
+      ...row,
+      status: row.legacyStatus || (row.status === 'ended' ? 'removed' : row.status),
+    }));
+  }
+  if (Array.isArray(data.surveyTemplates)) {
+    data.surveyTemplates = data.surveyTemplates.map(row => ({
+      ...row,
+      createdBy: row.legacyCreatedBy || row.createdBy || null,
+    }));
+  }
+
+  const relations = [];
+  const seen = new Set();
+  for (const row of Array.isArray(data.projectProducts) ? data.projectProducts : []) {
+    const key = `${row.projectId}:${row.productId}`;
+    if (!row.projectId || !row.productId || seen.has(key)) continue;
+    seen.add(key);
+    relations.push(row);
+  }
+  for (const product of Array.isArray(data.products) ? data.products : []) {
+    for (const projectId of Array.isArray(product.projectIds) ? product.projectIds : []) {
+      const key = `${projectId}:${product.id}`;
+      if (!projectId || !product.id || seen.has(key)) continue;
+      seen.add(key);
+      relations.push({
+        id: `PP-${projectId}-${product.id}`,
+        organizationId: product.organizationId,
+        projectId,
+        productId: product.id,
+        status: 'active',
+      });
+    }
+  }
+  data.projectProducts = relations;
+  return { ...payload, data };
 }
 
 async function repairManagerMemberships(env, organizationId, originalSnapshot = {}) {
@@ -70,6 +141,13 @@ async function repairManagerMemberships(env, organizationId, originalSnapshot = 
 export async function handleOperationalGateway(request, env, claims, url = new URL(request.url)) {
   if (!url.pathname.startsWith('/api/core/')) return null;
 
+  if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') {
+    const response = await handleOperationalRoute(request, env, claims, url);
+    if (!response || !response.ok) return response;
+    const payload = await response.json();
+    return json(compatibilityBootstrap(payload), response.status);
+  }
+
   if (url.pathname === '/api/core/import' && request.method === 'POST') {
     const original = await request.clone().json().catch(() => ({}));
     const sanitized = sanitizeImportBody(original);
@@ -90,6 +168,8 @@ export async function handleOperationalGateway(request, env, claims, url = new U
 
 export const __test = {
   sanitizeSurveyRow,
+  sanitizeOperationalRow,
   sanitizeImportBody,
   sanitizeSyncBody,
+  compatibilityBootstrap,
 };
