@@ -15,6 +15,8 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'projectProducts',
 ]);
 
+const DB_KEY = 'proqtrack_db_v6';
+const MIRROR_KEY = 'proqtrack_db_v7';
 let ready = false;
 let syncing = false;
 let timer = null;
@@ -23,6 +25,8 @@ let cutoverMode = 'pending';
 let baseline = {};
 let queuedSnapshot = null;
 let lastError = null;
+let suppressStorageHook = false;
+let storageHookInstalled = false;
 
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -91,6 +95,89 @@ function emitStatus(status, detail = {}) {
   }));
 }
 
+function rememberCutover(organizationId) {
+  try {
+    if (organizationId && cutoverMode === 'cloud') localStorage.setItem(`proqtrack_cloud_cutover_${organizationId}`, 'cloud');
+  } catch { /* ignore */ }
+}
+
+export function isCloudCutoverRemembered(organizationId) {
+  try { return localStorage.getItem(`proqtrack_cloud_cutover_${organizationId}`) === 'cloud'; } catch { return false; }
+}
+
+function persistLocalCache(db) {
+  if (typeof localStorage === 'undefined') return;
+  suppressStorageHook = true;
+  try {
+    const text = JSON.stringify(db);
+    localStorage.setItem(DB_KEY, text);
+    try { localStorage.setItem(MIRROR_KEY, text); } catch { /* mirror best effort */ }
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('proqtrack:db-updated', { detail: { reason: 'cloud-hydrate', fromCache: true } }));
+    }
+  } finally {
+    suppressStorageHook = false;
+  }
+}
+
+export function applyRemoteDataToLocal(localDb, remoteData = {}) {
+  if (!localDb || typeof localDb !== 'object') return localDb;
+  for (const key of CLOUD_COLLECTIONS) {
+    if (Array.isArray(remoteData[key])) localDb[key] = clone(remoteData[key]);
+  }
+  persistLocalCache(localDb);
+  return localDb;
+}
+
+export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = null) {
+  if (!localDb || !cloudAccount?.sub && !cloudAccount?.id) return localAccount;
+  const id = String(cloudAccount.sub || cloudAccount.id);
+  const email = String(cloudAccount.email || '').toLowerCase();
+  const accounts = Array.isArray(localDb.accounts) ? localDb.accounts : (localDb.accounts = []);
+  const employee = (localDb.employees || []).find(row => row?.authUserId === id || (email && String(row?.email || '').toLowerCase() === email));
+  const existingIndex = accounts.findIndex(row => row?.id === id || (email && String(row?.email || '').toLowerCase() === email));
+  const existing = existingIndex >= 0 ? accounts[existingIndex] : (localAccount || {});
+  const next = {
+    ...existing,
+    id,
+    email: cloudAccount.email || existing.email || '',
+    name: existing.name || employee?.name || cloudAccount.email || id,
+    role: cloudAccount.role || existing.role || 'employee',
+    organizationId: cloudAccount.organizationId || existing.organizationId || null,
+    projectId: cloudAccount.role === 'manager' ? (cloudAccount.projectIds?.[0] || existing.projectId || null) : (existing.projectId || null),
+    employeeId: employee?.id || existing.employeeId || null,
+    status: 'active',
+    cloudIdentity: true,
+    cloudSyncedAt: new Date().toISOString(),
+  };
+  if (!next.password && existing.password) next.password = existing.password;
+  if (existingIndex >= 0) accounts[existingIndex] = next;
+  else accounts.push(next);
+  persistLocalCache(localDb);
+  return next;
+}
+
+export function installStorageWriteThrough() {
+  if (storageHookInstalled || typeof Storage === 'undefined' || typeof localStorage === 'undefined') return false;
+  const proto = Storage.prototype;
+  const original = proto.setItem;
+  if (original.__proqtrackCloudWrapped) {
+    storageHookInstalled = true;
+    return true;
+  }
+  function wrappedSetItem(key, value) {
+    const result = original.call(this, key, value);
+    if (!suppressStorageHook && this === localStorage && key === DB_KEY && ready && cutoverMode === 'cloud') {
+      try { scheduleOperationalSync(JSON.parse(value)); } catch { /* ignore malformed local writes */ }
+    }
+    return result;
+  }
+  Object.defineProperty(wrappedSetItem, '__proqtrackCloudWrapped', { value: true });
+  proto.setItem = wrappedSetItem;
+  storageHookInstalled = true;
+  return true;
+}
+
 async function apiJson(path, options = {}) {
   const headers = authHeaders({ accept: 'application/json', ...(options.body ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) });
   const res = await fetch(path, { ...options, headers });
@@ -137,6 +224,7 @@ export async function bootstrapOperationalData(localDb, account = {}) {
   baseline = snapshotCollections(remote.data || {});
   ready = true;
   lastError = null;
+  rememberCutover(account.organizationId || account.organization?.id || null);
   emitStatus('ready');
   return { mode: 'cloud', data: clone(remote.data || {}), revision, cutoverMode };
 }
