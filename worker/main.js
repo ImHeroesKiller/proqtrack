@@ -4,6 +4,7 @@ import {
   authErrorResponse,
   handleAuthRoute,
 } from './authz.js';
+import { handleOperationalGateway } from './operations-gateway.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 
@@ -51,6 +52,12 @@ export default {
       } catch (error) {
         return authErrorResponse(error, id);
       }
+
+      if (url.pathname.startsWith('/api/core/')) {
+        const operational = await handleOperationalGateway(request, env, claims, url);
+        if (operational) return operational;
+      }
+
       return forwardWithAuthoritativeClaims(request, env, claims);
     }
 

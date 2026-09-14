@@ -45,3 +45,4 @@ await import('../src/project-client-logos.js');
 await import('../src/employee-avatars.js');
 await import('../src/lib/uploads.js');
 await import('../src/organization.js');
+await import('../src/cloud-cutover.js');

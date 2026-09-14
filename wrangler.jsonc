@@ -31,6 +31,7 @@
   ],
   "vars": {
     "ENVIRONMENT": "mvp",
+    "CORE_DATA_API_ENABLED": "true",
     "MVP_DATA_API_ENABLED": "false",
     "MVP_FILE_API_ENABLED": "false",
     "API_AUTH_REQUIRED": "true",
@@ -57,6 +58,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "development",
+        "CORE_DATA_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
@@ -83,6 +85,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "staging",
+        "CORE_DATA_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
@@ -109,6 +112,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "production",
+        "CORE_DATA_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
