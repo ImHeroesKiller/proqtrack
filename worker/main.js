@@ -5,6 +5,7 @@ import {
   handleAuthRoute,
 } from './authz.js';
 import { handleOperationalGateway } from './operations-gateway.js';
+import { handleEvidenceRoute } from './evidence.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 
@@ -56,6 +57,11 @@ export default {
       if (url.pathname.startsWith('/api/core/')) {
         const operational = await handleOperationalGateway(request, env, claims, url);
         if (operational) return operational;
+      }
+
+      if (url.pathname.startsWith('/api/evidence')) {
+        const evidence = await handleEvidenceRoute(request, env, claims, url);
+        if (evidence) return evidence;
       }
 
       return forwardWithAuthoritativeClaims(request, env, claims);
