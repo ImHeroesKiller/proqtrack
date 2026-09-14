@@ -65,13 +65,14 @@ Upload flow:
 4. Worker revalidates organization, project, employee/team, outlet, and visit scope;
 5. Worker validates JPEG/PNG/WebP from magic bytes;
 6. Worker computes SHA-256;
-7. binary is stored under the tenant/project R2 prefix;
-8. normalized metadata is written to `core_field_evidence`;
-9. the local Blob is released after a successful receipt.
+7. D1 reserves the evidence row with `storage_status=uploading` and the idempotency/hash metadata;
+8. binary is written under the tenant/project R2 prefix;
+9. the D1 reservation is promoted to `storage_status=ready`;
+10. the local Blob is released after a successful receipt.
 
 Evidence upload uses the evidence ID as an idempotency key. Replaying the same ID with the same hash is safe. Reusing the ID with different bytes returns a conflict.
 
-If R2 succeeds but the D1 metadata insert fails, the Worker attempts to delete the R2 object so an orphaned evidence object is not intentionally left behind.
+A same-hash retry is also allowed to finish an interrupted `uploading` reservation. This avoids an unrecoverable state if the Worker or network fails between the D1 reservation and the R2 write. Multiple same-hash concurrent requests may write the same bytes to the same R2 key and converge on one `ready` metadata row; they never delete each other's object.
 
 ## Evidence authorization
 
@@ -102,6 +103,7 @@ Migration `0008_offline_r2_evidence.sql` adds:
 - evidence uploader metadata;
 - evidence idempotency key;
 - evidence row version/update timestamp;
+- evidence storage reservation status;
 - tenant evidence lookup indexes;
 - `core_sync_conflicts` audit table.
 
