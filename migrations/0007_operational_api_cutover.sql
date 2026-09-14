@@ -1,16 +1,19 @@
 -- Milestone 3 — Operational API & Data Migration
--- Adds optimistic row versions, normalized project-product mapping, and per-tenant sync/cutover state.
+-- Adds optimistic row versions, metadata preservation, normalized project-product mapping,
+-- and per-tenant sync/cutover state.
 
 ALTER TABLE core_clients ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_projects ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_employees ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_employee_project_assignments ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE core_employee_project_assignments ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE core_outlets ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_visits ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_attendance ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_products ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_product_sales ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE core_survey_templates ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE core_survey_templates ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE core_survey_responses ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS core_project_products (
