@@ -20,6 +20,7 @@ jobs:
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROQTRACK_HEALTH_URL: https://proqtrack.arywibowo.workers.dev/api/health
     steps:
       - uses: actions/checkout@v7
 
@@ -38,15 +39,12 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      - name: Provision bindings and deploy
-        run: npx wrangler deploy
-
       - name: Ensure Worker API_AUTH_SECRET
         shell: bash
         run: |
           set -euo pipefail
           npx wrangler whoami
-          list_json="$(npx wrangler secret list --format json 2>/dev/null | node -e '
+          list_json="$(npx wrangler secret list --env="" --format json 2>/dev/null | node -e '
             const raw = require("fs").readFileSync(0, "utf8");
             const start = raw.indexOf("[");
             process.stdout.write(start >= 0 ? raw.slice(start) : "[]");
@@ -59,11 +57,11 @@ jobs:
             echo "API_AUTH_SECRET already present — not rotating"
           else
             echo "API_AUTH_SECRET missing — generating and storing (value not logged)"
-            openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET
+            openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET --env=""
           fi
 
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply DB --remote
+      - name: Apply D1 migrations before deploy
+        run: npx wrangler d1 migrations apply DB --remote --env=""
 
       - name: Record D1 database id
         shell: bash
@@ -79,11 +77,20 @@ jobs:
             console.log(id ? ("D1 database_id=" + id) : "D1 database_id missing from info payload");
           ' "$info"
 
-      - name: Redeploy after migration
-        run: npx wrangler deploy
+      - name: Deploy Worker after migration
+        run: npx wrangler deploy --env=""
 
-      - name: Verify API
+      - name: Verify live API health
         shell: bash
         run: |
-          URL="$(node -e "const fs=require('fs');const p='.wrangler/deploy/config.json';if(fs.existsSync(p)){const j=JSON.parse(fs.readFileSync(p));console.log(j.url||'')}" 2>/dev/null || true)"
-          echo "Deployment completed. Health endpoint: ${URL:-see Cloudflare dashboard}/api/health"
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors "$PROQTRACK_HEALTH_URL")"
+          printf '%s' "$body" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const data = JSON.parse(raw);
+            if (data.ok !== true || data.service !== "ProQTrack") {
+              console.error("Health check failed", data);
+              process.exit(1);
+            }
+            console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"}`);
+          '
