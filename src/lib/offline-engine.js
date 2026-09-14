@@ -8,9 +8,15 @@ const OPERATIONAL_KEYS = Object.freeze([
 ]);
 let installed = false;
 let recovering = false;
+let lastSignature = '';
+let observeTimer = null;
 
 function operationalSnapshot(db = {}) {
   return Object.fromEntries(OPERATIONAL_KEYS.map(key => [key, Array.isArray(db[key]) ? db[key] : []]));
+}
+
+function signature(snapshot) {
+  return JSON.stringify(snapshot);
 }
 
 function currentOrganizationId(snapshot = {}) {
@@ -32,16 +38,30 @@ function emit(status, organizationId, extra = {}) {
 async function persistOperationalSnapshot(db) {
   const organizationId = currentOrganizationId(db);
   if (!organizationId || !cutoverRemembered(organizationId)) return false;
+  const snapshot = operationalSnapshot(db);
+  const nextSignature = signature(snapshot);
+  if (nextSignature === lastSignature) return false;
+  lastSignature = nextSignature;
   const id = `${SNAPSHOT_PREFIX}${organizationId}`;
   await enqueueMutation({
     id,
     mutationId: id,
     organizationId,
     kind: 'snapshot',
-    changes: [{ entity: '__operational_snapshot__', op: 'replace', row: operationalSnapshot(db) }],
+    changes: [{ entity: '__operational_snapshot__', op: 'replace', row: snapshot }],
   });
   emit(navigator.onLine === false ? 'queued-offline' : 'queued', organizationId);
   return true;
+}
+
+function observeLocalCache() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) return;
+    const db = JSON.parse(raw);
+    persistOperationalSnapshot(db).catch(() => {});
+  } catch { /* db.js owns malformed cache handling */ }
 }
 
 async function snapshotItem(organizationId) {
@@ -92,25 +112,15 @@ export async function recoverCloudConflict(organizationId = '') {
 }
 
 export function installOfflineEngine() {
-  if (installed || typeof window === 'undefined' || typeof Storage === 'undefined') return false;
+  if (installed || typeof window === 'undefined') return false;
   installed = true;
-  const proto = Storage.prototype;
-  const original = proto.setItem;
-  if (!original.__proqtrackOfflineWrapped) {
-    function wrappedSetItem(key, value) {
-      const result = original.call(this, key, value);
-      if (this === localStorage && key === DB_KEY) {
-        try {
-          const snapshot = JSON.parse(value);
-          queueMicrotask(() => persistOperationalSnapshot(snapshot).catch(() => {}));
-        } catch { /* db.js owns malformed cache handling */ }
-      }
-      return result;
-    }
-    Object.defineProperty(wrappedSetItem, '__proqtrackOfflineWrapped', { value: true });
-    proto.setItem = wrappedSetItem;
-  }
+  observeLocalCache();
+  observeTimer = setInterval(observeLocalCache, 1000);
+  window.addEventListener('proqtrack:db-updated', observeLocalCache);
   window.addEventListener('online', () => replayLatestSnapshot().catch(() => {}));
+  document?.addEventListener?.('visibilitychange', () => {
+    if (document.visibilityState === 'visible') observeLocalCache();
+  });
   window.addEventListener('proqtrack:cloud-status', event => {
     const orgId = event.detail?.organizationId || window.FT?.state?.account?.organizationId || 'ORG-DEFAULT';
     if (event.detail?.status === 'synced') clearSyncedSnapshot(orgId).catch(() => {});
@@ -118,6 +128,11 @@ export function installOfflineEngine() {
     if (event.detail?.status === 'ready') replayLatestSnapshot(orgId).catch(() => {});
   });
   return true;
+}
+
+export function stopOfflineObserver() {
+  if (observeTimer) clearInterval(observeTimer);
+  observeTimer = null;
 }
 
 installOfflineEngine();
