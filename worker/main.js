@@ -60,7 +60,10 @@ export default {
       }
 
       if (url.pathname.startsWith('/api/evidence')) {
-        const evidence = await handleEvidenceRoute(request, env, claims, url);
+        const evidenceEnv = env.CORE_EVIDENCE_API_ENABLED == null
+          ? { ...env, CORE_EVIDENCE_API_ENABLED: 'true' }
+          : env;
+        const evidence = await handleEvidenceRoute(request, evidenceEnv, claims, url);
         if (evidence) return evidence;
       }
 
