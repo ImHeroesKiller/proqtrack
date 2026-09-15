@@ -46,3 +46,4 @@ await import('../src/employee-avatars.js');
 await import('../src/lib/uploads.js');
 await import('../src/organization.js');
 await import('../src/cloud-cutover.js');
+await import('../src/m4-bootstrap.js');

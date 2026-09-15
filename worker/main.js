@@ -5,6 +5,8 @@ import {
   handleAuthRoute,
 } from './authz.js';
 import { handleOperationalGateway } from './operations-gateway.js';
+import { handleEvidenceRoute } from './evidence.js';
+import { handleM4Sync } from './m4-sync.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 
@@ -53,9 +55,22 @@ export default {
         return authErrorResponse(error, id);
       }
 
+      if (url.pathname === '/api/core/sync' && request.method === 'POST') {
+        const sync = await handleM4Sync(request, env, claims, url);
+        if (sync) return sync;
+      }
+
       if (url.pathname.startsWith('/api/core/')) {
         const operational = await handleOperationalGateway(request, env, claims, url);
         if (operational) return operational;
+      }
+
+      if (url.pathname.startsWith('/api/evidence')) {
+        const evidenceEnv = env.CORE_EVIDENCE_API_ENABLED == null
+          ? { ...env, CORE_EVIDENCE_API_ENABLED: 'true' }
+          : env;
+        const evidence = await handleEvidenceRoute(request, evidenceEnv, claims, url);
+        if (evidence) return evidence;
       }
 
       return forwardWithAuthoritativeClaims(request, env, claims);
