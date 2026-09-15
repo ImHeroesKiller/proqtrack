@@ -24,6 +24,7 @@ Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project ma
   - menu Project Saya, Tim Saya, dan Komparasi Supervisor
   - tagging `projectId` untuk visit, intel, foto, harga, dan stok baru
 - Role: Superadmin | Head (1 organisasi) | Manager (1 project) | Supervisor | Field Sales
+- **Beranda karyawan (HR)**: absen masuk/pulang, pengajuan lembur/izin/cuti/WFH, laporan harian, kalender, rekap, berita, dan Hubungi HRD
 
 ## Demo login
 
@@ -104,7 +105,7 @@ location.reload();
 
 ## Catatan teknis
 
-- **DB internal:** version 14
+- **DB internal:** version 15
 - **Backward compatibility:** aplikasi inti memakai `proqtrack_db_v6`; `proqtrack_db_v7` hanya cermin otomatis dari v6 (bukan schema terpisah)
 - **Katalog dokumen:** `SCHEMA` di `src/lib/db.js` adalah daftar collection resmi. Tenant rows memakai `organizationId`; katalog global (`leaveTypes`, `promoTypes`, laporan) tidak di-scope per organisasi
 - **D1 bukan schema operasional:** tabel Worker (`app_snapshots`, `auth_users`, `file_metadata`, …) adalah sidecar. Jangan dinormalisasi ke tabel CRM
@@ -127,6 +128,7 @@ proqtrack/
 ├── assets/             # branding, PWA, visual phase 0
 └── src/
     ├── app.js          # router + UI field existing
+    ├── hr-home.js      # beranda karyawan, pengajuan, laporan, akun
     ├── phase0-data.js
     ├── phase0-ui.js
     ├── data/seed.js
