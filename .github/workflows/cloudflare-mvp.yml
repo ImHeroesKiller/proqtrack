@@ -110,12 +110,12 @@ jobs:
           printf '%s' "$body" | node -e '
             const raw = require("fs").readFileSync(0, "utf8");
             const data = JSON.parse(raw);
-            if (data.ok !== true || data.service !== "ProQTrack" || data.milestone !== "M5") {
+            if (data.ok !== true || data.service !== "ProQTrack" || data.milestone !== "M6") {
               console.error("Health check failed", data);
               process.exit(1);
             }
-            if (data.dependencies?.d1 !== true || data.dependencies?.hardeningSchema !== true) {
-              console.error("Hardening dependency check failed", data.dependencies);
+            if (data.dependencies?.d1 !== true || data.dependencies?.hardeningSchema !== true || data.dependencies?.reportingSchema !== true) {
+              console.error("M6 dependency check failed", data.dependencies);
               process.exit(1);
             }
             console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
@@ -139,7 +139,9 @@ jobs:
           evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
           test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
 
-          monitoring_status="$(curl --silent --show-error --output /tmp/monitoring-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/monitoring/summary")"
-          test "$monitoring_status" = "401" || { echo "::error::Unauthenticated monitoring endpoint returned HTTP $monitoring_status"; cat /tmp/monitoring-body; exit 1; }
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits; do
+            status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
+          done
 
-          echo "Security smoke checks PASS"
+          echo "Security and M6 auth-boundary smoke checks PASS"

@@ -27,6 +27,9 @@ export function classifyRoute(pathname = '') {
   if (pathname.startsWith('/api/auth/')) return 'auth';
   if (pathname.startsWith('/api/core/')) return 'core';
   if (pathname.startsWith('/api/evidence')) return 'evidence';
+  if (pathname.startsWith('/api/reports') || pathname.startsWith('/api/report-schedules')) return 'reporting';
+  if (pathname.startsWith('/api/workflows') || pathname.startsWith('/api/notifications')) return 'workflow';
+  if (pathname.startsWith('/api/analytics/') || pathname.startsWith('/api/query/')) return 'analytics';
   if (pathname.startsWith('/api/monitoring/')) return 'monitoring';
   if (pathname.startsWith('/api/')) return 'legacy_api';
   return 'asset';
@@ -179,6 +182,7 @@ export async function recordRequestTelemetry(env, {
 export async function healthResponse(env, requestId) {
   let dbOk = false;
   let schemaReady = false;
+  let reportingSchemaReady = false;
   try {
     const probe = await env.DB.prepare('SELECT 1 AS ok').first();
     dbOk = probe?.ok === 1;
@@ -190,16 +194,30 @@ export async function healthResponse(env, requestId) {
       )
     `).first();
     schemaReady = Number(schema?.count || 0) === 3;
+    const reporting = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM sqlite_master
+      WHERE type='table' AND name IN (
+        'core_report_schedules','core_workflow_requests','core_workflow_steps','core_notifications'
+      )
+    `).first();
+    const reportColumns = await env.DB.prepare(`PRAGMA table_info(report_generation_jobs)`).all();
+    const names = new Set((reportColumns?.results || []).map(row => String(row.name)));
+    reportingSchemaReady = Number(reporting?.count || 0) === 4
+      && ['organization_id', 'publication_status', 'lease_expires_at', 'filters_json'].every(name => names.has(name));
   } catch (error) {
     console.error('health_probe_failed', { requestId, error: error?.message || String(error) });
   }
-  const ok = dbOk && schemaReady;
+  const defaultMilestone = { milestone: 'M5' }.milestone;
+  const milestone = String(env.APP_MILESTONE || defaultMilestone);
+  const needsM6 = milestone.toUpperCase() === 'M6';
+  const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady);
   return json({
     ok,
     service: 'ProQTrack',
     environment: env.ENVIRONMENT || 'unknown',
-    milestone: 'M5',
-    dependencies: { d1: dbOk, hardeningSchema: schemaReady },
+    milestone,
+    dependencies: { d1: dbOk, hardeningSchema: schemaReady, reportingSchema: reportingSchemaReady },
     requestId,
   }, ok ? 200 : 503);
 }
@@ -208,7 +226,7 @@ export async function monitoringSummary(env, claims, requestId) {
   if (!['superadmin', 'head', 'admin'].includes(String(claims?.role || '').toLowerCase())) {
     return json({ error: 'FORBIDDEN', requestId }, 403);
   }
-  const [metrics, maintenance, sessions, rateLimited] = await Promise.all([
+  const [metrics, maintenance, sessions, rateLimited, reports, workflows] = await Promise.all([
     env.DB.prepare(`
       SELECT route_group,method,status_class,
         SUM(request_count) AS requests,
@@ -232,6 +250,14 @@ export async function monitoringSummary(env, claims, requestId) {
       SELECT COUNT(*) AS count FROM security_audit_logs
       WHERE action='rate_limit' AND created_at>=datetime('now','-60 minutes')
     `).first(),
+    env.DB.prepare(`
+      SELECT status,COUNT(*) AS count FROM report_generation_jobs
+      WHERE organization_id=? GROUP BY status
+    `).bind(claims.organizationId || 'ORG-DEFAULT').all().catch(() => ({ results: [] })),
+    env.DB.prepare(`
+      SELECT status,COUNT(*) AS count FROM core_workflow_requests
+      WHERE organization_id=? GROUP BY status
+    `).bind(claims.organizationId || 'ORG-DEFAULT').all().catch(() => ({ results: [] })),
   ]);
 
   const rows = (metrics?.results || []).map(row => {
@@ -253,6 +279,8 @@ export async function monitoringSummary(env, claims, requestId) {
     metrics: rows,
     sessions: sessions?.results || [],
     rateLimited: Number(rateLimited?.count || 0),
+    reportQueue: reports?.results || [],
+    workflows: workflows?.results || [],
     maintenance: (maintenance?.results || []).map(row => ({
       id: row.id,
       task: row.task,

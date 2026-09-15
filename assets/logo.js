@@ -47,3 +47,4 @@ await import('../src/lib/uploads.js');
 await import('../src/organization.js');
 await import('../src/cloud-cutover.js');
 await import('../src/m4-bootstrap.js');
+await import('../src/lib/m6-client.js');
