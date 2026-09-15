@@ -58,7 +58,7 @@ test('main gateway enforces M5 controls before operational dispatch', async () =
   const loginLimit = source.indexOf("scope: 'auth_login'");
   const authDispatch = source.indexOf('handleAuthRoute(request');
   const authoritativeAuth = source.indexOf('authenticateAuthoritatively(request');
-  const apiLimit = source.indexOf('apiLimitFor(url, request, env)');
+  const apiLimit = source.indexOf('limit: apiLimitFor(url, request, env)');
   const operational = source.indexOf('handleOperationalGateway(request');
   assert.ok(loginLimit >= 0 && authDispatch > loginLimit);
   assert.ok(authoritativeAuth >= 0 && apiLimit > authoritativeAuth && operational > apiLimit);
@@ -69,6 +69,7 @@ test('main gateway enforces M5 controls before operational dispatch', async () =
 test('scheduled maintenance expires sessions and cleans transient operational state', async () => {
   const source = await read('worker/maintenance.js');
   assert.match(source, /SET status='expired'/);
+  assert.match(source, /datetime\(expires_at\)/);
   assert.match(source, /DELETE FROM core_rate_limit_buckets/);
   assert.match(source, /DELETE FROM core_observability_minute/);
   assert.match(source, /storage_status='uploading'/);
