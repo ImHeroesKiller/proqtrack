@@ -4,6 +4,7 @@ const entries = [
   "index.html",
   "manifest.webmanifest",
   "sw.js",
+  "_headers",
   "assets",
   "src",
 ];
