@@ -11,6 +11,8 @@ const clamp = (value, fallback, min, max) => {
   if (!Number.isFinite(parsed)) return fallback;
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 };
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 function dateOnly(value, fallback) {
   const raw = normalize(value);
@@ -43,15 +45,19 @@ async function allRows(stmt) {
 }
 
 function b64urlEncode(value) {
-  const text = btoa(unescape(encodeURIComponent(JSON.stringify(value))));
-  return text.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const bytes = encoder.encode(JSON.stringify(value));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 function b64urlDecode(value) {
   if (!value) return null;
   try {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
-    return JSON.parse(decodeURIComponent(escape(atob(padded))));
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, char => char.charCodeAt(0));
+    return JSON.parse(decoder.decode(bytes));
   } catch {
     return null;
   }
