@@ -34,7 +34,7 @@
   ],
   "vars": {
     "ENVIRONMENT": "mvp",
-    "APP_MILESTONE": "M6",
+    "APP_MILESTONE": "M7",
     "CORE_DATA_API_ENABLED": "true",
     "CORE_EVIDENCE_API_ENABLED": "true",
     "MVP_DATA_API_ENABLED": "false",
@@ -74,7 +74,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "development",
-        "APP_MILESTONE": "M6",
+        "APP_MILESTONE": "M7",
         "CORE_DATA_API_ENABLED": "true",
         "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
@@ -114,7 +114,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "staging",
-        "APP_MILESTONE": "M6",
+        "APP_MILESTONE": "M7",
         "CORE_DATA_API_ENABLED": "true",
         "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
@@ -154,7 +154,7 @@
       ],
       "vars": {
         "ENVIRONMENT": "production",
-        "APP_MILESTONE": "M6",
+        "APP_MILESTONE": "M7",
         "CORE_DATA_API_ENABLED": "true",
         "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
