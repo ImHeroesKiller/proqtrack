@@ -15,6 +15,8 @@ const clampInt = (value, fallback, min = 1, max = 100000) => {
   return Math.min(max, Math.max(min, Math.floor(parsed)));
 };
 
+const sqliteTimestamp = value => new Date(value).toISOString().replace('T', ' ').slice(0, 19);
+
 async function sha256Hex(value) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(String(value || '')));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -44,7 +46,7 @@ export async function checkDistributedRateLimit(request, env, {
   const rawSubject = String(subject || request.headers.get('cf-connecting-ip') || 'anonymous');
   const subjectHash = await sha256Hex(rawSubject);
   const bucketKey = `${String(scope).slice(0, 40)}:${subjectHash}:${windowStart}`;
-  const expiresAt = new Date((resetAt + window) * 1000).toISOString();
+  const expiresAt = sqliteTimestamp((resetAt + window) * 1000);
 
   await env.DB.prepare(`
     INSERT INTO core_rate_limit_buckets(
@@ -145,7 +147,7 @@ export async function recordRequestTelemetry(env, {
   const statusClass = `${Math.floor(Number(status || 0) / 100)}xx`;
   const latency = Math.max(0, Math.round(Number(durationMs || 0)));
   const errorCount = Number(status || 0) >= 500 ? 1 : 0;
-  const bucketMinute = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
+  const bucketMinute = sqliteTimestamp(Math.floor(Date.now() / 60000) * 60000);
   const log = {
     event: 'http_request',
     requestId,
@@ -263,4 +265,4 @@ export async function monitoringSummary(env, claims, requestId) {
   });
 }
 
-export const __test = { clampInt, sha256Hex };
+export const __test = { clampInt, sha256Hex, sqliteTimestamp };
