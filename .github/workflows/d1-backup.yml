@@ -1,4 +1,4 @@
-name: Backup ProQTrack D1
+name: Verify ProQTrack D1 Recovery
 
 on:
   schedule:
@@ -9,11 +9,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: proqtrack-d1-backup
+  group: proqtrack-d1-recovery
   cancel-in-progress: false
 
 jobs:
-  backup:
+  recovery-check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -32,25 +32,21 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
-      - name: Export production D1
-        id: backup
+      - name: Capture current D1 Time Travel bookmark
+        id: recovery
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backups
+          mkdir -p recovery
           stamp="$(date -u +'%Y%m%dT%H%M%SZ')"
-          backup="backups/proqtrack-d1-${stamp}.sql"
-          npx wrangler d1 export proqtrack-mvp --remote --output="$backup"
-          sha256sum "$backup" | tee "$backup.sha256"
-          gzip -9 "$backup"
-          echo "path=$backup.gz" >> "$GITHUB_OUTPUT"
-          echo "checksum=$backup.sha256" >> "$GITHUB_OUTPUT"
-      - name: Upload encrypted-at-rest GitHub artifact
+          bookmark="recovery/proqtrack-d1-bookmark-${stamp}.json"
+          npx wrangler d1 time-travel info proqtrack-mvp --json > "$bookmark"
+          test -s "$bookmark"
+          echo "path=$bookmark" >> "$GITHUB_OUTPUT"
+      - name: Upload non-sensitive recovery metadata
         uses: actions/upload-artifact@v4
         with:
-          name: proqtrack-d1-backup-${{ github.run_id }}
-          path: |
-            ${{ steps.backup.outputs.path }}
-            ${{ steps.backup.outputs.checksum }}
+          name: proqtrack-d1-recovery-${{ github.run_id }}
+          path: ${{ steps.recovery.outputs.path }}
           retention-days: 30
           if-no-files-found: error
