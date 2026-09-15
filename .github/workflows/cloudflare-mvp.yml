@@ -150,11 +150,14 @@ jobs:
           printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
           printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
           printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$api_headers" | grep -qi '^content-security-policy-report-only:'
 
           static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
           printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
           printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
-          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
 
           evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
           test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
