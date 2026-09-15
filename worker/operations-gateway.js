@@ -195,13 +195,33 @@ async function repairDirectManagerMemberships(env, organizationId, originalSnaps
   }
 }
 
+async function bestEffortReconcile(env, organizationId, originalSnapshot = null) {
+  try {
+    await reconcileNormalizedMemberships(env, organizationId);
+  } catch (error) {
+    console.warn('operational_membership_reconcile_failed', {
+      organizationId,
+      error: error?.message || String(error),
+    });
+  }
+  if (!originalSnapshot) return;
+  try {
+    await repairDirectManagerMemberships(env, organizationId, originalSnapshot);
+  } catch (error) {
+    console.warn('operational_manager_repair_failed', {
+      organizationId,
+      error: error?.message || String(error),
+    });
+  }
+}
+
 export async function handleOperationalGateway(request, env, claims, url = new URL(request.url)) {
   if (!url.pathname.startsWith('/api/core/')) return null;
 
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') {
-    // Idempotent self-healing in case a prior browser/import was interrupted
-    // after operational rows committed but before identity linking completed.
-    await reconcileNormalizedMemberships(env, claims.organizationId);
+    // Identity reconciliation is repair work, not a prerequisite for reading the
+    // tenant. A repair failure must never turn a healthy bootstrap into HTTP 500.
+    await bestEffortReconcile(env, claims.organizationId);
     const response = await handleOperationalRoute(request, env, claims, url);
     if (!response || !response.ok) return response;
     const payload = await response.json();
@@ -213,8 +233,11 @@ export async function handleOperationalGateway(request, env, claims, url = new U
     const sanitized = sanitizeImportBody(original);
     const response = await handleOperationalRoute(jsonBodyRequest(request, sanitized), env, claims, url);
     if (response?.status === 201 && original.dryRun !== true) {
-      await reconcileNormalizedMemberships(env, claims.organizationId);
-      await repairDirectManagerMemberships(env, claims.organizationId, original.snapshot || {});
+      // The import transaction has already committed at this point. Follow-up
+      // identity repair is deliberately best-effort so a repair problem cannot
+      // misreport a successful import as HTTP 500. Bootstrap performs the same
+      // reconciliation again on later requests.
+      await bestEffortReconcile(env, claims.organizationId, original.snapshot || {});
     }
     return response;
   }
@@ -233,4 +256,5 @@ export const __test = {
   sanitizeImportBody,
   sanitizeSyncBody,
   compatibilityBootstrap,
+  bestEffortReconcile,
 };
