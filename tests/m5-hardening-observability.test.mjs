@@ -94,21 +94,24 @@ test('static asset build includes Cloudflare security header rules', async () =>
   assert.match(headers, /Strict-Transport-Security:/);
 });
 
-test('CI and deploy workflows enforce audit backup migration order and smoke checks', async () => {
-  const [ci, deploy, backup] = await Promise.all([
+test('CI and deploy workflows enforce audit recovery migration order and smoke checks', async () => {
+  const [ci, deploy, recovery] = await Promise.all([
     read('.github/workflows/ci.yml'),
     read('.github/workflows/cloudflare-mvp.yml'),
     read('.github/workflows/d1-backup.yml'),
   ]);
   assert.match(ci, /npm audit --audit-level=critical/);
-  const exportIndex = deploy.indexOf('Export pre-deploy D1 backup');
+  const recoveryIndex = deploy.indexOf('Record pre-deploy D1 Time Travel bookmark');
   const migrateIndex = deploy.indexOf('Apply D1 migrations before deploy');
   const workerIndex = deploy.indexOf('Deploy Worker after migration');
-  assert.ok(exportIndex >= 0 && migrateIndex > exportIndex && workerIndex > migrateIndex);
+  assert.ok(recoveryIndex >= 0 && migrateIndex > recoveryIndex && workerIndex > migrateIndex);
+  assert.match(deploy, /d1 time-travel info proqtrack-mvp --json/);
+  assert.doesNotMatch(deploy, /d1 export proqtrack-mvp/);
   assert.match(deploy, /hardeningSchema/);
   assert.match(deploy, /Unauthenticated evidence endpoint/);
   assert.match(deploy, /content-security-policy-report-only/);
-  assert.match(backup, /cron: '17 2 \* \* \*'/);
-  assert.match(backup, /wrangler d1 export proqtrack-mvp --remote/);
-  assert.match(backup, /retention-days: 30/);
+  assert.match(recovery, /cron: '17 2 \* \* \*'/);
+  assert.match(recovery, /d1 time-travel info proqtrack-mvp --json/);
+  assert.doesNotMatch(recovery, /d1 export proqtrack-mvp/);
+  assert.match(recovery, /retention-days: 30/);
 });
