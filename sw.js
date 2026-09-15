@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v5';
+const CACHE = 'proqtrack-v6';
 const SHELL = [
   './',
   './index.html',
