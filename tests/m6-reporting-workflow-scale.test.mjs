@@ -78,8 +78,8 @@ test('gateway routes M6 APIs before legacy locked data API', async () => {
   assert.match(source, /enqueueDueReportSchedules/);
   assert.match(source, /processReportQueue/);
   assert.match(source, /recoverExpiredReportLeases/);
-  const reporting = source.indexOf('handleReportRoute(request');
-  const legacy = source.indexOf('forwardWithAuthoritativeClaims(request');
+  const reporting = source.indexOf('response = await handleReportRoute(request');
+  const legacy = source.indexOf('response = await forwardWithAuthoritativeClaims(request');
   assert.ok(reporting >= 0 && legacy > reporting);
 });
 
