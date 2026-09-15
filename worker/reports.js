@@ -332,8 +332,11 @@ function addLocalDays(parts, days) {
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 }
 
-export function nextScheduleAt({ cadence, runHour, runDay, timezone }, from = new Date()) {
-  const timeZone = normalize(timezone) || 'Asia/Jakarta';
+export function nextScheduleAt(schedule = {}, from = new Date()) {
+  const cadence = normalize(schedule.cadence).toLowerCase();
+  const runHour = schedule.runHour ?? schedule.run_hour;
+  const runDay = schedule.runDay ?? schedule.run_day;
+  const timeZone = normalize(schedule.timezone) || 'Asia/Jakarta';
   const local = timeZoneParts(from, timeZone);
   const hour = clamp(runHour, 7, 0, 23);
   let target = { year: local.year, month: local.month, day: local.day, hour };
@@ -345,20 +348,20 @@ export function nextScheduleAt({ cadence, runHour, runDay, timezone }, from = ne
       return day === 0 ? 7 : day;
     })();
     let delta = (desiredDay - currentIsoDay + 7) % 7;
-    let candidate = zonedDateToUtc(target, timeZone);
+    const candidate = zonedDateToUtc(target, timeZone);
     if (delta === 0 && candidate <= from) delta = 7;
     const next = addLocalDays(local, delta);
     target = { ...next, hour };
   } else if (cadence === 'monthly') {
     const desiredDay = clamp(runDay, 1, 1, 28);
     target.day = desiredDay;
-    let candidate = zonedDateToUtc(target, timeZone);
+    const candidate = zonedDateToUtc(target, timeZone);
     if (candidate <= from) {
       const nextMonth = new Date(Date.UTC(local.year, local.month, 1));
       target = { year: nextMonth.getUTCFullYear(), month: nextMonth.getUTCMonth() + 1, day: desiredDay, hour };
     }
   } else {
-    let candidate = zonedDateToUtc(target, timeZone);
+    const candidate = zonedDateToUtc(target, timeZone);
     if (candidate <= from) {
       const next = addLocalDays(local, 1);
       target = { ...next, hour };
@@ -388,12 +391,7 @@ export async function enqueueDueReportSchedules(env, limit = 20) {
       schedule.created_by, payload, schedule.organization_id, schedule.name,
       schedule.filters_json || '{}', scheduledFor, schedule.id,
     ).run();
-    const next = nextScheduleAt({
-      cadence: schedule.cadence,
-      runHour: schedule.run_hour,
-      runDay: schedule.run_day,
-      timezone: schedule.timezone,
-    }, new Date(`${String(scheduledFor).replace(' ', 'T')}Z`));
+    const next = nextScheduleAt(schedule, new Date(`${String(scheduledFor).replace(' ', 'T')}Z`));
     await env.DB.prepare(`
       UPDATE core_report_schedules SET last_run_at=?,next_run_at=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND organization_id=?
     `).bind(scheduledFor, next, schedule.id, schedule.organization_id).run();
