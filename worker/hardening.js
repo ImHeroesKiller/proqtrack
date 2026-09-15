@@ -106,10 +106,10 @@ export function applySecurityHeaders(response, env, requestId = '') {
       "object-src 'none'",
       "frame-ancestors 'none'",
       "form-action 'self'",
-      "script-src 'self' 'unsafe-inline'",
-      "style-src 'self' 'unsafe-inline'",
+      "script-src 'self' 'unsafe-inline' https://unpkg.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
       "img-src 'self' data: blob: https:",
-      "font-src 'self' data:",
+      "font-src 'self' data: https://fonts.gstatic.com",
       "connect-src 'self' https://nominatim.openstreetmap.org https://*.tile.openstreetmap.org",
       "worker-src 'self' blob:",
       "manifest-src 'self'",
@@ -210,7 +210,7 @@ export async function healthResponse(env, requestId) {
   }
   const defaultMilestone = { milestone: 'M5' }.milestone;
   const milestone = String(env.APP_MILESTONE || defaultMilestone);
-  const needsM6 = milestone.toUpperCase() === 'M6';
+  const needsM6 = ['M6', 'M7'].includes(milestone.toUpperCase());
   const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady);
   return json({
     ok,
