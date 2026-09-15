@@ -11,6 +11,9 @@
       "invocation_logs": true
     }
   },
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
@@ -32,12 +35,19 @@
   "vars": {
     "ENVIRONMENT": "mvp",
     "CORE_DATA_API_ENABLED": "true",
+    "CORE_EVIDENCE_API_ENABLED": "true",
     "MVP_DATA_API_ENABLED": "false",
     "MVP_FILE_API_ENABLED": "false",
     "API_AUTH_REQUIRED": "true",
     "API_SESSION_TTL_SECONDS": "28800",
     "API_RATE_LIMIT_PER_MINUTE": "120",
     "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+    "API_SYNC_RATE_LIMIT_PER_MINUTE": "60",
+    "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
+    "OBSERVABILITY_RETENTION_DAYS": "14",
+    "MAINTENANCE_RETENTION_DAYS": "30",
+    "EVIDENCE_MAX_FILE_BYTES": "5242880",
+    "EVIDENCE_UPLOAD_TYPES": "image/jpeg,image/png,image/webp",
     "MVP_MAX_FILE_BYTES": "2097152",
     "MVP_MAX_STORAGE_BYTES": "524288000",
     "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
@@ -59,12 +69,19 @@
       "vars": {
         "ENVIRONMENT": "development",
         "CORE_DATA_API_ENABLED": "true",
+        "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
         "API_SESSION_TTL_SECONDS": "28800",
         "API_RATE_LIMIT_PER_MINUTE": "120",
         "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "API_SYNC_RATE_LIMIT_PER_MINUTE": "60",
+        "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
+        "OBSERVABILITY_RETENTION_DAYS": "14",
+        "MAINTENANCE_RETENTION_DAYS": "30",
+        "EVIDENCE_MAX_FILE_BYTES": "5242880",
+        "EVIDENCE_UPLOAD_TYPES": "image/jpeg,image/png,image/webp",
         "MVP_MAX_FILE_BYTES": "2097152",
         "MVP_MAX_STORAGE_BYTES": "524288000",
         "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
@@ -86,12 +103,19 @@
       "vars": {
         "ENVIRONMENT": "staging",
         "CORE_DATA_API_ENABLED": "true",
+        "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
         "API_SESSION_TTL_SECONDS": "28800",
         "API_RATE_LIMIT_PER_MINUTE": "120",
         "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "API_SYNC_RATE_LIMIT_PER_MINUTE": "60",
+        "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
+        "OBSERVABILITY_RETENTION_DAYS": "14",
+        "MAINTENANCE_RETENTION_DAYS": "30",
+        "EVIDENCE_MAX_FILE_BYTES": "5242880",
+        "EVIDENCE_UPLOAD_TYPES": "image/jpeg,image/png,image/webp",
         "MVP_MAX_FILE_BYTES": "2097152",
         "MVP_MAX_STORAGE_BYTES": "524288000",
         "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
@@ -113,12 +137,19 @@
       "vars": {
         "ENVIRONMENT": "production",
         "CORE_DATA_API_ENABLED": "true",
+        "CORE_EVIDENCE_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
         "API_SESSION_TTL_SECONDS": "28800",
         "API_RATE_LIMIT_PER_MINUTE": "120",
         "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
+        "API_SYNC_RATE_LIMIT_PER_MINUTE": "60",
+        "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
+        "OBSERVABILITY_RETENTION_DAYS": "14",
+        "MAINTENANCE_RETENTION_DAYS": "30",
+        "EVIDENCE_MAX_FILE_BYTES": "5242880",
+        "EVIDENCE_UPLOAD_TYPES": "image/jpeg,image/png,image/webp",
         "MVP_MAX_FILE_BYTES": "2097152",
         "MVP_MAX_STORAGE_BYTES": "524288000",
         "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
