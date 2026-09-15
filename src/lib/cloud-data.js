@@ -198,41 +198,37 @@ export async function establishCloudSession({ email, password, organizationId = 
   return apiJson('/api/auth/session');
 }
 
-async function importLegacySnapshotOrRecover(localDb) {
+// Legacy migration is intentionally explicit from M7 onward. Normal login must
+// never auto-post browser localStorage into a new/empty organization. Admin
+// migration tooling may call this function deliberately when a legacy cutover
+// is actually required.
+export async function importLegacySnapshotForAdmin(localDb) {
   const legacy = snapshotCollections(localDb, true);
   try {
     await apiJson('/api/core/import', { method: 'POST', body: JSON.stringify({ dryRun: true, snapshot: legacy }) });
     await apiJson('/api/core/import', { method: 'POST', body: JSON.stringify({ snapshot: legacy }) });
     return apiJson('/api/core/bootstrap');
   } catch (error) {
-    // An import may have committed before a follow-up reconciliation failed, or
-    // another tab may have completed the cutover first. Never retry blindly.
-    // Re-read authoritative D1 state and continue when server data now exists.
     const recovered = await apiJson('/api/core/bootstrap').catch(() => null);
-    if (recovered && (recovered.cutoverMode === 'cloud' || recovered.empty === false)) {
-      return recovered;
-    }
+    if (recovered && (recovered.cutoverMode === 'cloud' || recovered.empty === false)) return recovered;
     throw error;
   }
 }
 
 export async function bootstrapOperationalData(localDb, account = {}) {
   if (!getApiToken()) return { mode: 'local', data: null };
-  let remote = await apiJson('/api/core/bootstrap');
+  const remote = await apiJson('/api/core/bootstrap');
   cutoverMode = remote.cutoverMode || 'pending';
   revision = Number(remote.revision || 0);
-
-  const canImport = ['superadmin', 'head', 'admin'].includes(String(account.role || '').toLowerCase());
-  if (remote.empty && cutoverMode !== 'cloud' && canImport) {
-    remote = await importLegacySnapshotOrRecover(localDb);
-    cutoverMode = remote.cutoverMode || 'pending';
-    revision = Number(remote.revision || 0);
-  }
 
   if (cutoverMode !== 'cloud') {
     ready = false;
     baseline = {};
-    emitStatus('pending-cutover');
+    lastError = null;
+    emitStatus('pending-cutover', {
+      legacyImportRequired: remote.empty === true,
+      implicitLegacyImportDisabled: true,
+    });
     return { mode: 'pending', data: null, revision, cutoverMode };
   }
 
