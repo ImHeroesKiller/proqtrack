@@ -52,8 +52,6 @@ function sanitizeImportBody(body = {}) {
   for (const entity of ['clients','projects','projectAssignments','surveyTemplates']) {
     if (Array.isArray(snapshot[entity])) next[entity] = snapshot[entity].map(row => sanitizeOperationalRow(entity, row));
   }
-  // User identity can be created before operational parents, but employee/project
-  // links are reconciled only after employees/projects/assignments exist.
   next.accounts = Array.isArray(snapshot.accounts)
     ? snapshot.accounts.map(account => ({
         ...account,
@@ -78,9 +76,7 @@ function sanitizeSyncBody(body = {}) {
 
 function compatibilityBootstrap(payload = {}) {
   const data = payload.data && typeof payload.data === 'object' ? { ...payload.data } : {};
-  if (Array.isArray(data.clients)) {
-    data.clients = data.clients.map(row => ({ ...row, status: row.legacyStatus || row.status }));
-  }
+  if (Array.isArray(data.clients)) data.clients = data.clients.map(row => ({ ...row, status: row.legacyStatus || row.status }));
   if (Array.isArray(data.projects)) {
     data.projects = data.projects.map(row => ({
       ...row,
@@ -113,13 +109,7 @@ function compatibilityBootstrap(payload = {}) {
       const key = `${projectId}:${product.id}`;
       if (!projectId || !product.id || seen.has(key)) continue;
       seen.add(key);
-      relations.push({
-        id: `PP-${projectId}-${product.id}`,
-        organizationId: product.organizationId,
-        projectId,
-        productId: product.id,
-        status: 'active',
-      });
+      relations.push({ id: `PP-${projectId}-${product.id}`, organizationId: product.organizationId, projectId, productId: product.id, status: 'active' });
     }
   }
   data.projectProducts = relations;
@@ -127,8 +117,6 @@ function compatibilityBootstrap(payload = {}) {
 }
 
 async function reconcileNormalizedMemberships(env, organizationId) {
-  // Link employees to server users using email only after both sides and the
-  // organization membership exist. This keeps the import FK-safe.
   await env.DB.prepare(`
     UPDATE core_employees
     SET auth_user_id = (
@@ -150,9 +138,6 @@ async function reconcileNormalizedMemberships(env, organizationId) {
       )
   `).bind(organizationId).run();
 
-  // Project memberships are derived from the now-existing normalized
-  // assignments. The WHERE clause also makes SQLite's SELECT+UPSERT grammar
-  // unambiguous.
   await env.DB.prepare(`
     INSERT INTO core_project_memberships(organization_id,project_id,user_id,role,status,updated_at)
     SELECT
@@ -199,19 +184,13 @@ async function bestEffortReconcile(env, organizationId, originalSnapshot = null)
   try {
     await reconcileNormalizedMemberships(env, organizationId);
   } catch (error) {
-    console.warn('operational_membership_reconcile_failed', {
-      organizationId,
-      error: error?.message || String(error),
-    });
+    console.warn('operational_membership_reconcile_failed', { organizationId, error: error?.message || String(error) });
   }
   if (!originalSnapshot) return;
   try {
     await repairDirectManagerMemberships(env, organizationId, originalSnapshot);
   } catch (error) {
-    console.warn('operational_manager_repair_failed', {
-      organizationId,
-      error: error?.message || String(error),
-    });
+    console.warn('operational_manager_repair_failed', { organizationId, error: error?.message || String(error) });
   }
 }
 
@@ -219,8 +198,6 @@ export async function handleOperationalGateway(request, env, claims, url = new U
   if (!url.pathname.startsWith('/api/core/')) return null;
 
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') {
-    // Identity reconciliation is repair work, not a prerequisite for reading the
-    // tenant. A repair failure must never turn a healthy bootstrap into HTTP 500.
     await bestEffortReconcile(env, claims.organizationId);
     const response = await handleOperationalRoute(request, env, claims, url);
     if (!response || !response.ok) return response;
@@ -232,11 +209,18 @@ export async function handleOperationalGateway(request, env, claims, url = new U
     const original = await request.clone().json().catch(() => ({}));
     const sanitized = sanitizeImportBody(original);
     const response = await handleOperationalRoute(jsonBodyRequest(request, sanitized), env, claims, url);
+
+    // Import is a one-time cutover operation. If another tab/device already
+    // completed it, treat that state as an idempotent success instead of making
+    // the browser surface an expected 409 as a console error.
+    if (response?.status === 409) {
+      const payload = await response.clone().json().catch(() => ({}));
+      if (payload?.error === 'ALREADY_CUT_OVER') {
+        return json({ ok: true, alreadyCutOver: true, revision: Number(payload.revision || 0), cutoverMode: 'cloud' }, 200);
+      }
+    }
+
     if (response?.status === 201 && original.dryRun !== true) {
-      // The import transaction has already committed at this point. Follow-up
-      // identity repair is deliberately best-effort so a repair problem cannot
-      // misreport a successful import as HTTP 500. Bootstrap performs the same
-      // reconciliation again on later requests.
       await bestEffortReconcile(env, claims.organizationId, original.snapshot || {});
     }
     return response;
