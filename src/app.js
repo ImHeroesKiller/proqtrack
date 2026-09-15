@@ -25,15 +25,24 @@ import {
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
+  detectAreaAttendance, startRackEvidence, attachRackPhoto, getActivityEvidencePairs, rackPairStatus,
+  getEmployee, productSalesAnalytics,
 } from './lib/db.js';
 import { renderLastLocation, attendanceCheckinCard, photoFilterBar, applyPhotoFilters, productPickerRows, renderOutletProposalForm, renderVisitDetailHtml, outletNotesField } from './field-sales.js';
+import { renderSurveyList, renderSurveyBuilder, renderSurveyFill, renderSurveyMonitor } from './surveys.js';
+import {
+  renderHrHome, renderPengajuanHub, renderLaporanHub, renderAkunPage,
+  renderOvertimePage, renderIzinPage, renderCutiPage, renderWfhPage,
+  renderDailyReportPage, renderCalendarPage, renderOvertimeRecap,
+  renderMonthlyAttendance, renderNewsPage, renderContactHr, renderHrApprovals,
+} from './hr-home.js';
 import { renderSettings, renderAccounts } from './account-settings.js';
 import { renderOrganizations, renderOrganizationHub, orgSwitcherHtml } from './organization.js';
 import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
-  normalizeAttendanceStatus,
+  normalizeAttendanceStatus, stampPhotoEvidence, formatEvidenceStamp,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
@@ -178,6 +187,7 @@ const NAV_ITEMS = [
     { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
     { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
     { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'surveys',    label: 'Surveys',          icon: 'chart', route: '#/surveys' },
     { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
     { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
     { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
@@ -215,6 +225,7 @@ const NAV_ITEMS_PM = [
     { id: 'outlet-approvals', label: 'Outlet Approvals', icon: 'store', route: '#/outlet-approvals' },
     { id: 'products',   label: 'Products',         icon: 'products', route: '#/products' },
     { id: 'sales',      label: 'Product Sales',    icon: 'chart', route: '#/sales' },
+    { id: 'surveys',    label: 'Surveys',          icon: 'chart', route: '#/surveys' },
     { id: 'stocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/stocks' },
     { id: 'attendance', label: 'Attendance',       icon: 'attendance', route: '#/attendance' },
     { id: 'leaves',     label: 'Leave',            icon: 'leaves', route: '#/leaves' },
@@ -249,6 +260,7 @@ const NAV_ITEMS_SUPERVISOR = [
   { section: 'Field', items: [
     { id: 'mystocks',      label: 'Outlet Stock',      icon: 'stocks', route: '#/mystocks' },
     { id: 'mysales',       label: 'Product Sales',     icon: 'chart', route: '#/mysales' },
+    { id: 'surveys',       label: 'Surveys',            icon: 'chart', route: '#/surveys' },
     { id: 'myprices',      label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
     { id: 'myintel',       label: 'Competitor Intel',  icon: 'intel', route: '#/myintel' },
     { id: 'field-photos',  label: 'Field Photos',      icon: 'photos', route: '#/field-photos' },
@@ -274,7 +286,8 @@ const NAV_ITEMS_EMPLOYEE = [
   { section: 'Field', items: [
     { id: 'mystocks',     label: 'Outlet Stock',     icon: 'stocks', route: '#/mystocks' },
     { id: 'mysales',      label: 'Product Sales',    icon: 'chart', route: '#/mysales' },
-    { id: 'myprices',     label: 'Price & Discount', icon: 'price', route: '#/myprices' },
+    { id: 'mysurveys',    label: 'Surveys',          icon: 'chart', route: '#/mysurveys' },
+    { id: 'myprices',     label: 'Price & Discount',  icon: 'price', route: '#/myprices' },
     { id: 'myintel',      label: 'Competitor Intel', icon: 'intel', route: '#/myintel' },
     { id: 'myphotos',     label: 'Field Photos',     icon: 'photos', route: '#/myphotos' },
     { id: 'myattendance', label: 'My Attendance',    icon: 'attendance', route: '#/myattendance' },
@@ -284,6 +297,23 @@ const NAV_ITEMS_EMPLOYEE = [
     { id: 'settings', label: 'Settings', icon: 'settings', route: '#/settings' },
   ]},
 ];
+
+const HR_EMPLOYEE_ROUTES = new Set([
+  '#/myday', '#/pengajuan', '#/laporan', '#/akun',
+  '#/lembur', '#/izin', '#/cuti', '#/wfh',
+  '#/laporan-harian', '#/kalender', '#/rekap-lembur', '#/rekap-absensi',
+  '#/berita', '#/hubungi-hrd',
+]);
+
+function companyLabelForPage() {
+  const org = getOrganization();
+  return org?.legalName || getAppSettings().companyName || 'PT. ProQ Indonesia';
+}
+
+function isHrChromeRoute(route) {
+  return HR_EMPLOYEE_ROUTES.has(route) || route === '#/myattendance' || route === '#/myleaves';
+}
+
 // ===== Router =====
 function getRoute() {
   return location.hash || '#/';
@@ -383,20 +413,59 @@ function render() {
       return;
     }
     pageTitle = 'Project Management';
-    pageSubtitle = 'Memuat data project dan klien';
-    pageContent = '<div class="card"><div class="empty-state"><p>Memuat modul Project Management...</p></div></div>';
+    pageSubtitle = 'Loading projects and clients';
+    pageContent = '<div class="card"><div class="empty-state"><p>Loading Project Management…</p></div></div>';
   // Field personal routes (employee + supervisor)
   } else if (!manager && (
     route === '#/myday' || route === '#/last-location' || route === '#/myvisits' || route === '#/mystocks' ||
     route === '#/myprices' || route === '#/myintel' || route === '#/myphotos' ||
     route === '#/myattendance' || route === '#/myleaves' || route === '#/new-outlet' ||
-    route === '#/mysales'
+    route === '#/mysales' || route === '#/mysurveys' || route.startsWith('#/surveys/fill') || HR_EMPLOYEE_ROUTES.has(route)
   )) {
     if (route === '#/myday') {
       pageTitle = 'My Day'; pageSubtitle = 'Today’s field activity';
       pageContent = renderMyDay();
+    } else if (route === '#/pengajuan') {
+      pageTitle = 'Requests'; pageSubtitle = 'Overtime, leave, and WFH';
+      pageContent = renderPengajuanHub();
+    } else if (route === '#/laporan') {
+      pageTitle = 'Reports'; pageSubtitle = 'Daily notes and recaps';
+      pageContent = renderLaporanHub();
+    } else if (route === '#/akun') {
+      pageTitle = 'Account'; pageSubtitle = 'Profile and settings';
+      pageContent = renderAkunPage();
+    } else if (route === '#/lembur') {
+      pageTitle = 'Overtime'; pageSubtitle = 'Submit and track overtime';
+      pageContent = renderOvertimePage();
+    } else if (route === '#/izin') {
+      pageTitle = 'Time off'; pageSubtitle = 'Personal, official, or sick leave';
+      pageContent = renderIzinPage();
+    } else if (route === '#/cuti') {
+      pageTitle = 'Leave'; pageSubtitle = 'Annual and special leave';
+      pageContent = renderCutiPage();
+    } else if (route === '#/wfh') {
+      pageTitle = 'Work From Home'; pageSubtitle = 'Work-from-home requests';
+      pageContent = renderWfhPage();
+    } else if (route === '#/laporan-harian') {
+      pageTitle = 'Daily Report'; pageSubtitle = 'Today’s field notes';
+      pageContent = renderDailyReportPage();
+    } else if (route === '#/kalender') {
+      pageTitle = 'Calendar'; pageSubtitle = 'Attendance and leave this month';
+      pageContent = renderCalendarPage();
+    } else if (route === '#/rekap-lembur') {
+      pageTitle = 'Overtime Recap'; pageSubtitle = 'Approved overtime hours';
+      pageContent = renderOvertimeRecap();
+    } else if (route === '#/rekap-absensi') {
+      pageTitle = 'Monthly Attendance'; pageSubtitle = 'Attendance summary';
+      pageContent = renderMonthlyAttendance();
+    } else if (route === '#/berita') {
+      pageTitle = 'News'; pageSubtitle = 'HR announcements';
+      pageContent = renderNewsPage();
+    } else if (route === '#/hubungi-hrd') {
+      pageTitle = 'Contact HR'; pageSubtitle = 'Human resources contacts';
+      pageContent = renderContactHr();
     } else if (route === '#/last-location') {
-      pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in toko atau tempat kerja';
+      pageTitle = 'Last Location'; pageSubtitle = 'Store or workplace check-in location';
       pageContent = renderLastLocation();
     } else if (route === '#/myvisits') {
       pageTitle = 'My Visits'; pageSubtitle = 'Your visit history';
@@ -428,6 +497,14 @@ function render() {
     } else if (route === '#/mysales') {
       pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
       pageContent = renderProductSales({ mine: true });
+    } else if (route === '#/mysurveys') {
+      pageTitle = 'Surveys'; pageSubtitle = 'Assigned field surveys';
+      pageContent = renderSurveyList({ field: true });
+    } else if (route.startsWith('#/surveys/fill/')) {
+      const id = route.replace('#/surveys/fill/', '').split('?')[0];
+      const q = new URLSearchParams(route.split('?')[1] || '');
+      pageTitle = 'Complete survey'; pageSubtitle = 'Required answers must be filled before submit';
+      pageContent = renderSurveyFill(id, { visitId: q.get('v') || '', outletId: q.get('o') || '' });
     }
   } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
@@ -435,7 +512,7 @@ function render() {
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Operational summary';
     pageContent = (isProjectAdmin() || isManager()) ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
-    pageTitle = 'Last Location'; pageSubtitle = 'Lokasi check-in terakhir tim di toko atau lokasi kerja';
+    pageTitle = 'Last Location'; pageSubtitle = 'Team last check-in at a store or work location';
     pageContent = renderTracking();
   } else if (teamOps && route === '#/visits') {
     pageTitle = 'Visits'; pageSubtitle = 'Outlet visits by the field team';
@@ -447,7 +524,7 @@ function render() {
     pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
     pageContent = renderOutletProposalForm();
   } else if (isProjectAdmin() && route === '#/outlets') {
-    pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
+    pageTitle = 'Outlets'; pageSubtitle = 'Manage outlet records';
     pageContent = renderOutlets();
   } else if (isProjectAdmin() && route === '#/products') {
     pageTitle = 'Products'; pageSubtitle = 'Product catalog';
@@ -455,6 +532,20 @@ function render() {
   } else if (isProjectAdmin() && route === '#/sales') {
     pageTitle = 'Product Sales'; pageSubtitle = 'Sales entries used to calculate monthly targets';
     pageContent = renderProductSales({ mine: false });
+  } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/surveys' || route.startsWith('#/surveys/'))) {
+    if (route === '#/surveys/new') {
+      pageTitle = 'Survey builder'; pageSubtitle = 'Dynamic questions and validation';
+      pageContent = renderSurveyBuilder('');
+    } else if (route.startsWith('#/surveys/edit/')) {
+      pageTitle = 'Survey builder'; pageSubtitle = 'Edit template';
+      pageContent = renderSurveyBuilder(route.replace('#/surveys/edit/', ''));
+    } else if (route.startsWith('#/surveys/monitor/')) {
+      pageTitle = 'Survey monitoring'; pageSubtitle = 'Assigned, completed, pending';
+      pageContent = renderSurveyMonitor(route.replace('#/surveys/monitor/', ''));
+    } else {
+      pageTitle = 'Surveys'; pageSubtitle = isSupervisor() ? 'Team survey completion' : 'Templates, assignment, and monitoring';
+      pageContent = isSupervisor() ? renderSurveyList({ field: false }) : renderSurveyList({ field: false });
+    }
   } else if (isProjectAdmin() && route === '#/stocks') {
     pageTitle = 'Outlet Stock'; pageSubtitle = 'Stock levels at each outlet';
     pageContent = renderStocks();
@@ -472,15 +563,15 @@ function render() {
     pageContent = renderAttendanceManager();
   } else if (teamOps && route === '#/leaves') {
     pageTitle = 'Leave'; pageSubtitle = 'Leave and time-off requests';
-    pageContent = renderLeavesManager();
+    pageContent = renderLeavesManager() + (isProjectAdmin() || isSupervisor() ? renderHrApprovals() : '');
   } else if (isProjectAdmin() && route.startsWith('#/employee/')) {
     const id = route.replace('#/employee/', '');
     pageContent = renderEmployeeDetail(id);
-    pageTitle = 'Detail Karyawan'; pageSubtitle = '';
+    pageTitle = 'Employee Detail'; pageSubtitle = '';
   } else if (isProjectAdmin() && route.startsWith('#/outlet/')) {
     const id = route.replace('#/outlet/', '');
     pageContent = renderOutletDetail(id);
-    pageTitle = 'Detail Outlet'; pageSubtitle = '';
+    pageTitle = 'Outlet Detail'; pageSubtitle = '';
   } else if (route === '#/organizations' || route.startsWith('#/organizations/')) {
     if (!isSuperadmin()) {
       location.hash = defaultRouteFor(state.account);
@@ -491,7 +582,7 @@ function render() {
       pageContent = renderOrganizations();
     } else {
       const orgId = decodeURIComponent(route.replace('#/organizations/', ''));
-      pageTitle = 'Workspace Organisasi'; pageSubtitle = 'Modul data milik organisasi ini';
+      pageTitle = 'Organization Workspace'; pageSubtitle = 'Data modules for this organization';
       pageContent = renderOrganizationHub(orgId);
     }
   } else if (route === '#/settings') {
@@ -500,7 +591,7 @@ function render() {
   } else if (isProjectAdmin() && (route === '#/reports' || route.startsWith('#/reports/'))) {
     pageTitle = 'Reports';
     pageSubtitle = 'Operational analytics and custom extracts';
-    pageContent = '<div class="card"><div class="empty-state"><p>Memuat laporan...</p></div></div>';
+    pageContent = '<div class="card"><div class="empty-state"><p>Loading reports…</p></div></div>';
   } else if (isOrgAdmin() && route === '#/accounts') {
     pageTitle = 'Accounts'; pageSubtitle = 'Logins, roles, and employee links';
     pageContent = renderAccounts();
@@ -508,7 +599,7 @@ function render() {
     location.hash = '#/myday';
     return;
   } else {
-    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Halaman tidak ditemukan</h3><p>Route: ${esc(route)}</p></div>`;
+    pageContent = `<div class="empty-state"><div class="empty-icon">🔍</div><h3>Page not found</h3><p>Route: ${esc(route)}</p></div>`;
   }
 
   const fieldRole = !isProjectAdmin();
@@ -547,6 +638,7 @@ function render() {
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
+  if (state.account?.role === 'employee') window.FS?.startAreaWatch?.();
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -590,20 +682,20 @@ function renderSidebar() {
       <div class="sidebar-header">
         <div class="sidebar-logo">${getAppSettings().companyLogo ? `<img src="${esc(getAppSettings().companyLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
         <div class="sidebar-logo-text">${esc(getAppSettings().companyName || 'ProQTrack')}<small>Monitoring System</small></div>
-        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
+        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Expand menu' : 'Collapse menu'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
         </button>
       </div>
       ${orgSwitcherHtml()}
       <nav class="sidebar-nav">${navHTML}</nav>
       <div class="sidebar-footer">
-        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
+        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Account settings">
           <div class="sidebar-avatar">${getInitials(state.user.name)}</div>
           <div class="sidebar-user-info">
             <div class="name">${esc(state.user.name)}</div>
             <div class="role">${esc(state.user.role)}</div>
           </div>
-          <button class="logout-btn" onclick="FT.logout()" title="Keluar">
+          <button class="logout-btn" onclick="FT.logout()" title="Sign out">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -615,20 +707,22 @@ function renderSidebar() {
 function renderFieldDock(route) {
   const tabs = isSupervisor()
     ? [
-        { route: '#/', label: 'Beranda', icon: 'home' },
-        { route: '#/myday', label: 'My Day', icon: 'calendar' },
+        { route: '#/', label: 'Home', icon: 'home' },
+        { route: '#/myday', label: 'Today', icon: 'calendar' },
         { route: '#/tracking', label: 'Team Loc', icon: 'pin' },
         { route: '#/visits', label: 'Visits', icon: 'visits' },
       ]
     : [
         { route: '#/myday', label: 'Today', icon: 'calendar' },
         { route: '#/myvisits', label: 'Visits', icon: 'visits' },
-        { route: '#/mysales', label: 'Sales', icon: 'chart' },
+        { route: '#/mystocks', label: 'Stock', icon: 'stocks' },
       ];
   return `
-    <nav class="field-dock" aria-label="Menu cepat">
+    <nav class="field-dock" aria-label="Quick menu">
       ${tabs.map(t => {
-        const active = route === t.route || (t.route === '#/' && (route === '#' || route === '#/'));
+        const active = route === t.route
+          || (t.route === '#/' && (route === '#' || route === '#/'))
+          || (t.route === '#/myday' && (route === '#/myday' || route === '#'));
         return `<a href="${t.route}" class="field-dock-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${t.route}')">
           <span class="field-dock-icon">${iconSvg(t.icon)}</span>
           <span>${t.label}</span>
@@ -717,7 +811,9 @@ window.FT.logout = function() {
   clearApiToken();
   state.loggedIn = false;
   state.account = null;
+  state.user = null;
   state.route = '#/login';
+  try { sessionStorage.removeItem('proqtrack_active_session_v1'); } catch { /* ignore */ }
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
   render();
 };
@@ -741,23 +837,23 @@ function renderManagerDashboard() {
           <div class="card-subtitle">Workspace ${esc(org?.code || '-')} · ${employees.filter(e=>e.status==='active').length} tenaga aktif</div>
         </div>
         <div class="spacer"></div>
-        ${isSuperadmin() ? dashLink('#/organizations','Ganti organisasi') : ''}
+        ${isSuperadmin() ? dashLink('#/organizations','Switch organization') : ''}
         ${dashLink('#/tracking','Last Location')}
-        ${dashLink('#/outlet-approvals','Persetujuan toko')}
-        ${dashLink('#/reports','Laporan')}
+        ${dashLink('#/outlet-approvals','Outlet Approvals')}
+        ${dashLink('#/reports','Reports')}
       </div>
     </div>
     <div class="grid-4">
       ${[
-        ['Karyawan aktif', employees.filter(e=>e.status==='active').length, '#/employees'],
-        ['Kunjungan hari ini', stats.todayVisits, '#/visits'],
-        ['Stok menipis', stats.lowStocks, '#/stocks'],
-        ['Cuti pending', pendingLeaves, '#/leaves'],
+        ['Active employees', employees.filter(e=>e.status==='active').length, '#/employees'],
+        ['Visits today', stats.todayVisits, '#/visits'],
+        ['Low stock', stats.lowStocks, '#/stocks'],
+        ['Pending leave', pendingLeaves, '#/leaves'],
       ].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
     <div class="grid-2">
       <div class="card">
-        <div class="card-title">Aktivitas hari ini</div>
+        <div class="card-title">Today’s activity</div>
         ${todayVisits.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Waktu</th><th>Sales</th><th>Outlet</th><th>Status</th></tr></thead><tbody>${todayVisits.slice(0,8).map(v => {
           const emp = employees.find(e => e.id === v.employeeId);
           const out = getOutlets().find(o => o.id === v.outletId);
@@ -765,9 +861,9 @@ function renderManagerDashboard() {
         }).join('')}</tbody></table></div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Live Tracking atau buat kunjungan.</p></div>'}
       </div>
       <div class="card">
-        <div class="card-title">Pintasan workspace</div>
+        <div class="card-title">Workspace shortcuts</div>
         <div class="org-hub">
-          ${[['#/clients','Klien'],['#/projects','Project'],['#/employees','Karyawan'],['#/outlets','Toko'],['#/products','Produk'],['#/competitors','Kompetitor']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Data organisasi aktif</span></a>`).join('')}
+          ${[['#/clients','Clients'],['#/projects','Projects'],['#/employees','Employees'],['#/outlets','Outlets'],['#/products','Products'],['#/competitors','Competitors']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Active organization data</span></a>`).join('')}
         </div>
       </div>
     </div>
@@ -784,7 +880,7 @@ function renderSupervisorDashboard() {
   const active = visits.filter(v => v.status === 'checked-in');
   return `
     <div class="grid-4">
-      ${[['Anggota tim', team.length, '#/my-team'],['Kunjungan tim', visits.length, '#/visits'],['Sedang di lapangan', active.length, '#/tracking'],['Ijin menunggu', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
+      ${[['Team members', team.length, '#/my-team'],['Team visits', visits.length, '#/visits'],['In the field', active.length, '#/tracking'],['Pending leave', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
     <div class="grid-2">
       <div class="card">
@@ -796,7 +892,7 @@ function renderSupervisorDashboard() {
         ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : ''}
         ${pendingStores.length ? pendingStores.map(p => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || '')}</div></div>`).join('') : ''}
         ${!pending.length && !pendingStores.length ? '<p class="am-muted">Tidak ada pengajuan pending.</p>' : ''}
-        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/visits','Kunjungan tim')} ${dashLink('#/myday','Hari saya')}</div>
+        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Outlet Approvals')} ${dashLink('#/visits','Team Visits')} ${dashLink('#/myday','My Day')}</div>
       </div>
     </div>
   `;
@@ -1149,7 +1245,7 @@ window.FT.toggleCollapse = function() {
     const btn = sb.querySelector('.sidebar-toggle');
     if (btn) {
       btn.setAttribute('aria-expanded', state.sidebarCollapsed ? 'false' : 'true');
-      btn.title = state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu';
+      btn.title = state.sidebarCollapsed ? 'Expand menu' : 'Collapse menu';
       const path = btn.querySelector('path');
       if (path) path.setAttribute('d', state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6');
     }
@@ -1175,9 +1271,24 @@ window.FT.closeSidebar = function() {
 };
 
 window.FT.checkInVisit = function(id) {
+  const apply = extra => {
+    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5), ...extra });
+    closeModal(); showToast('Checked in', 'success'); render();
+  };
   try {
-    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-    closeModal(); showToast('Berhasil check in', 'success'); render();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        try {
+          apply({ checkInLat: pos.coords.latitude, checkInLng: pos.coords.longitude, checkInAccuracy: pos.coords.accuracy });
+          detectAreaAttendance({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            capturedAt: new Date().toISOString(),
+          });
+        } catch (error) { showToast(error.message || 'Check-in saved without area attendance', 'error'); render(); }
+      }, () => apply({}), { enableHighAccuracy: true, timeout: 8000 });
+    } else apply({});
   } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
 window.FT.checkOutVisit = function(id) {
@@ -1723,15 +1834,27 @@ window.FT.updateOutlet = function(e, id) {
 };
 
 function greetingNow() {
-  const h = new Date().getHours();
-  if (h < 11) return 'Selamat pagi';
-  if (h < 15) return 'Selamat siang';
-  if (h < 18) return 'Selamat sore';
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false,
+  }).format(new Date()));
+  if (hour < 11) return 'Selamat pagi';
+  if (hour < 15) return 'Selamat siang';
+  if (hour < 18) return 'Selamat sore';
   return 'Selamat malam';
 }
 
-function longDateId(d = new Date()) {
-  return d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+function longDateId() {
+  const parts = new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).formatToParts(new Date());
+  const pick = type => parts.find(p => p.type === type)?.value || '';
+  const weekday = pick('weekday');
+  const pretty = weekday ? weekday.charAt(0).toUpperCase() + weekday.slice(1) : '';
+  return `${pretty}, ${pick('day')} ${pick('month')} ${pick('year')}`;
 }
 
 function minutesAgoLabel(time) {
@@ -1767,11 +1890,13 @@ function renderMyDay() {
   const completed = visits.filter(v => v.status === 'completed');
   const activeV = visits.filter(v => v.status === 'checked-in');
   const planned = visits.filter(v => v.status === 'planned');
-  const sold = monthSalesAmount(empId);
-  const target = salesTargetOf(emp);
-  const doneCount = completed.length;
-  const pct = target > 0 ? Math.min(100, Math.round((sold / target) * 100)) : 0;
+  const targetVisits = Number(emp.targetVisits) > 0 ? Number(emp.targetVisits) : 6;
+  const progressed = completed.length + activeV.length;
+  const remaining = Math.max(planned.length, targetVisits - progressed);
+  const pct = Math.min(100, Math.round((progressed / targetVisits) * 100));
   const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
+  const attNorm = att ? normalizeAttendanceStatus(att.status) : '';
+  const attLate = attNorm === 'terlambat';
   const active = activeV[0];
   const activeOut = active ? outletMap[active.outletId] : null;
   const attMaps = att && (att.lat || att.lng) ? mapsDir(att.lat, att.lng) : (activeOut ? mapsDir(activeOut.lat, activeOut.lng) : '');
@@ -1782,29 +1907,29 @@ function renderMyDay() {
   return `
     <div class="mq-home">
       <header class="mq-head">
-        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <div class="mq-hello">
           <h1>${greetingNow()}, ${esc(firstName(emp.name))}! 👋</h1>
           <p>${esc(longDateId())}</p>
         </div>
         <button type="button" class="mq-icon-btn" onclick="location.hash='#/myleaves'" aria-label="Notifikasi">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
           ${alerts ? `<span class="mq-badge">${alerts}</span>` : ''}
         </button>
         <button type="button" class="mq-avatar" style="background:${colors[cIdx]}" onclick="location.hash='#/settings'">${getInitials(emp.name)}</button>
       </header>
 
       <section class="mq-card mq-progress">
-        <div class="mq-card-kicker">${iconSvg('chart')} Sales target this month</div>
+        <div class="mq-card-kicker">${iconSvg('chart')} Today's Progress</div>
         <div class="mq-progress-row">
           <div>
-            <div class="mq-big" style="font-size:22px">${formatCurrency(sold)}<small>${target ? ' / ' + formatCurrency(target) : ''}</small></div>
-            <div class="mq-muted">${doneCount} visits today (not targeted)</div>
+            <div class="mq-big">${progressed}<small> / ${targetVisits}</small></div>
+            <div class="mq-muted">Visits</div>
           </div>
           <div class="mq-pills">
-            <div><b class="ok">${completed.length}</b><span>Selesai</span></div>
-            <div><b class="warn">${activeV.length}</b><span>Berlangsung</span></div>
-            <div><b>${planned.length}</b><span>Berikutnya</span></div>
+            <div><b class="ok">${completed.length}</b><span>Done</span></div>
+            <div><b class="warn">${activeV.length}</b><span>In progress</span></div>
+            <div><b>${remaining}</b><span>Next</span></div>
           </div>
         </div>
         <div class="mq-bar"><i style="width:${pct}%"></i></div>
@@ -1813,20 +1938,20 @@ function renderMyDay() {
 
       <section class="mq-card mq-att">
         ${att ? `
-          <div class="mq-att-status">
+          <div class="mq-att-status ${attLate ? 'late' : ''}">
             <span class="mq-dot"></span>
-            <div><small>Status Absensi</small><strong>${esc(att.status === 'late' || att.status === 'terlambat' ? 'Terlambat' : 'Hadir')}</strong></div>
+            <div><small>Attendance</small><strong>${attLate ? 'Late' : 'Present'}</strong></div>
           </div>
           <div class="mq-att-meta">Check-in <b>${esc(att.checkInTime || '—')}</b><br>${esc(att.checkInLocation || att.locationName || '—')}</div>
-          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} Lihat Lokasi</a>` : ''}
+          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} View location</a>` : '<span></span>'}
         ` : `<div class="mq-att-form">${attendanceCheckinCard()}</div>`}
       </section>
 
       ${active && activeOut ? `
       <section class="mq-card mq-active">
-        <div class="mq-card-kicker">Sedang Dikunjungi</div>
+        <div class="mq-card-kicker">Currently visiting</div>
         <div class="mq-store">
-          <div class="mq-store-ico">${outletIcon(activeOut.type)}</div>
+          <div class="mq-store-ico">${iconSvg('store')}</div>
           <div>
             <h2>${esc(activeOut.name)}</h2>
             <p>${esc(activeOut.address || '')}</p>
@@ -1835,21 +1960,23 @@ function renderMyDay() {
           <span class="mq-live">checked-in</span>
         </div>
         <div class="mq-tiles">
-          ${tile('Stok', 'stocks', `FT.openVisitStockInput('${active.id}','${active.outletId}')`)}
-          ${tile('Harga', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
+          ${tile('Stock', 'stocks', `FT.openVisitStockInput('${active.id}','${active.outletId}')`)}
+          ${tile('Price', 'price', `FT.openVisitPriceInput('${active.id}','${active.outletId}')`)}
           ${tile('Intel', 'intel', `FT.openVisitIntelInput('${active.id}','${active.outletId}')`)}
-          ${tile('Foto', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
+          ${tile('Photo', 'camera', `FT.openVisitPhotoInput('${active.id}','${active.outletId}')`)}
+          ${tile('Rack', 'store', `FT.openRackEvidence('${active.id}','${active.outletId}')`)}
+          ${tile('Survey', 'chart', `location.hash='#/mysurveys'`)}
           ${mapsDir(activeOut.lat, activeOut.lng)
-            ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></a>`
-            : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></span>`}
+            ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></a>`
+            : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Route</span></span>`}
         </div>
         <button type="button" class="mq-checkout" onclick="FT.mobileCheckOut('${active.id}')">CHECK OUT →</button>
       </section>` : ''}
 
       <section class="mq-card mq-next">
         <div class="mq-next-head">
-          <h3>Berikutnya</h3>
-          <a href="#/myvisits">Lihat Semua ›</a>
+          <h3>Up next</h3>
+          <a href="#/myvisits">See all ›</a>
         </div>
         ${planned.length ? planned.map(v => {
           const o = outletMap[v.outletId];
@@ -1857,15 +1984,15 @@ function renderMyDay() {
           const km = (emp.lat && o.lat) ? calculateDistance(emp.lat, emp.lng, o.lat, o.lng) : null;
           const dir = mapsDir(o.lat, o.lng);
           return `<div class="mq-next-row">
-            <div class="mq-store-ico sm">${outletIcon(o.type)}</div>
+            <div class="mq-store-ico sm">${iconSvg('store')}</div>
             <div>
               <strong>${esc(o.name)}</strong>
               <p>${esc(o.address || '')}</p>
-              <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Terjadwal'} ${km != null ? ` · ${km} km` : ''}</div>
+              <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Scheduled'} ${km != null ? ` · ${km} km` : ''}</div>
             </div>
-            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Rute</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
+            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Route</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
           </div>`;
-        }).join('') : `<div class="empty-state" style="padding:20px"><h3>Tidak ada jadwal berikutnya</h3></div>`}
+        }).join('') : `<div class="empty-state" style="padding:20px"><h3>No upcoming visits</h3></div>`}
       </section>
     </div>
   `;
@@ -1953,16 +2080,23 @@ function renderProductSales({ mine } = {}) {
   const monthTotal = monthRows.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
   const myTarget = mine ? salesTargetOf(employees.find(e => e.id === empId) || {}) : 0;
   const pct = myTarget > 0 ? Math.min(100, Math.round((monthTotal / myTarget) * 100)) : 0;
+  const analytics = productSalesAnalytics({ month });
+  const rankList = mine ? analytics.byProduct : analytics.byEmployee;
   return `
     ${mine ? `<div class="card" style="margin-bottom:16px">
-      <div class="card-title">Monthly target</div>
+      <div class="card-title">My sales</div>
       <div class="stat-value">${formatCurrency(monthTotal)}${myTarget ? ` <small>/ ${formatCurrency(myTarget)}</small>` : ''}</div>
+      <div class="mq-muted">Achievement ${pct}%</div>
       <div class="mq-bar" style="margin-top:10px"><i style="width:${pct}%"></i></div>
     </div>` : `<div class="grid-3" style="margin-bottom:14px">
-      <div class="stat-card"><div class="stat-label">Sales this month</div><div class="stat-value">${formatCurrency(monthTotal)}</div></div>
-      <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value">${monthRows.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Team target</div><div class="stat-value">${formatCurrency(employees.reduce((s, e) => s + salesTargetOf(e), 0))}</div></div>
-    </div>`}
+      <div class="stat-card"><div class="stat-label">Total sales</div><div class="stat-value">${formatCurrency(analytics.total)}</div></div>
+      <div class="stat-card"><div class="stat-label">Sales vs target</div><div class="stat-value">${formatCurrency(analytics.target)}</div></div>
+      <div class="stat-card"><div class="stat-label">Achievement</div><div class="stat-value">${analytics.achievement}%</div></div>
+    </div>
+    <div class="card" style="margin-bottom:14px"><div class="card-title">${isSupervisor() && !isProjectAdmin() ? 'Team ranking' : 'By employee / product / outlet'}</div>
+      <div class="visits-table-wrapper"><table class="table"><thead><tr><th>Breakdown</th><th>Amount</th></tr></thead><tbody>
+        ${rankList.slice(0, 8).map(r => `<tr><td>${esc(r.label)}</td><td>${formatCurrency(r.amount)}</td></tr>`).join('') || '<tr><td colspan="2">No sales this month</td></tr>'}
+      </tbody></table></div></div>`}
     <div class="card">
       <div class="card-title">${mine ? 'Record a sale' : 'New sale'}</div>
       <form onsubmit="FT.submitProductSale(event)">
@@ -1994,15 +2128,17 @@ function renderProductSales({ mine } = {}) {
     <div class="card" style="margin-top:16px">
       <div class="card-title">Sales log</div>
       <div class="visits-table-wrapper"><table class="table">
-        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>Outlet</th><th>Qty</th><th>Amount</th><th></th></tr></thead>
+        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>SKU</th><th>Outlet</th><th>Qty</th><th>Unit</th><th>Amount</th><th></th></tr></thead>
         <tbody>
           ${sales.length ? sales.slice().sort((a,b)=>String(b.date).localeCompare(a.date)).map(s => `
             <tr>
               <td>${formatDateShort(s.date)}</td>
               ${mine ? '' : `<td>${esc(empMap[s.employeeId]?.name || s.employeeId)}</td>`}
               <td>${esc(prodMap[s.productId]?.name || s.productId)}</td>
+              <td>${esc(s.sku || prodMap[s.productId]?.sku || '—')}</td>
               <td>${esc(s.outletId ? formatOutletLabel(outMap[s.outletId]) : '—')}</td>
               <td>${s.qty}</td>
+              <td>${formatCurrency(s.unitPrice)}</td>
               <td>${formatCurrency(s.amount)}</td>
               <td><button class="btn btn-danger btn-sm" onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
             </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><h3>No sales yet</h3></div></td></tr>`}
@@ -2019,6 +2155,9 @@ window.FT.fillSalePrice = function(sel) {
 
 window.FT.submitProductSale = function(e) {
   e.preventDefault();
+  const btn = e.target.querySelector('[type=submit]');
+  if (btn?.dataset.busy === '1') return;
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; }
   try {
     const data = Object.fromEntries(new FormData(e.target));
     createProductSale(data);
@@ -2026,6 +2165,7 @@ window.FT.submitProductSale = function(e) {
     render();
   } catch (error) {
     showToast(error.message, 'error');
+    if (btn) { btn.dataset.busy = '0'; btn.disabled = false; }
   }
 };
 
@@ -3812,7 +3952,7 @@ function renderFieldPhotosGallery({ managerView }) {
             const emp = empMap[p.recordedBy || p.employeeId];
             const prod = p.productId ? productMap[p.productId] : null;
             const comp = p.competitorId ? compMap[p.competitorId] : null;
-            const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
+            const imageSrc = safePhotoUrl(p.watermarkUrl || p.dataUrl || p.photoUrl);
             const thumb = imageSrc
               ? `<img src="${imageSrc}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
               : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
@@ -3843,6 +3983,40 @@ function renderFieldPhotosGallery({ managerView }) {
 window.FT.setPhotoFilter = function(type) {
   state._photoFilterType = type || '';
   render();
+};
+
+window.FT.openRackEvidence = function(visitId, outletId) {
+  const visit = getVisits().find(v => v.id === visitId);
+  if (!visit) { showToast('Visit not found', 'error'); return; }
+  if (visit.outletId !== outletId) { showToast('Outlet mismatch', 'error'); return; }
+  const pair = startRackEvidence(visitId);
+  const status = rackPairStatus(pair);
+  const nextType = status === 'waiting_after' ? 'rack_after' : 'rack_before';
+  const label = nextType === 'rack_after' ? 'Capture AFTER' : 'Capture BEFORE';
+  openModal('Rack execution', `
+    <p class="am-muted">${status === 'completed' ? 'Evidence complete' : status === 'waiting_after' ? 'Before captured → waiting after' : 'Capture before, then after'}</p>
+    ${status === 'completed' ? '<p>This visit already has a completed pair.</p>' : `
+    <form onsubmit="FT.saveFieldPhoto(event,'${visitId}','${outletId}')">
+      <input type="hidden" name="type" value="${nextType}">
+      <div class="form-group"><label class="label">${label}</label>
+        <input class="input" type="file" name="photoFile" accept="image/*" capture="environment" required onchange="FT.onPhotoFileSelected(event)">
+      </div>
+      <div id="photoPreview" style="margin-top:10px;display:none;"><img id="photoPreviewImg" alt="" style="max-width:100%;max-height:200px;border-radius:10px"></div>
+      <input type="hidden" name="dataUrl" id="photoDataUrl">
+      <input type="hidden" name="lat" id="photoLat">
+      <input type="hidden" name="lng" id="photoLng">
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Cancel</button>
+      <button class="btn btn-primary" type="submit">Save ${nextType === 'rack_after' ? 'after' : 'before'}</button></div>
+    </form>`}
+  `);
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      const lat = document.getElementById('photoLat');
+      const lng = document.getElementById('photoLng');
+      if (lat) lat.value = pos.coords.latitude;
+      if (lng) lng.value = pos.coords.longitude;
+    }, () => {}, { enableHighAccuracy: true, timeout: 8000 });
+  }
 };
 
 window.FT.openVisitPhotoInput = function(visitId, outletId) {
@@ -3979,20 +4153,43 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
     return;
   }
   const type = fd.get('type') || 'location';
-  createFieldPhoto({
+  const emp = getEmployees().find(e => e.id === empId);
+  const outlet = getOutlets().find(o => o.id === outletId);
+  const stampLines = [
+    formatEvidenceStamp(new Date()),
+    `Outlet: ${outlet ? formatOutletLabel(outlet) : outletId || '—'}`,
+    `Sales: ${emp?.name || state.account?.name || '—'}`,
+  ];
+  let watermarkUrl = dataUrl;
+  try {
+    if (dataUrl) watermarkUrl = await stampPhotoEvidence(dataUrl, stampLines);
+  } catch { /* keep original */ }
+  const photo = createFieldPhoto({
     projectId: fd.get('projectId') || null,
     visitId: visitId || null,
     outletId,
     type,
+    photoType: type,
     caption: fd.get('caption') || '',
     productId: fd.get('productId') || null,
     competitorId: type === 'competitor' ? (fd.get('competitorId') || null) : (fd.get('competitorId') || null),
     dataUrl,
-    photoUrl: photoUrl || dataUrl,
+    watermarkUrl,
+    photoUrl: photoUrl || watermarkUrl || dataUrl,
     r2Key,
+    employeeId: empId || null,
     recordedBy: empId || state.account?.id || 'manager',
     recordedAt: new Date().toISOString(),
+    lat: fd.get('lat') || null,
+    lng: fd.get('lng') || null,
   });
+  if (visitId && (type === 'rack_before' || type === 'rack_after')) {
+    try {
+      attachRackPhoto(visitId, type === 'rack_before' ? 'before' : 'after', photo.id);
+    } catch (error) {
+      showToast(error.message, 'error');
+    }
+  }
   closeModal();
   showToast(r2Key ? 'Foto tersimpan di R2' : 'Foto lapangan tersimpan lokal', 'success');
   render();
@@ -4027,10 +4224,10 @@ function renderMobileSim() {
   const att = getAttendance().find(a => a.employeeId === current?.id && a.date === todayISO());
 
   const tabs = [
-    { id: 'home',   icon: '🏠', label: 'Beranda' },
-    { id: 'visits', icon: '📋', label: 'Kunjungan' },
-    { id: 'route',  icon: '🗺️', label: 'Rute' },
-    { id: 'profile', icon: '👤', label: 'Profil' },
+    { id: 'home',   icon: '🏠', label: 'Home' },
+    { id: 'visits', icon: '📋', label: 'Visits' },
+    { id: 'route',  icon: '🗺️', label: 'Route' },
+    { id: 'profile', icon: '👤', label: 'Profile' },
   ];
 
   let screenContent = '';
@@ -4186,7 +4383,7 @@ function renderMobileSim() {
             <div class="progress-bar"><div class="progress-fill" style="width:${current ? Math.round(current.todayVisits/current.targetVisits*100) : 0}%;"></div></div>
           </div>
         </div>
-        <button class="btn btn-danger" style="width:100%; justify-content:center;" onclick="FT.logout()">Keluar</button>
+        <button class="btn btn-danger" style="width:100%; justify-content:center;" onclick="FT.logout()">Sign out</button>
       </div>
     `;
   }
@@ -4243,6 +4440,8 @@ function openModal(title, content) {
 }
 function closeModal() { const root = document.getElementById('modalRoot'); if (root) root.innerHTML = ''; }
 window.FT.closeModal = closeModal;
+window.FT.openHtmlModal = openModal;
+window.FT.showToast = showToast;
 
 // ===== Page-specific handler attachments =====
 function attachPageHandlers() {

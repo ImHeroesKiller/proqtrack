@@ -75,9 +75,11 @@ function renderAttendanceSettings() {
             </select>
           </div>
           <div class="form-row">
-            <div class="form-group"><label class="label">Geofence radius (meters)</label><input class="input" type="number" name="attendanceRadiusM" min="20" value="${esc(policy.radiusM)}"></div>
+            <div class="form-group"><label class="label">Office geofence (meters)</label><input class="input" type="number" name="attendanceRadiusM" min="20" value="${esc(policy.radiusM)}"></div>
             <div class="form-group"><label class="label">Office name</label><input class="input" name="officeName" value="${esc(policy.officeName || '')}"></div>
           </div>
+          <label class="am-check"><input type="checkbox" name="autoAreaAttendance" ${policy.autoAreaAttendance !== false ? 'checked' : ''}> Automatic area attendance at outlets</label>
+          <div class="form-group"><label class="label">Outlet auto-geofence radius (meters)</label><input class="input" type="number" name="geofenceRadiusM" min="10" value="${esc(policy.geofenceRadiusM || 50)}"></div>
           <div class="form-row">
             <div class="form-group"><label class="label">Office latitude</label><input class="input" name="officeLat" value="${policy.officeLat ?? ''}" placeholder="-6.1944"></div>
             <div class="form-group"><label class="label">Office longitude</label><input class="input" name="officeLng" value="${policy.officeLng ?? ''}" placeholder="106.8229"></div>
@@ -152,7 +154,7 @@ export function renderSettings() {
         <div class="card-title">Wajib ganti password</div>
         <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
-      <nav class="am-tabs" aria-label="Pengaturan">
+      <nav class="am-tabs" aria-label="Settings">
         ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
       </nav>
       <div class="card am-tab-body">
@@ -263,7 +265,7 @@ export function renderSettings() {
           })() : ''}
           ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
           <div class="am-actions">
-            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
+            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Sign out</button>
           </div>
         </section>
       </div>
@@ -451,6 +453,8 @@ window.AM = {
       updateAppSettings({
         attendanceMode: form.attendanceMode.value,
         attendanceRadiusM: Number(form.attendanceRadiusM.value) || 150,
+        autoAreaAttendance: form.autoAreaAttendance?.checked !== false,
+        geofenceRadiusM: Number(form.geofenceRadiusM?.value) || 50,
         officeName: form.officeName.value,
         officeLat: form.officeLat.value === '' ? null : Number(form.officeLat.value),
         officeLng: form.officeLng.value === '' ? null : Number(form.officeLng.value),

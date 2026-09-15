@@ -49,11 +49,22 @@ function login(email, dev = device('DEV-TEST-1')) {
   return acc;
 }
 
-test('fresh DB is version 15 and keeps eight seed employees', () => {
+test('fresh DB is version 18 and keeps eight seed employees', () => {
   prepare();
   const db = getDB();
-  assert.equal(db._version, 15);
+  assert.equal(db._version, 18);
   assert.equal(db.employees.length, 8);
+});
+
+test('demo accounts accept the shared UAT password', () => {
+  __resetForTests();
+  resetDB();
+  const acc = authenticate('budi.santoso@proqtrack.id', 'Proqpay2026', device('DEV-UAT-PW'));
+  assert.ok(acc);
+  assert.equal(acc.role, 'employee');
+  const head = authenticate('head@proqtrack.id', 'Proqpay2026', device('DEV-UAT-PW'));
+  assert.ok(head);
+  assert.equal(head.role, 'head');
 });
 
 test('legacy manager@ is Head and pm@ is a one-project Manager', () => {
