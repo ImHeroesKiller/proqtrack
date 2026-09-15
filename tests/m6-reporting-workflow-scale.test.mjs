@@ -94,6 +94,25 @@ test('report processor writes private R2 output with lease retry and approval li
   assert.match(source, /INSERT OR IGNORE INTO report_generation_jobs/);
 });
 
+test('analytics cursor codec uses Worker-standard encoding primitives', async () => {
+  const source = await read('worker/analytics.js');
+  assert.match(source, /new TextEncoder\(\)/);
+  assert.match(source, /new TextDecoder\(\)/);
+  assert.doesNotMatch(source, /\bunescape\(/);
+  assert.doesNotMatch(source, /\bescape\(/);
+});
+
+test('M6 browser bridge exposes analytics reports schedules workflows and notifications', async () => {
+  const [client, bootstrap] = await Promise.all([read('src/lib/m6-client.js'), read('assets/logo.js')]);
+  assert.match(client, /window\.ProQTrackM6 = M6/);
+  assert.match(client, /\/api\/analytics\/overview/);
+  assert.match(client, /\/api\/reports/);
+  assert.match(client, /\/api\/report-schedules/);
+  assert.match(client, /\/api\/workflows/);
+  assert.match(client, /\/api\/notifications/);
+  assert.match(bootstrap, /m6-client\.js/);
+});
+
 test('M6 config keeps legacy APIs locked and bounds report workload', async () => {
   const config = await read('wrangler.jsonc');
   assert.match(config, /"APP_MILESTONE": "M6"/);
