@@ -115,9 +115,9 @@ test('M6 browser bridge exposes analytics reports schedules workflows and notifi
   assert.match(bootstrap, /m6-client\.js/);
 });
 
-test('M6 config keeps legacy APIs locked and bounds report workload', async () => {
+test('M6 capabilities remain enabled under M6/M7 runtime while legacy APIs stay locked', async () => {
   const config = await read('wrangler.jsonc');
-  assert.match(config, /"APP_MILESTONE": "M6"/);
+  assert.match(config, /"APP_MILESTONE": "M[67]"/);
   assert.match(config, /"REPORT_MAX_ROWS": "20000"/);
   assert.match(config, /"REPORT_BATCH_ROWS": "1000"/);
   assert.match(config, /"REPORT_QUEUE_MAX_JOBS": "3"/);
