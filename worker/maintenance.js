@@ -50,7 +50,7 @@ export async function runProductionMaintenance(env) {
     const expired = await env.DB.prepare(`
       UPDATE core_auth_sessions
       SET status='expired'
-      WHERE status='active' AND expires_at <= CURRENT_TIMESTAMP
+      WHERE status='active' AND datetime(expires_at) <= CURRENT_TIMESTAMP
     `).run();
     detail.sessionsExpired = Number(expired?.meta?.changes || 0);
 
