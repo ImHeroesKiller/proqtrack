@@ -45,7 +45,8 @@ test('gateway hardening uses D1 distributed rate limiting and hashed subjects', 
 test('gateway applies security headers and records minute telemetry', async () => {
   const source = await read('worker/hardening.js');
   assert.match(source, /strict-transport-security/);
-  assert.match(source, /content-security-policy-report-only/);
+  assert.match(source, /headers\.set\('content-security-policy'/);
+  assert.doesNotMatch(source, /headers\.set\('content-security-policy-report-only'/);
   assert.match(source, /permissions-policy/);
   assert.match(source, /core_observability_minute/);
   assert.match(source, /event: 'http_request'/);
@@ -91,7 +92,8 @@ test('static asset build includes Cloudflare security header rules', async () =>
   const [build, headers] = await Promise.all([read('scripts/build.mjs'), read('_headers')]);
   assert.match(build, /"_headers"/);
   assert.match(headers, /X-Frame-Options: DENY/);
-  assert.match(headers, /Content-Security-Policy-Report-Only:/);
+  assert.match(headers, /Content-Security-Policy:/);
+  assert.doesNotMatch(headers, /Content-Security-Policy-Report-Only:/);
   assert.match(headers, /Strict-Transport-Security:/);
 });
 
@@ -110,6 +112,7 @@ test('CI and deploy workflows enforce audit recovery migration order and smoke c
   assert.doesNotMatch(deploy, /d1 export proqtrack-mvp/);
   assert.match(deploy, /hardeningSchema/);
   assert.match(deploy, /Unauthenticated evidence endpoint/);
+  assert.match(deploy, /\^content-security-policy:/);
   assert.match(deploy, /content-security-policy-report-only/);
   assert.match(recovery, /cron: '17 2 \* \* \*'/);
   assert.match(recovery, /d1 time-travel info proqtrack-mvp --json/);
