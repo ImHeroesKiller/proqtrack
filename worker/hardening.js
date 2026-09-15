@@ -99,8 +99,9 @@ export function applySecurityHeaders(response, env, requestId = '') {
   if (String(env.ENVIRONMENT || '').toLowerCase() === 'production' || String(env.ENVIRONMENT || '').toLowerCase() === 'mvp') {
     headers.set('strict-transport-security', 'max-age=31536000; includeSubDomains');
   }
-  if (!headers.has('content-security-policy') && !headers.has('content-security-policy-report-only')) {
-    headers.set('content-security-policy-report-only', [
+  if (!headers.has('content-security-policy')) {
+    headers.delete('content-security-policy-report-only');
+    headers.set('content-security-policy', [
       "default-src 'self'",
       "base-uri 'self'",
       "object-src 'none'",
