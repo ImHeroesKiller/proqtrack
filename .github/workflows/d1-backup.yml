@@ -1,0 +1,56 @@
+name: Backup ProQTrack D1
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: proqtrack-d1-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify Cloudflare credentials
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
+      - name: Export production D1
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backups
+          stamp="$(date -u +'%Y%m%dT%H%M%SZ')"
+          backup="backups/proqtrack-d1-${stamp}.sql"
+          npx wrangler d1 export proqtrack-mvp --remote --output="$backup"
+          sha256sum "$backup" | tee "$backup.sha256"
+          gzip -9 "$backup"
+          echo "path=$backup.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$backup.sha256" >> "$GITHUB_OUTPUT"
+      - name: Upload encrypted-at-rest GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proqtrack-d1-backup-${{ github.run_id }}
+          path: |
+            ${{ steps.backup.outputs.path }}
+            ${{ steps.backup.outputs.checksum }}
+          retention-days: 30
+          if-no-files-found: error
