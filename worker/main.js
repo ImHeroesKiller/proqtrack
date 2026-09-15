@@ -17,6 +17,9 @@ import {
   writeRateLimitAudit,
 } from './hardening.js';
 import { runProductionMaintenance } from './maintenance.js';
+import { handleReportRoute, enqueueDueReportSchedules, processReportQueue } from './reports.js';
+import { handleWorkflowRoute } from './workflows.js';
+import { handleAnalyticsRoute } from './analytics.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
@@ -47,12 +50,25 @@ async function forwardWithAuthoritativeClaims(request, env, claims) {
   return legacyWorker.fetch(new Request(request, { headers }), env);
 }
 
+function apiScopeFor(url) {
+  if (url.pathname.startsWith('/api/evidence')) return 'evidence';
+  if (url.pathname.startsWith('/api/reports') || url.pathname.startsWith('/api/report-schedules')) return 'reporting';
+  if (url.pathname.startsWith('/api/workflows')) return 'workflow';
+  return 'api';
+}
+
 function apiLimitFor(url, request, env) {
   if (url.pathname.startsWith('/api/evidence') && request.method === 'POST') {
     return Number(env.API_EVIDENCE_RATE_LIMIT_PER_MINUTE || 30);
   }
   if (url.pathname === '/api/core/sync' && request.method === 'POST') {
     return Number(env.API_SYNC_RATE_LIMIT_PER_MINUTE || 60);
+  }
+  if ((url.pathname === '/api/reports' || url.pathname === '/api/report-schedules') && request.method === 'POST') {
+    return Number(env.API_REPORT_RATE_LIMIT_PER_MINUTE || 20);
+  }
+  if (url.pathname.startsWith('/api/workflows') && request.method === 'POST') {
+    return Number(env.API_WORKFLOW_RATE_LIMIT_PER_MINUTE || 30);
   }
   return Number(env.API_RATE_LIMIT_PER_MINUTE || 120);
 }
@@ -74,6 +90,27 @@ async function finalizeResponse(request, env, ctx, response, id, startedAt, clai
   if (ctx?.waitUntil) ctx.waitUntil(telemetry);
   else await telemetry;
   return hardened;
+}
+
+async function recoverExpiredReportLeases(env) {
+  try {
+    await env.DB.prepare(`
+      UPDATE report_generation_jobs
+      SET status='queued',worker_id=NULL,lease_expires_at=NULL,available_at=CURRENT_TIMESTAMP,
+        last_error='LEASE_EXPIRED',progress_percent=0,updated_at=CURRENT_TIMESTAMP
+      WHERE status='processing' AND lease_expires_at IS NOT NULL AND lease_expires_at<CURRENT_TIMESTAMP
+    `).run();
+  } catch (error) {
+    console.warn('report_lease_recovery_failed', error?.message || error);
+  }
+}
+
+async function runM6Scheduler(env) {
+  await recoverExpiredReportLeases(env);
+  const enqueued = await enqueueDueReportSchedules(env, 20);
+  const processed = await processReportQueue(env, { maxJobs: Number(env.REPORT_QUEUE_MAX_JOBS || 3) });
+  console.log(JSON.stringify({ event: 'm6_report_scheduler', enqueued, processed: processed.length }));
+  return { enqueued, processed: processed.length };
 }
 
 export default {
@@ -118,8 +155,9 @@ export default {
         }
 
         if (!response) {
+          const scope = apiScopeFor(url);
           const apiLimit = await checkDistributedRateLimit(request, env, {
-            scope: url.pathname.startsWith('/api/evidence') ? 'evidence' : 'api',
+            scope,
             subject: claims.sub,
             limit: apiLimitFor(url, request, env),
           });
@@ -127,7 +165,7 @@ export default {
             await writeRateLimitAudit(env, {
               requestId: id,
               claims,
-              scope: url.pathname.startsWith('/api/evidence') ? 'evidence' : 'api',
+              scope,
               subjectHash: apiLimit.subjectHash,
               limit: apiLimit.limit,
             });
@@ -137,6 +175,24 @@ export default {
 
         if (!response && url.pathname === '/api/monitoring/summary' && request.method === 'GET') {
           response = await monitoringSummary(env, claims, id);
+        }
+
+        if (!response && (url.pathname.startsWith('/api/reports') || url.pathname.startsWith('/api/report-schedules'))) {
+          response = await handleReportRoute(request, env, claims, url, id);
+          if (response && url.pathname === '/api/reports' && request.method === 'POST' && response.status === 202) {
+            const work = processReportQueue(env, { maxJobs: 1 }).catch(error => {
+              console.error('report_immediate_processing_failed', { requestId: id, error: error?.message || String(error) });
+            });
+            if (ctx?.waitUntil) ctx.waitUntil(work);
+          }
+        }
+
+        if (!response && (url.pathname.startsWith('/api/workflows') || url.pathname.startsWith('/api/notifications'))) {
+          response = await handleWorkflowRoute(request, env, claims, url, id);
+        }
+
+        if (!response && (url.pathname.startsWith('/api/analytics/') || url.pathname.startsWith('/api/query/'))) {
+          response = await handleAnalyticsRoute(request, env, claims, url, id);
         }
 
         if (!response && url.pathname === '/api/core/sync' && request.method === 'POST') {
@@ -174,9 +230,19 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    const maintenance = runProductionMaintenance(env);
-    if (ctx?.waitUntil) ctx.waitUntil(maintenance);
-    else await maintenance;
+    const scheduler = runM6Scheduler(env).catch(error => {
+      console.error('m6_scheduler_failed', error?.stack || error?.message || String(error));
+    });
+    const maintenance = runProductionMaintenance(env).catch(error => {
+      console.error('production_maintenance_scheduled_failed', error?.stack || error?.message || String(error));
+    });
+    if (ctx?.waitUntil) {
+      ctx.waitUntil(scheduler);
+      ctx.waitUntil(maintenance);
+    } else {
+      await scheduler;
+      await maintenance;
+    }
 
     if (typeof legacyWorker.scheduled === 'function') {
       const legacy = legacyWorker.scheduled(event, env, ctx);
