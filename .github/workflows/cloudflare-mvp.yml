@@ -15,11 +15,12 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: production
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROQTRACK_BASE_URL: https://proqtrack.arywibowo.workers.dev
       PROQTRACK_HEALTH_URL: https://proqtrack.arywibowo.workers.dev/api/health
     steps:
       - uses: actions/checkout@v7
@@ -36,6 +37,8 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
 
       - run: npm ci
+      - name: Dependency security gate
+        run: npm audit --audit-level=critical
       - run: npm test
       - run: npm run build
 
@@ -59,6 +62,27 @@ jobs:
             echo "API_AUTH_SECRET missing — generating and storing (value not logged)"
             openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET --env=""
           fi
+
+      - name: Export pre-deploy D1 backup
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backups
+          backup="backups/proqtrack-predeploy-${GITHUB_SHA}.sql"
+          npx wrangler d1 export proqtrack-mvp --remote --output="$backup"
+          sha256sum "$backup" | tee "$backup.sha256"
+          echo "path=$backup" >> "$GITHUB_OUTPUT"
+
+      - name: Upload pre-deploy backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proqtrack-predeploy-${{ github.sha }}
+          path: |
+            ${{ steps.backup.outputs.path }}
+            ${{ steps.backup.outputs.path }}.sha256
+          retention-days: 14
+          if-no-files-found: error
 
       - name: Apply D1 migrations before deploy
         run: npx wrangler d1 migrations apply DB --remote --env=""
@@ -88,9 +112,36 @@ jobs:
           printf '%s' "$body" | node -e '
             const raw = require("fs").readFileSync(0, "utf8");
             const data = JSON.parse(raw);
-            if (data.ok !== true || data.service !== "ProQTrack") {
+            if (data.ok !== true || data.service !== "ProQTrack" || data.milestone !== "M5") {
               console.error("Health check failed", data);
               process.exit(1);
             }
-            console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"}`);
+            if (data.dependencies?.d1 !== true || data.dependencies?.hardeningSchema !== true) {
+              console.error("Hardening dependency check failed", data.dependencies);
+              process.exit(1);
+            }
+            console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
           '
+
+      - name: Verify security headers and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+
+          evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
+          test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
+
+          monitoring_status="$(curl --silent --show-error --output /tmp/monitoring-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/monitoring/summary")"
+          test "$monitoring_status" = "401" || { echo "::error::Unauthenticated monitoring endpoint returned HTTP $monitoring_status"; cat /tmp/monitoring-body; exit 1; }
+
+          echo "Security smoke checks PASS"
