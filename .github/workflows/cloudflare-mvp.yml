@@ -63,25 +63,23 @@ jobs:
             openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET --env=""
           fi
 
-      - name: Export pre-deploy D1 backup
-        id: backup
+      - name: Record pre-deploy D1 Time Travel bookmark
+        id: recovery
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backups
-          backup="backups/proqtrack-predeploy-${GITHUB_SHA}.sql"
-          npx wrangler d1 export proqtrack-mvp --remote --output="$backup"
-          sha256sum "$backup" | tee "$backup.sha256"
-          echo "path=$backup" >> "$GITHUB_OUTPUT"
+          mkdir -p recovery
+          bookmark="recovery/proqtrack-predeploy-${GITHUB_SHA}.json"
+          npx wrangler d1 time-travel info proqtrack-mvp --json > "$bookmark"
+          test -s "$bookmark"
+          echo "path=$bookmark" >> "$GITHUB_OUTPUT"
 
-      - name: Upload pre-deploy backup artifact
+      - name: Upload pre-deploy recovery metadata
         uses: actions/upload-artifact@v4
         with:
-          name: proqtrack-predeploy-${{ github.sha }}
-          path: |
-            ${{ steps.backup.outputs.path }}
-            ${{ steps.backup.outputs.path }}.sha256
-          retention-days: 14
+          name: proqtrack-predeploy-recovery-${{ github.sha }}
+          path: ${{ steps.recovery.outputs.path }}
+          retention-days: 30
           if-no-files-found: error
 
       - name: Apply D1 migrations before deploy
