@@ -39,7 +39,9 @@ test('report schedules calculate next local run without relying on server timezo
   const next = nextScheduleAt({ cadence: 'daily', runHour: 7, timezone: 'Asia/Jakarta' }, new Date('2026-09-15T01:00:00Z'));
   assert.equal(next, '2026-09-16 00:00:00');
   const weekly = nextScheduleAt({ cadence: 'weekly', runHour: 9, runDay: 1, timezone: 'Asia/Jakarta' }, new Date('2026-09-15T01:00:00Z'));
-  assert.ok(/^2026-09-21 02:00:00$/.test(weekly));
+  assert.equal(weekly, '2026-09-21 02:00:00');
+  const persisted = nextScheduleAt({ cadence: 'weekly', run_hour: 9, run_day: 1, timezone: 'Asia/Jakarta' }, new Date('2026-09-15T01:00:00Z'));
+  assert.equal(persisted, weekly);
 });
 
 test('workflow definitions require staged approval and separation-friendly roles', () => {
