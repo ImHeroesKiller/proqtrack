@@ -33,6 +33,9 @@ CREATE INDEX IF NOT EXISTS idx_report_jobs_org
   ON report_generation_jobs(organization_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_report_jobs_publication
   ON report_generation_jobs(organization_id, publication_status, completed_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_report_schedule_slot
+  ON report_generation_jobs(schedule_id, available_at)
+  WHERE schedule_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS core_report_schedules (
   id TEXT PRIMARY KEY,
@@ -56,9 +59,7 @@ CREATE TABLE IF NOT EXISTS core_report_schedules (
   UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (project_id, organization_id)
-    REFERENCES core_projects(id, organization_id) ON DELETE RESTRICT,
-  FOREIGN KEY (created_by, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE RESTRICT
+    REFERENCES core_projects(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_report_schedules_due
@@ -85,9 +86,7 @@ CREATE TABLE IF NOT EXISTS core_workflow_requests (
   UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (project_id, organization_id)
-    REFERENCES core_projects(id, organization_id) ON DELETE RESTRICT,
-  FOREIGN KEY (requested_by, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE RESTRICT
+    REFERENCES core_projects(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_workflow_requests_scope
@@ -109,11 +108,7 @@ CREATE TABLE IF NOT EXISTS core_workflow_steps (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (organization_id, request_id, step_no),
   FOREIGN KEY (request_id, organization_id)
-    REFERENCES core_workflow_requests(id, organization_id) ON DELETE CASCADE,
-  FOREIGN KEY (approver_user_id, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE RESTRICT,
-  FOREIGN KEY (acted_by, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE RESTRICT
+    REFERENCES core_workflow_requests(id, organization_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_workflow_steps_pending
@@ -128,9 +123,7 @@ CREATE TABLE IF NOT EXISTS core_workflow_events (
   payload_json TEXT NOT NULL DEFAULT '{}',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (request_id, organization_id)
-    REFERENCES core_workflow_requests(id, organization_id) ON DELETE CASCADE,
-  FOREIGN KEY (actor_user_id, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE RESTRICT
+    REFERENCES core_workflow_requests(id, organization_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_workflow_events_request
@@ -149,9 +142,7 @@ CREATE TABLE IF NOT EXISTS core_notifications (
   status TEXT NOT NULL DEFAULT 'unread' CHECK(status IN ('unread','read','archived')),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   read_at TEXT,
-  FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id, organization_id)
-    REFERENCES core_organization_users(user_id, organization_id) ON DELETE CASCADE
+  FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_notifications_user
