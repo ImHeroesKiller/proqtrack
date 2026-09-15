@@ -1,5 +1,6 @@
 import './lib/offline-engine.js';
 import './lib/evidence-client.js';
+import './lib/field-photo-evidence.js';
 import './lib/offline-login.js';
 
 function installStatusBridge() {
