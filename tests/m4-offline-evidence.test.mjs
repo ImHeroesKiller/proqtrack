@@ -70,7 +70,7 @@ test('service worker never caches API traffic', async () => {
   const source = await read('sw.js');
   assert.match(source, /pathname\.startsWith\('\/api\/'\)/);
   assert.match(source, /if \(isPrivateApi\(url\)\) return/);
-  assert.match(source, /proqtrack-v4/);
+  assert.match(source, /proqtrack-v5/);
   assert.match(source, /offline-login\.js/);
 });
 
