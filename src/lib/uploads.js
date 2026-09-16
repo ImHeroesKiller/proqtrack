@@ -46,14 +46,14 @@ function rememberToken(token, exp, role, organizationId = null) {
  * switch can never keep using the previous actor's bearer token.
  */
 export async function issueUploadSession(account, credentials = {}) {
+  clearApiToken();
+  const generation = tokenGeneration;
+
   if (!account?.id && !credentials.email) return null;
   const email = credentials.email || account?.email;
   const password = credentials.password;
   const organizationId = credentials.organizationId || account?.organizationId || '';
   if (!email || !password) return null;
-
-  clearApiToken();
-  const generation = tokenGeneration;
 
   let res;
   try {
@@ -193,7 +193,7 @@ function installStyles() {
   style.textContent = `
     .r2-upload-row{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center}
     .r2-preview{width:72px;height:72px;border-radius:12px;border:1px solid var(--gray-200);object-fit:cover;background:#fff;display:grid;place-items:center;overflow:hidden}
-    .r2-preview img{width:72px;height:72px;object-fit:cover}
+    .r2-preview img{width:100%;height:100%;object-fit:cover}
     .r2-preview-empty{font-size:10px;color:var(--gray-400);text-align:center;padding:6px}
     .r2-status{font-size:11px;color:var(--gray-400);margin-top:6px}
   `;
