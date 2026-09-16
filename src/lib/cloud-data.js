@@ -195,7 +195,12 @@ async function apiJson(path, options = {}) {
 export async function establishCloudSession({ email, password, organizationId = '' } = {}) {
   const token = await issueUploadSession(null, { email, password, organizationId });
   if (!token) return null;
-  return apiJson('/api/auth/session');
+  try {
+    return await apiJson('/api/auth/session');
+  } catch (error) {
+    await revokeApiSession().catch(() => {});
+    throw error;
+  }
 }
 
 // Legacy migration is intentionally explicit from M7 onward. Normal login must
