@@ -41,3 +41,46 @@ test('normal M7 bootstrap never performs implicit legacy import', async () => {
   assert.doesNotMatch(bootstrapBody, /\/api\/core\/import/);
   assert.doesNotMatch(bootstrapBody, /importLegacySnapshotForAdmin\(/);
 });
+
+test('every cloud login attempt invalidates stale bearer state and ignores superseded responses', async () => {
+  const uploads = await read('src/lib/uploads.js');
+  assert.match(uploads, /let tokenGeneration = 0/);
+  assert.match(uploads, /function clearApiTokenIfCurrent\(generation\)/);
+  const start = uploads.indexOf('export async function issueUploadSession');
+  const end = uploads.indexOf('export async function revokeApiSession', start);
+  const login = uploads.slice(start, end);
+  const clearIndex = login.indexOf('clearApiToken();');
+  const validationIndex = login.indexOf("if (!account?.id && !credentials.email)");
+  assert.ok(clearIndex >= 0 && validationIndex > clearIndex);
+  assert.match(login, /const generation = tokenGeneration/);
+  assert.match(login, /if \(generation !== tokenGeneration\) return null/);
+  assert.match(login, /clearApiTokenIfCurrent\(generation\)/);
+});
+
+test('partial cloud session is revoked when authoritative session lookup fails', async () => {
+  const bridge = await read('src/lib/cloud-data.js');
+  const start = bridge.indexOf('export async function establishCloudSession');
+  const end = bridge.indexOf('// Legacy migration', start);
+  const establish = bridge.slice(start, end);
+  assert.match(establish, /apiJson\('\/api\/auth\/session'\)/);
+  assert.match(establish, /revokeApiSession\(\)/);
+});
+
+test('online M7 login is cloud-authoritative and single-flight', async () => {
+  const cutover = await read('src/cloud-cutover.js');
+  assert.match(cutover, /let loginInFlight = false/);
+  assert.match(cutover, /if \(loginInFlight\) return/);
+  assert.match(cutover, /clearApiToken\(\)/);
+  assert.match(cutover, /if \(!cloudAccount\) \{/);
+  assert.match(cutover, /Login server gagal/);
+  assert.doesNotMatch(cutover, /sesi lokal sementara dipertahankan/);
+  assert.match(cutover, /await logoutCloudSession\(\)\.catch/);
+});
+
+test('successful cloud login refreshes only the hashed offline credential', async () => {
+  const [bridge, cutover] = await Promise.all([read('src/lib/cloud-data.js'), read('src/cloud-cutover.js')]);
+  assert.match(bridge, /verifiedPassword = ''/);
+  assert.match(bridge, /next\.password = hashPassword\(verifiedPassword\)/);
+  assert.match(cutover, /ensureCloudIdentity\(db, cloudAccount, localAccount \|\| localCandidate, password\)/);
+  assert.doesNotMatch(bridge, /next\.password = verifiedPassword/);
+});
