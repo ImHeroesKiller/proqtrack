@@ -55,23 +55,45 @@ test('offline outbox contains operational collections only and never account cre
   assert.match(source, /recoverCloudConflict/);
 });
 
-test('offline login requires prior cloud identity, remembered cutover and never enrolls a privileged device', async () => {
+test('offline login requires prior cloud identity, remembered cutover and never falls back locally', async () => {
   const source = await read('src/lib/offline-login.js');
   assert.match(source, /candidate\?\.cloudIdentity/);
   assert.match(source, /isCloudCutoverRemembered/);
   assert.match(source, /authenticate\(email, password, getDeviceIdentity\(\)\)/);
   assert.match(source, /clearApiToken\(\)/);
+  assert.match(source, /Offline login belum diizinkan/);
+  const gateStart = source.indexOf("if (!candidate?.cloudIdentity");
+  const authStart = source.indexOf('let account = null', gateStart);
+  assert.ok(gateStart >= 0 && authStart > gateStart);
+  assert.doesNotMatch(source.slice(gateStart, authStart), /original\.call/);
   assert.doesNotMatch(source, /markSuperadminHost/);
   assert.doesNotMatch(source, /registerTestDevice/);
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*password/i);
 });
 
-test('service worker never caches API traffic', async () => {
-  const source = await read('sw.js');
+test('conflict recovery preserves durable local snapshot until replay is scheduled', async () => {
+  const source = await read('src/lib/offline-engine.js');
+  assert.match(source, /const lastSignatures = new Map\(\)/);
+  assert.match(source, /if \(recovering\) return false/);
+  assert.match(source, /persistDB\('offline-replay'\)/);
+  assert.match(source, /status === 'ready' && !recovering/);
+  assert.match(source, /replaying/);
+  const hydrateIndex = source.indexOf('cloud.applyRemoteDataToLocal');
+  const replayIndex = source.indexOf('await replayLatestSnapshot', hydrateIndex);
+  assert.ok(hydrateIndex >= 0 && replayIndex > hydrateIndex);
+});
+
+test('service worker never caches API traffic and precaches the complete built app', async () => {
+  const [source, build] = await Promise.all([read('sw.js'), read('scripts/build.mjs')]);
   assert.match(source, /pathname\.startsWith\('\/api\/'\)/);
   assert.match(source, /if \(isPrivateApi\(url\)\) return/);
-  assert.match(source, /proqtrack-v6/);
-  assert.match(source, /offline-login\.js/);
+  assert.match(source, /proqtrack-v7/);
+  assert.match(source, /PRECACHE_MANIFEST/);
+  assert.match(source, /field-photo-evidence\.js/);
+  assert.match(source, /m6-client\.js/);
+  assert.match(build, /precache-manifest\.json/);
+  assert.match(build, /collectFiles\("dist"\)/);
+  assert.match(build, /writeFile/);
 });
 
 test('R2 evidence API is separate from locked legacy file API and uses resumable reservation state', async () => {

@@ -1,14 +1,9 @@
-const CACHE = 'proqtrack-v6';
-const SHELL = [
+const CACHE = 'proqtrack-v7';
+const PRECACHE_MANIFEST = 'precache-manifest.json';
+const FALLBACK_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
-  './assets/phase0.css',
-  './assets/phase0-v2.css',
-  './assets/sidebar-collapse.css',
-  './assets/field-mobile.css',
-  './assets/ui-2026.css',
-  './assets/mobile-sales.css',
   './assets/logo.js',
   './assets/logo-dark.svg',
   './assets/logo-light.svg',
@@ -23,12 +18,31 @@ const SHELL = [
   './src/lib/offline-engine.js',
   './src/lib/offline-login.js',
   './src/lib/evidence-client.js',
+  './src/lib/field-photo-evidence.js',
+  './src/lib/m6-client.js',
   './src/lib/uploads.js',
-  './src/data/seed.js',
 ];
 
+async function precacheApplication() {
+  const cache = await caches.open(CACHE);
+  let assets = FALLBACK_SHELL;
+  try {
+    const manifestUrl = new URL(PRECACHE_MANIFEST, self.registration.scope);
+    const response = await fetch(manifestUrl, { cache: 'no-store' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const manifest = await response.json();
+    const generated = Array.isArray(manifest?.assets)
+      ? manifest.assets.filter(path => typeof path === 'string' && path.startsWith('./'))
+      : [];
+    assets = [...new Set([...FALLBACK_SHELL, ...generated])];
+  } catch (error) {
+    console.warn('pwa_precache_manifest_unavailable', error?.message || error);
+  }
+  await cache.addAll(assets);
+}
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil(precacheApplication().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', event => {

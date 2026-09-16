@@ -1,4 +1,5 @@
 import { authHeaders, getApiToken, issueUploadSession, revokeApiSession } from './uploads.js';
+import { hashPassword } from './utils.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
   'clients',
@@ -129,7 +130,7 @@ export function applyRemoteDataToLocal(localDb, remoteData = {}) {
   return localDb;
 }
 
-export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = null) {
+export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = null, verifiedPassword = '') {
   if (!localDb || !cloudAccount?.sub && !cloudAccount?.id) return localAccount;
   const id = String(cloudAccount.sub || cloudAccount.id);
   const email = String(cloudAccount.email || '').toLowerCase();
@@ -150,7 +151,8 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
     cloudIdentity: true,
     cloudSyncedAt: new Date().toISOString(),
   };
-  if (!next.password && existing.password) next.password = existing.password;
+  if (verifiedPassword) next.password = hashPassword(verifiedPassword);
+  else if (!next.password && existing.password) next.password = existing.password;
   if (existingIndex >= 0) accounts[existingIndex] = next;
   else accounts.push(next);
   persistLocalCache(localDb);
@@ -195,7 +197,12 @@ async function apiJson(path, options = {}) {
 export async function establishCloudSession({ email, password, organizationId = '' } = {}) {
   const token = await issueUploadSession(null, { email, password, organizationId });
   if (!token) return null;
-  return apiJson('/api/auth/session');
+  try {
+    return await apiJson('/api/auth/session');
+  } catch (error) {
+    await revokeApiSession().catch(() => {});
+    throw error;
+  }
 }
 
 // Legacy migration is intentionally explicit from M7 onward. Normal login must

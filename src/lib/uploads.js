@@ -1,15 +1,25 @@
 const TOKEN_KEY = 'proqtrack_api_token_v1';
 const TOKEN_META = 'proqtrack_api_token_meta_v1';
+let tokenGeneration = 0;
 
 export function getApiToken() {
   try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 }
 
-export function clearApiToken() {
+function clearStoredToken() {
   try {
     sessionStorage.removeItem(TOKEN_KEY);
     sessionStorage.removeItem(TOKEN_META);
   } catch { /* ignore */ }
+}
+
+export function clearApiToken() {
+  tokenGeneration += 1;
+  clearStoredToken();
+}
+
+function clearApiTokenIfCurrent(generation) {
+  if (generation === tokenGeneration) clearApiToken();
 }
 
 export function fileUrl(key) {
@@ -32,22 +42,38 @@ function rememberToken(token, exp, role, organizationId = null) {
 /**
  * Cloud tokens are issued only by POST /api/auth/login against D1 auth_users.
  * Milestone 2 binds them to an authoritative server session and organization.
- * Local prototype login remains separate until operational data moves to D1.
+ * Every login attempt invalidates any prior browser token so a failed account
+ * switch can never keep using the previous actor's bearer token.
  */
 export async function issueUploadSession(account, credentials = {}) {
+  clearApiToken();
+  const generation = tokenGeneration;
+
   if (!account?.id && !credentials.email) return null;
   const email = credentials.email || account?.email;
   const password = credentials.password;
   const organizationId = credentials.organizationId || account?.organizationId || '';
   if (!email || !password) return null;
-  const res = await fetch('/api/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ email, password, ...(organizationId ? { organizationId } : {}) }),
-  });
+
+  let res;
+  try {
+    res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ email, password, ...(organizationId ? { organizationId } : {}) }),
+    });
+  } catch (error) {
+    clearApiTokenIfCurrent(generation);
+    throw error;
+  }
+
   const data = await res.json().catch(() => null);
-  if (!data || typeof data !== 'object') return null;
+  if (!data || typeof data !== 'object') {
+    clearApiTokenIfCurrent(generation);
+    return null;
+  }
   if (!res.ok) {
+    clearApiTokenIfCurrent(generation);
     if (res.status === 409 && data.error === 'ORGANIZATION_REQUIRED') {
       const error = new Error('Pilih organisasi sebelum membuat sesi cloud.');
       error.code = data.error;
@@ -57,7 +83,12 @@ export async function issueUploadSession(account, credentials = {}) {
     if ([400, 401, 403, 404, 405, 410, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
-  if (!data.token) return null;
+  if (!data.token) {
+    clearApiTokenIfCurrent(generation);
+    return null;
+  }
+  if (generation !== tokenGeneration) return null;
+
   return rememberToken(
     data.token,
     data.exp,

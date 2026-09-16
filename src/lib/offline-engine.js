@@ -8,11 +8,16 @@ const OPERATIONAL_KEYS = Object.freeze([
 ]);
 let installed = false;
 let recovering = false;
-let lastSignature = '';
+let replaying = false;
+const lastSignatures = new Map();
 let observeTimer = null;
 
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function operationalSnapshot(db = {}) {
-  return Object.fromEntries(OPERATIONAL_KEYS.map(key => [key, Array.isArray(db[key]) ? db[key] : []]));
+  return Object.fromEntries(OPERATIONAL_KEYS.map(key => [key, Array.isArray(db[key]) ? clone(db[key]) : []]));
 }
 
 function signature(snapshot) {
@@ -20,7 +25,9 @@ function signature(snapshot) {
 }
 
 function currentOrganizationId(snapshot = {}) {
-  return String(window.FT?.state?.account?.organizationId || snapshot.currentOrganizationId || 'ORG-DEFAULT');
+  const account = window.FT?.state?.account || null;
+  if (account?.role !== 'superadmin' && account?.organizationId) return String(account.organizationId);
+  return String(snapshot.currentOrganizationId || account?.organizationId || '');
 }
 
 function cutoverRemembered(organizationId) {
@@ -28,6 +35,7 @@ function cutoverRemembered(organizationId) {
 }
 
 function emit(status, organizationId, extra = {}) {
+  if (!organizationId) return;
   offlineQueueStats(organizationId).then(queue => {
     window.dispatchEvent(new CustomEvent('proqtrack:offline-status', {
       detail: { status, organizationId, online: navigator.onLine !== false, queue, ...extra },
@@ -36,12 +44,15 @@ function emit(status, organizationId, extra = {}) {
 }
 
 async function persistOperationalSnapshot(db) {
+  // During a conflict rebase the server hydrate must never overwrite the durable
+  // local snapshot that is about to be replayed.
+  if (recovering) return false;
   const organizationId = currentOrganizationId(db);
   if (!organizationId || !cutoverRemembered(organizationId)) return false;
   const snapshot = operationalSnapshot(db);
   const nextSignature = signature(snapshot);
-  if (nextSignature === lastSignature) return false;
-  lastSignature = nextSignature;
+  if (nextSignature === lastSignatures.get(organizationId)) return false;
+  lastSignatures.set(organizationId, nextSignature);
   const id = `${SNAPSHOT_PREFIX}${organizationId}`;
   await enqueueMutation({
     id,
@@ -70,17 +81,25 @@ async function snapshotItem(organizationId) {
 }
 
 export async function replayLatestSnapshot(organizationId = '') {
-  const orgId = String(organizationId || window.FT?.state?.account?.organizationId || 'ORG-DEFAULT');
-  if (!orgId || navigator.onLine === false) return false;
-  const item = await snapshotItem(orgId);
-  const snapshot = item?.changes?.[0]?.row;
-  if (!snapshot) return false;
-  const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
-  const db = getDB();
-  for (const key of OPERATIONAL_KEYS) if (Array.isArray(snapshot[key])) db[key] = snapshot[key];
-  const accepted = cloud.scheduleOperationalSync(db);
-  if (accepted) emit('replaying', orgId);
-  return accepted;
+  const orgId = String(organizationId || window.FT?.state?.account?.organizationId || '');
+  if (!orgId || navigator.onLine === false || replaying) return false;
+  replaying = true;
+  try {
+    const item = await snapshotItem(orgId);
+    const snapshot = item?.changes?.[0]?.row;
+    if (!snapshot) return false;
+    const [{ getDB, persistDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
+    const db = getDB();
+    for (const key of OPERATIONAL_KEYS) {
+      if (Array.isArray(snapshot[key])) db[key] = clone(snapshot[key]);
+    }
+    persistDB('offline-replay');
+    const accepted = cloud.scheduleOperationalSync(db);
+    if (accepted) emit('replaying', orgId);
+    return accepted;
+  } finally {
+    replaying = false;
+  }
 }
 
 async function clearSyncedSnapshot(organizationId) {
@@ -93,16 +112,17 @@ export async function recoverCloudConflict(organizationId = '') {
   if (recovering || navigator.onLine === false) return false;
   recovering = true;
   try {
-    const orgId = String(organizationId || window.FT?.state?.account?.organizationId || 'ORG-DEFAULT');
     const account = window.FT?.state?.account;
-    if (!account) return false;
+    const orgId = String(organizationId || account?.organizationId || '');
+    if (!account || !orgId) return false;
+    if (account.role !== 'superadmin' && account.organizationId && String(account.organizationId) !== orgId) return false;
     const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
     const db = getDB();
     const bootstrap = await cloud.bootstrapOperationalData(db, account);
     if (bootstrap.mode === 'cloud' && bootstrap.data) cloud.applyRemoteDataToLocal(db, bootstrap.data);
-    await replayLatestSnapshot(orgId);
-    emit('conflict-rebased', orgId);
-    return true;
+    const replayed = await replayLatestSnapshot(orgId);
+    emit(replayed ? 'conflict-rebased' : 'conflict-rebase-empty', orgId);
+    return replayed;
   } catch (error) {
     emit('conflict-recovery-failed', organizationId, { error: error?.message || String(error) });
     return false;
@@ -122,10 +142,11 @@ export function installOfflineEngine() {
     if (document.visibilityState === 'visible') observeLocalCache();
   });
   window.addEventListener('proqtrack:cloud-status', event => {
-    const orgId = event.detail?.organizationId || window.FT?.state?.account?.organizationId || 'ORG-DEFAULT';
+    const orgId = String(event.detail?.organizationId || window.FT?.state?.account?.organizationId || '');
+    if (!orgId) return;
     if (event.detail?.status === 'synced') clearSyncedSnapshot(orgId).catch(() => {});
     if (event.detail?.status === 'conflict') recoverCloudConflict(orgId).catch(() => {});
-    if (event.detail?.status === 'ready') replayLatestSnapshot(orgId).catch(() => {});
+    if (event.detail?.status === 'ready' && !recovering) replayLatestSnapshot(orgId).catch(() => {});
   });
   return true;
 }

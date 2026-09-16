@@ -32,6 +32,8 @@ function activateOfflineSession(account) {
 async function offlineLogin(event, original) {
   if (navigator.onLine !== false) return original.call(window.FT, event);
   event?.preventDefault?.();
+  clearApiToken();
+
   const email = String(document.getElementById('loginEmail')?.value || '').trim().toLowerCase();
   const password = String(document.getElementById('loginPassword')?.value || '');
   if (!email || !password) return;
@@ -40,7 +42,8 @@ async function offlineLogin(event, original) {
   const candidate = (db.accounts || []).find(row => String(row.email || '').toLowerCase() === email) || null;
   const organizationId = candidate?.organizationId || db.currentOrganizationId || getCurrentOrgId();
   if (!candidate?.cloudIdentity || !isCloudCutoverRemembered(organizationId)) {
-    return original.call(window.FT, event);
+    window.showToast?.('Offline login belum diizinkan. Akun harus pernah tervalidasi oleh D1 pada device ini.', 'error');
+    return;
   }
 
   let account = null;
