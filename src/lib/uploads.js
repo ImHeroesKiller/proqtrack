@@ -97,6 +97,34 @@ export async function issueUploadSession(account, credentials = {}) {
   );
 }
 
+export async function switchApiOrganization(organizationId) {
+  const target = String(organizationId || '').trim();
+  const token = getApiToken();
+  if (!target) throw new Error('ORGANIZATION_REQUIRED');
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const generation = tokenGeneration;
+  const res = await fetch('/api/auth/switch-organization', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ organizationId: target }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const error = new Error(data.message || data.error || `HTTP ${res.status}`);
+    error.code = data.error;
+    error.status = res.status;
+    error.payload = data;
+    throw error;
+  }
+  if (!data.token || generation !== tokenGeneration) throw new Error('SESSION_SWITCH_STALE');
+  rememberToken(data.token, data.exp, data.account?.role || 'superadmin', data.account?.organizationId || target);
+  return data.account || null;
+}
+
 export async function revokeApiSession({ all = false } = {}) {
   const token = getApiToken();
   if (!token) {
@@ -210,6 +238,7 @@ if (typeof window !== 'undefined') {
     fileUrl,
     clearApiToken,
     getApiToken,
+    switchApiOrganization,
   };
 }
 export {};
