@@ -87,7 +87,7 @@ test('service worker never caches API traffic and precaches the complete built a
   const [source, build] = await Promise.all([read('sw.js'), read('scripts/build.mjs')]);
   assert.match(source, /pathname\.startsWith\('\/api\/'\)/);
   assert.match(source, /if \(isPrivateApi\(url\)\) return/);
-  assert.match(source, /proqtrack-v8/);
+  assert.match(source, /proqtrack-v9/);
   assert.match(source, /PRECACHE_MANIFEST/);
   assert.match(source, /field-photo-evidence\.js/);
   assert.match(source, /m6-client\.js/);
