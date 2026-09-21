@@ -31,11 +31,12 @@ test('authenticated production UAT uses ephemeral credentials and guaranteed cle
 });
 
 
-test('deployment gates five provisioned identities and zero UAT leftovers', async () => {
+test('historical authenticated UAT remains reproducible but is retired from real MKB deploys', async () => {
   const workflow = await read('.github/workflows/cloudflare-mvp.yml');
-  assert.match(workflow, /identity provisioning gate failed/);
-  assert.match(workflow, /Verify authenticated M7 UAT cleanup/);
-  assert.match(workflow, /M7 authenticated UAT cleanup PASS/);
-  assert.match(workflow, /core_sync_conflicts/);
-  assert.match(workflow, /auth_users WHERE email LIKE 'uat\.m7\.%@proqtrack\.id'/);
+  const script = await read('scripts/m7-authenticated-production-uat.sh');
+  assert.match(script, /M7 authenticated production UAT PASS/);
+  assert.doesNotMatch(workflow, /Run authenticated M7 production UAT/);
+  assert.doesNotMatch(workflow, /M7 MKB identity provisioned/);
+  assert.match(workflow, /Verify MKB real tenant isolation/);
+  assert.match(workflow, /synthetic M7 seed=0/);
 });
