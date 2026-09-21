@@ -208,7 +208,9 @@ async function createAccount(env, claims, request, requestId) {
 
   let projects = [];
   if (role === 'manager') projects = [{ project_id:projectId }];
-  else projects = await activeEmployeeProjects(env,claims.organizationId,employee?.id);
+  else if (['supervisor','employee'].includes(role)) {
+    projects = await activeEmployeeProjects(env,claims.organizationId,employee?.id);
+  }
   for (const project of projects) {
     statements.push(env.DB.prepare(`
       INSERT INTO core_project_memberships(
@@ -304,7 +306,9 @@ async function updateAccount(env, claims, request, userId, requestId) {
 
   let projects = [];
   if (nextRole === 'manager') projects = [{ project_id:projectId }];
-  else projects = await activeEmployeeProjects(env,claims.organizationId,employee?.id);
+  else if (['supervisor','employee'].includes(nextRole)) {
+    projects = await activeEmployeeProjects(env,claims.organizationId,employee?.id);
+  }
   for (const project of projects) {
     statements.push(env.DB.prepare(`
       INSERT INTO core_project_memberships(
