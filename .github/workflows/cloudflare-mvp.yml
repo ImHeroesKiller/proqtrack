@@ -175,6 +175,7 @@ jobs:
             ).length;
             console.log("M7 MKB identity provisioned=" + provisioned + "/5");
             console.log("M7 MKB human login ready=" + ready + "/5");
+            if (provisioned !== 5) throw new Error("MKB identity provisioning gate failed: " + provisioned + "/5");
           '
 
       - name: Record D1 database id
@@ -216,6 +217,41 @@ jobs:
       - name: Run authenticated M7 production UAT
         shell: bash
         run: bash scripts/m7-authenticated-production-uat.sh
+
+      - name: Verify authenticated M7 UAT cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute DB --remote --env="" --json --command "
+            SELECT
+              (SELECT COUNT(*) FROM auth_users WHERE email LIKE 'uat.m7.%@proqtrack.id') AS auth_users,
+              (SELECT COUNT(*) FROM core_organization_users WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS org_users,
+              (SELECT COUNT(*) FROM core_project_memberships WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS project_memberships,
+              (SELECT COUNT(*) FROM core_employees WHERE organization_id='ORG-MKB' AND id LIKE 'EMP-UAT-M7-%') AS employees,
+              (SELECT COUNT(*) FROM core_employee_project_assignments WHERE organization_id='ORG-MKB' AND id LIKE 'ASN-UAT-M7-%') AS assignments,
+              (SELECT COUNT(*) FROM core_auth_sessions WHERE user_id LIKE 'UAT-M7-%') AS sessions,
+              (SELECT COUNT(*) FROM core_auth_devices WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS devices,
+              (SELECT COUNT(*) FROM core_attendance WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS attendance,
+              (SELECT COUNT(*) FROM core_visits WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS visits,
+              (SELECT COUNT(*) FROM core_product_sales WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS sales,
+              (SELECT COUNT(*) FROM core_survey_responses WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS surveys,
+              (SELECT COUNT(*) FROM core_sync_mutations WHERE organization_id='ORG-MKB' AND mutation_id LIKE 'UAT-M7-%') AS sync_mutations,
+              (SELECT COUNT(*) FROM core_sync_conflicts WHERE organization_id='ORG-MKB' AND mutation_id LIKE 'UAT-M7-%') AS sync_conflicts;
+          ")"
+          printf '%s' "$result" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const start = raw.indexOf("[");
+            if (start < 0) throw new Error("D1 JSON result not found");
+            const parsed = JSON.parse(raw.slice(start));
+            const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
+            const row = entry?.results?.[0];
+            if (!row) throw new Error("cleanup verification row missing");
+            const leftovers = Object.entries(row).filter(([, value]) => Number(value) !== 0);
+            if (leftovers.length) {
+              throw new Error("M7 UAT cleanup leftovers: " + leftovers.map(([k,v]) => k + "=" + v).join(", "));
+            }
+            console.log("M7 authenticated UAT cleanup PASS: no temporary identities or operational rows remain");
+          '
 
       - name: Verify security headers and auth boundaries
         shell: bash
