@@ -394,6 +394,24 @@ async function commit(request, env, claims, requestId) {
       row.email || null,row.phone || null,row.status,metadata,
     ));
 
+    if (authUserId && row.status !== 'active') {
+      statements.push(env.DB.prepare(`
+        UPDATE core_organization_users
+        SET status='inactive',updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND user_id=? AND status='active'
+      `).bind(claims.organizationId,authUserId));
+      statements.push(env.DB.prepare(`
+        UPDATE core_project_memberships
+        SET status='inactive',updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND user_id=?
+      `).bind(claims.organizationId,authUserId));
+      statements.push(env.DB.prepare(`
+        UPDATE core_auth_sessions
+        SET status='revoked',revoked_at=CURRENT_TIMESTAMP
+        WHERE user_id=? AND status='active'
+      `).bind(authUserId));
+    }
+
     const assignmentKey = `${row.projectId}:${empId}`;
     const existingAssignment = ctx.assignmentByKey.get(assignmentKey);
     statements.push(env.DB.prepare(`
