@@ -1,10 +1,13 @@
 import {
-  getOrganizations, getOrganization, createOrganization, updateOrganization,
+  getOrganizations, getOrganization,
   setCurrentOrgId, getCurrentOrgId, getEmployees, getAccounts, getOutlets,
   getProducts, getCompetitors, getVisits, getFieldPhotos, getDB,
 } from './lib/db.js';
 import { esc, statusBadge } from './lib/utils.js';
 import { switchCloudOrganization } from './lib/cloud-data.js';
+import {
+  syncCloudOrganizations, createCloudOrganization, updateCloudOrganization,
+} from './lib/cloud-organizations.js';
 
 function canManageOrgs() {
   return window.FT?.state?.account?.role === 'superadmin';
@@ -41,8 +44,28 @@ const HUB_LINKS = [
   ['#/stocks', 'Stok', 'Ketersediaan outlet'],
 ];
 
+let organizationSyncInFlight = false;
+let organizationsSynced = false;
+
+function scheduleOrganizationRefresh() {
+  if (organizationsSynced || organizationSyncInFlight || !canManageOrgs()) return;
+  organizationSyncInFlight = true;
+  queueMicrotask(async () => {
+    try {
+      await syncCloudOrganizations();
+      organizationsSynced = true;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      window.showToast?.(`Sinkronisasi organisasi gagal: ${error.message || error}`, 'error');
+    } finally {
+      organizationSyncInFlight = false;
+    }
+  });
+}
+
 export function renderOrganizations() {
   if (!canManageOrgs()) return '<div class="card"><p>Hanya superadmin yang mengelola daftar organisasi.</p></div>';
+  scheduleOrganizationRefresh();
   const current = getCurrentOrgId();
   const rows = getOrganizations();
   return `
@@ -180,14 +203,26 @@ window.ORG = {
     window.FT.closeModal?.();
     document.getElementById('modalRoot').innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${existing ? 'Edit organisasi' : 'Organisasi baru'}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${form(existing)}</div></div></div>`;
   },
-  save(event, id) {
+  async save(event, id) {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.target).entries());
     try {
-      const org = id ? updateOrganization(id, data) : createOrganization(data);
+      const org = id
+        ? await updateCloudOrganization(id, data)
+        : await createCloudOrganization(data);
+      organizationsSynced = true;
       window.FT.closeModal?.();
-      if (!id) setCurrentOrgId(org.id);
-      window.showToast?.(id ? 'Organisasi diperbarui' : 'Organisasi dibuat', 'success');
+      window.showToast?.(id ? 'Organisasi cloud diperbarui' : 'Organisasi cloud dibuat', 'success');
+
+      if (!id) {
+        const switched = await this.switchTo(org.id, `#/organizations/${org.id}`);
+        if (!switched) {
+          location.hash = '#/organizations';
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
+        }
+        return;
+      }
+
       location.hash = `#/organizations/${org.id}`;
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {

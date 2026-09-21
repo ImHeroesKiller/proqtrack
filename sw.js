@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v9';
+const CACHE = 'proqtrack-v10';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -22,6 +22,7 @@ const FALLBACK_SHELL = [
   './src/lib/m6-client.js',
   './src/lib/uploads.js',
   './src/lib/cloud-accounts.js',
+  './src/lib/cloud-organizations.js',
   './src/bulk-employees.js',
   './src/lib/bulk-upload.js',
 ];

@@ -162,7 +162,7 @@ jobs:
           evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
           test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
 
-          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/admin/accounts; do
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/admin/accounts /api/admin/organizations; do
             status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
             test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
           done
