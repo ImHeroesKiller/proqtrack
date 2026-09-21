@@ -10,6 +10,7 @@ let currentRows = [];
 let currentPreview = [];
 let currentFileName = '';
 let generatedCredentials = [];
+let passwordByRow = new Map();
 let busy = false;
 
 const esc = value => String(value ?? '')
@@ -48,6 +49,18 @@ function download(name, text, type = 'text/csv;charset=utf-8') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function strongInitialPassword(length = 20) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*-_';
+  const bytes = crypto.getRandomValues(new Uint8Array(length));
+  const chars = ['A','a','7','!'];
+  for (let i = chars.length; i < length; i += 1) chars.push(alphabet[bytes[i] % alphabet.length]);
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = bytes[i % bytes.length] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
 }
 
 function csvCell(value) {
@@ -152,6 +165,7 @@ export async function handleFile(input) {
   if (!file || busy) return;
   busy = true;
   generatedCredentials = [];
+  passwordByRow = new Map();
   const root = document.getElementById('bulkEmployeePreview');
   try {
     if (root) root.innerHTML = '<div class="bulk-loading">Membaca dan memvalidasi file…</div>';
@@ -180,6 +194,12 @@ export async function commit() {
 
   busy = true;
   generatedCredentials = [];
+  passwordByRow = new Map();
+  for (const row of currentPreview) {
+    if (row.valid && row.loginAction === 'create') {
+      passwordByRow.set(Number(row.rowNumber), strongInitialPassword());
+    }
+  }
   const importId = `BULK-${crypto.randomUUID()}`;
   const groups = chunks(currentRows, COMMIT_CHUNK);
   const totals = { inserted:0, updated:0, loginCreated:0, loginLinked:0 };
@@ -193,7 +213,10 @@ export async function commit() {
         chunkId: String(i + 1),
         finalChunk: i === groups.length - 1,
         sourceName: currentFileName,
-        rows: groups[i],
+        rows: groups[i].map(row => {
+          const initialPassword = passwordByRow.get(Number(row._row_number));
+          return initialPassword ? { ...row, initial_password: initialPassword } : row;
+        }),
       });
       if (!data.replayed) {
         totals.inserted += Number(data.summary?.inserted || 0);
@@ -208,7 +231,7 @@ export async function commit() {
     window.showToast?.('Bulk upload karyawan selesai.', 'success');
   } catch (error) {
     const detail = error.payload?.rows?.flatMap(row => row.errors || []).slice(0, 8).join(', ');
-    if (root) root.innerHTML = `<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message || error)}${detail ? `<br><span class="bulk-muted">${esc(detail)}</span>` : ''}<br><br>Chunk yang sudah sukses aman dan idempotent. Upload ulang file yang sama untuk melanjutkan/update.</div>`;
+    if (root) root.innerHTML = `<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message || error)}${detail ? `<br><span class="bulk-muted">${esc(detail)}</span>` : ''}<br><br>Chunk yang sudah sukses aman dan idempotent. Upload ulang file yang sama untuk melanjutkan/update.${generatedCredentials.length ? '<br><br><button class="btn btn-primary" type="button" onclick="BulkEmployees.downloadCredentials()">Download credential yang sudah berhasil dibuat</button>' : ''}</div>`;
     window.showToast?.('Bulk upload belum selesai.', 'error');
   } finally {
     busy = false;
@@ -233,6 +256,7 @@ export function reset() {
   currentPreview = [];
   currentFileName = '';
   generatedCredentials = [];
+  passwordByRow = new Map();
   const input = document.getElementById('bulkEmployeeFile');
   if (input) input.value = '';
   renderPreview();
@@ -247,6 +271,7 @@ export function open() {
   currentRows = [];
   currentPreview = [];
   generatedCredentials = [];
+  passwordByRow = new Map();
   window.FT.closeModal?.();
   const root = document.getElementById('modalRoot');
   if (!root) return;
@@ -304,4 +329,4 @@ if (typeof window !== 'undefined') {
   window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials };
 }
 
-export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary };
+export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword };
