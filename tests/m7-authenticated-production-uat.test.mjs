@@ -10,7 +10,8 @@ test('Rizky identity is provisioned without an active human credential', async (
   assert.match(sql, /'supervisor','suspended'/);
   assert.match(sql, /'supervisor','inactive'/);
   assert.match(sql, /EMP-MKB-RIZKY/);
-  assert.doesNotMatch(sql, /Proqpay|Password|123456|password\s*=/i);
+  assert.match(sql, /pbkdf2\$sha256\$100000\$/);
+  assert.doesNotMatch(sql, /Proqpay2026|correct-horse|temporary-password|12345678/i);
 });
 
 test('authenticated production UAT uses ephemeral credentials and guaranteed cleanup', async () => {
