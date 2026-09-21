@@ -17,20 +17,66 @@ const esc = value => String(value ?? '')
   .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
   .replaceAll('"','&quot;').replaceAll("'","&#039;");
 
-async function apiJson(path, body) {
-  const res = await fetch(path, {
-    method: 'POST',
-    headers: authHeaders({ 'content-type': 'application/json', accept: 'application/json' }),
-    body: JSON.stringify(body),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const error = new Error(data.message || data.error || `HTTP ${res.status}`);
-    error.code = data.error;
-    error.payload = data;
-    throw error;
+async function apiJson(path, body, { retries = 0 } = {}) {
+  const payload = JSON.stringify(body);
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const res = await fetch(path, {
+        method: 'POST',
+        headers: authHeaders({ 'content-type': 'application/json', accept: 'application/json' }),
+        body: payload,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) return data;
+      const error = new Error(data.message || data.error || `HTTP ${res.status}`);
+      error.code = data.error;
+      error.status = res.status;
+      error.payload = data;
+      if (attempt < retries && (res.status >= 500 || res.status === 429)) {
+        const waitMs = res.status === 429
+          ? Math.min(5000, Math.max(500, Number(res.headers.get('retry-after') || 1) * 1000))
+          : 350 * (attempt + 1);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+        lastError = error;
+        continue;
+      }
+      throw error;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= retries || error?.status && error.status < 500 && error.status !== 429) throw error;
+      await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+    }
   }
-  return data;
+  throw lastError || new Error('NETWORK_ERROR');
+}
+
+function duplicateErrors(rows) {
+  const byCode = new Map();
+  const byEmail = new Map();
+  const errors = new Map();
+  const add = (rowNumber, code) => {
+    if (!errors.has(rowNumber)) errors.set(rowNumber, []);
+    errors.get(rowNumber).push(code);
+  };
+  for (const row of rows) {
+    const rowNumber = Number(row._row_number);
+    const code = String(row.employee_code || '').trim().toLowerCase();
+    const email = String(row.email || '').trim().toLowerCase();
+    if (code) {
+      if (byCode.has(code)) {
+        add(rowNumber, `DUPLICATE_EMPLOYEE_CODE_ROW_${byCode.get(code)}`);
+        add(byCode.get(code), `DUPLICATE_EMPLOYEE_CODE_ROW_${rowNumber}`);
+      } else byCode.set(code, rowNumber);
+    }
+    if (email) {
+      if (byEmail.has(email)) {
+        add(rowNumber, `DUPLICATE_EMAIL_ROW_${byEmail.get(email)}`);
+        add(byEmail.get(email), `DUPLICATE_EMAIL_ROW_${rowNumber}`);
+      } else byEmail.set(email, rowNumber);
+    }
+  }
+  return errors;
 }
 
 function chunks(rows, size) {
@@ -133,7 +179,12 @@ async function previewRows(rows) {
     const data = await apiJson('/api/bulk/employees/preview', { rows: chunk });
     result.push(...(data.rows || []));
   }
-  return result;
+  const duplicates = duplicateErrors(rows);
+  return result.map(row => {
+    const extra = duplicates.get(Number(row.rowNumber)) || [];
+    if (!extra.length) return row;
+    return { ...row, valid: false, errors: [...new Set([...(row.errors || []), ...extra])] };
+  });
 }
 
 async function refreshFromCloud() {
@@ -217,7 +268,7 @@ export async function commit() {
           const initialPassword = passwordByRow.get(Number(row._row_number));
           return initialPassword ? { ...row, initial_password: initialPassword } : row;
         }),
-      });
+      }, { retries: 2 });
       if (!data.replayed) {
         totals.inserted += Number(data.summary?.inserted || 0);
         totals.updated += Number(data.summary?.updated || 0);
@@ -329,4 +380,4 @@ if (typeof window !== 'undefined') {
   window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials };
 }
 
-export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword };
+export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword, duplicateErrors };
