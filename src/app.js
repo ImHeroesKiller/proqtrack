@@ -39,6 +39,7 @@ import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetF
 import { defaultPortrait } from './lib/avatars.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
+import './bulk-employees.js';
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -1207,6 +1208,7 @@ function renderEmployees() {
           <option value="Supervisor">Supervisor</option>
         </select>
         <div class="spacer"></div>
+        ${isProjectAdmin() ? `<button class="btn btn-secondary" onclick="BulkEmployees.open()">Bulk Upload</button>` : ``}
         <button class="btn btn-primary" onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>
       </div>
       <div class="visits-table-wrapper">
