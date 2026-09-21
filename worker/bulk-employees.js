@@ -44,8 +44,16 @@ function normalizeRow(input = {}, index = 0) {
   const supervisorEmail = lower(input.supervisor_email || input.supervisorEmail).slice(0, 180);
   const status = employmentStatus(input.status);
   const createLogin = bool(input.create_login ?? input.createLogin);
+  const salesTargetAmount = Math.max(0, Number(input.sales_target_amount ?? input.salesTargetAmount ?? 0) || 0);
+  const attendancePointId = str(input.attendance_point_id ?? input.attendancePointId, 120);
+  const photo = str(input.photo, 120000);
+  const joinDate = str(input.join_date ?? input.joinDate, 20);
   const rowNumber = Number(input._row_number || input.rowNumber || index + 2);
-  return { rowNumber, employeeCode, fullName, email, phone, role, area, position, projectRef, supervisorEmail, status, createLogin };
+  return {
+    rowNumber, employeeCode, fullName, email, phone, role, area, position,
+    projectRef, supervisorEmail, status, createLogin,
+    salesTargetAmount, attendancePointId, photo, joinDate,
+  };
 }
 
 function validInitialPassword(value) {
@@ -356,6 +364,10 @@ async function commit(request, env, claims, requestId) {
       role: row.role === 'supervisor' ? 'Supervisor' : 'Field Sales',
       area: row.area,
       position: row.position,
+      salesTargetAmount: row.salesTargetAmount,
+      attendancePointId: row.attendancePointId || null,
+      photo: row.photo || '',
+      joinDate: row.joinDate || new Date().toISOString().slice(0,10),
       bulkImportId: importId,
       bulkImportedAt: new Date().toISOString(),
     });
