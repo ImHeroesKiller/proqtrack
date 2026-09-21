@@ -244,6 +244,13 @@ async function commit(request, env, claims, requestId) {
   const sourceName = str(body.sourceName || 'bulk-upload', 180);
   const finalChunk = body.finalChunk === true;
 
+  const owner = await env.DB.prepare(
+    'SELECT organization_id,actor_user_id FROM core_bulk_import_runs WHERE id=? LIMIT 1',
+  ).bind(importId).first();
+  if (owner && (String(owner.organization_id) !== String(claims.organizationId) || String(owner.actor_user_id) !== String(claims.sub))) {
+    return json({ error: 'IMPORT_OWNERSHIP_MISMATCH' }, 409);
+  }
+
   const replay = await env.DB.prepare(
     "SELECT status,row_count FROM core_bulk_import_chunks WHERE import_id=? AND chunk_id=? AND organization_id=? LIMIT 1",
   ).bind(importId, chunkId, claims.organizationId).first();
