@@ -372,7 +372,435 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     return authErrorResponse(error, requestId);
   }
 
-  if (String(user.password_hash || '').startsWith('sha256
+  if (String(user.password_hash || '').startsWith('sha256    try {
+      const upgraded = await hashPassword(password);
+      await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(upgraded, user.id).run();
+    } catch (error) {
+      console.warn('password_hash_upgrade_failed', error?.message || error);
+    }
+  }
+
+  const { token, claims } = await createSession(env, request, user, authorization);
+  try {
+    await env.DB.prepare('UPDATE auth_users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').bind(user.id).run();
+  } catch (error) {
+    console.warn('auth_user_touch_failed', error?.message || error);
+  }
+  await writeAuthAudit(env, { requestId, actor: claims, action: 'login' });
+
+  return authJson({
+    ok: true,
+    token,
+    exp: claims.exp,
+    account: {
+      id: claims.sub,
+      email: claims.email,
+      role: claims.role,
+      organizationId: claims.organizationId,
+      organization: authorization.organization,
+      projectIds: claims.projectIds,
+      clientIds: claims.clientIds,
+    },
+    requestId,
+  });
+}
+
+export async function authenticateAuthoritatively(request, env) {
+  const secret = resolveSessionSecret(env);
+  const token = extractBearerToken(request);
+  const signed = await verifyToken(token, secret);
+  if (!signed.sid || signed.authz !== 'server') throw new Error('SESSION_REAUTH_REQUIRED');
+
+  const session = await env.DB.prepare(`
+    SELECT id,user_id,organization_id,role_at_issue,status,expires_at
+    FROM core_auth_sessions
+    WHERE id=? AND user_id=?
+    LIMIT 1
+  `).bind(signed.sid, signed.sub).first();
+  if (!session) throw new Error('SESSION_REVOKED');
+  if (session.status !== 'active') throw new Error('SESSION_REVOKED');
+  if (Date.parse(session.expires_at) <= Date.now()) throw new Error('SESSION_EXPIRED');
+
+  const signedOrg = signed.organizationId || null;
+  const sessionOrg = session.organization_id || null;
+  if (signedOrg !== sessionOrg) throw new Error('INVALID_TOKEN');
+
+  const user = await findUserById(env, signed.sub);
+  if (!user || user.status !== 'active') throw new Error('USER_ACCESS_DISABLED');
+  if (!sessionOrg && roleOf(user.role) !== 'superadmin') throw new Error('SESSION_REAUTH_REQUIRED');
+
+  const authorization = await resolveAuthorizationForUser(env, user, sessionOrg || '');
+  try {
+    await env.DB.prepare('UPDATE core_auth_sessions SET last_seen_at=CURRENT_TIMESTAMP WHERE id=?').bind(session.id).run();
+  } catch (error) {
+    console.warn('session_touch_failed', error?.message || error);
+  }
+
+  return {
+    sub: user.id,
+    sid: session.id,
+    email: user.email,
+    role: authorization.role,
+    organizationId: authorization.organizationId,
+    organization: authorization.organization,
+    projectIds: authorization.projectIds,
+    clientIds: authorization.clientIds,
+    exp: signed.exp,
+    scope: 'api',
+    authz: 'server',
+  };
+}
+
+export async function revokeSession(env, sessionId) {
+  await env.DB.prepare(`
+    UPDATE core_auth_sessions
+    SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+    WHERE id=? AND status='active'
+  `).bind(sessionId).run();
+}
+
+export async function revokeAllSessions(env, userId) {
+  await env.DB.prepare(`
+    UPDATE core_auth_sessions
+    SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+    WHERE user_id=? AND status='active'
+  `).bind(userId).run();
+}
+
+export function authErrorResponse(error, requestId = crypto.randomUUID()) {
+  const code = String(error?.message || error || 'AUTH_REQUIRED');
+  const status = code === 'SESSION_UNAVAILABLE' ? 503
+    : code === 'ORGANIZATION_REQUIRED' ? 409
+      : ['ORGANIZATION_ACCESS_DENIED', 'ORGANIZATION_ACCESS_NOT_CONFIGURED', 'USER_ACCESS_DISABLED',
+          'DEVICE_REQUIRED', 'DEVICE_ACCESS_DENIED'].includes(code) ? 403
+        : 401;
+  return authJson({ error: code, requestId }, status, status === 401 ? { 'www-authenticate': 'Bearer' } : {});
+}
+
+export async function handleAuthRoute(request, env, url = new URL(request.url), requestId = crypto.randomUUID()) {
+  if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+    return loginAuthoritatively(request, env, requestId);
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'POST') {
+    return authJson({
+      error: 'SESSION_MINTING_DISABLED',
+      message: 'Client-supplied claims are not accepted. Authenticate with POST /api/auth/login.',
+      requestId,
+    }, 410);
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      return authJson({ ok: true, ...claims, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/change-password' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const currentPassword = String(body.currentPassword || '');
+      const nextPassword = String(body.nextPassword || '');
+      if (nextPassword.length < 8) {
+        return authJson({ error: 'PASSWORD_TOO_SHORT', requestId }, 400);
+      }
+      const user = await findUserById(env, claims.sub);
+      if (!user || !await verifyPassword(user.password_hash, currentPassword)) {
+        return authJson({ error: 'INVALID_CURRENT_PASSWORD', requestId }, 403);
+      }
+      if (await verifyPassword(user.password_hash, nextPassword)) {
+        return authJson({ error: 'PASSWORD_UNCHANGED', requestId }, 409);
+      }
+      const passwordHash = await hashPassword(nextPassword);
+      await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(passwordHash, claims.sub).run();
+      await env.DB.prepare(`
+        UPDATE core_auth_sessions
+        SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+        WHERE user_id=? AND id<>? AND status='active'
+      `).bind(claims.sub, claims.sid).run();
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'change_password' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/profile' && request.method === 'PATCH') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const email = normalizeEmail(body.email || claims.email);
+      const fullName = String(body.name || '').trim().slice(0, 180);
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return authJson({ error: 'EMAIL_INVALID', requestId }, 400);
+      }
+      const conflict = await env.DB.prepare(
+        'SELECT id FROM auth_users WHERE lower(email)=? AND id<>? LIMIT 1',
+      ).bind(email, claims.sub).first();
+      if (conflict) return authJson({ error: 'EMAIL_ALREADY_USED', requestId }, 409);
+
+      const statements = [
+        env.DB.prepare('UPDATE auth_users SET email=? WHERE id=?').bind(email, claims.sub),
+      ];
+      if (claims.organizationId) {
+        statements.push(env.DB.prepare(`
+          UPDATE core_employees
+          SET email=?,
+              full_name=CASE WHEN ?<>'' THEN ? ELSE full_name END,
+              updated_at=CURRENT_TIMESTAMP
+          WHERE organization_id=? AND auth_user_id=?
+        `).bind(email, fullName, fullName, claims.organizationId, claims.sub));
+      }
+      await env.DB.batch(statements);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'update_profile' });
+      return authJson({ ok: true, account: { id: claims.sub, email, name: fullName || null }, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      await revokeSession(env, claims.sid);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'logout' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/logout-all' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      await revokeAllSessions(env, claims.sub);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'logout_all' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/switch-organization' && request.method === 'POST') {
+    try {
+      const current = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const targetOrganizationId = normalizeId(body.organizationId);
+      if (!targetOrganizationId) throw new Error('ORGANIZATION_REQUIRED');
+      const user = await findUserById(env, current.sub);
+      const authorization = await resolveAuthorizationForUser(env, user, targetOrganizationId);
+      const next = await createSession(env, request, user, authorization);
+      await revokeSession(env, current.sid);
+      await writeAuthAudit(env, { requestId, actor: next.claims, action: 'switch_organization' });
+      return authJson({
+        ok: true,
+        token: next.token,
+        exp: next.claims.exp,
+        account: {
+          id: next.claims.sub,
+          email: next.claims.email,
+          role: next.claims.role,
+          organizationId: next.claims.organizationId,
+          organization: authorization.organization,
+          projectIds: next.claims.projectIds,
+          clientIds: next.claims.clientIds,
+        },
+        requestId,
+      });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  return null;
+}
+)) {
+    try {
+      const upgraded = await hashPassword(password);
+      await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(upgraded, user.id).run();
+    } catch (error) {
+      console.warn('password_hash_upgrade_failed', error?.message || error);
+    }
+  }
+
+  const { token, claims } = await createSession(env, request, user, authorization);
+  try {
+    await env.DB.prepare('UPDATE auth_users SET last_login_at=CURRENT_TIMESTAMP WHERE id=?').bind(user.id).run();
+  } catch (error) {
+    console.warn('auth_user_touch_failed', error?.message || error);
+  }
+  await writeAuthAudit(env, { requestId, actor: claims, action: 'login' });
+
+  return authJson({
+    ok: true,
+    token,
+    exp: claims.exp,
+    account: {
+      id: claims.sub,
+      email: claims.email,
+      role: claims.role,
+      organizationId: claims.organizationId,
+      organization: authorization.organization,
+      projectIds: claims.projectIds,
+      clientIds: claims.clientIds,
+    },
+    requestId,
+  });
+}
+
+export async function authenticateAuthoritatively(request, env) {
+  const secret = resolveSessionSecret(env);
+  const token = extractBearerToken(request);
+  const signed = await verifyToken(token, secret);
+  if (!signed.sid || signed.authz !== 'server') throw new Error('SESSION_REAUTH_REQUIRED');
+
+  const session = await env.DB.prepare(`
+    SELECT id,user_id,organization_id,role_at_issue,status,expires_at
+    FROM core_auth_sessions
+    WHERE id=? AND user_id=?
+    LIMIT 1
+  `).bind(signed.sid, signed.sub).first();
+  if (!session) throw new Error('SESSION_REVOKED');
+  if (session.status !== 'active') throw new Error('SESSION_REVOKED');
+  if (Date.parse(session.expires_at) <= Date.now()) throw new Error('SESSION_EXPIRED');
+
+  const signedOrg = signed.organizationId || null;
+  const sessionOrg = session.organization_id || null;
+  if (signedOrg !== sessionOrg) throw new Error('INVALID_TOKEN');
+
+  const user = await findUserById(env, signed.sub);
+  if (!user || user.status !== 'active') throw new Error('USER_ACCESS_DISABLED');
+  if (!sessionOrg && roleOf(user.role) !== 'superadmin') throw new Error('SESSION_REAUTH_REQUIRED');
+
+  const authorization = await resolveAuthorizationForUser(env, user, sessionOrg || '');
+  try {
+    await env.DB.prepare('UPDATE core_auth_sessions SET last_seen_at=CURRENT_TIMESTAMP WHERE id=?').bind(session.id).run();
+  } catch (error) {
+    console.warn('session_touch_failed', error?.message || error);
+  }
+
+  return {
+    sub: user.id,
+    sid: session.id,
+    email: user.email,
+    role: authorization.role,
+    organizationId: authorization.organizationId,
+    organization: authorization.organization,
+    projectIds: authorization.projectIds,
+    clientIds: authorization.clientIds,
+    exp: signed.exp,
+    scope: 'api',
+    authz: 'server',
+  };
+}
+
+export async function revokeSession(env, sessionId) {
+  await env.DB.prepare(`
+    UPDATE core_auth_sessions
+    SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+    WHERE id=? AND status='active'
+  `).bind(sessionId).run();
+}
+
+export async function revokeAllSessions(env, userId) {
+  await env.DB.prepare(`
+    UPDATE core_auth_sessions
+    SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+    WHERE user_id=? AND status='active'
+  `).bind(userId).run();
+}
+
+export function authErrorResponse(error, requestId = crypto.randomUUID()) {
+  const code = String(error?.message || error || 'AUTH_REQUIRED');
+  const status = code === 'SESSION_UNAVAILABLE' ? 503
+    : code === 'ORGANIZATION_REQUIRED' ? 409
+      : ['ORGANIZATION_ACCESS_DENIED', 'ORGANIZATION_ACCESS_NOT_CONFIGURED', 'USER_ACCESS_DISABLED'].includes(code) ? 403
+        : 401;
+  return authJson({ error: code, requestId }, status, status === 401 ? { 'www-authenticate': 'Bearer' } : {});
+}
+
+export async function handleAuthRoute(request, env, url = new URL(request.url), requestId = crypto.randomUUID()) {
+  if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+    return loginAuthoritatively(request, env, requestId);
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'POST') {
+    return authJson({
+      error: 'SESSION_MINTING_DISABLED',
+      message: 'Client-supplied claims are not accepted. Authenticate with POST /api/auth/login.',
+      requestId,
+    }, 410);
+  }
+
+  if (url.pathname === '/api/auth/session' && request.method === 'GET') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      return authJson({ ok: true, ...claims, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      await revokeSession(env, claims.sid);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'logout' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/logout-all' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      await revokeAllSessions(env, claims.sub);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'logout_all' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/switch-organization' && request.method === 'POST') {
+    try {
+      const current = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const targetOrganizationId = normalizeId(body.organizationId);
+      if (!targetOrganizationId) throw new Error('ORGANIZATION_REQUIRED');
+      const user = await findUserById(env, current.sub);
+      const authorization = await resolveAuthorizationForUser(env, user, targetOrganizationId);
+      const next = await createSession(env, request, user, authorization);
+      await revokeSession(env, current.sid);
+      await writeAuthAudit(env, { requestId, actor: next.claims, action: 'switch_organization' });
+      return authJson({
+        ok: true,
+        token: next.token,
+        exp: next.claims.exp,
+        account: {
+          id: next.claims.sub,
+          email: next.claims.email,
+          role: next.claims.role,
+          organizationId: next.claims.organizationId,
+          organization: authorization.organization,
+          projectIds: next.claims.projectIds,
+          clientIds: next.claims.clientIds,
+        },
+        requestId,
+      });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  return null;
+}
+)) {
     try {
       const upgraded = await hashPassword(password);
       await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(upgraded, user.id).run();
