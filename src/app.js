@@ -1369,12 +1369,35 @@ window.FT.createEmployee = async function(e) {
   } catch (error) { showToast(error.message, 'error'); }
 };
 
-window.FT.deleteEmployee = function(id) {
+window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  if (!confirm('Hapus karyawan ini?')) return;
-  const result = deleteEmployee(id);
-  showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
-  render();
+  const current = getEmployees().find(row => row.id === id);
+  if (!current) return;
+  if (!confirm('Nonaktifkan karyawan ini? Login cloud aktif akan dicabut.')) return;
+  try {
+    const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
+    const projectId = assignment?.projectId || getActor()?.projectId || '';
+    if (!projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
+    await window.BulkEmployees.updateSingleEmployee({
+      employeeCode: current.employeeCode || current.code || id,
+      name: current.name,
+      email: current.email,
+      phone: current.phone,
+      role: current.role,
+      area: current.area,
+      position: current.position || current.role,
+      projectId,
+      status: 'inactive',
+      salesTargetAmount: current.salesTargetAmount || 0,
+      attendancePointId: current.attendancePointId || '',
+      photo: current.photo || '',
+      joinDate: current.joinDate || '',
+    });
+    showToast('Karyawan dinonaktifkan dan sesi login cloud dicabut', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || error, 'error');
+  }
 };
 
 // ===== Employee Detail =====
