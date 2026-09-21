@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS core_bulk_import_chunks (
   status TEXT NOT NULL DEFAULT 'completed'
     CHECK(status IN ('completed','failed')),
   row_count INTEGER NOT NULL DEFAULT 0 CHECK(row_count >= 0),
+  login_created_json TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (import_id, chunk_id),
   FOREIGN KEY (import_id, organization_id) REFERENCES core_bulk_import_runs(id, organization_id) ON DELETE CASCADE
