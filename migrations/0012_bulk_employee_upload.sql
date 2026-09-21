@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS core_bulk_import_runs (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TEXT,
+  UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (actor_user_id) REFERENCES auth_users(id) ON DELETE RESTRICT
 );
@@ -37,8 +38,7 @@ CREATE TABLE IF NOT EXISTS core_bulk_import_chunks (
   row_count INTEGER NOT NULL DEFAULT 0 CHECK(row_count >= 0),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (import_id, chunk_id),
-  FOREIGN KEY (import_id) REFERENCES core_bulk_import_runs(id) ON DELETE CASCADE,
-  FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE RESTRICT
+  FOREIGN KEY (import_id, organization_id) REFERENCES core_bulk_import_runs(id, organization_id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_bulk_import_chunks_org
