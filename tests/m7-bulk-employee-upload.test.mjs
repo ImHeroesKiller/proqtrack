@@ -33,7 +33,9 @@ test('bulk server normalizes field roles statuses and login intent safely', () =
   assert.equal(row.rowNumber, 7);
   assert.equal(row.employeeCode, 'EMP-7');
   assert.equal(row.role, 'employee');
-  assert.equal(row.createLogin, true);\n  assert.equal(bulkServer.validInitialPassword('Abcdefghijk7!XYZ'), true);\n  assert.equal(bulkServer.validInitialPassword('too-short'), false);
+  assert.equal(row.createLogin, true);
+  assert.equal(bulkServer.validInitialPassword('Abcdefghijk7!XYZ'), true);
+  assert.equal(bulkServer.validInitialPassword('too-short'), false);
 });
 
 test('bulk upload is first-class server route and employee UI exposes it', async () => {
