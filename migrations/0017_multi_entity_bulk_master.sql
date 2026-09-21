@@ -86,6 +86,19 @@ CREATE TABLE IF NOT EXISTS core_competitor_intel (
 CREATE INDEX IF NOT EXISTS idx_core_competitor_intel_scope
   ON core_competitor_intel(organization_id, project_id, recorded_at);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_core_sync_state_org_revision
+  ON core_sync_state(organization_id, revision);
+
+CREATE TABLE IF NOT EXISTS core_bulk_revision_guards (
+  organization_id TEXT NOT NULL,
+  guard_id TEXT NOT NULL,
+  expected_revision INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (organization_id, guard_id),
+  FOREIGN KEY (organization_id, expected_revision)
+    REFERENCES core_sync_state(organization_id, revision) ON UPDATE RESTRICT ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS core_bulk_master_runs (
   id TEXT PRIMARY KEY,
   organization_id TEXT NOT NULL,
