@@ -746,6 +746,12 @@ export function getAccounts() {
   if (actor.role === 'head') {
     return all.filter(a => a.organizationId === actor.organizationId && a.role !== 'superadmin');
   }
+  if (actor.role === 'admin') {
+    return all.filter(a =>
+      a.organizationId === actor.organizationId
+      && (a.id === actor.id || ['manager','supervisor','employee'].includes(a.role))
+    );
+  }
   if (actor.role === 'manager') {
     const ids = visibleEmployeeIds(actor);
     return all.filter(a =>
