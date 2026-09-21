@@ -27,7 +27,7 @@ export function classifyRoute(pathname = '') {
   if (pathname.startsWith('/api/auth/')) return 'auth';
   if (pathname.startsWith('/api/core/')) return 'core';
   if (pathname.startsWith('/api/admin/')) return 'admin';
-  if (pathname.startsWith('/api/bulk/employees')) return 'bulk';
+  if (pathname.startsWith('/api/bulk/')) return 'bulk';
   if (pathname.startsWith('/api/evidence')) return 'evidence';
   if (pathname.startsWith('/api/reports') || pathname.startsWith('/api/report-schedules')) return 'reporting';
   if (pathname.startsWith('/api/workflows') || pathname.startsWith('/api/notifications')) return 'workflow';
@@ -187,6 +187,7 @@ export async function healthResponse(env, requestId) {
   let schemaReady = false;
   let reportingSchemaReady = false;
   let uatSchemaReady = false;
+  let bulkMasterSchemaReady = false;
   try {
     const probe = await env.DB.prepare('SELECT 1 AS ok').first();
     dbOk = probe?.ok === 1;
@@ -217,6 +218,15 @@ export async function healthResponse(env, requestId) {
     const orgColumns = await env.DB.prepare(`PRAGMA table_info(core_organizations)`).all();
     const orgColumnNames = new Set((orgColumns?.results || []).map(row => String(row.name)));
     uatSchemaReady = Number(uatSchema?.count || 0) === 1 && orgColumnNames.has('metadata_json');
+    const bulkMasterSchema = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM sqlite_master
+      WHERE type='table' AND name IN (
+        'core_competitors','core_competitor_products','core_competitor_intel',
+        'core_bulk_master_runs','core_bulk_master_chunks'
+      )
+    `).first();
+    bulkMasterSchemaReady = Number(bulkMasterSchema?.count || 0) === 5;
   } catch (error) {
     console.error('health_probe_failed', { requestId, error: error?.message || String(error) });
   }
@@ -224,13 +234,13 @@ export async function healthResponse(env, requestId) {
   const milestone = String(env.APP_MILESTONE || defaultMilestone);
   const needsM6 = ['M6', 'M7'].includes(milestone.toUpperCase());
   const needsM7 = milestone.toUpperCase() === 'M7';
-  const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady) && (!needsM7 || uatSchemaReady);
+  const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady) && (!needsM7 || uatSchemaReady) && bulkMasterSchemaReady;
   return json({
     ok,
     service: 'ProQTrack',
     environment: env.ENVIRONMENT || 'unknown',
     milestone,
-    dependencies: { d1: dbOk, hardeningSchema: schemaReady, reportingSchema: reportingSchemaReady, uatSchema: uatSchemaReady },
+    dependencies: { d1: dbOk, hardeningSchema: schemaReady, reportingSchema: reportingSchemaReady, uatSchema: uatSchemaReady, bulkMasterSchema: bulkMasterSchemaReady },
     requestId,
   }, ok ? 200 : 503);
 }

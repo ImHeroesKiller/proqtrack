@@ -125,7 +125,7 @@ test('M7 health and PWA require UAT hardening generation', async () => {
   ]);
   assert.match(hardening, /uatSchemaReady/);
   assert.match(hardening, /core_auth_devices/);
-  assert.match(sw, /proqtrack-v11/);
+  assert.match(sw, /proqtrack-v12/);
   assert.match(sw, /\.\/src\/lib\/cloud-accounts\.js/);
   assert.match(workflow, /uatSchema/);
 });
