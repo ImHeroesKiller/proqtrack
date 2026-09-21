@@ -53,7 +53,8 @@ test('bulk upload is first-class server route and employee UI exposes it', async
   assert.match(wrangler, /CORE_BULK_API_ENABLED/);
   assert.match(workflow, /\/api\/bulk\/employees\/preview/);
   assert.match(migration, /core_bulk_import_runs/);
-  assert.match(migration, /core_bulk_import_chunks/);\n  assert.match(main, /API_BULK_RATE_LIMIT_PER_MINUTE/);
+  assert.match(migration, /core_bulk_import_chunks/);
+  assert.match(main, /API_BULK_RATE_LIMIT_PER_MINUTE/);
 });
 
 test('bulk endpoint stores no plaintext credential fields in audit schema', async () => {
