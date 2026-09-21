@@ -143,33 +143,38 @@ function validateRows(rows, ctx, claims) {
 
     let supervisor = null;
     if (row.supervisorEmail) {
+      if (row.email && row.supervisorEmail === row.email) errors.push('SUPERVISOR_CANNOT_BE_SELF');
       supervisor = ctx.userByEmail.get(row.supervisorEmail) || null;
       const membership = supervisor ? ctx.membershipByUser.get(String(supervisor.id)) : null;
+      const projectMembership = supervisor && project
+        ? ctx.projectMembershipByKey.get(`${project.id}:${supervisor.id}`)
+        : null;
       if (!supervisor || supervisor.user_status !== 'active' || membership?.status !== 'active'
-        || !['head','admin','manager','supervisor'].includes(String(membership?.role || ''))) {
+        || String(membership?.role || '') !== 'supervisor') {
         errors.push('SUPERVISOR_NOT_FOUND');
+      } else if (!projectMembership || projectMembership.status !== 'active' || projectMembership.role !== 'supervisor') {
+        errors.push('SUPERVISOR_NOT_ASSIGNED_TO_PROJECT');
       }
     }
 
     const user = row.email ? ctx.userByEmail.get(row.email) || null : null;
+    const userMembership = user ? ctx.membershipByUser.get(String(user.id)) : null;
     if (user && existing?.auth_user_id && String(existing.auth_user_id) !== String(user.id)) {
       errors.push('EMPLOYEE_LOGIN_IDENTITY_MISMATCH');
     }
-    if (user && !existing?.auth_user_id) {
-      const membership = ctx.membershipByUser.get(String(user.id));
-      if (user.global_role === 'superadmin' || ['head','admin','manager'].includes(String(membership?.role || ''))) {
-        errors.push('PRIVILEGED_LOGIN_REQUIRES_ACCOUNT_MANAGEMENT');
-      }
+    if (user && (user.global_role === 'superadmin' || ['head','admin','manager'].includes(String(userMembership?.role || '')))) {
+      errors.push('PRIVILEGED_LOGIN_REQUIRES_ACCOUNT_MANAGEMENT');
     }
     let loginAction = 'none';
     if (row.createLogin) {
       if (user?.user_status && user.user_status !== 'active') errors.push('LOGIN_USER_DISABLED');
       else if (!user) loginAction = 'create';
       else {
-        const membership = ctx.membershipByUser.get(String(user.id));
-        loginAction = membership?.status === 'active' ? 'existing' : 'link';
-        if (membership?.status === 'active' && membership.role !== row.role) {
-          warnings.push(`LOGIN_ROLE_PRESERVED_${String(membership.role).toUpperCase()}`);
+        loginAction = userMembership?.status === 'active' ? 'existing' : 'link';
+        if (userMembership?.status === 'active' && userMembership.role === 'supervisor' && row.role === 'employee') {
+          errors.push('LOGIN_ROLE_DOWNGRADE_REQUIRES_ACCOUNT_MANAGEMENT');
+        } else if (userMembership?.status === 'active' && userMembership.role === 'employee' && row.role === 'supervisor') {
+          warnings.push('LOGIN_ROLE_WILL_UPGRADE_SUPERVISOR');
         }
       }
     } else if (existing?.auth_user_id) {
