@@ -524,17 +524,35 @@ async function commit(request,env,claims,entity,requestId){
   if(sync?.cutover_mode!=='cloud') return json({error:'CUTOVER_REQUIRED'},409);
   const currentRevision=Number(sync.revision||0), nextRevision=currentRevision+1;
   const mutationId=`bulk-master:${importId}:${chunkId}`;
+  const guardId=`guard:${importId}:${chunkId}`;
+  statements.unshift(env.DB.prepare(`
+    INSERT INTO core_bulk_revision_guards(organization_id,guard_id,expected_revision,created_at)
+    VALUES(?,?,?,CURRENT_TIMESTAMP)
+  `).bind(claims.organizationId,guardId,currentRevision));
   statements.push(env.DB.prepare(`
     INSERT OR IGNORE INTO core_sync_mutations(
       organization_id,mutation_id,actor_user_id,base_revision,applied_revision,change_count,created_at
     ) VALUES(?,?,?,?,?,?,CURRENT_TIMESTAMP)
   `).bind(claims.organizationId,mutationId,claims.sub,currentRevision,nextRevision,validated.length));
+  statements.push(env.DB.prepare(
+    'DELETE FROM core_bulk_revision_guards WHERE organization_id=? AND guard_id=?'
+  ).bind(claims.organizationId,guardId));
   statements.push(env.DB.prepare(`
     UPDATE core_sync_state SET revision=?,last_mutation_id=?,updated_at=CURRENT_TIMESTAMP
     WHERE organization_id=? AND revision=?
   `).bind(nextRevision,mutationId,claims.organizationId,currentRevision));
 
-  await env.DB.batch(statements);
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    const latest=await env.DB.prepare(
+      'SELECT revision FROM core_sync_state WHERE organization_id=? LIMIT 1'
+    ).bind(claims.organizationId).first().catch(()=>null);
+    if(Number(latest?.revision) !== currentRevision){
+      return json({error:'REVISION_CONFLICT',revision:Number(latest?.revision||0),requestId},409);
+    }
+    throw error;
+  }
   return json({ok:true,entity,importId,chunkId,revision:nextRevision,summary:{inserted,updated}},201);
 }
 
