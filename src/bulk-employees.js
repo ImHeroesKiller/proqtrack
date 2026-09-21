@@ -344,6 +344,44 @@ export async function createSingleEmployee(input = {}) {
   return data;
 }
 
+export async function updateSingleEmployee(input = {}) {
+  const row = {
+    _row_number: 2,
+    employee_code: input.employeeCode,
+    full_name: input.name,
+    email: input.email,
+    phone: input.phone,
+    role: input.role || 'Field Sales',
+    area: input.area || '',
+    position: input.position || input.role || 'Field Sales',
+    project_code: input.projectId,
+    supervisor_email: input.supervisorEmail || '',
+    status: input.status || 'active',
+    create_login: 'TIDAK',
+    salesTargetAmount: Number(input.salesTargetAmount || 0),
+    attendancePointId: input.attendancePointId || '',
+    photo: input.photo || '',
+    joinDate: input.joinDate || '',
+  };
+  const preview = await apiJson('/api/bulk/employees/preview', { rows:[row] });
+  const checked = preview.rows?.[0];
+  if (!checked?.valid) {
+    const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
+    error.code = checked?.errors?.[0] || 'VALIDATION_FAILED';
+    error.payload = preview;
+    throw error;
+  }
+  const data = await apiJson('/api/bulk/employees/commit', {
+    importId: `SINGLE-UPDATE-${crypto.randomUUID()}`,
+    chunkId: '1',
+    finalChunk: true,
+    sourceName: 'single-employee-edit',
+    rows:[row],
+  }, { retries:2 });
+  await refreshFromCloud();
+  return data;
+}
+
 export function downloadTemplate() {
   download('ProQTrack_Bulk_Employee_Template.csv', templateCsv());
 }
@@ -432,7 +470,7 @@ function installStyles() {
 
 if (typeof window !== 'undefined') {
   installStyles();
-  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials, createSingleEmployee };
+  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials, createSingleEmployee, updateSingleEmployee };
 }
 
 export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword, duplicateErrors };
