@@ -1,4 +1,4 @@
-import { authHeaders, getApiToken, issueUploadSession, revokeApiSession } from './uploads.js';
+import { authHeaders, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
@@ -314,6 +314,19 @@ export function resetCloudDataBridge() {
   clearTimeout(timer);
   timer = null;
   emitStatus('reset');
+}
+
+export async function switchCloudOrganization(localDb, organizationId) {
+  const target = String(organizationId || '').trim();
+  if (!target) throw new Error('ORGANIZATION_REQUIRED');
+  const switched = await switchApiOrganization(target);
+  resetCloudDataBridge();
+  const session = await apiJson('/api/auth/session');
+  const bootstrap = await bootstrapOperationalData(localDb, session);
+  if (bootstrap.mode !== 'cloud' || !bootstrap.data) throw new Error('ORGANIZATION_NOT_CUT_OVER');
+  applyRemoteDataToLocal(localDb, bootstrap.data);
+  const account = ensureCloudIdentity(localDb, session, null, '');
+  return { account: account || switched, session, bootstrap };
 }
 
 export async function logoutCloudSession() {
