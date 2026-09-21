@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseDelimited, normalizeRows, detectDelimiter, templateCsv } from '../src/lib/bulk-upload.js';
+import { __test as bulkClient } from '../src/bulk-employees.js';
 import { __test as bulkServer } from '../worker/bulk-employees.js';
 import { readFile } from 'node:fs/promises';
 
@@ -38,6 +39,18 @@ test('bulk server normalizes field roles statuses and login intent safely', () =
   assert.equal(bulkServer.validInitialPassword('too-short'), false);
 });
 
+test('bulk client detects duplicates across preview chunk boundaries', () => {
+  const rows = [
+    { _row_number: 2, employee_code: 'EMP-1', email: 'one@example.com' },
+    { _row_number: 102, employee_code: 'emp-1', email: 'two@example.com' },
+    { _row_number: 202, employee_code: 'EMP-3', email: 'ONE@example.com' },
+  ];
+  const errors = bulkClient.duplicateErrors(rows);
+  assert.match(errors.get(2).join(','), /DUPLICATE_EMPLOYEE_CODE_ROW_102/);
+  assert.match(errors.get(102).join(','), /DUPLICATE_EMPLOYEE_CODE_ROW_2/);
+  assert.match(errors.get(202).join(','), /DUPLICATE_EMAIL_ROW_2/);
+});
+
 test('bulk upload is first-class server route and employee UI exposes it', async () => {
   const [main, hardening, app, wrangler, workflow, migration] = await Promise.all([
     read('worker/main.js'),
@@ -56,6 +69,7 @@ test('bulk upload is first-class server route and employee UI exposes it', async
   assert.match(workflow, /\/api\/bulk\/employees\/preview/);
   assert.match(migration, /core_bulk_import_runs/);
   assert.match(migration, /core_bulk_import_chunks/);
+  assert.match(migration, /login_created_json/);
   assert.match(main, /API_BULK_RATE_LIMIT_PER_MINUTE/);
 });
 
