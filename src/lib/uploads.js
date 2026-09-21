@@ -3,9 +3,9 @@ const TOKEN_KEY = 'proqtrack_api_token_v1';
 const TOKEN_META = 'proqtrack_api_token_meta_v1';
 let tokenGeneration = 0;
 
-async function deviceProofFor(device, email) {
+async function deviceProofFor(device) {
   if (!device?.id || !device?.secret) return '';
-  const raw = `${device.secret}|${String(email || '').toLowerCase()}|proqtrack.cloud.device.v1`;
+  const raw = `${device.secret}|${device.id}|proqtrack.cloud.device.v1`;
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -64,7 +64,7 @@ export async function issueUploadSession(account, credentials = {}) {
   if (!email || !password) return null;
 
   const device = credentials.device || getDeviceIdentity();
-  const deviceProof = await deviceProofFor(device, email);
+  const deviceProof = await deviceProofFor(device);
 
   let res;
   try {
