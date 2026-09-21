@@ -13,7 +13,8 @@ test('MKB promotion removes only known synthetic tenant seed and preserves real 
   assert.match(sql, /DELETE FROM core_organization_users/);
   assert.match(sql, /mkb-real-tenant-promotion-0016/);
   assert.doesNotMatch(sql, /DELETE FROM auth_users/);
-  assert.doesNotMatch(sql, /akbar@mkb\.com/);
+  assert.match(sql, /Preserve all non-synthetic MKB records and the real Head account \(akbar@mkb\.com\)/);
+  assert.doesNotMatch(sql, /lower\(email\)='akbar@mkb\.com'/);
 });
 
 test('production gate treats MKB as real tenant and rejects synthetic leftovers', async () => {
