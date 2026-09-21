@@ -2095,8 +2095,12 @@ export function updateCompetitor(id, data) {
 export function deleteCompetitor(id) {
   assertProjectAdmin();
   const db = getDB();
+  const productIds = new Set((db.competitorProducts || []).filter(p => p.competitorId === id).map(p => p.id));
   db.competitors = db.competitors.filter(c => c.id !== id);
   db.competitorProducts = (db.competitorProducts || []).filter(p => p.competitorId !== id);
+  db.competitorIntel = (db.competitorIntel || []).filter(row =>
+    row.competitorId !== id && !productIds.has(row.competitorProductId)
+  );
   saveDB();
 }
 
