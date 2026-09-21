@@ -532,7 +532,7 @@ function employee() {
 function role() {
   const a = account(),
     e = employee();
-  if (a?.role === "superadmin" || a?.role === "head") return "manager";
+  if (a?.role === "superadmin" || a?.role === "head" || a?.role === "admin") return "manager";
   if (a?.role === "manager") return "project-manager";
   if (
     a?.role === "supervisor" ||
@@ -730,7 +730,7 @@ function renderProjects(readOnly = false) {
             x.status === "active" && rows.some((p) => p.id === x.projectId),
         ).length,
       ],
-    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" onclick="BulkMaster.open('projects')">Bulk Upload</button><button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `${role() === "manager" ? `<button class="btn btn-secondary" onclick="BulkMaster.open('projects')">Bulk Upload</button>` : ""}<button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
       .map((p) => {
         const c = cm[p.clientId] || {},
           ass = (db.projectAssignments || []).filter(
