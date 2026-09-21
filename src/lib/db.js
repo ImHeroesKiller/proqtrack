@@ -866,6 +866,16 @@ function assertSalesDevice(db, acc, device) {
   if (!acc.deviceBinding) acc.deviceBinding = binding;
 }
 
+export function pairCloudAuthenticatedSalesDevice(accountId, device) {
+  const db = getDB();
+  const acc = (db.accounts || []).find(row => row.id === accountId);
+  if (!acc) throw new Error('Akun cloud lokal tidak ditemukan.');
+  if (acc.role !== 'employee') return publicAccount(acc);
+  assertSalesDevice(db, acc, device);
+  saveDB();
+  return publicAccount(acc);
+}
+
 export function resetSalesDevice(accountId) {
   const actor = assertProjectAdmin();
   const db = getDB();
@@ -896,7 +906,7 @@ export function authenticate(email, password, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
+    if (!['superadmin', 'head', 'admin', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
@@ -921,7 +931,7 @@ export function resumeSession(accountId, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
+    if (!['superadmin', 'head', 'admin', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
