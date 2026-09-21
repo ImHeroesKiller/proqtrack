@@ -147,7 +147,7 @@ function normalize(entity, input = {}, index = 0) {
 
 async function context(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,users,competitors,outlets,products,assignments] = await Promise.all([
+  const [clients,projects,employees,users,competitors,competitorProducts,outlets,products,assignments] = await Promise.all([
     allRows(env.DB.prepare('SELECT id,code,name,status,metadata_json FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,client_id,code,name,status,metadata_json FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,employee_code,full_name,email,auth_user_id,employment_status,metadata_json FROM core_employees WHERE organization_id=?').bind(org)),
@@ -157,6 +157,7 @@ async function context(env, claims) {
       LEFT JOIN core_organization_users ou ON ou.user_id=u.id AND ou.organization_id=?
     `).bind(org)),
     allRows(env.DB.prepare('SELECT id,code,name,status,metadata_json FROM core_competitors WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT id,competitor_id,sku,name,status,metadata_json FROM core_competitor_products WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,client_id,code,name,status,metadata_json FROM core_outlets WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,client_id,sku,name,status,metadata_json FROM core_products WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,project_id,employee_id,status,metadata_json FROM core_employee_project_assignments WHERE organization_id=?').bind(org)),
@@ -172,11 +173,12 @@ async function context(env, claims) {
   const userByEmail=new Map(users.map(row=>[lower(row.email),row]));
   const outletByKey=new Map(outlets.map(row=>[`${row.client_id}:${lower(row.code)}`,row]));
   const productByKey=new Map(products.map(row=>[`${row.client_id}:${lower(row.sku)}`,row]));
+  const competitorProductByKey=new Map(competitorProducts.map(row=>[`${row.competitor_id}:${lower(row.sku)}`,row]));
   const assignmentByKey=new Map(assignments.map(row=>[`${row.project_id}:${row.employee_id}`,row]));
   return {
     org,clients,projects,employees,competitors,
     clientByRef,projectByRef,competitorByRef,employeeByRef,userByEmail,
-    outletByKey,productByKey,assignmentByKey,
+    outletByKey,productByKey,competitorProductByKey,assignmentByKey,
     allowedProjects:new Set((claims.projectIds || []).map(String)),
   };
 }
@@ -254,8 +256,11 @@ function validateRow(entity, row, ctx, claims) {
     if(!row.status) errors.push('STATUS_INVALID');
     if(row.typicalPrice!=null && row.typicalPrice<0) errors.push('PRICE_INVALID');
     const competitor=ctx.competitorByRef.get(lower(row.competitorCode));
-    if(!competitor) errors.push('COMPETITOR_NOT_FOUND'); else resolved.competitor=competitor;
-    // Existing product lookup is deferred to commit query to keep preview context lightweight.
+    if(!competitor) errors.push('COMPETITOR_NOT_FOUND');
+    else {
+      resolved.competitor=competitor;
+      existing=ctx.competitorProductByKey.get(`${competitor.id}:${lower(row.sku)}`) || null;
+    }
   }
 
   if(entity==='projectAssignments'){
@@ -318,13 +323,6 @@ async function preview(request,env,claims,entity){
   return json({ok:true,entity,rows:validated.map(publicPreview),summary:summary(validated)});
 }
 
-async function findCompetitorProduct(env,org,competitorId,sku){
-  return env.DB.prepare(`
-    SELECT id FROM core_competitor_products
-    WHERE organization_id=? AND competitor_id=? AND lower(sku)=lower(?) LIMIT 1
-  `).bind(org,competitorId,sku).first();
-}
-
 function auditMetadata(entity,row,importId){
   const base={ bulkImportId:importId, bulkImportedAt:new Date().toISOString() };
   if(entity==='clients') return { ...base,legalName:row.legalName,industry:row.industry,picName:row.picName,picRole:row.picRole,picPhone:row.picPhone,picEmail:row.picEmail,address:row.address,city:row.city,province:row.province,website:row.website,cooperationStart:row.cooperationStart,cooperationEnd:row.cooperationEnd,notes:row.notes };
@@ -370,13 +368,7 @@ async function commit(request,env,claims,entity,requestId){
   const totals=summary(validated);
   if(totals.errors) return json({error:'BULK_VALIDATION_FAILED',entity,rows:validated.map(publicPreview),summary:totals},422);
 
-  // Resolve competitor-product existing rows after validation.
-  if(entity==='competitorProducts'){
-    for(const row of validated){
-      const existing=await findCompetitorProduct(env,claims.organizationId,row.resolved.competitor.id,row.sku);
-      if(existing){ row.existingId=existing.id; row.action='update'; if(!row.warnings.includes('WILL_UPDATE')) row.warnings.push('WILL_UPDATE'); }
-    }
-  }
+
 
   const statements=[];
   let inserted=0,updated=0;
