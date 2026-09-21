@@ -20,6 +20,7 @@ import { runProductionMaintenance } from './maintenance.js';
 import { handleReportRoute, enqueueDueReportSchedules, processReportQueue } from './reports.js';
 import { handleWorkflowRoute } from './workflows.js';
 import { handleAnalyticsRoute } from './analytics.js';
+import { handleBulkEmployeeRoute } from './bulk-employees.js';
 
 const requestId = request => request.headers.get('cf-ray') || crypto.randomUUID();
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
@@ -51,6 +52,7 @@ async function forwardWithAuthoritativeClaims(request, env, claims) {
 }
 
 function apiScopeFor(url) {
+  if (url.pathname.startsWith('/api/bulk/employees')) return 'bulk';
   if (url.pathname.startsWith('/api/evidence')) return 'evidence';
   if (url.pathname.startsWith('/api/reports') || url.pathname.startsWith('/api/report-schedules')) return 'reporting';
   if (url.pathname.startsWith('/api/workflows')) return 'workflow';
@@ -58,6 +60,9 @@ function apiScopeFor(url) {
 }
 
 function apiLimitFor(url, request, env) {
+  if (url.pathname.startsWith('/api/bulk/employees') && request.method === 'POST') {
+    return Number(env.API_BULK_RATE_LIMIT_PER_MINUTE || 60);
+  }
   if (url.pathname.startsWith('/api/evidence') && request.method === 'POST') {
     return Number(env.API_EVIDENCE_RATE_LIMIT_PER_MINUTE || 30);
   }
@@ -193,6 +198,10 @@ export default {
 
         if (!response && (url.pathname.startsWith('/api/analytics/') || url.pathname.startsWith('/api/query/'))) {
           response = await handleAnalyticsRoute(request, env, claims, url, id);
+        }
+
+        if (!response && url.pathname.startsWith('/api/bulk/employees')) {
+          response = await handleBulkEmployeeRoute(request, env, claims, url, id);
         }
 
         if (!response && url.pathname === '/api/core/sync' && request.method === 'POST') {
