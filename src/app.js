@@ -103,13 +103,14 @@ function canViewTeamOps() {
 function displayRole(account) {
   if (account?.role === 'superadmin') return 'Superadmin';
   if (account?.role === 'head') return 'Head';
+  if (account?.role === 'admin') return 'Admin';
   if (account?.role === 'manager') return 'Manager';
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 }
 
 function defaultRouteFor(account) {
-  if (['superadmin', 'head', 'manager', 'supervisor'].includes(account?.role)) return '#/';
+  if (['superadmin', 'head', 'admin', 'manager', 'supervisor'].includes(account?.role)) return '#/';
   return '#/myday';
 }
 
