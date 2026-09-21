@@ -1,11 +1,16 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
-  createAccount, updateAccount, changePassword, updateOwnProfile, resetSalesDevice,
+  updateOwnProfile,
   getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
   getAttendancePolicy, getAttendancePoints, createAttendancePoint,
   isTestDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, isSuperadminHostDevice } from './lib/device.js';
+import { getApiToken } from './lib/uploads.js';
+import {
+  syncCloudAccounts, createCloudAccount, updateCloudAccount,
+  resetCloudAccountDevice, changeCloudPassword, updateCloudProfile,
+} from './lib/cloud-accounts.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -18,7 +23,7 @@ function toast(msg, type = 'success') {
 }
 
 function roleLabel(role) {
-  return { superadmin: 'Superadmin', head: 'Head', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
+  return { superadmin: 'Superadmin', head: 'Head', admin: 'Admin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
 
 function statusLabel(status) {
@@ -130,7 +135,7 @@ export function renderSettings() {
   if (!acc) return '<div class="card"><p>Sesi tidak ditemukan. Silakan masuk ulang.</p></div>';
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
-  const isOrgAdmin = acc.role === 'head' || acc.role === 'superadmin';
+  const isOrgAdmin = ['head','admin','superadmin'].includes(acc.role);
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
@@ -271,10 +276,31 @@ export function renderSettings() {
   `;
 }
 
+let accountSyncInFlight = false;
+let accountSyncedOrg = '';
+
+function scheduleAccountRefresh(acc) {
+  const orgId = String(acc?.organizationId || getDB().currentOrganizationId || '');
+  if (!getApiToken() || !orgId || accountSyncInFlight || accountSyncedOrg === orgId) return;
+  accountSyncInFlight = true;
+  queueMicrotask(async () => {
+    try {
+      await syncCloudAccounts();
+      accountSyncedOrg = orgId;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(`Sinkronisasi akun gagal: ${error.message || error}`, 'error');
+    } finally {
+      accountSyncInFlight = false;
+    }
+  });
+}
+
 export function renderAccounts() {
   const acc = account();
-  if (acc?.role !== 'head' && acc?.role !== 'superadmin') {
-    return '<div class="card"><p>Only Superadmin and Head can manage organization accounts.</p></div>';
+  scheduleAccountRefresh(acc);
+  if (!['head','admin','superadmin'].includes(acc?.role)) {
+    return '<div class="card"><p>Only Superadmin, Head, and Admin can manage organization accounts.</p></div>';
   }
   const q = (window.FT.state._accountQuery || '').toLowerCase();
   const roleFilter = window.FT.state._accountRole || '';
@@ -292,7 +318,7 @@ export function renderAccounts() {
         <select class="select" style="width:auto" onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
           <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
-          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
+          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>\n          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
         </select>
@@ -312,7 +338,7 @@ export function renderAccounts() {
             ${rows.length ? rows.map(a => {
               const emp = employees.find(e => e.id === a.employeeId);
               const device = a.role === 'employee'
-                ? (a.deviceId ? `${esc(a.deviceId || 'Device')}<div class="am-muted">${esc(a.deviceLabel || 'Browser')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
+                ? ((a.deviceBound || a.deviceId) ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
                 : '—';
               return `<tr>
                 <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
@@ -322,7 +348,7 @@ export function renderAccounts() {
                 <td>${device}</td>
                 <td>
                   <button class="btn btn-secondary btn-sm" onclick="AM.openAccount('${a.id}')">Edit</button>
-                  ${a.role === 'employee' && a.deviceId ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
+                  ${a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
                   ${a.status === 'active'
                     ? `<button class="btn btn-danger btn-sm" onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
                     : `<button class="btn btn-secondary btn-sm" onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
@@ -348,7 +374,7 @@ function accountForm(existing) {
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
           <select class="select" name="role">
-            ${(account()?.role === 'superadmin' ? ['superadmin', 'head', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+            ${(account()?.role === 'superadmin' ? ['head', 'admin', 'manager', 'supervisor', 'employee'] : account()?.role === 'head' ? ['admin', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="label">Status</label>
@@ -375,7 +401,7 @@ function accountForm(existing) {
       ${existing?.role === 'employee' ? `
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
-        ${existing.deviceId ? `<div class="am-muted">Device ${esc(existing.deviceId || '—')} · ${esc(existing.deviceLabel || '—')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}<br>${esc((existing.deviceUserAgent || '').slice(0, 120))}</div>
+        ${(existing.deviceBound || existing.deviceId) ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
         <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
       </div>` : ''}
       <div class="modal-footer">
@@ -396,33 +422,30 @@ window.AM = {
     window.FT.state._settingsTab = id;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
-  saveProfile(event) {
+  async saveProfile(event) {
     try {
       const data = formData(event);
+      await updateCloudProfile({ email: data.email, name: data.name });
       const next = updateOwnProfile(account().id, data);
       const fresh = getAccounts().find(a => a.id === next.id) || next;
       window.FT.state.account = fresh;
       window.FT.state.user = { name: fresh.name, role: window.FT.state.user.role, email: fresh.email };
-      toast('Profil disimpan');
+      toast('Profil tersimpan di cloud');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
     }
   },
-  savePassword(event) {
+  async savePassword(event) {
     try {
       const data = formData(event);
       if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
-      changePassword(account().id, data.currentPassword, data.nextPassword);
+      await changeCloudPassword(data.currentPassword, data.nextPassword);
       const next = getAccounts().find(a => a.id === account().id);
-      if (next && window.FT?.state) {
-        window.FT.state.account = next;
-      }
-      toast('Password diperbarui');
+      if (next && window.FT?.state) window.FT.state.account = next;
+      toast('Password cloud diperbarui');
       event.target.reset();
-      if (location.hash === '#/settings') {
-        window.dispatchEvent(new HashChangeEvent('hashchange'));
-      }
+      if (location.hash === '#/settings') window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
     }
@@ -544,34 +567,48 @@ window.AM = {
     if (!root) return;
     root.innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
   },
-  saveAccount(event, id) {
+  async refreshAccounts() {
+    if (accountSyncInFlight) return;
+    accountSyncInFlight = true;
+    try {
+      await syncCloudAccounts();
+      accountSyncedOrg = String(account()?.organizationId || getDB().currentOrganizationId || '');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error.message || error, 'error');
+    } finally {
+      accountSyncInFlight = false;
+    }
+  },
+  async saveAccount(event, id) {
     try {
       const data = formData(event);
       if (!data.password) delete data.password;
-      if (id) updateAccount(id, data);
-      else createAccount(data);
+      if (id) await updateCloudAccount(id, data);
+      else await createCloudAccount(data);
       window.FT.closeModal?.();
-      toast(id ? 'Akun diperbarui' : 'Akun dibuat');
+      accountSyncedOrg = '';
+      toast(id ? 'Akun cloud diperbarui' : 'Akun cloud dibuat');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
     }
   },
-  resetDevice(id) {
-    if (!confirm('Reset perangkat akun ini? Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+  async resetDevice(id) {
+    if (!confirm('Reset perangkat akun ini? Field Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
     try {
-      resetSalesDevice(id);
+      await resetCloudAccountDevice(id);
       window.FT.closeModal?.();
-      toast('Perangkat direset. Sales dapat pairing perangkat baru saat login.');
+      toast('Binding perangkat server direset. Login berikutnya akan memasangkan perangkat baru.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
     }
   },
-  toggleStatus(id, status) {
+  async toggleStatus(id, status) {
     try {
-      updateAccount(id, { status });
-      toast(status === 'active' ? 'Akun diaktifkan' : 'Akun ditangguhkan');
+      await updateCloudAccount(id, { status });
+      toast(status === 'active' ? 'Akun cloud diaktifkan' : 'Akun cloud ditangguhkan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');

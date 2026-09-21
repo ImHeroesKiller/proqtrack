@@ -233,6 +233,57 @@ async function writeAuthAudit(env, {
   }
 }
 
+async function enforceFieldDevice(env, authorization, user, body = {}) {
+  if (roleOf(authorization?.role) !== 'employee') return null;
+  const organizationId = normalizeId(authorization?.organizationId);
+  const deviceId = normalizeId(body.deviceId);
+  const deviceProof = String(body.deviceProof || '').trim().slice(0, 256);
+  const deviceLabel = String(body.deviceLabel || '').trim().slice(0, 160);
+  if (!organizationId || !deviceId || !deviceProof) throw new Error('DEVICE_REQUIRED');
+
+  const deviceIdHash = await sha256Text(deviceId);
+  const deviceProofHash = await sha256Text(deviceProof);
+  const current = await env.DB.prepare(`
+    SELECT device_id_hash,device_proof_hash,status
+    FROM core_auth_devices
+    WHERE organization_id=? AND user_id=?
+    LIMIT 1
+  `).bind(organizationId, user.id).first();
+
+  if (!current || current.status === 'reset_pending') {
+    await env.DB.prepare(`
+      INSERT INTO core_auth_devices(
+        organization_id,user_id,device_id_hash,device_proof_hash,device_label,status,
+        paired_at,last_seen_at,reset_at,reset_by,updated_at
+      ) VALUES(?,?,?,?,?,'active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,NULL,NULL,CURRENT_TIMESTAMP)
+      ON CONFLICT(organization_id,user_id) DO UPDATE SET
+        device_id_hash=excluded.device_id_hash,
+        device_proof_hash=excluded.device_proof_hash,
+        device_label=excluded.device_label,
+        status='active',
+        paired_at=CURRENT_TIMESTAMP,
+        last_seen_at=CURRENT_TIMESTAMP,
+        reset_at=NULL,
+        reset_by=NULL,
+        updated_at=CURRENT_TIMESTAMP
+    `).bind(organizationId,user.id,deviceIdHash,deviceProofHash,deviceLabel || null).run();
+    return { paired: true };
+  }
+
+  if (current.device_id_hash !== deviceIdHash || current.device_proof_hash !== deviceProofHash) {
+    throw new Error('DEVICE_ACCESS_DENIED');
+  }
+
+  await env.DB.prepare(`
+    UPDATE core_auth_devices
+    SET last_seen_at=CURRENT_TIMESTAMP,
+        device_label=COALESCE(?,device_label),
+        updated_at=CURRENT_TIMESTAMP
+    WHERE organization_id=? AND user_id=? AND status='active'
+  `).bind(deviceLabel || null,organizationId,user.id).run();
+  return { paired: false };
+}
+
 function loginRateAllowed(request, env) {
   const max = Math.max(1, Number(env.API_LOGIN_RATE_LIMIT_PER_MINUTE || 10));
   const key = `${request.headers.get('cf-connecting-ip') || 'anonymous'}:${Math.floor(Date.now() / 60000)}`;
@@ -309,6 +360,13 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
   let authorization;
   try {
     authorization = await resolveAuthorizationForUser(env, user, organizationId);
+  } catch (error) {
+    await writeAuthAudit(env, { requestId, actor: user, action: 'login', outcome: 'denied', detail: error?.message });
+    return authErrorResponse(error, requestId);
+  }
+
+  try {
+    await enforceFieldDevice(env, authorization, user, body);
   } catch (error) {
     await writeAuthAudit(env, { requestId, actor: user, action: 'login', outcome: 'denied', detail: error?.message });
     return authErrorResponse(error, requestId);
@@ -414,7 +472,8 @@ export function authErrorResponse(error, requestId = crypto.randomUUID()) {
   const code = String(error?.message || error || 'AUTH_REQUIRED');
   const status = code === 'SESSION_UNAVAILABLE' ? 503
     : code === 'ORGANIZATION_REQUIRED' ? 409
-      : ['ORGANIZATION_ACCESS_DENIED', 'ORGANIZATION_ACCESS_NOT_CONFIGURED', 'USER_ACCESS_DISABLED'].includes(code) ? 403
+      : ['ORGANIZATION_ACCESS_DENIED', 'ORGANIZATION_ACCESS_NOT_CONFIGURED', 'USER_ACCESS_DISABLED',
+          'DEVICE_REQUIRED', 'DEVICE_ACCESS_DENIED'].includes(code) ? 403
         : 401;
   return authJson({ error: code, requestId }, status, status === 401 ? { 'www-authenticate': 'Bearer' } : {});
 }
@@ -436,6 +495,76 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
     try {
       const claims = await authenticateAuthoritatively(request, env);
       return authJson({ ok: true, ...claims, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/change-password' && request.method === 'POST') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const currentPassword = String(body.currentPassword || '');
+      const nextPassword = String(body.nextPassword || '');
+      if (nextPassword.length < 8) return authJson({ error: 'PASSWORD_TOO_SHORT', requestId }, 400);
+
+      const user = await findUserById(env, claims.sub);
+      if (!user || !await verifyPassword(user.password_hash, currentPassword)) {
+        return authJson({ error: 'INVALID_CURRENT_PASSWORD', requestId }, 403);
+      }
+      if (await verifyPassword(user.password_hash, nextPassword)) {
+        return authJson({ error: 'PASSWORD_UNCHANGED', requestId }, 409);
+      }
+
+      const passwordHash = await hashPassword(nextPassword);
+      await env.DB.batch([
+        env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(passwordHash, claims.sub),
+        env.DB.prepare(`
+          UPDATE core_auth_sessions
+          SET status='revoked', revoked_at=CURRENT_TIMESTAMP
+          WHERE user_id=? AND id<>? AND status='active'
+        `).bind(claims.sub, claims.sid),
+      ]);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'change_password' });
+      return authJson({ ok: true, requestId });
+    } catch (error) {
+      return authErrorResponse(error, requestId);
+    }
+  }
+
+  if (url.pathname === '/api/auth/profile' && request.method === 'PATCH') {
+    try {
+      const claims = await authenticateAuthoritatively(request, env);
+      const body = await request.json().catch(() => ({}));
+      const email = normalizeEmail(body.email || claims.email);
+      const fullName = String(body.name || '').trim().slice(0, 180);
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return authJson({ error: 'EMAIL_INVALID', requestId }, 400);
+      }
+      const conflict = await env.DB.prepare(
+        'SELECT id FROM auth_users WHERE lower(email)=? AND id<>? LIMIT 1',
+      ).bind(email, claims.sub).first();
+      if (conflict) return authJson({ error: 'EMAIL_ALREADY_USED', requestId }, 409);
+
+      const statements = [
+        env.DB.prepare('UPDATE auth_users SET email=? WHERE id=?').bind(email, claims.sub),
+      ];
+      if (claims.organizationId) {
+        statements.push(env.DB.prepare(`
+          UPDATE core_employees
+          SET email=?,
+              full_name=CASE WHEN ?<>'' THEN ? ELSE full_name END,
+              updated_at=CURRENT_TIMESTAMP
+          WHERE organization_id=? AND auth_user_id=?
+        `).bind(email, fullName, fullName, claims.organizationId, claims.sub));
+      }
+      await env.DB.batch(statements);
+      await writeAuthAudit(env, { requestId, actor: claims, action: 'update_profile' });
+      return authJson({
+        ok: true,
+        account: { id: claims.sub, email, name: fullName || null },
+        requestId,
+      });
     } catch (error) {
       return authErrorResponse(error, requestId);
     }

@@ -26,6 +26,7 @@ export function classifyRoute(pathname = '') {
   if (pathname === '/api/health') return 'health';
   if (pathname.startsWith('/api/auth/')) return 'auth';
   if (pathname.startsWith('/api/core/')) return 'core';
+  if (pathname.startsWith('/api/admin/accounts')) return 'admin';
   if (pathname.startsWith('/api/bulk/employees')) return 'bulk';
   if (pathname.startsWith('/api/evidence')) return 'evidence';
   if (pathname.startsWith('/api/reports') || pathname.startsWith('/api/report-schedules')) return 'reporting';
@@ -185,6 +186,7 @@ export async function healthResponse(env, requestId) {
   let dbOk = false;
   let schemaReady = false;
   let reportingSchemaReady = false;
+  let uatSchemaReady = false;
   try {
     const probe = await env.DB.prepare('SELECT 1 AS ok').first();
     dbOk = probe?.ok === 1;
@@ -207,19 +209,26 @@ export async function healthResponse(env, requestId) {
     const names = new Set((reportColumns?.results || []).map(row => String(row.name)));
     reportingSchemaReady = Number(reporting?.count || 0) === 4
       && ['organization_id', 'publication_status', 'lease_expires_at', 'filters_json'].every(name => names.has(name));
+    const uatSchema = await env.DB.prepare(`
+      SELECT COUNT(*) AS count
+      FROM sqlite_master
+      WHERE type='table' AND name='core_auth_devices'
+    `).first();
+    uatSchemaReady = Number(uatSchema?.count || 0) === 1;
   } catch (error) {
     console.error('health_probe_failed', { requestId, error: error?.message || String(error) });
   }
   const defaultMilestone = { milestone: 'M5' }.milestone;
   const milestone = String(env.APP_MILESTONE || defaultMilestone);
   const needsM6 = ['M6', 'M7'].includes(milestone.toUpperCase());
-  const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady);
+  const needsM7 = milestone.toUpperCase() === 'M7';
+  const ok = dbOk && schemaReady && (!needsM6 || reportingSchemaReady) && (!needsM7 || uatSchemaReady);
   return json({
     ok,
     service: 'ProQTrack',
     environment: env.ENVIRONMENT || 'unknown',
     milestone,
-    dependencies: { d1: dbOk, hardeningSchema: schemaReady, reportingSchema: reportingSchemaReady },
+    dependencies: { d1: dbOk, hardeningSchema: schemaReady, reportingSchema: reportingSchemaReady, uatSchema: uatSchemaReady },
     requestId,
   }, ok ? 200 : 503);
 }

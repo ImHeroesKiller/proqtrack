@@ -44,8 +44,16 @@ function normalizeRow(input = {}, index = 0) {
   const supervisorEmail = lower(input.supervisor_email || input.supervisorEmail).slice(0, 180);
   const status = employmentStatus(input.status);
   const createLogin = bool(input.create_login ?? input.createLogin);
+  const salesTargetAmount = Math.max(0, Number(input.sales_target_amount ?? input.salesTargetAmount ?? 0) || 0);
+  const attendancePointId = str(input.attendance_point_id ?? input.attendancePointId, 120);
+  const photo = str(input.photo, 120000);
+  const joinDate = str(input.join_date ?? input.joinDate, 20);
   const rowNumber = Number(input._row_number || input.rowNumber || index + 2);
-  return { rowNumber, employeeCode, fullName, email, phone, role, area, position, projectRef, supervisorEmail, status, createLogin };
+  return {
+    rowNumber, employeeCode, fullName, email, phone, role, area, position,
+    projectRef, supervisorEmail, status, createLogin,
+    salesTargetAmount, attendancePointId, photo, joinDate,
+  };
 }
 
 function validInitialPassword(value) {
@@ -143,33 +151,38 @@ function validateRows(rows, ctx, claims) {
 
     let supervisor = null;
     if (row.supervisorEmail) {
+      if (row.email && row.supervisorEmail === row.email) errors.push('SUPERVISOR_CANNOT_BE_SELF');
       supervisor = ctx.userByEmail.get(row.supervisorEmail) || null;
       const membership = supervisor ? ctx.membershipByUser.get(String(supervisor.id)) : null;
+      const projectMembership = supervisor && project
+        ? ctx.projectMembershipByKey.get(`${project.id}:${supervisor.id}`)
+        : null;
       if (!supervisor || supervisor.user_status !== 'active' || membership?.status !== 'active'
-        || !['head','admin','manager','supervisor'].includes(String(membership?.role || ''))) {
+        || String(membership?.role || '') !== 'supervisor') {
         errors.push('SUPERVISOR_NOT_FOUND');
+      } else if (!projectMembership || projectMembership.status !== 'active' || projectMembership.role !== 'supervisor') {
+        errors.push('SUPERVISOR_NOT_ASSIGNED_TO_PROJECT');
       }
     }
 
     const user = row.email ? ctx.userByEmail.get(row.email) || null : null;
+    const userMembership = user ? ctx.membershipByUser.get(String(user.id)) : null;
     if (user && existing?.auth_user_id && String(existing.auth_user_id) !== String(user.id)) {
       errors.push('EMPLOYEE_LOGIN_IDENTITY_MISMATCH');
     }
-    if (user && !existing?.auth_user_id) {
-      const membership = ctx.membershipByUser.get(String(user.id));
-      if (user.global_role === 'superadmin' || ['head','admin','manager'].includes(String(membership?.role || ''))) {
-        errors.push('PRIVILEGED_LOGIN_REQUIRES_ACCOUNT_MANAGEMENT');
-      }
+    if (user && (user.global_role === 'superadmin' || ['head','admin','manager'].includes(String(userMembership?.role || '')))) {
+      errors.push('PRIVILEGED_LOGIN_REQUIRES_ACCOUNT_MANAGEMENT');
     }
     let loginAction = 'none';
     if (row.createLogin) {
       if (user?.user_status && user.user_status !== 'active') errors.push('LOGIN_USER_DISABLED');
       else if (!user) loginAction = 'create';
       else {
-        const membership = ctx.membershipByUser.get(String(user.id));
-        loginAction = membership?.status === 'active' ? 'existing' : 'link';
-        if (membership?.status === 'active' && membership.role !== row.role) {
-          warnings.push(`LOGIN_ROLE_PRESERVED_${String(membership.role).toUpperCase()}`);
+        loginAction = userMembership?.status === 'active' ? 'existing' : 'link';
+        if (userMembership?.status === 'active' && userMembership.role === 'supervisor' && row.role === 'employee') {
+          errors.push('LOGIN_ROLE_DOWNGRADE_REQUIRES_ACCOUNT_MANAGEMENT');
+        } else if (userMembership?.status === 'active' && userMembership.role === 'employee' && row.role === 'supervisor') {
+          warnings.push('LOGIN_ROLE_WILL_UPGRADE_SUPERVISOR');
         }
       }
     } else if (existing?.auth_user_id) {
@@ -351,6 +364,10 @@ async function commit(request, env, claims, requestId) {
       role: row.role === 'supervisor' ? 'Supervisor' : 'Field Sales',
       area: row.area,
       position: row.position,
+      salesTargetAmount: row.salesTargetAmount,
+      attendancePointId: row.attendancePointId || null,
+      photo: row.photo || '',
+      joinDate: row.joinDate || new Date().toISOString().slice(0,10),
       bulkImportId: importId,
       bulkImportedAt: new Date().toISOString(),
     });
@@ -376,6 +393,24 @@ async function commit(request, env, claims, requestId) {
       empId,claims.organizationId,authUserId,row.employeeCode,row.fullName,
       row.email || null,row.phone || null,row.status,metadata,
     ));
+
+    if (authUserId && row.status !== 'active') {
+      statements.push(env.DB.prepare(`
+        UPDATE core_organization_users
+        SET status='inactive',updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND user_id=? AND status='active'
+      `).bind(claims.organizationId,authUserId));
+      statements.push(env.DB.prepare(`
+        UPDATE core_project_memberships
+        SET status='inactive',updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND user_id=?
+      `).bind(claims.organizationId,authUserId));
+      statements.push(env.DB.prepare(`
+        UPDATE core_auth_sessions
+        SET status='revoked',revoked_at=CURRENT_TIMESTAMP
+        WHERE user_id=? AND status='active'
+      `).bind(authUserId));
+    }
 
     const assignmentKey = `${row.projectId}:${empId}`;
     const existingAssignment = ctx.assignmentByKey.get(assignmentKey);

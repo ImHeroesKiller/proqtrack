@@ -254,6 +254,8 @@ export async function commit() {
   const importId = `BULK-${crypto.randomUUID()}`;
   const groups = chunks(currentRows, COMMIT_CHUNK);
   const totals = { inserted:0, updated:0, loginCreated:0, loginLinked:0 };
+  const previewByRow = new Map(currentPreview.map(row => [Number(row.rowNumber), row]));
+  const credentialKeys = new Set();
   const root = document.getElementById('bulkEmployeePreview');
 
   try {
@@ -269,12 +271,25 @@ export async function commit() {
           return initialPassword ? { ...row, initial_password: initialPassword } : row;
         }),
       }, { retries: 2 });
+      const chunkPreview = groups[i]
+        .map(row => previewByRow.get(Number(row._row_number)))
+        .filter(Boolean);
       if (!data.replayed) {
         totals.inserted += Number(data.summary?.inserted || 0);
         totals.updated += Number(data.summary?.updated || 0);
         totals.loginCreated += Number(data.summary?.loginCreated || 0);
         totals.loginLinked += Number(data.summary?.loginLinked || 0);
-        generatedCredentials.push(...(data.credentials || []));
+      } else {
+        totals.inserted += chunkPreview.filter(row => row.action === 'create').length;
+        totals.updated += chunkPreview.filter(row => row.action === 'update').length;
+        totals.loginCreated += chunkPreview.filter(row => row.loginAction === 'create').length;
+        totals.loginLinked += chunkPreview.filter(row => row.loginAction === 'link').length;
+      }
+      for (const credential of data.credentials || []) {
+        const key = String(credential.email || credential.employeeCode || credential.rowNumber || '');
+        if (!key || credentialKeys.has(key)) continue;
+        credentialKeys.add(key);
+        generatedCredentials.push(credential);
       }
     }
     await refreshFromCloud();
@@ -287,6 +302,84 @@ export async function commit() {
   } finally {
     busy = false;
   }
+}
+
+export async function createSingleEmployee(input = {}) {
+  const password = String(input.password || '');
+  const row = {
+    _row_number: 2,
+    employee_code: input.employeeCode,
+    full_name: input.name,
+    email: input.email,
+    phone: input.phone,
+    role: input.role || 'Field Sales',
+    area: input.area || '',
+    position: input.position || input.role || 'Field Sales',
+    project_code: input.projectId,
+    supervisor_email: input.supervisorEmail || '',
+    status: input.status || 'active',
+    create_login: 'YA',
+    salesTargetAmount: Number(input.salesTargetAmount || 0),
+    attendancePointId: input.attendancePointId || '',
+    photo: input.photo || '',
+    joinDate: input.joinDate || new Date().toISOString().slice(0,10),
+  };
+  const preview = await apiJson('/api/bulk/employees/preview', { rows:[row] });
+  const checked = preview.rows?.[0];
+  if (!checked?.valid) {
+    const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
+    error.code = checked?.errors?.[0] || 'VALIDATION_FAILED';
+    error.payload = preview;
+    throw error;
+  }
+  if (checked.loginAction === 'create' && !password) throw new Error('PASSWORD_REQUIRED');
+  const data = await apiJson('/api/bulk/employees/commit', {
+    importId: `SINGLE-${crypto.randomUUID()}`,
+    chunkId: '1',
+    finalChunk: true,
+    sourceName: 'single-employee-form',
+    rows: [{ ...row, ...(checked.loginAction === 'create' ? { initial_password: password } : {}) }],
+  }, { retries:2 });
+  await refreshFromCloud();
+  return data;
+}
+
+export async function updateSingleEmployee(input = {}) {
+  const row = {
+    _row_number: 2,
+    employee_code: input.employeeCode,
+    full_name: input.name,
+    email: input.email,
+    phone: input.phone,
+    role: input.role || 'Field Sales',
+    area: input.area || '',
+    position: input.position || input.role || 'Field Sales',
+    project_code: input.projectId,
+    supervisor_email: input.supervisorEmail || '',
+    status: input.status || 'active',
+    create_login: 'TIDAK',
+    salesTargetAmount: Number(input.salesTargetAmount || 0),
+    attendancePointId: input.attendancePointId || '',
+    photo: input.photo || '',
+    joinDate: input.joinDate || '',
+  };
+  const preview = await apiJson('/api/bulk/employees/preview', { rows:[row] });
+  const checked = preview.rows?.[0];
+  if (!checked?.valid) {
+    const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
+    error.code = checked?.errors?.[0] || 'VALIDATION_FAILED';
+    error.payload = preview;
+    throw error;
+  }
+  const data = await apiJson('/api/bulk/employees/commit', {
+    importId: `SINGLE-UPDATE-${crypto.randomUUID()}`,
+    chunkId: '1',
+    finalChunk: true,
+    sourceName: 'single-employee-edit',
+    rows:[row],
+  }, { retries:2 });
+  await refreshFromCloud();
+  return data;
 }
 
 export function downloadTemplate() {
@@ -377,7 +470,7 @@ function installStyles() {
 
 if (typeof window !== 'undefined') {
   installStyles();
-  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials };
+  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials, createSingleEmployee, updateSingleEmployee };
 }
 
 export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword, duplicateErrors };

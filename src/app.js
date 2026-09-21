@@ -103,13 +103,14 @@ function canViewTeamOps() {
 function displayRole(account) {
   if (account?.role === 'superadmin') return 'Superadmin';
   if (account?.role === 'head') return 'Head';
+  if (account?.role === 'admin') return 'Admin';
   if (account?.role === 'manager') return 'Manager';
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 }
 
 function defaultRouteFor(account) {
-  if (['superadmin', 'head', 'manager', 'supervisor'].includes(account?.role)) return '#/';
+  if (['superadmin', 'head', 'admin', 'manager', 'supervisor'].includes(account?.role)) return '#/';
   return '#/myday';
 }
 
@@ -1302,15 +1303,34 @@ async function photoFromEmployeeForm(form, fallback = '') {
 }
 
 window.FT.openEmployeeModal = function() {
+  const actor = getActor();
+  let projects = (getDB().projects || []).filter(p => !['completed','cancelled','closed','archived'].includes(p.status));
+  if (actor?.role === 'manager' && actor.projectId) projects = projects.filter(p => p.id === actor.projectId);
   openModal('Tambah Karyawan', `
     <form onsubmit="FT.createEmployee(event)">
       ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
-      <div class="form-group"><label class="label">Nama Lengkap</label><input class="input" name="name" required></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" required></div>
+        <div class="form-group"><label class="label">Kode Karyawan</label><input class="input" name="employeeCode" required placeholder="EMP-001"></div>
+        <div class="form-group"><label class="label">Nama Lengkap</label><input class="input" name="name" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Email Login</label><input class="input" type="email" name="email" required></div>
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" placeholder="08xx-xxxx-xxxx" required></div>
       </div>
-      <div class="form-group"><label class="label">Password Login</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required></div>
+      <div class="form-group">
+        <label class="label">Project</label>
+        <select class="select" name="projectId" required>
+          <option value="">Pilih project</option>
+          ${projects.map(p => `<option value="${esc(p.id)}">${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label class="label">Supervisor email (opsional)</label><input class="input" type="email" name="supervisorEmail" placeholder="supervisor@proqtrack.id"></div>
+      <div class="form-group">
+        <label class="label">Password Login Awal</label>
+        <input class="input" type="password" name="password" minlength="16" autocomplete="new-password"
+          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{16,}" required>
+        <div class="am-muted">Minimal 16 karakter, huruf besar, huruf kecil, angka, dan simbol.</div>
+      </div>
       <div class="form-row">
         <div class="form-group">
           <label class="label">Role</label>
@@ -1324,11 +1344,10 @@ window.FT.openEmployeeModal = function() {
           <option value="">— None —</option>
           ${getAttendancePoints().map(p => `<option value="${p.id}">${esc(p.name)} (${esc(p.type)})</option>`).join('')}
         </select>
-        <div class="am-muted" style="margin-top:4px">Used when Settings → Attendance mode is Specific point.</div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
+        <button type="submit" class="btn btn-primary">Simpan ke Cloud</button>
       </div>
     </form>
   `);
@@ -1345,17 +1364,40 @@ window.FT.createEmployee = async function(e) {
   try {
     data.photo = await photoFromEmployeeForm(form, '');
     delete data.photoFile;
-    createEmployee(data);
-    closeModal(); showToast('Karyawan dan akun login berhasil dibuat', 'success'); render();
+    await window.BulkEmployees.createSingleEmployee(data);
+    closeModal(); showToast('Karyawan, assignment, dan akun login cloud berhasil dibuat', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }
 };
 
-window.FT.deleteEmployee = function(id) {
+window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  if (!confirm('Hapus karyawan ini?')) return;
-  const result = deleteEmployee(id);
-  showToast(result?.deactivated ? 'Karyawan dinonaktifkan karena memiliki riwayat data' : 'Karyawan dihapus', 'success');
-  render();
+  const current = getEmployees().find(row => row.id === id);
+  if (!current) return;
+  if (!confirm('Nonaktifkan karyawan ini? Login cloud aktif akan dicabut.')) return;
+  try {
+    const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
+    const projectId = assignment?.projectId || getActor()?.projectId || '';
+    if (!projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
+    await window.BulkEmployees.updateSingleEmployee({
+      employeeCode: current.employeeCode || current.code || id,
+      name: current.name,
+      email: current.email,
+      phone: current.phone,
+      role: current.role,
+      area: current.area,
+      position: current.position || current.role,
+      projectId,
+      status: 'inactive',
+      salesTargetAmount: current.salesTargetAmount || 0,
+      attendancePointId: current.attendancePointId || '',
+      photo: current.photo || '',
+      joinDate: current.joinDate || '',
+    });
+    showToast('Karyawan dinonaktifkan dan sesi login cloud dicabut', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || error, 'error');
+  }
 };
 
 // ===== Employee Detail =====
@@ -1428,12 +1470,11 @@ window.FT.editEmployee = function(id) {
       ${employeePhotoField(emp.photo || defaultPortrait(emp))}
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(emp.name)}" required></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(emp.email)}" required></div>
+        <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(emp.email)}" readonly><div class="am-muted">Ubah email login dari Manajemen Akun.</div></div>
         <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}" required></div>
       </div>
-      <div class="form-group"><label class="label">Password Baru</label><input class="input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Kosongkan jika tidak diubah"></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Role</label><select class="select" name="role"><option ${emp.role==='Field Sales'?'selected':''}>Field Sales</option><option ${emp.role==='Supervisor'?'selected':''}>Supervisor</option></select></div>
+        <div class="form-group"><label class="label">Role</label><input class="input" name="role" value="${esc(emp.role)}" readonly><div class="am-muted">Ubah role dari Manajemen Akun.</div></div>
         <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}" required></div>
       </div>
       <div class="form-row">
@@ -1461,14 +1502,19 @@ window.FT.updateEmployee = async function(e, id) {
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
-  if (!data.password) delete data.password;
+  delete data.password;
   delete data.lat;
   delete data.lng;
   try {
     data.photo = await photoFromEmployeeForm(form, current?.photo || '');
     delete data.photoFile;
-    updateEmployee(id, data);
-    closeModal(); showToast('Karyawan dan akun login diperbarui', 'success'); render();
+    const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
+    data.employeeCode = current?.employeeCode || current?.code || id;
+    data.projectId = assignment?.projectId || getActor()?.projectId || '';
+    if (!data.projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
+    data.joinDate = current?.joinDate || '';
+    await window.BulkEmployees.updateSingleEmployee(data);
+    closeModal(); showToast('Data operasional karyawan diperbarui di cloud', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }
 };
 

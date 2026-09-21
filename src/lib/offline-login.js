@@ -8,12 +8,13 @@ let installed = false;
 const displayRole = account => {
   if (account?.role === 'superadmin') return 'Superadmin';
   if (account?.role === 'head') return 'Head';
+  if (account?.role === 'admin') return 'Admin';
   if (account?.role === 'manager') return 'Manager';
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 };
 
-const defaultRouteFor = account => ['superadmin','head','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday';
+const defaultRouteFor = account => ['superadmin','head','admin','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday';
 
 function activateOfflineSession(account) {
   clearApiToken();

@@ -83,7 +83,7 @@ function assertSuperadmin() {
 }
 
 export function isOrgAdminRole(role) {
-  return role === 'head' || role === 'superadmin';
+  return role === 'head' || role === 'admin' || role === 'superadmin';
 }
 
 export function isProjectAdminRole(role) {
@@ -746,6 +746,12 @@ export function getAccounts() {
   if (actor.role === 'head') {
     return all.filter(a => a.organizationId === actor.organizationId && a.role !== 'superadmin');
   }
+  if (actor.role === 'admin') {
+    return all.filter(a =>
+      a.organizationId === actor.organizationId
+      && (a.id === actor.id || ['manager','supervisor','employee'].includes(a.role))
+    );
+  }
   if (actor.role === 'manager') {
     const ids = visibleEmployeeIds(actor);
     return all.filter(a =>
@@ -866,6 +872,16 @@ function assertSalesDevice(db, acc, device) {
   if (!acc.deviceBinding) acc.deviceBinding = binding;
 }
 
+export function pairCloudAuthenticatedSalesDevice(accountId, device) {
+  const db = getDB();
+  const acc = (db.accounts || []).find(row => row.id === accountId);
+  if (!acc) throw new Error('Akun cloud lokal tidak ditemukan.');
+  if (acc.role !== 'employee') return publicAccount(acc);
+  assertSalesDevice(db, acc, device);
+  saveDB();
+  return publicAccount(acc);
+}
+
 export function resetSalesDevice(accountId) {
   const actor = assertProjectAdmin();
   const db = getDB();
@@ -896,7 +912,7 @@ export function authenticate(email, password, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
+    if (!['superadmin', 'head', 'admin', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
@@ -921,7 +937,7 @@ export function resumeSession(accountId, device = null) {
   if (acc.employeeId) {
     const employee = findEmployee(acc.employeeId, db);
     if (!employee || employee.status !== 'active') return null;
-    if (!['superadmin', 'head', 'manager'].includes(acc.role)) {
+    if (!['superadmin', 'head', 'admin', 'manager'].includes(acc.role)) {
       acc.role = accountRoleForEmployee(employee);
     }
   }
@@ -1014,10 +1030,12 @@ export function createAccount(data) {
     throw new Error('Password login minimal 8 karakter.');
   }
   const allowed = actor.role === 'superadmin'
-    ? ['superadmin', 'head', 'manager', 'supervisor', 'employee']
+    ? ['superadmin', 'head', 'admin', 'manager', 'supervisor', 'employee']
     : actor.role === 'head'
-      ? ['manager', 'supervisor', 'employee']
-      : ['supervisor', 'employee'];
+      ? ['admin', 'manager', 'supervisor', 'employee']
+      : actor.role === 'admin'
+        ? ['manager', 'supervisor', 'employee']
+        : ['supervisor', 'employee'];
   const role = allowed.includes(data.role) ? data.role : (actor.role === 'superadmin' ? 'head' : 'employee');
   if (role === 'superadmin' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
   if (role === 'head' && actor.role !== 'superadmin') throw new Error('Akses ditolak');
@@ -1062,15 +1080,21 @@ export function updateAccount(id, data) {
   const actor = getActor();
   const current = db.accounts[idx];
   const allowed = actor?.role === 'superadmin'
-    ? ['superadmin', 'head', 'manager', 'supervisor', 'employee']
+    ? ['superadmin', 'head', 'admin', 'manager', 'supervisor', 'employee']
     : actor?.role === 'head'
-      ? ['manager', 'supervisor', 'employee']
-      : ['supervisor', 'employee'];
+      ? ['admin', 'manager', 'supervisor', 'employee']
+      : actor?.role === 'admin'
+        ? ['manager', 'supervisor', 'employee']
+        : ['supervisor', 'employee'];
   const nextRole = allowed.includes(data.role) ? data.role : current.role;
   const nextStatus = data.status || current.status;
   if (actor?.role === 'head') {
     if (current.organizationId !== actor.organizationId || current.role === 'superadmin') throw new Error('Akses ditolak');
     if (nextRole === 'superadmin' || nextRole === 'head') throw new Error('Akses ditolak');
+  }
+  if (actor?.role === 'admin') {
+    if (current.organizationId !== actor.organizationId || ['superadmin','head','admin'].includes(current.role)) throw new Error('Akses ditolak');
+    if (['superadmin','head','admin'].includes(nextRole)) throw new Error('Akses ditolak');
   }
   if (current.role === 'superadmin' && (nextRole !== 'superadmin' || nextStatus !== 'active')) {
     if (countActiveSuperadmins(db, id) < 1) throw new Error('Tidak bisa menonaktifkan superadmin terakhir.');
@@ -1096,7 +1120,7 @@ export function updateAccount(id, data) {
     ...current,
     email,
     name: sanitizePlainText(data.name ?? current.name),
-    role: ['superadmin', 'head', 'manager', 'supervisor', 'employee'].includes(nextRole) ? nextRole : current.role,
+    role: ['superadmin', 'head', 'admin', 'manager', 'supervisor', 'employee'].includes(nextRole) ? nextRole : current.role,
     status: ['active', 'inactive', 'suspended'].includes(nextStatus) ? nextStatus : current.status,
     organizationId: nextRole === 'superadmin' ? null : (current.organizationId || actor?.organizationId || getCurrentOrgId()),
     projectId: nextRole === 'manager' ? (data.projectId || current.projectId || null) : null,

@@ -1,9 +1,10 @@
 import {
   getOrganizations, getOrganization, createOrganization, updateOrganization,
   setCurrentOrgId, getCurrentOrgId, getEmployees, getAccounts, getOutlets,
-  getProducts, getCompetitors, getVisits, getFieldPhotos,
+  getProducts, getCompetitors, getVisits, getFieldPhotos, getDB,
 } from './lib/db.js';
 import { esc, statusBadge } from './lib/utils.js';
+import { switchCloudOrganization } from './lib/cloud-data.js';
 
 function canManageOrgs() {
   return window.FT?.state?.account?.role === 'superadmin';
@@ -103,7 +104,7 @@ export function renderOrganizationHub(id) {
       <p class="am-muted">${esc(org.notes || 'Workspace terpisah: data klien, project, dan karyawan tidak bercampur dengan organisasi lain.')}</p>
     </div>
     <div class="org-hub">
-      ${HUB_LINKS.map(([href, title, sub]) => `<a class="org-tile" href="${href}" onclick="ORG.ensureActive('${org.id}')">
+      ${HUB_LINKS.map(([href, title, sub]) => `<a class="org-tile" href="${href}" onclick="return ORG.ensureActive(event,'${org.id}','${href}')">
         <strong>${esc(title)}</strong>
         <span>${esc(sub)}</span>
       </a>`).join('')}
@@ -137,18 +138,42 @@ function form(existing) {
 }
 
 window.ORG = {
-  switchTo(id) {
+  async switchTo(id, targetRoute = '') {
+    const target = String(id || '');
+    const current = getCurrentOrgId();
+    if (!target) return false;
+    if (target === current) {
+      if (targetRoute) location.hash = targetRoute;
+      return true;
+    }
     try {
-      setCurrentOrgId(id);
-      window.showToast?.(`Workspace ${getOrganization(id)?.name} aktif`, 'success');
-      location.hash = `#/organizations/${id}`;
+      if (window.FT?.state?.account?.role !== 'superadmin') throw new Error('Akses ditolak');
+      if (navigator.onLine === false || window.FT?.state?.account?.offlineSession) {
+        throw new Error('Ganti organisasi memerlukan sesi cloud online.');
+      }
+      const { account } = await switchCloudOrganization(getDB(), target);
+      setCurrentOrgId(target);
+      if (account && window.FT?.state) {
+        window.FT.state.account = account;
+        window.FT.state.user = { name: account.name || account.email, role: 'Superadmin', email: account.email };
+      }
+      window.showToast?.(`Workspace ${getOrganization(target)?.name || target} aktif`, 'success');
+      location.hash = targetRoute || `#/organizations/${target}`;
       window.dispatchEvent(new HashChangeEvent('hashchange'));
+      return true;
     } catch (error) {
       window.showToast?.(error.message || error, 'error');
+      return false;
     }
   },
-  ensureActive(id) {
-    if (getCurrentOrgId() !== id) setCurrentOrgId(id);
+  ensureActive(event, id, href) {
+    event?.preventDefault?.();
+    if (getCurrentOrgId() === id) {
+      location.hash = href;
+      return false;
+    }
+    this.switchTo(id, href);
+    return false;
   },
   open(id = '') {
     const existing = id ? getOrganization(id) : null;

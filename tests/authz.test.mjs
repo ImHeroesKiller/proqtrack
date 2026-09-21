@@ -203,7 +203,14 @@ async function login(env, body = {}) {
   __resetAuthGatewayForTests();
   return loginAuthoritatively(request('/api/auth/login', {
     method: 'POST',
-    body: { email: 'user@proqtrack.id', password: 'correct-horse-battery', ...body },
+    body: {
+      email: 'user@proqtrack.id',
+      password: 'correct-horse-battery',
+      deviceId: 'DEV-AUTHZ-TEST',
+      deviceProof: 'proof-authz-test-stable',
+      deviceLabel: 'Node test device',
+      ...body,
+    },
   }), env, 'REQ-LOGIN');
 }
 
