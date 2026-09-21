@@ -105,6 +105,72 @@ jobs:
             console.log(`M7 MKB seed PASS: outlets=${row.outlets} products=${row.products} employees=${row.employees} linkedUsers=${row.linked_users}`);
           '
 
+      - name: Diagnose M7 MKB identity readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(npx wrangler d1 execute DB --remote --env="" --json --command "
+            WITH target(email, expected_role, employee_id) AS (
+              VALUES
+                ('budi.santoso@proqtrack.id','employee','EMP-MKB-BUDI'),
+                ('nadia.permata@proqtrack.id','employee','EMP-MKB-NADIA'),
+                ('rizky.pratama@proqtrack.id','supervisor','EMP-MKB-RIZKY'),
+                ('manager-re@proqtrack.id','manager','EMP-MKB-MANAGER'),
+                ('head@proqtrack.id','head','EMP-MKB-HEAD')
+            )
+            SELECT
+              t.email,
+              t.expected_role,
+              CASE WHEN au.id IS NULL THEN 'missing' ELSE au.status END AS auth_status,
+              COALESCE(ou.role,'missing') AS org_role,
+              COALESCE(ou.status,'missing') AS org_status,
+              CASE WHEN e.auth_user_id=au.id AND au.id IS NOT NULL THEN 1 ELSE 0 END AS employee_linked,
+              CASE
+                WHEN t.expected_role='head' THEN 1
+                WHEN EXISTS (
+                  SELECT 1 FROM core_project_memberships pm
+                  WHERE pm.organization_id='ORG-MKB'
+                    AND pm.project_id='PRJ-MKB-SALES-UAT'
+                    AND pm.user_id=au.id
+                    AND pm.status='active'
+                ) THEN 1 ELSE 0
+              END AS project_linked
+            FROM target t
+            LEFT JOIN auth_users au ON lower(au.email)=lower(t.email)
+            LEFT JOIN core_organization_users ou
+              ON ou.organization_id='ORG-MKB' AND ou.user_id=au.id
+            LEFT JOIN core_employees e
+              ON e.organization_id='ORG-MKB' AND e.id=t.employee_id
+            ORDER BY t.email;
+          ")"
+          printf '%s' "$result" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const start = raw.indexOf("[");
+            if (start < 0) throw new Error("D1 JSON result not found");
+            const parsed = JSON.parse(raw.slice(start));
+            const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
+            const rows = entry?.results || [];
+            console.log("M7 MKB identity readiness:");
+            for (const row of rows) {
+              console.log([
+                row.email,
+                "auth=" + row.auth_status,
+                "orgRole=" + row.org_role,
+                "orgStatus=" + row.org_status,
+                "employeeLinked=" + row.employee_linked,
+                "projectLinked=" + row.project_linked
+              ].join(" | "));
+            }
+            const ready = rows.filter(row =>
+              row.auth_status === "active"
+              && row.org_status === "active"
+              && row.org_role === row.expected_role
+              && Number(row.employee_linked) === 1
+              && Number(row.project_linked) === 1
+            ).length;
+            console.log("M7 MKB identity ready=" + ready + "/5");
+          '
+
       - name: Record D1 database id
         shell: bash
         run: |
