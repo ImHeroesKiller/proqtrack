@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS core_competitor_intel (
   FOREIGN KEY (competitor_id, organization_id)
     REFERENCES core_competitors(id, organization_id) ON DELETE CASCADE,
   FOREIGN KEY (competitor_product_id, organization_id)
-    REFERENCES core_competitor_products(id, organization_id) ON DELETE SET NULL,
+    REFERENCES core_competitor_products(id, organization_id) ON DELETE CASCADE,
   FOREIGN KEY (product_id, organization_id)
     REFERENCES core_products(id, organization_id) ON DELETE RESTRICT
 );
