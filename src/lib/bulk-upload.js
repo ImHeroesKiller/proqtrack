@@ -159,24 +159,25 @@ export async function parseXlsx(buffer) {
   const shared = [];
   if (sharedXml) {
     const doc = new DOMParser().parseFromString(sharedXml, 'application/xml');
-    for (const si of doc.querySelectorAll('si')) {
-      shared.push([...si.querySelectorAll('t')].map(node => node.textContent || '').join(''));
+    for (const si of [...doc.getElementsByTagNameNS('*', 'si')]) {
+      shared.push([...si.getElementsByTagNameNS('*', 't')].map(node => node.textContent || '').join(''));
     }
   }
 
   const sheetXml = await zip.text(sheetName);
   const doc = new DOMParser().parseFromString(sheetXml, 'application/xml');
-  if (doc.querySelector('parsererror')) throw new Error('XLSX_XML_INVALID');
+  if (doc.getElementsByTagName('parsererror').length) throw new Error('XLSX_XML_INVALID');
   const rows = [];
-  for (const rowNode of doc.querySelectorAll('sheetData > row')) {
+  for (const rowNode of [...doc.getElementsByTagNameNS('*', 'row')]) {
     const row = [];
-    for (const cell of rowNode.querySelectorAll(':scope > c')) {
+    const cells = [...rowNode.childNodes].filter(node => node.nodeType === 1 && node.localName === 'c');
+    for (const cell of cells) {
       const index = columnIndex(cell.getAttribute('r') || '');
       const type = cell.getAttribute('t') || '';
       let value = '';
-      if (type === 'inlineStr') value = [...cell.querySelectorAll('is t')].map(node => node.textContent || '').join('');
+      if (type === 'inlineStr') value = [...cell.getElementsByTagNameNS('*', 't')].map(node => node.textContent || '').join('');
       else {
-        const raw = cell.querySelector('v')?.textContent || '';
+        const raw = cell.getElementsByTagNameNS('*', 'v')[0]?.textContent || '';
         value = type === 's' ? (shared[Number(raw)] ?? '') : raw;
       }
       row[index] = value;
