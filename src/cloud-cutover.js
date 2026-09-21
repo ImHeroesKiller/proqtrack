@@ -6,7 +6,7 @@ import {
   pairCloudAuthenticatedSalesDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
-import { clearApiToken } from './lib/uploads.js';
+import { clearApiToken, getApiToken } from './lib/uploads.js';
 import {
   applyRemoteDataToLocal,
   bootstrapOperationalData,
@@ -14,6 +14,7 @@ import {
   establishCloudSession,
   installStorageWriteThrough,
   logoutCloudSession,
+  restoreCloudSession,
 } from './lib/cloud-data.js';
 
 installStorageWriteThrough();
@@ -120,6 +121,36 @@ async function cloudFirstLogin(event) {
   }
 }
 
+let restoreInFlight = false;
+
+async function restoreCloudSessionOnReload() {
+  if (restoreInFlight || !getApiToken() || window.FT?.state?.loggedIn) return false;
+  restoreInFlight = true;
+  const state = window.FT.state;
+  try {
+    const restored = await restoreCloudSession(getDB());
+    const account = restored?.account;
+    if (!account) return false;
+
+    state.loggedIn = true;
+    state.account = account;
+    state.user = { name: account.name, role: displayRole(account), email: account.email };
+
+    const current = String(location.hash || '');
+    const preserved = current && current !== '#/login' ? current : '';
+    state.route = account.mustChangePassword ? '#/settings' : (preserved || defaultRouteFor(account));
+    forceRoute(state.route);
+    return true;
+  } catch (error) {
+    if (navigator.onLine !== false) {
+      console.warn('cloud_session_restore_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    restoreInFlight = false;
+  }
+}
+
 async function cloudLogout() {
   try { await logoutCloudSession(); } catch (error) { console.warn('cloud_logout_failed', error); }
   const state = window.FT.state;
@@ -142,6 +173,7 @@ function install() {
   window.FT.__m3CloudCutoverInstalled = true;
   window.FT.handleLogin = cloudFirstLogin;
   window.FT.logout = cloudLogout;
+  queueMicrotask(() => restoreCloudSessionOnReload());
 
   let lastNotice = '';
   window.addEventListener('proqtrack:cloud-status', event => {

@@ -1,4 +1,4 @@
-import { authHeaders, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
+import { authHeaders, clearApiToken, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
@@ -192,6 +192,29 @@ async function apiJson(path, options = {}) {
     throw error;
   }
   return data;
+}
+
+export async function restoreCloudSession(localDb) {
+  if (!getApiToken()) return null;
+  try {
+    const session = await apiJson('/api/auth/session');
+    const bootstrap = await bootstrapOperationalData(localDb, session);
+    if (bootstrap.mode !== 'cloud' || !bootstrap.data) {
+      const error = new Error('ORGANIZATION_NOT_CUT_OVER');
+      error.code = 'ORGANIZATION_NOT_CUT_OVER';
+      throw error;
+    }
+    applyRemoteDataToLocal(localDb, bootstrap.data);
+    const account = ensureCloudIdentity(localDb, session, null, '');
+    if (!account) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
+    return { account, session, bootstrap };
+  } catch (error) {
+    if ([401, 403].includes(Number(error?.status || 0))
+      || ['AUTH_REQUIRED','INVALID_TOKEN','TOKEN_EXPIRED','SESSION_REVOKED','USER_ACCESS_DISABLED','ORGANIZATION_ACCESS_DENIED'].includes(error?.code)) {
+      clearApiToken();
+    }
+    throw error;
+  }
 }
 
 export async function establishCloudSession({ email, password, organizationId = '' } = {}) {
