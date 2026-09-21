@@ -3,6 +3,7 @@ import {
   getCurrentOrgId,
   getDB,
   registerTestDevice,
+  pairCloudAuthenticatedSalesDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { clearApiToken } from './lib/uploads.js';
@@ -75,12 +76,6 @@ async function cloudFirstLogin(event) {
       return;
     }
 
-    if ((localCandidate?.role === 'employee' || cloudAccount.role === 'employee') && !localAccount) {
-      await logoutCloudSession().catch(() => {});
-      window.showToast?.('Perangkat Field Sales belum lolos verifikasi lokal. Gunakan device yang sudah dipasangkan atau minta reset device.', 'error');
-      return;
-    }
-
     let bootstrap;
     try {
       bootstrap = await bootstrapOperationalData(db, cloudAccount);
@@ -88,6 +83,9 @@ async function cloudFirstLogin(event) {
         applyRemoteDataToLocal(db, bootstrap.data);
       }
       localAccount = ensureCloudIdentity(db, cloudAccount, localAccount || localCandidate, password);
+      if (localAccount?.role === 'employee') {
+        localAccount = pairCloudAuthenticatedSalesDevice(localAccount.id, device);
+      }
     } catch (error) {
       await logoutCloudSession().catch(() => {});
       window.showToast?.(`Sinkronisasi D1 gagal: ${error.message || error}`, 'error');
