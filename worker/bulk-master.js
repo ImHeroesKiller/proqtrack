@@ -168,6 +168,9 @@ async function context(env, claims) {
     return m;
   };
   const clientByRef=refMap(clients), projectByRef=refMap(projects), competitorByRef=refMap(competitors);
+  const clientByCode=new Map(clients.map(row=>[lower(row.code),row]));
+  const projectByCode=new Map(projects.map(row=>[lower(row.code),row]));
+  const competitorByCode=new Map(competitors.map(row=>[lower(row.code),row]));
   const employeeByRef=new Map();
   for(const row of employees) for(const key of [row.id,row.employee_code,row.email,row.full_name]) if(key) employeeByRef.set(lower(key),row);
   const userByEmail=new Map(users.map(row=>[lower(row.email),row]));
@@ -177,8 +180,8 @@ async function context(env, claims) {
   const assignmentByKey=new Map(assignments.map(row=>[`${row.project_id}:${row.employee_id}`,row]));
   return {
     org,clients,projects,employees,competitors,
-    clientByRef,projectByRef,competitorByRef,employeeByRef,userByEmail,
-    outletByKey,productByKey,competitorProductByKey,assignmentByKey,
+    clientByRef,projectByRef,competitorByRef,clientByCode,projectByCode,competitorByCode,
+    employeeByRef,userByEmail,outletByKey,productByKey,competitorProductByKey,assignmentByKey,
     allowedProjects:new Set((claims.projectIds || []).map(String)),
   };
 }
@@ -206,7 +209,7 @@ function validateRow(entity, row, ctx, claims) {
     if(!row.name) errors.push('NAME_REQUIRED');
     if(!row.status) errors.push('STATUS_INVALID');
     if(row.picEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.picEmail)) errors.push('PIC_EMAIL_INVALID');
-    existing=ctx.clientByRef.get(lower(row.clientCode)) || null;
+    existing=ctx.clientByCode.get(lower(row.clientCode)) || null;
   }
 
   if(entity==='projects'){
@@ -216,7 +219,7 @@ function validateRow(entity, row, ctx, claims) {
     if(!row.status) errors.push('STATUS_INVALID');
     const client=ctx.clientByRef.get(lower(row.clientCode));
     if(!client) errors.push('CLIENT_NOT_FOUND'); else resolved.client=client;
-    existing=ctx.projectByRef.get(lower(row.projectCode)) || null;
+    existing=ctx.projectByCode.get(lower(row.projectCode)) || null;
   }
 
   if(entity==='outlets' || entity==='products'){
@@ -246,7 +249,7 @@ function validateRow(entity, row, ctx, claims) {
     if(!row.competitorCode) errors.push('COMPETITOR_CODE_REQUIRED');
     if(!row.name) errors.push('NAME_REQUIRED');
     if(!row.status) errors.push('STATUS_INVALID');
-    existing=ctx.competitorByRef.get(lower(row.competitorCode)) || null;
+    existing=ctx.competitorByCode.get(lower(row.competitorCode)) || null;
   }
 
   if(entity==='competitorProducts'){
@@ -537,6 +540,7 @@ async function commit(request,env,claims,entity,requestId){
 
 export async function handleBulkMasterRoute(request,env,claims,url=new URL(request.url),requestId=crypto.randomUUID()){
   const match=url.pathname.match(/^\/api\/bulk\/master\/([^/]+)\/(preview|commit)$/);
+  if (env.CORE_BULK_API_ENABLED !== 'true') return json({error:'CORE_BULK_API_LOCKED',requestId},503);
   if(!match) return null;
   if(!claims?.organizationId) return json({error:'ORGANIZATION_REQUIRED',requestId},409);
   const entity=decodeURIComponent(match[1]), action=match[2];
