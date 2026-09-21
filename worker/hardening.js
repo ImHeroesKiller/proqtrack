@@ -26,6 +26,7 @@ export function classifyRoute(pathname = '') {
   if (pathname === '/api/health') return 'health';
   if (pathname.startsWith('/api/auth/')) return 'auth';
   if (pathname.startsWith('/api/core/')) return 'core';
+  if (pathname.startsWith('/api/bulk/employees')) return 'bulk';
   if (pathname.startsWith('/api/evidence')) return 'evidence';
   if (pathname.startsWith('/api/reports') || pathname.startsWith('/api/report-schedules')) return 'reporting';
   if (pathname.startsWith('/api/workflows') || pathname.startsWith('/api/notifications')) return 'workflow';
