@@ -48,17 +48,13 @@ function normalizeRow(input = {}, index = 0) {
   return { rowNumber, employeeCode, fullName, email, phone, role, area, position, projectRef, supervisorEmail, status, createLogin };
 }
 
-function randomPassword(length = 20) {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*-_';
-  const seed = ['A','a','7','!'];
-  const bytes = crypto.getRandomValues(new Uint8Array(Math.max(length, 12)));
-  const chars = [...seed];
-  for (let i = chars.length; i < bytes.length; i += 1) chars.push(alphabet[bytes[i] % alphabet.length]);
-  for (let i = chars.length - 1; i > 0; i -= 1) {
-    const j = bytes[i % bytes.length] % (i + 1);
-    [chars[i], chars[j]] = [chars[j], chars[i]];
-  }
-  return chars.join('').slice(0, length);
+function validInitialPassword(value) {
+  const password = String(value || '');
+  return password.length >= 16
+    && /[A-Z]/.test(password)
+    && /[a-z]/.test(password)
+    && /[0-9]/.test(password)
+    && /[^A-Za-z0-9]/.test(password);
 }
 
 function employeeId() {
@@ -260,11 +256,22 @@ async function commit(request, env, claims, requestId) {
   const totals = summary(validated);
   if (totals.errors) return json({ error: 'BULK_VALIDATION_FAILED', rows: validated, summary: totals }, 422);
 
+  for (let index = 0; index < validated.length; index += 1) {
+    if (validated[index].loginAction === 'create' && !validInitialPassword(rows[index]?.initial_password)) {
+      return json({
+        error: 'INITIAL_PASSWORD_REQUIRED',
+        rowNumber: validated[index].rowNumber,
+        message: 'Initial password minimal 16 karakter dan harus berisi huruf besar, huruf kecil, angka, dan simbol.',
+      }, 422);
+    }
+  }
+
   const statements = [];
   const credentials = [];
   let inserted = 0, updated = 0, loginCreated = 0, loginLinked = 0;
 
-  for (const row of validated) {
+  for (let rowIndex = 0; rowIndex < validated.length; rowIndex += 1) {
+    const row = validated[rowIndex];
     const existing = row.existingEmployeeId ? ctx.employeeByCode.get(lower(row.employeeCode)) : null;
     const empId = existing?.id || employeeId();
     let authUserId = existing?.auth_user_id || null;
@@ -273,7 +280,7 @@ async function commit(request, env, claims, requestId) {
     if (row.createLogin) {
       if (row.loginAction === 'create') {
         authUserId = userId();
-        const password = randomPassword();
+        const password = String(rows[rowIndex]?.initial_password || '');
         const passwordHash = await hashPassword(password);
         statements.push(env.DB.prepare(`
           INSERT INTO auth_users(id,email,password_hash,role,status,project_ids,client_ids,created_at)
@@ -387,6 +394,8 @@ async function commit(request, env, claims, requestId) {
       status=excluded.status,
       updated_at=CURRENT_TIMESTAMP,
       completed_at=CASE WHEN excluded.status='completed' THEN CURRENT_TIMESTAMP ELSE core_bulk_import_runs.completed_at END
+    WHERE core_bulk_import_runs.organization_id=excluded.organization_id
+      AND core_bulk_import_runs.actor_user_id=excluded.actor_user_id
   `).bind(
     importId,claims.organizationId,claims.sub,sourceName,runStatus,rows.length,
     inserted,updated,loginCreated,loginLinked,totals.warnings,runStatus,
@@ -446,4 +455,5 @@ export const __test = {
   normalizeRow,
   validateRows,
   summary,
+  validInitialPassword,
 };
