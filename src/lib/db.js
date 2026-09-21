@@ -2144,6 +2144,7 @@ export function deleteCompetitorProduct(id) {
   assertProjectAdmin();
   const db = getDB();
   db.competitorProducts = db.competitorProducts.filter(p => p.id !== id);
+  db.competitorIntel = (db.competitorIntel || []).filter(row => row.competitorProductId !== id);
   saveDB();
 }
 
