@@ -96,6 +96,8 @@ test('generic bulk API is server validated, locked, chunk-idempotent and revisio
   assert.match(source, /replayed:true/);
   assert.match(source, /core_sync_mutations/);
   assert.match(source, /UPDATE core_sync_state SET revision=/);
+  assert.match(source, /core_bulk_revision_guards/);
+  assert.match(source, /REVISION_CONFLICT/);
   assert.match(source, /PROJECT_CLIENT_MISMATCH/);
   assert.match(source, /PROJECT_OUT_OF_SCOPE/);
   assert.match(source, /DUPLICATE_KEY_ROW_/);
