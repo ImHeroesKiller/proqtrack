@@ -143,6 +143,14 @@ test('M8 release gate requires competitor/bulk schema and protects generic bulk 
   assert.match(main, /pathname\.startsWith\('\/api\/bulk\/'\)/);
 });
 
+test('manual retry reuses the same import id for chunk replay safety', async () => {
+  const ui = await read('src/bulk-master.js');
+  assert.match(ui, /let currentImportId=''/);
+  assert.match(ui, /currentImportId=currentImportId \|\|/);
+  assert.match(ui, /const importId=currentImportId/);
+  assert.match(ui, /currentImportId=''/);
+});
+
 test('PWA cache includes generic bulk UI/parser at generation v12', async () => {
   const sw = await read('sw.js');
   assert.match(sw,/proqtrack-v12/);
