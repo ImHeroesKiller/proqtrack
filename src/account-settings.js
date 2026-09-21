@@ -18,7 +18,7 @@ function toast(msg, type = 'success') {
 }
 
 function roleLabel(role) {
-  return { superadmin: 'Superadmin', head: 'Head', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
+  return { superadmin: 'Superadmin', head: 'Head', admin: 'Admin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
 
 function statusLabel(status) {
@@ -273,7 +273,7 @@ export function renderSettings() {
 
 export function renderAccounts() {
   const acc = account();
-  if (acc?.role !== 'head' && acc?.role !== 'superadmin') {
+  if (!['head','admin','superadmin'].includes(acc?.role)) {
     return '<div class="card"><p>Only Superadmin and Head can manage organization accounts.</p></div>';
   }
   const q = (window.FT.state._accountQuery || '').toLowerCase();
@@ -292,7 +292,7 @@ export function renderAccounts() {
         <select class="select" style="width:auto" onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
           <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
-          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
+          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>\n          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
         </select>
@@ -348,7 +348,7 @@ function accountForm(existing) {
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
           <select class="select" name="role">
-            ${(account()?.role === 'superadmin' ? ['superadmin', 'head', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+            ${(account()?.role === 'superadmin' ? ['superadmin', 'head', 'admin', 'manager', 'supervisor', 'employee'] : account()?.role === 'head' ? ['admin', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="label">Status</label>
