@@ -11,6 +11,7 @@ let currentEntity='';
 let currentRows=[];
 let currentPreview=[];
 let currentFileName='';
+let currentImportId='';
 let busy=false;
 
 const esc=value=>String(value??'')
@@ -148,6 +149,7 @@ export async function handleFile(input){
     const el=root();
     if(el) el.innerHTML='<div class="bulk-loading">Membaca dan memvalidasi file…</div>';
     currentFileName=file.name;
+    currentImportId='';
     currentRows=await parseBulkMasterFile(file,currentEntity);
     if(!currentRows.length) throw new Error('File tidak memiliki data.');
     if(currentRows.length>MAX_FILE_ROWS) throw new Error(`Maksimal ${MAX_FILE_ROWS} row per file.`);
@@ -171,7 +173,8 @@ export async function commit(){
   const config=masterEntityConfig(currentEntity);
   if(!confirm(`Commit ${currentRows.length} ${config?.label||'data'} ke organisasi aktif?`)) return;
   busy=true;
-  const importId=`BULK-MASTER-${crypto.randomUUID()}`;
+  currentImportId=currentImportId || `BULK-MASTER-${crypto.randomUUID()}`;
+  const importId=currentImportId;
   const groups=chunks(currentRows,COMMIT_CHUNK);
   const totals={inserted:0,updated:0};
   try{
@@ -223,7 +226,7 @@ export function downloadTemplate(){
 }
 
 export function reset(){
-  currentRows=[]; currentPreview=[]; currentFileName='';
+  currentRows=[]; currentPreview=[]; currentFileName=''; currentImportId='';
   const input=document.getElementById('bulkMasterFile');
   if(input) input.value='';
   renderPreview();
@@ -244,7 +247,7 @@ export function open(entity){
     window.showToast?.('Bulk Klien/Project hanya untuk Head/Admin/Superadmin.','error');
     return;
   }
-  currentEntity=entity; currentRows=[]; currentPreview=[]; currentFileName='';
+  currentEntity=entity; currentRows=[]; currentPreview=[]; currentFileName=''; currentImportId='';
   window.FT.closeModal?.();
   const modal=document.getElementById('modalRoot');
   if(!modal) return;
