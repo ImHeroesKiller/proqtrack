@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v7';
+const CACHE = 'proqtrack-v8';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -21,6 +21,8 @@ const FALLBACK_SHELL = [
   './src/lib/field-photo-evidence.js',
   './src/lib/m6-client.js',
   './src/lib/uploads.js',
+  './src/bulk-employees.js',
+  './src/lib/bulk-upload.js',
 ];
 
 async function precacheApplication() {
