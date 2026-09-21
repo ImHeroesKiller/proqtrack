@@ -372,7 +372,8 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     return authErrorResponse(error, requestId);
   }
 
-  if (String(user.password_hash || '').startsWith('sha256    try {
+  if (String(user.password_hash || '').startsWith('sha256$')) {
+    try {
       const upgraded = await hashPassword(password);
       await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(upgraded, user.id).run();
     } catch (error) {
