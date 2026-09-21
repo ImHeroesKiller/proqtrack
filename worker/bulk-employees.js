@@ -156,6 +156,15 @@ function validateRows(rows, ctx, claims) {
     }
 
     const user = row.email ? ctx.userByEmail.get(row.email) || null : null;
+    if (user && existing?.auth_user_id && String(existing.auth_user_id) !== String(user.id)) {
+      errors.push('EMPLOYEE_LOGIN_IDENTITY_MISMATCH');
+    }
+    if (user && !existing?.auth_user_id) {
+      const membership = ctx.membershipByUser.get(String(user.id));
+      if (user.global_role === 'superadmin' || ['head','admin','manager'].includes(String(membership?.role || ''))) {
+        errors.push('PRIVILEGED_LOGIN_REQUIRES_ACCOUNT_MANAGEMENT');
+      }
+    }
     let loginAction = 'none';
     if (row.createLogin) {
       if (user?.user_status && user.user_status !== 'active') errors.push('LOGIN_USER_DISABLED');
