@@ -59,7 +59,20 @@ async function writeAudit(env, requestId, claims, action, resourceId, detail = {
 
 async function findTarget(env, organizationId, userId) {
   return env.DB.prepare(`
-    SELECT u.id,u.email,u.status AS global_status,ou.role,ou.status
+    SELECT u.id,u.email,u.status AS global_status,ou.role,ou.status,
+      (
+        SELECT e.id FROM core_employees e
+        WHERE e.organization_id=ou.organization_id AND e.auth_user_id=ou.user_id
+        LIMIT 1
+      ) AS employee_id,
+      (
+        SELECT pm.project_id FROM core_project_memberships pm
+        WHERE pm.organization_id=ou.organization_id
+          AND pm.user_id=ou.user_id
+          AND pm.role='manager'
+          AND pm.status='active'
+        ORDER BY pm.project_id LIMIT 1
+      ) AS project_id
     FROM core_organization_users ou
     JOIN auth_users u ON u.id=ou.user_id
     WHERE ou.organization_id=? AND ou.user_id=?
@@ -247,13 +260,9 @@ async function updateAccount(env, claims, request, userId, requestId) {
   ).bind(email,userId).first();
   if (conflict) return json({ error:'EMAIL_ALREADY_USED', requestId },409);
 
-  const employeeId = body.employeeId === undefined
-    ? (await env.DB.prepare(
-      'SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? LIMIT 1',
-    ).bind(claims.organizationId,userId).first())?.id || ''
-    : clean(body.employeeId,120);
+  const employeeId = body.employeeId === undefined ? clean(target.employee_id,120) : clean(body.employeeId,120);
   const employee = await employeeForLink(env,claims.organizationId,employeeId,userId);
-  const projectId = clean(body.projectId,120);
+  const projectId = body.projectId === undefined ? clean(target.project_id,120) : clean(body.projectId,120);
   if (nextRole === 'manager') await projectForManager(env,claims.organizationId,projectId);
 
   const statements = [
