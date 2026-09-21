@@ -161,6 +161,11 @@ jobs:
                 "projectLinked=" + row.project_linked
               ].join(" | "));
             }
+            const provisioned = rows.filter(row =>
+              row.auth_status !== "missing"
+              && row.org_role === row.expected_role
+              && Number(row.employee_linked) === 1
+            ).length;
             const ready = rows.filter(row =>
               row.auth_status === "active"
               && row.org_status === "active"
@@ -168,7 +173,8 @@ jobs:
               && Number(row.employee_linked) === 1
               && Number(row.project_linked) === 1
             ).length;
-            console.log("M7 MKB identity ready=" + ready + "/5");
+            console.log("M7 MKB identity provisioned=" + provisioned + "/5");
+            console.log("M7 MKB human login ready=" + ready + "/5");
           '
 
       - name: Record D1 database id
@@ -206,6 +212,10 @@ jobs:
             }
             console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
           '
+
+      - name: Run authenticated M7 production UAT
+        shell: bash
+        run: bash scripts/m7-authenticated-production-uat.sh
 
       - name: Verify security headers and auth boundaries
         shell: bash
