@@ -1,4 +1,4 @@
-const MAX_PREVIEW_ROWS = 200;
+const MAX_PREVIEW_ROWS = 500;
 const MAX_COMMIT_ROWS = 50;
 const BROAD_ROLES = new Set(['superadmin','head','admin']);
 const MANAGER_ENTITIES = new Set(['outlets','products','competitors','competitorProducts','projectAssignments']);
@@ -147,7 +147,7 @@ function normalize(entity, input = {}, index = 0) {
 
 async function context(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,users,competitors,competitorProducts,outlets,products,assignments] = await Promise.all([
+  const [clients,projects,employees,users,projectMemberships,competitors,competitorProducts,outlets,products,assignments] = await Promise.all([
     allRows(env.DB.prepare('SELECT id,code,name,status,metadata_json FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,client_id,code,name,status,metadata_json FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,employee_code,full_name,email,auth_user_id,employment_status,metadata_json FROM core_employees WHERE organization_id=?').bind(org)),
@@ -155,6 +155,11 @@ async function context(env, claims) {
       SELECT u.id,u.email,u.status AS user_status,ou.role,ou.status AS org_status
       FROM auth_users u
       LEFT JOIN core_organization_users ou ON ou.user_id=u.id AND ou.organization_id=?
+    `).bind(org)),
+    allRows(env.DB.prepare(`
+      SELECT project_id,user_id,role,status
+      FROM core_project_memberships
+      WHERE organization_id=?
     `).bind(org)),
     allRows(env.DB.prepare('SELECT id,code,name,status,metadata_json FROM core_competitors WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT id,competitor_id,sku,name,status,metadata_json FROM core_competitor_products WHERE organization_id=?').bind(org)),
@@ -174,6 +179,7 @@ async function context(env, claims) {
   const employeeByRef=new Map();
   for(const row of employees) for(const key of [row.id,row.employee_code,row.email,row.full_name]) if(key) employeeByRef.set(lower(key),row);
   const userByEmail=new Map(users.map(row=>[lower(row.email),row]));
+  const projectMembershipByKey=new Map(projectMemberships.map(row=>[`${row.project_id}:${row.user_id}`,row]));
   const outletByKey=new Map(outlets.map(row=>[`${row.client_id}:${lower(row.code)}`,row]));
   const productByKey=new Map(products.map(row=>[`${row.client_id}:${lower(row.sku)}`,row]));
   const competitorProductByKey=new Map(competitorProducts.map(row=>[`${row.competitor_id}:${lower(row.sku)}`,row]));
@@ -181,7 +187,7 @@ async function context(env, claims) {
   return {
     org,clients,projects,employees,competitors,
     clientByRef,projectByRef,competitorByRef,clientByCode,projectByCode,competitorByCode,
-    employeeByRef,userByEmail,outletByKey,productByKey,competitorProductByKey,assignmentByKey,
+    employeeByRef,userByEmail,projectMembershipByKey,outletByKey,productByKey,competitorProductByKey,assignmentByKey,
     allowedProjects:new Set((claims.projectIds || []).map(String)),
   };
 }
@@ -279,7 +285,14 @@ function validateRow(entity, row, ctx, claims) {
       const supervisor=ctx.userByEmail.get(row.supervisorEmail);
       if(!supervisor || supervisor.user_status!=='active' || supervisor.org_status!=='active' || supervisor.role!=='supervisor') {
         errors.push('SUPERVISOR_NOT_FOUND');
-      } else resolved.supervisor=supervisor;
+      } else {
+        const membership=project
+          ? ctx.projectMembershipByKey.get(`${project.id}:${supervisor.id}`)
+          : null;
+        if(!membership || membership.status!=='active' || membership.role!=='supervisor') {
+          errors.push('SUPERVISOR_NOT_ASSIGNED_TO_PROJECT');
+        } else resolved.supervisor=supervisor;
+      }
     }
     existing=project&&employee ? ctx.assignmentByKey.get(`${project.id}:${employee.id}`) || null : null;
   }
@@ -289,6 +302,7 @@ function validateRow(entity, row, ctx, claims) {
     entity,...row,
     action:existing?'update':'create',
     existingId:existing?.id||null,
+    existingMetadata:existing?.metadata_json||'{}',
     resolved,
     errors:[...new Set(errors)],
     warnings:[...new Set(warnings)],
@@ -382,7 +396,7 @@ async function commit(request,env,claims,entity,requestId){
       clients:'CL',projects:'PRJ',outlets:'OUT',products:'PRD',competitors:'CMP',
       competitorProducts:'CPD',projectAssignments:'ASN'
     }[entity]||'ROW');
-    const meta=metadata('{}',auditMetadata(entity,row,importId));
+    const meta=metadata(row.existingMetadata||'{}',auditMetadata(entity,row,importId));
 
     if(entity==='clients'){
       statements.push(env.DB.prepare(`
