@@ -252,10 +252,23 @@ async function commit(request, env, claims, requestId) {
   }
 
   const replay = await env.DB.prepare(
-    "SELECT status,row_count FROM core_bulk_import_chunks WHERE import_id=? AND chunk_id=? AND organization_id=? LIMIT 1",
+    "SELECT status,row_count,login_created_json FROM core_bulk_import_chunks WHERE import_id=? AND chunk_id=? AND organization_id=? LIMIT 1",
   ).bind(importId, chunkId, claims.organizationId).first();
   if (replay?.status === 'completed') {
-    return json({ ok: true, replayed: true, importId, chunkId, credentials: [] });
+    let created = [];
+    try { created = JSON.parse(replay.login_created_json || '[]'); } catch { created = []; }
+    const createdCodes = new Set(Array.isArray(created) ? created.map(lower) : []);
+    const credentials = rows
+      .map((input, index) => ({ input, row: normalizeRow(input, index) }))
+      .filter(({ row }) => createdCodes.has(lower(row.employeeCode)) && validInitialPassword(input.initial_password))
+      .map(({ input, row }) => ({
+        rowNumber: row.rowNumber,
+        employeeCode: row.employeeCode,
+        fullName: row.fullName,
+        email: row.email,
+        initialPassword: String(input.initial_password),
+      }));
+    return json({ ok: true, replayed: true, importId, chunkId, credentials });
   }
 
   const ctx = await context(env, claims);
@@ -409,9 +422,13 @@ async function commit(request, env, claims, requestId) {
   ));
 
   statements.push(env.DB.prepare(`
-    INSERT INTO core_bulk_import_chunks(import_id,chunk_id,organization_id,status,row_count,created_at)
-    VALUES(?,?,?,'completed',?,CURRENT_TIMESTAMP)
-  `).bind(importId,chunkId,claims.organizationId,rows.length));
+    INSERT INTO core_bulk_import_chunks(
+      import_id,chunk_id,organization_id,status,row_count,login_created_json,created_at
+    ) VALUES(?,?,?,'completed',?,?,CURRENT_TIMESTAMP)
+  `).bind(
+    importId,chunkId,claims.organizationId,rows.length,
+    JSON.stringify(credentials.map(row => row.employeeCode)).slice(0,4000),
+  ));
 
   statements.push(env.DB.prepare(`
     INSERT INTO core_sync_state(organization_id,revision,cutover_mode,imported_at,updated_at)
