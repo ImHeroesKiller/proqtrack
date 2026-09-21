@@ -4,7 +4,7 @@ import { bootstrapOperationalData, applyRemoteDataToLocal } from './lib/cloud-da
 import { parseBulkMasterFile, masterTemplateCsv, masterEntityConfig } from './lib/bulk-master-upload.js';
 
 const MAX_FILE_ROWS=500;
-const PREVIEW_CHUNK=200;
+const PREVIEW_CHUNK=500;
 const COMMIT_CHUNK=50;
 
 let currentEntity='';
