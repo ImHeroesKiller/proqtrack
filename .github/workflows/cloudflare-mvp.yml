@@ -85,63 +85,50 @@ jobs:
       - name: Apply D1 migrations before deploy
         run: npx wrangler d1 migrations apply DB --remote --env=""
 
-      - name: Verify M7 MKB tenant seed
-        shell: bash
-        run: |
-          set -euo pipefail
-          result="$(npx wrangler d1 execute DB --remote --env="" --json --command "SELECT (SELECT COUNT(*) FROM core_organizations WHERE id='ORG-MKB' AND code='MKB' AND name='Mitra Kreasi Bersama' AND status='active') AS organizations, (SELECT COUNT(*) FROM core_clients WHERE organization_id='ORG-MKB' AND id='CL-MKB-FMCG-UAT' AND status='active') AS clients, (SELECT COUNT(*) FROM core_projects WHERE organization_id='ORG-MKB' AND id='PRJ-MKB-SALES-UAT' AND status='active') AS projects, (SELECT COUNT(*) FROM core_outlets WHERE organization_id='ORG-MKB' AND status='active') AS outlets, (SELECT COUNT(*) FROM core_products WHERE organization_id='ORG-MKB' AND status='active') AS products, (SELECT COUNT(*) FROM core_employees WHERE organization_id='ORG-MKB' AND employment_status='active') AS employees, (SELECT COUNT(*) FROM core_survey_templates WHERE organization_id='ORG-MKB' AND id='SURV-MKB-PERFECT-STORE' AND status='active') AS surveys, (SELECT COUNT(*) FROM core_sync_state WHERE organization_id='ORG-MKB' AND cutover_mode='cloud') AS cloud_cutover, (SELECT COUNT(*) FROM core_organization_users WHERE organization_id='ORG-MKB' AND status='active') AS linked_users;")"
-          printf '%s' "$result" | node -e '
-            const raw = require("fs").readFileSync(0, "utf8");
-            const start = raw.indexOf("[");
-            if (start < 0) throw new Error("D1 JSON result not found");
-            const parsed = JSON.parse(raw.slice(start));
-            const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
-            const row = entry?.results?.[0];
-            if (!row) throw new Error("MKB readiness row missing");
-            const expected = { organizations:1, clients:1, projects:1, outlets:6, products:5, employees:5, surveys:1, cloud_cutover:1 };
-            for (const [key, value] of Object.entries(expected)) {
-              if (Number(row[key]) !== value) throw new Error(`MKB seed mismatch ${key}: expected ${value}, got ${row[key]}`);
-            }
-            console.log(`M7 MKB seed PASS: outlets=${row.outlets} products=${row.products} employees=${row.employees} linkedUsers=${row.linked_users}`);
-          '
-
-      - name: Diagnose M7 MKB identity readiness
+      - name: Verify MKB real tenant isolation
         shell: bash
         run: |
           set -euo pipefail
           result="$(npx wrangler d1 execute DB --remote --env="" --json --command "
-            WITH target(email, expected_role, employee_id) AS (
-              VALUES
-                ('budi.santoso@proqtrack.id','employee','EMP-MKB-BUDI'),
-                ('nadia.permata@proqtrack.id','employee','EMP-MKB-NADIA'),
-                ('rizky.pratama@proqtrack.id','supervisor','EMP-MKB-RIZKY'),
-                ('manager-re@proqtrack.id','manager','EMP-MKB-MANAGER'),
-                ('head@proqtrack.id','head','EMP-MKB-HEAD')
-            )
             SELECT
-              t.email,
-              t.expected_role,
-              CASE WHEN au.id IS NULL THEN 'missing' ELSE au.status END AS auth_status,
-              COALESCE(ou.role,'missing') AS org_role,
-              COALESCE(ou.status,'missing') AS org_status,
-              CASE WHEN e.auth_user_id=au.id AND au.id IS NOT NULL THEN 1 ELSE 0 END AS employee_linked,
-              CASE
-                WHEN t.expected_role='head' THEN 1
-                WHEN EXISTS (
-                  SELECT 1 FROM core_project_memberships pm
-                  WHERE pm.organization_id='ORG-MKB'
-                    AND pm.project_id='PRJ-MKB-SALES-UAT'
-                    AND pm.user_id=au.id
-                    AND pm.status='active'
-                ) THEN 1 ELSE 0
-              END AS project_linked
-            FROM target t
-            LEFT JOIN auth_users au ON lower(au.email)=lower(t.email)
-            LEFT JOIN core_organization_users ou
-              ON ou.organization_id='ORG-MKB' AND ou.user_id=au.id
-            LEFT JOIN core_employees e
-              ON e.organization_id='ORG-MKB' AND e.id=t.employee_id
-            ORDER BY t.email;
+              (SELECT COUNT(*) FROM core_organizations
+                WHERE id='ORG-MKB' AND code='MKB' AND status='active') AS organizations,
+              (SELECT COUNT(*) FROM core_sync_state
+                WHERE organization_id='ORG-MKB' AND cutover_mode='cloud') AS cloud_cutover,
+              (SELECT COUNT(*)
+                FROM core_organization_users ou
+                JOIN auth_users au ON au.id=ou.user_id
+                WHERE ou.organization_id='ORG-MKB'
+                  AND lower(au.email)='akbar@mkb.com'
+                  AND ou.role='head'
+                  AND ou.status='active'
+                  AND au.status='active') AS akbar_head,
+              (SELECT COUNT(*) FROM core_employees
+                WHERE organization_id='ORG-MKB'
+                  AND id IN ('EMP-MKB-BUDI','EMP-MKB-NADIA','EMP-MKB-RIZKY','EMP-MKB-MANAGER','EMP-MKB-HEAD')) AS synthetic_employees,
+              (SELECT COUNT(*)
+                FROM core_organization_users ou
+                JOIN auth_users au ON au.id=ou.user_id
+                WHERE ou.organization_id='ORG-MKB'
+                  AND lower(au.email) IN (
+                    'budi.santoso@proqtrack.id',
+                    'nadia.permata@proqtrack.id',
+                    'rizky.pratama@proqtrack.id',
+                    'manager-re@proqtrack.id',
+                    'head@proqtrack.id'
+                  )) AS synthetic_org_users,
+              (SELECT COUNT(*) FROM core_clients
+                WHERE organization_id='ORG-MKB' AND id='CL-MKB-FMCG-UAT') AS uat_clients,
+              (SELECT COUNT(*) FROM core_projects
+                WHERE organization_id='ORG-MKB' AND id='PRJ-MKB-SALES-UAT') AS uat_projects,
+              (SELECT COUNT(*) FROM core_outlets
+                WHERE organization_id='ORG-MKB'
+                  AND id IN ('OUT-MKB-001','OUT-MKB-002','OUT-MKB-003','OUT-MKB-004','OUT-MKB-005','OUT-MKB-006')) AS uat_outlets,
+              (SELECT COUNT(*) FROM core_products
+                WHERE organization_id='ORG-MKB'
+                  AND id IN ('PROD-MKB-001','PROD-MKB-002','PROD-MKB-003','PROD-MKB-004','PROD-MKB-005')) AS uat_products,
+              (SELECT COUNT(*) FROM core_survey_templates
+                WHERE organization_id='ORG-MKB' AND id='SURV-MKB-PERFECT-STORE') AS uat_surveys;
           ")"
           printf '%s' "$result" | node -e '
             const raw = require("fs").readFileSync(0, "utf8");
@@ -149,33 +136,20 @@ jobs:
             if (start < 0) throw new Error("D1 JSON result not found");
             const parsed = JSON.parse(raw.slice(start));
             const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
-            const rows = entry?.results || [];
-            console.log("M7 MKB identity readiness:");
-            for (const row of rows) {
-              console.log([
-                row.email,
-                "auth=" + row.auth_status,
-                "orgRole=" + row.org_role,
-                "orgStatus=" + row.org_status,
-                "employeeLinked=" + row.employee_linked,
-                "projectLinked=" + row.project_linked
-              ].join(" | "));
+            const row = entry?.results?.[0];
+            if (!row) throw new Error("MKB real-tenant verification row missing");
+            if (Number(row.organizations) !== 1) throw new Error("ORG-MKB is not active");
+            if (Number(row.cloud_cutover) !== 1) throw new Error("ORG-MKB cloud cutover missing");
+            if (Number(row.akbar_head) !== 1) throw new Error("akbar@mkb.com is not the active MKB Head");
+            const syntheticKeys = [
+              "synthetic_employees","synthetic_org_users","uat_clients","uat_projects",
+              "uat_outlets","uat_products","uat_surveys"
+            ];
+            const leftovers = syntheticKeys.filter(key => Number(row[key]) !== 0);
+            if (leftovers.length) {
+              throw new Error("Synthetic MKB UAT leftovers: " + leftovers.map(key => key + "=" + row[key]).join(", "));
             }
-            const provisioned = rows.filter(row =>
-              row.auth_status !== "missing"
-              && row.org_role === row.expected_role
-              && Number(row.employee_linked) === 1
-            ).length;
-            const ready = rows.filter(row =>
-              row.auth_status === "active"
-              && row.org_status === "active"
-              && row.org_role === row.expected_role
-              && Number(row.employee_linked) === 1
-              && Number(row.project_linked) === 1
-            ).length;
-            console.log("M7 MKB identity provisioned=" + provisioned + "/5");
-            console.log("M7 MKB human login ready=" + ready + "/5");
-            if (provisioned !== 5) throw new Error("MKB identity provisioning gate failed: " + provisioned + "/5");
+            console.log("MKB real tenant PASS: Akbar active Head; synthetic M7 seed=0");
           '
 
       - name: Record D1 database id
@@ -212,45 +186,6 @@ jobs:
               process.exit(1);
             }
             console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
-          '
-
-      - name: Run authenticated M7 production UAT
-        shell: bash
-        run: bash scripts/m7-authenticated-production-uat.sh
-
-      - name: Verify authenticated M7 UAT cleanup
-        shell: bash
-        run: |
-          set -euo pipefail
-          result="$(npx wrangler d1 execute DB --remote --env="" --json --command "
-            SELECT
-              (SELECT COUNT(*) FROM auth_users WHERE email LIKE 'uat.m7.%@proqtrack.id') AS auth_users,
-              (SELECT COUNT(*) FROM core_organization_users WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS org_users,
-              (SELECT COUNT(*) FROM core_project_memberships WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS project_memberships,
-              (SELECT COUNT(*) FROM core_employees WHERE organization_id='ORG-MKB' AND id LIKE 'EMP-UAT-M7-%') AS employees,
-              (SELECT COUNT(*) FROM core_employee_project_assignments WHERE organization_id='ORG-MKB' AND id LIKE 'ASN-UAT-M7-%') AS assignments,
-              (SELECT COUNT(*) FROM core_auth_sessions WHERE user_id LIKE 'UAT-M7-%') AS sessions,
-              (SELECT COUNT(*) FROM core_auth_devices WHERE organization_id='ORG-MKB' AND user_id LIKE 'UAT-M7-%') AS devices,
-              (SELECT COUNT(*) FROM core_attendance WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS attendance,
-              (SELECT COUNT(*) FROM core_visits WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS visits,
-              (SELECT COUNT(*) FROM core_product_sales WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS sales,
-              (SELECT COUNT(*) FROM core_survey_responses WHERE organization_id='ORG-MKB' AND id LIKE 'UAT-M7-%') AS surveys,
-              (SELECT COUNT(*) FROM core_sync_mutations WHERE organization_id='ORG-MKB' AND mutation_id LIKE 'UAT-M7-%') AS sync_mutations,
-              (SELECT COUNT(*) FROM core_sync_conflicts WHERE organization_id='ORG-MKB' AND mutation_id LIKE 'UAT-M7-%') AS sync_conflicts;
-          ")"
-          printf '%s' "$result" | node -e '
-            const raw = require("fs").readFileSync(0, "utf8");
-            const start = raw.indexOf("[");
-            if (start < 0) throw new Error("D1 JSON result not found");
-            const parsed = JSON.parse(raw.slice(start));
-            const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
-            const row = entry?.results?.[0];
-            if (!row) throw new Error("cleanup verification row missing");
-            const leftovers = Object.entries(row).filter(([, value]) => Number(value) !== 0);
-            if (leftovers.length) {
-              throw new Error("M7 UAT cleanup leftovers: " + leftovers.map(([k,v]) => k + "=" + v).join(", "));
-            }
-            console.log("M7 authenticated UAT cleanup PASS: no temporary identities or operational rows remain");
           '
 
       - name: Verify security headers and auth boundaries
