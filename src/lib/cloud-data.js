@@ -319,14 +319,35 @@ export function resetCloudDataBridge() {
 export async function switchCloudOrganization(localDb, organizationId) {
   const target = String(organizationId || '').trim();
   if (!target) throw new Error('ORGANIZATION_REQUIRED');
-  const switched = await switchApiOrganization(target);
-  resetCloudDataBridge();
-  const session = await apiJson('/api/auth/session');
-  const bootstrap = await bootstrapOperationalData(localDb, session);
-  if (bootstrap.mode !== 'cloud' || !bootstrap.data) throw new Error('ORGANIZATION_NOT_CUT_OVER');
-  applyRemoteDataToLocal(localDb, bootstrap.data);
-  const account = ensureCloudIdentity(localDb, session, null, '');
-  return { account: account || switched, session, bootstrap };
+  const previous = String(window.FT?.state?.account?.organizationId || localDb?.currentOrganizationId || '');
+  let switched = null;
+  try {
+    switched = await switchApiOrganization(target);
+    resetCloudDataBridge();
+    const session = await apiJson('/api/auth/session');
+    const bootstrap = await bootstrapOperationalData(localDb, session);
+    if (bootstrap.mode !== 'cloud' || !bootstrap.data) throw new Error('ORGANIZATION_NOT_CUT_OVER');
+    applyRemoteDataToLocal(localDb, bootstrap.data);
+    const account = ensureCloudIdentity(localDb, session, null, '');
+    return { account: account || switched, session, bootstrap };
+  } catch (error) {
+    if (previous && previous !== target && switched) {
+      try {
+        await switchApiOrganization(previous);
+        resetCloudDataBridge();
+        const priorSession = await apiJson('/api/auth/session');
+        const priorBootstrap = await bootstrapOperationalData(localDb, priorSession);
+        if (priorBootstrap.mode === 'cloud' && priorBootstrap.data) {
+          applyRemoteDataToLocal(localDb, priorBootstrap.data);
+          ensureCloudIdentity(localDb, priorSession, null, '');
+        }
+      } catch (rollbackError) {
+        console.warn('organization_switch_rollback_failed', rollbackError?.message || rollbackError);
+        await revokeApiSession().catch(() => {});
+      }
+    }
+    throw error;
+  }
 }
 
 export async function logoutCloudSession() {
