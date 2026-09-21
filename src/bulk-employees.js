@@ -254,6 +254,8 @@ export async function commit() {
   const importId = `BULK-${crypto.randomUUID()}`;
   const groups = chunks(currentRows, COMMIT_CHUNK);
   const totals = { inserted:0, updated:0, loginCreated:0, loginLinked:0 };
+  const previewByRow = new Map(currentPreview.map(row => [Number(row.rowNumber), row]));
+  const credentialKeys = new Set();
   const root = document.getElementById('bulkEmployeePreview');
 
   try {
@@ -269,12 +271,25 @@ export async function commit() {
           return initialPassword ? { ...row, initial_password: initialPassword } : row;
         }),
       }, { retries: 2 });
+      const chunkPreview = groups[i]
+        .map(row => previewByRow.get(Number(row._row_number)))
+        .filter(Boolean);
       if (!data.replayed) {
         totals.inserted += Number(data.summary?.inserted || 0);
         totals.updated += Number(data.summary?.updated || 0);
         totals.loginCreated += Number(data.summary?.loginCreated || 0);
         totals.loginLinked += Number(data.summary?.loginLinked || 0);
-        generatedCredentials.push(...(data.credentials || []));
+      } else {
+        totals.inserted += chunkPreview.filter(row => row.action === 'create').length;
+        totals.updated += chunkPreview.filter(row => row.action === 'update').length;
+        totals.loginCreated += chunkPreview.filter(row => row.loginAction === 'create').length;
+        totals.loginLinked += chunkPreview.filter(row => row.loginAction === 'link').length;
+      }
+      for (const credential of data.credentials || []) {
+        const key = String(credential.email || credential.employeeCode || credential.rowNumber || '');
+        if (!key || credentialKeys.has(key)) continue;
+        credentialKeys.add(key);
+        generatedCredentials.push(credential);
       }
     }
     await refreshFromCloud();
