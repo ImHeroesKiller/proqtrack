@@ -27,7 +27,7 @@ export function classifyRoute(pathname = '') {
   if (pathname.startsWith('/api/auth/')) return 'auth';
   if (pathname.startsWith('/api/core/')) return 'core';
   if (pathname.startsWith('/api/admin/')) return 'admin';
-  if (pathname.startsWith('/api/bulk/employees')) return 'bulk';
+  if (pathname.startsWith('/api/bulk/')) return 'bulk';
   if (pathname.startsWith('/api/evidence')) return 'evidence';
   if (pathname.startsWith('/api/reports') || pathname.startsWith('/api/report-schedules')) return 'reporting';
   if (pathname.startsWith('/api/workflows') || pathname.startsWith('/api/notifications')) return 'workflow';
@@ -212,11 +212,16 @@ export async function healthResponse(env, requestId) {
     const uatSchema = await env.DB.prepare(`
       SELECT COUNT(*) AS count
       FROM sqlite_master
-      WHERE type='table' AND name='core_auth_devices'
+      WHERE type='table' AND name IN (
+        'core_auth_devices',
+        'core_competitors',
+        'core_competitor_products',
+        'core_attendance_points'
+      )
     `).first();
     const orgColumns = await env.DB.prepare(`PRAGMA table_info(core_organizations)`).all();
     const orgColumnNames = new Set((orgColumns?.results || []).map(row => String(row.name)));
-    uatSchemaReady = Number(uatSchema?.count || 0) === 1 && orgColumnNames.has('metadata_json');
+    uatSchemaReady = Number(uatSchema?.count || 0) === 4 && orgColumnNames.has('metadata_json');
   } catch (error) {
     console.error('health_probe_failed', { requestId, error: error?.message || String(error) });
   }

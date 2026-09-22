@@ -40,6 +40,7 @@ import { defaultPortrait } from './lib/avatars.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
+import './bulk-master.js';
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -1532,6 +1533,7 @@ function renderOutlets() {
           <option>Toko Elektronik</option><option>Bakery</option><option>Toko Fashion</option>
         </select>
         <div class="spacer"></div>
+        <button class="btn btn-secondary" onclick="BulkMaster.open('outlets')">Bulk Upload</button>
         <button class="btn btn-primary" onclick="FT.openOutletModal()">+ Tambah Outlet</button>
       </div>
       <div class="visits-table-wrapper">
@@ -2129,6 +2131,7 @@ function renderProducts() {
           <option value="inactive">Inactive</option>
         </select>
         <div class="spacer"></div>
+        <button class="btn btn-secondary" onclick="BulkMaster.open('products')">Bulk Upload</button>
         <button class="btn btn-primary" onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
       <datalist id="catList">${cats.map(c => `<option value="${c}">`).join('')}</datalist>
@@ -3097,6 +3100,8 @@ function renderCompetitors() {
       <div class="filter-row">
         <div class="card-title" style="margin:0;">Master Kompetitor</div>
         <div class="spacer"></div>
+        <button class="btn btn-secondary" onclick="BulkMaster.open('competitors')">Bulk Merek</button>
+        <button class="btn btn-secondary" onclick="BulkMaster.open('competitorProducts')">Bulk Produk</button>
         <button class="btn btn-secondary" onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
         <button class="btn btn-primary" onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
       </div>

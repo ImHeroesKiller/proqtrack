@@ -90,8 +90,14 @@ function renderAttendanceSettings() {
           <button class="btn btn-primary" type="submit">Save attendance policy</button>
         </form>
         <hr style="margin:20px 0;border:0;border-top:1px solid var(--gray-200)">
-        <div class="card-title">Named points</div>
-        <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
+        <div class="filter-row">
+          <div>
+            <div class="card-title">Named points</div>
+            <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-secondary" type="button" onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
+        </div>
         <form class="am-form" onsubmit="AM.addAttendancePoint(event)">
           <div class="form-row">
             <div class="form-group"><label class="label">Name</label><input class="input" name="pointName" required></div>

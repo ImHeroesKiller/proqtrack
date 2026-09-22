@@ -20,6 +20,9 @@ export const ENTITY_COLLECTIONS = Object.freeze({
   surveyTemplates: 'surveyTemplates',
   surveyResponses: 'surveyResponses',
   projectProducts: 'projectProducts',
+  competitors: 'competitors',
+  competitorProducts: 'competitorProducts',
+  attendancePoints: 'attendancePoints',
 });
 
 const ENTITY_TABLES = Object.freeze({
@@ -35,9 +38,12 @@ const ENTITY_TABLES = Object.freeze({
   surveyTemplates: 'core_survey_templates',
   surveyResponses: 'core_survey_responses',
   projectProducts: 'core_project_products',
+  competitors: 'core_competitors',
+  competitorProducts: 'core_competitor_products',
+  attendancePoints: 'core_attendance_points',
 });
 
-const ADMIN_ENTITIES = new Set(['clients', 'projects', 'employees', 'projectAssignments', 'outlets', 'products', 'surveyTemplates', 'projectProducts']);
+const ADMIN_ENTITIES = new Set(['clients', 'projects', 'employees', 'projectAssignments', 'outlets', 'products', 'surveyTemplates', 'projectProducts', 'competitors', 'competitorProducts', 'attendancePoints']);
 const FIELD_ENTITIES = new Set(['visits', 'attendance', 'productSales', 'surveyResponses']);
 const BROAD_ROLES = new Set(['superadmin', 'head', 'admin']);
 const MAX_CHANGES = 250;
@@ -197,11 +203,13 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
       return projectIds.length > 0 && projectIds.every(id => projectAllowed(claims, id));
     }
+    if (['competitors','competitorProducts','attendancePoints'].includes(entity)) return true;
     if (entity === 'projectAssignments' || entity === 'projectProducts' || entity === 'surveyTemplates') return projectAllowed(claims, projectId);
     if (FIELD_ENTITIES.has(entity)) return projectAllowed(claims, projectId) && (!employeeId || context.accessibleEmployeeIds?.has(employeeId));
     return false;
   }
   if (role === 'supervisor' || role === 'employee') {
+    if (role === 'supervisor' && entity === 'attendancePoints') return true;
     if (!FIELD_ENTITIES.has(entity)) return false;
     return projectAllowed(claims, projectId) && !!employeeId && context.accessibleEmployeeIds?.has(employeeId);
   }
@@ -211,8 +219,15 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
 function normalizeRow(entity, row, organizationId, extras = {}) {
   const base = { ...row, organizationId };
   switch (entity) {
-    case 'clients': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Client'), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
-    case 'projects': return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name || 'Project'), status: ({ planning: 'draft', completed: 'closed', cancelled: 'closed' }[str(row.status)] || safeStatus(row.status, ['draft','active','paused','closed','archived'], 'active')) };
+    case 'clients': {
+      const uiStatus = safeStatus(row.status, ['active','inactive','archived','prospect'], 'active');
+      return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Client'), uiStatus, status: uiStatus === 'prospect' ? 'active' : uiStatus };
+    }
+    case 'projects': {
+      const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
+      const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
+      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name || 'Project'), uiStatus, status };
+    }
     case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName || 'Employee'), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
     case 'projectAssignments': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), status: ({ removed: 'ended', assigned: 'active' }[str(row.status)] || safeStatus(row.status, ['active','inactive','ended'], 'active')) };
     case 'outlets': return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.outletNumber || row.code || row.id), name: str(row.name || 'Outlet'), projectIds: unique(row.projectIds?.length ? row.projectIds : (row.projectId ? [row.projectId] : [])), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
@@ -223,6 +238,9 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'surveyTemplates': return { ...base, id: str(row.id), clientId: str(row.clientId), projectId: nullable(str(row.projectId)), name: str(row.name || row.title || 'Survey'), status: safeStatus(row.status, ['draft','active','closed','archived'], 'draft') };
     case 'surveyResponses': return { ...base, id: str(row.id), templateId: str(row.templateId), projectId: str(row.projectId), outletId: nullable(str(row.outletId)), employeeId: str(row.employeeId), visitId: nullable(str(row.visitId)), status: safeStatus(row.status, ['draft','submitted','rejected'], 'submitted') };
     case 'projectProducts': return { ...base, projectId: str(row.projectId), productId: str(row.productId), status: safeStatus(row.status, ['active','inactive'], 'active') };
+    case 'competitors': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Competitor'), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
+    case 'competitorProducts': return { ...base, id: str(row.id), competitorId: str(row.competitorId), sku: str(row.sku || row.id), name: str(row.name || 'Competitor Product'), unit: str(row.unit || 'pcs'), typicalPrice: num(row.typicalPrice), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
+    case 'attendancePoints': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Attendance Point'), type: safeStatus(row.type, ['office','meeting','store','point'], 'point'), outletId: nullable(str(row.outletId)), latitude: num(row.latitude ?? row.lat), longitude: num(row.longitude ?? row.lng), radiusM: num(row.radiusM), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     default: return base;
   }
 }
@@ -254,6 +272,9 @@ function upsertStatements(env, entity, rawRow, organizationId, extras = {}) {
     case 'surveyTemplates': return [p(`INSERT INTO core_survey_templates(id,organization_id,client_id,project_id,name,status,version,starts_at,ends_at,created_by,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET client_id=excluded.client_id,project_id=excluded.project_id,name=excluded.name,status=excluded.status,version=excluded.version,starts_at=excluded.starts_at,ends_at=excluded.ends_at,metadata_json=excluded.metadata_json,row_version=core_survey_templates.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_survey_templates.organization_id=excluded.organization_id`, [row.id,organizationId,row.clientId,row.projectId,row.name,row.status,Math.max(1,Number(row.version)||1),nullable(row.startsAt),nullable(row.endsAt),nullable(row.createdBy),m,1])];
     case 'surveyResponses': return [p(`INSERT INTO core_survey_responses(id,organization_id,template_id,project_id,outlet_id,employee_id,visit_id,status,answers_json,submitted_at,idempotency_key,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET template_id=excluded.template_id,project_id=excluded.project_id,outlet_id=excluded.outlet_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,status=excluded.status,answers_json=excluded.answers_json,submitted_at=excluded.submitted_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_survey_responses.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_survey_responses.organization_id=excluded.organization_id`, [row.id,organizationId,row.templateId,row.projectId,row.outletId,row.employeeId,row.visitId,row.status,JSON.stringify(row.answers || row.answers_json || {}),nullable(row.submittedAt),nullable(row.idempotencyKey),m])];
     case 'projectProducts': return [p(`INSERT INTO core_project_products(organization_id,project_id,product_id,status,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(organization_id,project_id,product_id) DO UPDATE SET status=excluded.status,updated_at=CURRENT_TIMESTAMP`, [organizationId,row.projectId,row.productId,row.status])];
+    case 'competitors': return [p(`INSERT INTO core_competitors(id,organization_id,code,name,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_competitors.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitors.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.status,m])];
+    case 'competitorProducts': return [p(`INSERT INTO core_competitor_products(id,organization_id,competitor_id,sku,name,unit,typical_price,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET competitor_id=excluded.competitor_id,sku=excluded.sku,name=excluded.name,unit=excluded.unit,typical_price=excluded.typical_price,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_competitor_products.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitor_products.organization_id=excluded.organization_id`, [row.id,organizationId,row.competitorId,row.sku,row.name,nullable(row.unit),num(row.typicalPrice),row.status,m])];
+    case 'attendancePoints': return [p(`INSERT INTO core_attendance_points(id,organization_id,code,name,type,address,outlet_id,latitude,longitude,radius_m,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,type=excluded.type,address=excluded.address,outlet_id=excluded.outlet_id,latitude=excluded.latitude,longitude=excluded.longitude,radius_m=excluded.radius_m,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_attendance_points.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_attendance_points.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.type,nullable(row.address),nullable(row.outletId),num(row.latitude),num(row.longitude),num(row.radiusM),row.status,m])];
     default: return [];
   }
 }
@@ -330,8 +351,8 @@ function decodeRows(entity, rows, relationMap = new Map()) {
     const meta = parseMetadata(dbRow.metadata_json);
     const common = { ...meta, id: dbRow.id || meta.id, organizationId: dbRow.organization_id || meta.organizationId, rowVersion: Number(dbRow.row_version || meta.rowVersion || 1) };
     switch (entity) {
-      case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: dbRow.status };
-      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
+      case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status };
+      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
       case 'employees': return { ...common, authUserId: dbRow.auth_user_id || meta.authUserId, employeeCode: dbRow.employee_code, name: dbRow.full_name, email: dbRow.email, phone: dbRow.phone, status: dbRow.employment_status };
       case 'projectAssignments': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, supervisorUserId: dbRow.supervisor_user_id, positionName: dbRow.position_name, status: dbRow.status, startDate: dbRow.starts_on, endDate: dbRow.ends_on };
       case 'outlets': return { ...common, clientId: dbRow.client_id, outletNumber: dbRow.code, code: dbRow.code, name: dbRow.name, address: dbRow.address, lat: dbRow.latitude, lng: dbRow.longitude, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
@@ -341,6 +362,9 @@ function decodeRows(entity, rows, relationMap = new Map()) {
       case 'productSales': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, employeeId: dbRow.employee_id, productId: dbRow.product_id, quantity: dbRow.quantity, unitPrice: dbRow.unit_price, totalAmount: dbRow.total_amount, amount: dbRow.total_amount, soldAt: dbRow.sold_at };
       case 'surveyTemplates': return { ...common, clientId: dbRow.client_id, projectId: dbRow.project_id, name: dbRow.name, status: dbRow.status, version: dbRow.version };
       case 'surveyResponses': return { ...common, templateId: dbRow.template_id, projectId: dbRow.project_id, outletId: dbRow.outlet_id, employeeId: dbRow.employee_id, visitId: dbRow.visit_id, status: dbRow.status, answers: parseMetadata(dbRow.answers_json), submittedAt: dbRow.submitted_at };
+      case 'competitors': return { ...common, code: dbRow.code, name: dbRow.name, status: dbRow.status };
+      case 'competitorProducts': return { ...common, competitorId: dbRow.competitor_id, sku: dbRow.sku, name: dbRow.name, unit: dbRow.unit, typicalPrice: dbRow.typical_price, status: dbRow.status };
+      case 'attendancePoints': return { ...common, code: dbRow.code, name: dbRow.name, type: dbRow.type, address: dbRow.address, outletId: dbRow.outlet_id, lat: dbRow.latitude, lng: dbRow.longitude, radiusM: dbRow.radius_m, status: dbRow.status };
       default: return common;
     }
   });
@@ -348,7 +372,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
 
 async function bootstrapData(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses] = await Promise.all([
+  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints] = await Promise.all([
     allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
@@ -362,6 +386,9 @@ async function bootstrapData(env, claims) {
     allRows(env.DB.prepare('SELECT * FROM core_product_sales WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_survey_templates WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_survey_responses WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_competitors WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_competitor_products WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
   ]);
   const outletProjects = new Map();
   for (const row of projectOutlets) { if (!outletProjects.has(str(row.outlet_id))) outletProjects.set(str(row.outlet_id), []); outletProjects.get(str(row.outlet_id)).push(str(row.project_id)); }
@@ -379,6 +406,9 @@ async function bootstrapData(env, claims) {
     productSales: decodeRows('productSales', sales),
     surveyTemplates: decodeRows('surveyTemplates', surveyTemplates),
     surveyResponses: decodeRows('surveyResponses', surveyResponses),
+    competitors: decodeRows('competitors', competitors),
+    competitorProducts: decodeRows('competitorProducts', competitorProducts),
+    attendancePoints: decodeRows('attendancePoints', attendancePoints),
     projectProducts: projectProducts.map ? [] : projectProducts,
   };
   data.projectProducts = projectProducts instanceof Map ? [...projectProducts.entries()].flatMap(([productId, ids]) => ids.map(projectId => ({ id: `PP-${projectId}-${productId}`, organizationId: org, projectId, productId, status: 'active' }))) : [];
@@ -461,7 +491,7 @@ async function handleImport(request, env, claims) {
 
   const { statements: authStatements, userIdByEmployee } = await importAuthStatements(env, canonical, claims, organizationId);
   const statements = [...authStatements];
-  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','visits','attendance','productSales','surveyTemplates','surveyResponses'];
+  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','surveyTemplates','surveyResponses'];
   for (const entity of order) {
     for (const row of canonical[entity] || []) {
       const extras = entity === 'employees' ? { authUserId: userIdByEmployee.get(str(row.id)) || null } : {};

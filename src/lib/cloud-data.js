@@ -14,6 +14,9 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'surveyTemplates',
   'surveyResponses',
   'projectProducts',
+  'competitors',
+  'competitorProducts',
+  'attendancePoints',
 ]);
 
 const DB_KEY = 'proqtrack_db_v6';
@@ -39,6 +42,143 @@ function stable(value) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+const LEGACY_DEMO_COMPETITOR_IDS = new Set([
+  'CMP001','CMP002','CMP003','CMP004','CMP005','CMP006','CMP007','CMP008',
+]);
+const LEGACY_DEMO_COMPETITOR_PRODUCT_IDS = new Set([
+  'CPD001','CPD002','CPD003','CPD004','CPD005','CPD006','CPD007',
+  'CPD008','CPD009','CPD010','CPD011','CPD012','CPD013','CPD014',
+]);
+
+function sameOrganization(row, organizationId) {
+  return !!organizationId && String(row?.organizationId || '') === String(organizationId);
+}
+
+function legacyRefMap(rows = [], fields = []) {
+  const map = new Map();
+  for (const row of rows) {
+    for (const field of fields) {
+      const value = String(row?.[field] || '').trim().toLowerCase();
+      if (value && !map.has(value)) map.set(value, row);
+    }
+  }
+  return map;
+}
+
+export function legacyMasterMigrationChanges(localDb = {}, remoteData = {}, organizationId = '') {
+  if (!organizationId) return [];
+  const changes = [];
+  const remoteCompetitors = Array.isArray(remoteData.competitors) ? remoteData.competitors : [];
+  const remoteProducts = Array.isArray(remoteData.competitorProducts) ? remoteData.competitorProducts : [];
+  const remotePoints = Array.isArray(remoteData.attendancePoints) ? remoteData.attendancePoints : [];
+  const remoteOutlets = new Set((remoteData.outlets || []).map(row => String(row?.id || '')));
+  const competitorRefs = legacyRefMap(remoteCompetitors, ['id','code','name']);
+  const competitorIdMap = new Map();
+
+  for (const row of Array.isArray(localDb.competitors) ? localDb.competitors : []) {
+    if (!sameOrganization(row, organizationId) || LEGACY_DEMO_COMPETITOR_IDS.has(String(row.id || ''))) continue;
+    const existing = competitorRefs.get(String(row.id || '').toLowerCase())
+      || competitorRefs.get(String(row.code || '').toLowerCase())
+      || competitorRefs.get(String(row.name || '').toLowerCase());
+    if (existing) {
+      competitorIdMap.set(String(row.id), String(existing.id));
+      continue;
+    }
+    const canonical = {
+      ...clone(row),
+      id: String(row.id || ('CMP-' + crypto.randomUUID())),
+      code: String(row.code || row.id || '').trim() || ('CMP-' + crypto.randomUUID().slice(0,8)),
+      organizationId,
+      status: row.status || 'active',
+    };
+    competitorIdMap.set(String(row.id), canonical.id);
+    changes.push({ entity:'competitors', op:'upsert', row:canonical });
+    competitorRefs.set(canonical.id.toLowerCase(), canonical);
+    competitorRefs.set(String(canonical.code).toLowerCase(), canonical);
+  }
+
+  const remoteProductKeys = new Set(remoteProducts.map(row =>
+    String(row.competitorId || '').toLowerCase() + '::' + String(row.sku || '').toLowerCase()
+  ));
+  for (const row of Array.isArray(localDb.competitorProducts) ? localDb.competitorProducts : []) {
+    if (!sameOrganization(row, organizationId) || LEGACY_DEMO_COMPETITOR_PRODUCT_IDS.has(String(row.id || ''))) continue;
+    const competitorId = competitorIdMap.get(String(row.competitorId))
+      || competitorRefs.get(String(row.competitorId || '').toLowerCase())?.id
+      || '';
+    if (!competitorId) continue;
+    const key = String(competitorId).toLowerCase() + '::' + String(row.sku || '').toLowerCase();
+    if (remoteProductKeys.has(key)) continue;
+    changes.push({
+      entity:'competitorProducts',
+      op:'upsert',
+      row:{ ...clone(row), competitorId, organizationId },
+    });
+    remoteProductKeys.add(key);
+  }
+
+  const pointRefs = legacyRefMap(remotePoints, ['id','code','name']);
+  for (const row of Array.isArray(localDb.attendancePoints) ? localDb.attendancePoints : []) {
+    if (!sameOrganization(row, organizationId) || row?.builtIn || String(row?.id || '') === 'APT-OFFICE') continue;
+    const existing = pointRefs.get(String(row.id || '').toLowerCase())
+      || pointRefs.get(String(row.code || '').toLowerCase())
+      || pointRefs.get(String(row.name || '').toLowerCase());
+    if (existing) continue;
+    const outletId = row.outletId && remoteOutlets.has(String(row.outletId)) ? String(row.outletId) : null;
+    changes.push({
+      entity:'attendancePoints',
+      op:'upsert',
+      row:{
+        ...clone(row),
+        id:String(row.id || ('APT-' + crypto.randomUUID())),
+        code:String(row.code || row.id || '').trim() || ('APT-' + crypto.randomUUID().slice(0,8)),
+        organizationId,
+        outletId,
+        ...(row.outletId && !outletId ? { legacyOutletId:String(row.outletId) } : {}),
+        status:row.status || 'active',
+      },
+    });
+  }
+  return changes;
+}
+
+function stableMutationSuffix(changes = []) {
+  const input = changes.map(change => change.entity + ':' + (change.row?.id || '')).sort().join('|');
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+async function migrateLegacyMasterCollections(localDb, remote, account = {}) {
+  const organizationId = String(account?.organizationId || account?.organization?.id || localDb?.currentOrganizationId || '');
+  const changes = legacyMasterMigrationChanges(localDb, remote?.data || {}, organizationId);
+  if (!changes.length) return remote;
+
+  let baseRevision = Number(remote?.revision || 0);
+  for (let offset = 0; offset < changes.length; offset += 100) {
+    const chunk = changes.slice(offset, offset + 100);
+    const mutationId = 'LEGACY-MASTER-' + organizationId + '-' + stableMutationSuffix(chunk);
+    const send = () => apiJson('/api/core/sync', {
+      method:'POST',
+      headers:{ 'idempotency-key':mutationId },
+      body:JSON.stringify({ mutationId, baseRevision, changes:chunk }),
+    });
+    let result;
+    try {
+      result = await send();
+    } catch (error) {
+      if (error?.code !== 'REVISION_CONFLICT') throw error;
+      const latest = await apiJson('/api/core/bootstrap');
+      baseRevision = Number(latest?.revision || baseRevision);
+      result = await send();
+    }
+    baseRevision = Number(result?.revision ?? baseRevision);
+  }
+  return apiJson('/api/core/bootstrap');
 }
 
 function snapshotCollections(db, includeAccounts = false) {
@@ -247,7 +387,7 @@ export async function importLegacySnapshotForAdmin(localDb) {
 
 export async function bootstrapOperationalData(localDb, account = {}) {
   if (!getApiToken()) return { mode: 'local', data: null };
-  const remote = await apiJson('/api/core/bootstrap');
+  let remote = await apiJson('/api/core/bootstrap');
   cutoverMode = remote.cutoverMode || 'pending';
   revision = Number(remote.revision || 0);
 
@@ -260,6 +400,16 @@ export async function bootstrapOperationalData(localDb, account = {}) {
       implicitLegacyImportDisabled: true,
     });
     return { mode: 'pending', data: null, revision, cutoverMode };
+  }
+
+  try {
+    remote = await migrateLegacyMasterCollections(localDb, remote, account);
+    revision = Number(remote.revision || revision);
+  } catch (error) {
+    ready = false;
+    lastError = error.code || error.message || String(error);
+    emitStatus('legacy-master-migration-error');
+    throw error;
   }
 
   baseline = snapshotCollections(remote.data || {});
