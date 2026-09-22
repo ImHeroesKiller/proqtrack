@@ -85,6 +85,11 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
   assert.match(uploads, /Organisasi tersimpan sudah tidak aktif/);
 });
 
+test('superadmin login hotfix forces a fresh service-worker cache', async () => {
+  const serviceWorker = await read('sw.js');
+  assert.match(serviceWorker, /proqtrack-v12\.2/);
+});
+
 test('successful cloud login refreshes only the hashed offline credential', async () => {
   const [bridge, cutover] = await Promise.all([read('src/lib/cloud-data.js'), read('src/cloud-cutover.js')]);
   assert.match(bridge, /verifiedPassword = ''/);
