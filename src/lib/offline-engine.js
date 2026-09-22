@@ -5,6 +5,8 @@ const SNAPSHOT_PREFIX = 'offline-snapshot:';
 const OPERATIONAL_KEYS = Object.freeze([
   'clients','projects','employees','projectAssignments','outlets','visits','attendance',
   'products','productSales','surveyTemplates','surveyResponses','projectProducts',
+  'competitors','competitorProducts','attendancePoints','leaves','stocks',
+  'priceObservations','competitorIntel','outletProposals',
 ]);
 let installed = false;
 let recovering = false;
@@ -118,11 +120,16 @@ export async function recoverCloudConflict(organizationId = '') {
     if (account.role !== 'superadmin' && account.organizationId && String(account.organizationId) !== orgId) return false;
     const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
     const db = getDB();
+    const pending = await snapshotItem(orgId);
     const bootstrap = await cloud.bootstrapOperationalData(db, account);
     if (bootstrap.mode === 'cloud' && bootstrap.data) cloud.applyRemoteDataToLocal(db, bootstrap.data);
-    const replayed = await replayLatestSnapshot(orgId);
-    emit(replayed ? 'conflict-rebased' : 'conflict-rebase-empty', orgId);
-    return replayed;
+    // Fail closed: never auto-overwrite a newer server revision with a whole
+    // device snapshot. Keep the offline snapshot durable for explicit review.
+    emit(pending ? 'conflict-held' : 'conflict-no-local-change', orgId, {
+      pendingSnapshot: !!pending,
+      resolution: pending ? 'manual' : 'server-wins',
+    });
+    return false;
   } catch (error) {
     emit('conflict-recovery-failed', organizationId, { error: error?.message || String(error) });
     return false;
@@ -135,7 +142,7 @@ export function installOfflineEngine() {
   if (installed || typeof window === 'undefined') return false;
   installed = true;
   observeLocalCache();
-  observeTimer = setInterval(observeLocalCache, 1000);
+  observeTimer = setInterval(observeLocalCache, 5000);
   window.addEventListener('proqtrack:db-updated', observeLocalCache);
   window.addEventListener('online', () => replayLatestSnapshot().catch(() => {}));
   document?.addEventListener?.('visibilitychange', () => {

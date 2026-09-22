@@ -5,6 +5,12 @@ const TITLE_ROUTES={
   'Progress Kunjungan':'#/visits',
   'Portofolio Aktif':'#/projects'
 };
+const STAT_ROUTES={
+  'Total Karyawan':'#/employees',
+  'Kunjungan Hari Ini':'#/visits',
+  'Stok Menipis':'#/stocks',
+  'Ijin/Cuti Pending':'#/leaves'
+};
 function link(el,route,label){if(!el||el.dataset.deepLink==='1')return;el.dataset.deepLink='1';el.setAttribute('role','link');el.setAttribute('tabindex','0');el.setAttribute('aria-label',`${label}, buka detail`);el.style.cursor='pointer';el.addEventListener('click',event=>{if(event.target.closest('a,button,input,select,textarea'))return;location.hash=route});el.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();location.hash=route}})}
-function enhance(){if(!(location.hash==='#/'||location.hash==='#'))return;document.querySelectorAll('.card-title').forEach(title=>{const label=title.textContent.trim(),route=TITLE_ROUTES[label];if(route)link(title.closest('.card'),route,label)});const portfolio=document.querySelector('.phase0-portfolio');if(portfolio)link(portfolio,'#/projects','Portofolio Aktif');document.querySelectorAll('.phase0-project-card').forEach(card=>link(card,'#/projects',card.querySelector('strong')?.textContent||'Project'))}
+function enhance(){if(!(location.hash==='#/'||location.hash==='#'))return;document.querySelectorAll('.card-title').forEach(title=>{const label=title.textContent.trim(),route=TITLE_ROUTES[label];if(route)link(title.closest('.card'),route,label)});document.querySelectorAll('.stat-card').forEach(card=>{const label=card.querySelector('.stat-label')?.textContent.trim()||'';const route=STAT_ROUTES[label];if(route)link(card,route,label)});const portfolio=document.querySelector('.phase0-portfolio');if(portfolio)link(portfolio,'#/projects','Portofolio Aktif');document.querySelectorAll('.phase0-project-card').forEach(card=>link(card,'#/projects',card.querySelector('strong')?.textContent||'Project'))}
 function schedule(){setTimeout(enhance,100);setTimeout(enhance,260)}window.addEventListener('hashchange',schedule);schedule();export {};

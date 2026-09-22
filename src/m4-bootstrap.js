@@ -11,9 +11,9 @@ function installStatusBridge() {
     if ((status === 'queued-offline' || status === 'offline-session') && last !== status) {
       last = status;
       window.showToast?.('Mode offline aktif. Perubahan operasional aman di perangkat.', 'success');
-    } else if (status === 'conflict-rebased' && last !== status) {
+    } else if (status === 'conflict-held' && last !== status) {
       last = status;
-      window.showToast?.('Data berhasil diperbarui ke versi terbaru.', 'success');
+      window.showToast?.('Ada perubahan dari perangkat lain. Perubahan offline tetap tersimpan untuk ditinjau.', 'error');
     } else if (status === 'synced') {
       last = '';
     }

@@ -10,14 +10,17 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:development": "npm run build && wrangler deploy --env development",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
-    "deploy:production": "npm run build && wrangler deploy --env production",
+    "deploy:production": "npm run deploy:live",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "db:migrate:development": "wrangler d1 migrations apply DB --remote --env development",
     "db:migrate:staging": "wrangler d1 migrations apply DB --remote --env staging",
-    "db:migrate:production": "wrangler d1 migrations apply DB --remote --env production"
+    "db:migrate:production": "npm run db:migrate:live",
+    "deploy:live": "npm run build && wrangler deploy",
+    "db:migrate:live": "wrangler d1 migrations apply DB --remote"
   },
   "devDependencies": {
-    "wrangler": "^4.123.0"
+    "wrangler": "^4.123.0",
+    "leaflet": "1.9.4"
   }
 }

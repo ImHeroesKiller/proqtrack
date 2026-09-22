@@ -78,14 +78,14 @@ test('scheduled maintenance expires sessions and cleans transient operational st
   assert.match(source, /core_maintenance_runs/);
 });
 
-test('wrangler enables cron and explicit M5 production limits', async () => {
-  const config = await read('wrangler.jsonc');
-  assert.match(config, /"crons": \["\*\/15 \* \* \* \*"\]/);
-  assert.match(config, /"API_SYNC_RATE_LIMIT_PER_MINUTE": "60"/);
-  assert.match(config, /"API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30"/);
-  assert.match(config, /"OBSERVABILITY_RETENTION_DAYS": "14"/);
-  assert.match(config, /"CORE_EVIDENCE_API_ENABLED": "true"/);
-  assert.match(config, /"MVP_FILE_API_ENABLED": "false"/);
+test('wrangler enables cron and explicit M5 live limits', async () => {
+  const config = JSON.parse(await read('wrangler.jsonc'));
+  assert.deepEqual(config.triggers?.crons, ['*/15 * * * *']);
+  assert.equal(config.vars.API_SYNC_RATE_LIMIT_PER_MINUTE, '60');
+  assert.equal(config.vars.API_EVIDENCE_RATE_LIMIT_PER_MINUTE, '30');
+  assert.equal(config.vars.OBSERVABILITY_RETENTION_DAYS, '14');
+  assert.equal(config.vars.CORE_EVIDENCE_API_ENABLED, 'true');
+  assert.equal(config.vars.MVP_FILE_API_ENABLED, 'false');
 });
 
 test('static asset build includes Cloudflare security header rules', async () => {

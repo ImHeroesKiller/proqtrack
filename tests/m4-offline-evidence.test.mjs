@@ -71,16 +71,18 @@ test('offline login requires prior cloud identity, remembered cutover and never 
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*password/i);
 });
 
-test('conflict recovery preserves durable local snapshot until replay is scheduled', async () => {
+test('conflict recovery hydrates server state but holds local snapshot for explicit review', async () => {
   const source = await read('src/lib/offline-engine.js');
   assert.match(source, /const lastSignatures = new Map\(\)/);
   assert.match(source, /if \(recovering\) return false/);
   assert.match(source, /persistDB\('offline-replay'\)/);
   assert.match(source, /status === 'ready' && !recovering/);
-  assert.match(source, /replaying/);
-  const hydrateIndex = source.indexOf('cloud.applyRemoteDataToLocal');
-  const replayIndex = source.indexOf('await replayLatestSnapshot', hydrateIndex);
-  assert.ok(hydrateIndex >= 0 && replayIndex > hydrateIndex);
+  assert.match(source, /conflict-held/);
+  const recoveryStart = source.indexOf('export async function recoverCloudConflict');
+  const recoveryEnd = source.indexOf('export function installOfflineEngine', recoveryStart);
+  const recovery = source.slice(recoveryStart, recoveryEnd);
+  assert.match(recovery, /cloud\.applyRemoteDataToLocal/);
+  assert.doesNotMatch(recovery, /await replayLatestSnapshot/);
 });
 
 test('service worker never caches API traffic and precaches the complete built app', async () => {
@@ -93,6 +95,8 @@ test('service worker never caches API traffic and precaches the complete built a
   assert.match(source, /m6-client\.js/);
   assert.match(build, /precache-manifest\.json/);
   assert.match(build, /collectFiles\("dist"\)/);
+  assert.match(build, /runtimeGraph\("src\/entry\.js"\)/);
+  assert.match(build, /node_modules\/leaflet\/dist\/leaflet\.js/);
   assert.match(build, /writeFile/);
 });
 
@@ -123,12 +127,12 @@ test('evidence client persists blob before network upload', async () => {
   assert.match(source, /idempotency-key/);
 });
 
-test('revision conflicts are recorded before client replay', async () => {
+test('revision conflicts are recorded for manual resolution', async () => {
   const [main, sync] = await Promise.all([read('worker/main.js'), read('worker/m4-sync.js')]);
   assert.match(main, /handleM4Sync/);
   assert.match(sync, /core_sync_conflicts/);
   assert.match(sync, /REVISION_CONFLICT/);
-  assert.match(sync, /client_replay/);
+  assert.match(sync, /'manual'/);
 });
 
 test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {

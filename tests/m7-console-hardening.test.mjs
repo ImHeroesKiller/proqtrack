@@ -4,17 +4,21 @@ import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('CSP is enforced with only the intentional Google Fonts and Leaflet origins', async () => {
-  const [headers, hardening] = await Promise.all([read('_headers'), read('worker/hardening.js')]);
+test('CSP keeps executable scripts external except legacy event attributes', async () => {
+  const [headers, hardening, html] = await Promise.all([read('_headers'), read('worker/hardening.js'), read('index.html')]);
   for (const source of [headers, hardening]) {
     assert.match(source, /https:\/\/fonts\.googleapis\.com/);
     assert.match(source, /https:\/\/fonts\.gstatic\.com/);
-    assert.match(source, /https:\/\/unpkg\.com/);
+    assert.match(source, /script-src-attr 'unsafe-inline'/);
+    assert.match(source, /script-src-elem 'self' https:\/\/cdn\.jsdelivr\.net/);
+    assert.doesNotMatch(source, /https:\/\/unpkg\.com/);
+    assert.doesNotMatch(source, /script-src 'self' 'unsafe-inline'/);
   }
+  assert.match(html, /\.\/assets\/vendor\/leaflet\/leaflet\.js/);
+  assert.doesNotMatch(html, /<script type="module">/);
   assert.match(headers, /Content-Security-Policy:/);
   assert.doesNotMatch(headers, /Content-Security-Policy-Report-Only/);
   assert.match(hardening, /headers\.set\('content-security-policy'/);
-  assert.doesNotMatch(hardening, /headers\.set\('content-security-policy-report-only'/);
 });
 
 test('M7 health still requires the M6 reporting schema', async () => {
@@ -87,7 +91,7 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.6/);
+  assert.match(serviceWorker, /proqtrack-v12\.7/);
 });
 
 test('global superadmin session selects an active tenant before bootstrap', async () => {

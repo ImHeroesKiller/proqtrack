@@ -1526,8 +1526,8 @@ export function createOutletProposal(data) {
     outletNumber,
     ...org,
   };
-  db.outlets = db.outlets || [];
-  db.outlets.push(outlet);
+  // A proposal is not master outlet data yet. Keep the preallocated outlet id
+  // only on the proposal; create the authoritative outlet after final approval.
   db.outletProposals = db.outletProposals || [];
   db.outletProposals.push(proposal);
   saveDB();
@@ -1573,7 +1573,7 @@ export function reviewOutletProposal(id, decision, note = '', projectId = null) 
     let outlet = (db.outlets || []).find(o => o.id === row.outletId);
     if (!outlet) {
       outlet = {
-        id: uid('OUT'),
+        id: row.outletId || uid('OUT'),
         outletNumber: row.outletNumber || nextOutletNumber(db),
         status: 'active',
         name: row.name,

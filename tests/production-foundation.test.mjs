@@ -103,11 +103,18 @@ test('foundation migration never mutates or collides with legacy operational tab
   assert.match(migration, /CREATE TABLE IF NOT EXISTS\s+core_projects/i);
 });
 
-test('Cloudflare environments are isolated and production APIs stay locked', () => {
-  const names = ['development', 'staging', 'production'];
-  const dbNames = new Set();
-  const bucketNames = new Set();
+test('default config is the canonical live target while development and staging stay isolated', () => {
+  assert.equal(wrangler.vars.ENVIRONMENT, 'mvp');
+  assert.equal(wrangler.vars.MVP_DATA_API_ENABLED, 'false');
+  assert.equal(wrangler.vars.MVP_FILE_API_ENABLED, 'false');
+  assert.equal(wrangler.vars.API_AUTH_REQUIRED, 'true');
+  assert.equal(wrangler.d1_databases?.[0]?.database_name, 'proqtrack-mvp');
+  assert.equal(wrangler.r2_buckets?.[0]?.bucket_name, 'proqtrack-mvp-files');
+  assert.equal(wrangler.env?.production, undefined);
 
+  const names = ['development', 'staging'];
+  const dbNames = new Set([wrangler.d1_databases[0].database_name]);
+  const bucketNames = new Set([wrangler.r2_buckets[0].bucket_name]);
   for (const name of names) {
     const env = wrangler.env?.[name];
     assert.ok(env, `missing wrangler env: ${name}`);
@@ -115,14 +122,9 @@ test('Cloudflare environments are isolated and production APIs stay locked', () 
     assert.equal(env.vars.MVP_DATA_API_ENABLED, 'false');
     assert.equal(env.vars.MVP_FILE_API_ENABLED, 'false');
     assert.equal(env.vars.API_AUTH_REQUIRED, 'true');
-    assert.equal(env.d1_databases?.[0]?.binding, 'DB');
-    assert.equal(env.r2_buckets?.[0]?.binding, 'FILES');
     dbNames.add(env.d1_databases[0].database_name);
     bucketNames.add(env.r2_buckets[0].bucket_name);
   }
-
-  assert.equal(dbNames.size, names.length, 'D1 database names must be isolated per environment');
-  assert.equal(bucketNames.size, names.length, 'R2 bucket names must be isolated per environment');
-  assert.equal(wrangler.vars.MVP_DATA_API_ENABLED, 'false');
-  assert.equal(wrangler.vars.MVP_FILE_API_ENABLED, 'false');
+  assert.equal(dbNames.size, 3);
+  assert.equal(bucketNames.size, 3);
 });

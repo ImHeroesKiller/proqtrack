@@ -12,13 +12,17 @@
     }
   },
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": [
+      "*/15 * * * *"
+    ]
   },
   "assets": {
     "binding": "ASSETS",
     "directory": "./dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
   "d1_databases": [
     {
@@ -80,7 +84,7 @@
         "APP_MILESTONE": "M7",
         "CORE_DATA_API_ENABLED": "true",
         "CORE_EVIDENCE_API_ENABLED": "true",
-    "CORE_BULK_API_ENABLED": "true",
+        "CORE_BULK_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
@@ -91,8 +95,8 @@
         "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
         "API_REPORT_RATE_LIMIT_PER_MINUTE": "20",
         "API_WORKFLOW_RATE_LIMIT_PER_MINUTE": "30",
-    "API_ADMIN_RATE_LIMIT_PER_MINUTE": "30",
-    "API_BULK_RATE_LIMIT_PER_MINUTE": "60",
+        "API_ADMIN_RATE_LIMIT_PER_MINUTE": "30",
+        "API_BULK_RATE_LIMIT_PER_MINUTE": "60",
         "REPORT_MAX_ROWS": "20000",
         "REPORT_BATCH_ROWS": "1000",
         "REPORT_QUEUE_MAX_JOBS": "3",
@@ -123,7 +127,7 @@
         "APP_MILESTONE": "M7",
         "CORE_DATA_API_ENABLED": "true",
         "CORE_EVIDENCE_API_ENABLED": "true",
-    "CORE_BULK_API_ENABLED": "true",
+        "CORE_BULK_API_ENABLED": "true",
         "MVP_DATA_API_ENABLED": "false",
         "MVP_FILE_API_ENABLED": "false",
         "API_AUTH_REQUIRED": "true",
@@ -134,51 +138,8 @@
         "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
         "API_REPORT_RATE_LIMIT_PER_MINUTE": "20",
         "API_WORKFLOW_RATE_LIMIT_PER_MINUTE": "30",
-    "API_ADMIN_RATE_LIMIT_PER_MINUTE": "30",
-    "API_BULK_RATE_LIMIT_PER_MINUTE": "60",
-        "REPORT_MAX_ROWS": "20000",
-        "REPORT_BATCH_ROWS": "1000",
-        "REPORT_QUEUE_MAX_JOBS": "3",
-        "OBSERVABILITY_RETENTION_DAYS": "14",
-        "MAINTENANCE_RETENTION_DAYS": "30",
-        "EVIDENCE_MAX_FILE_BYTES": "5242880",
-        "EVIDENCE_UPLOAD_TYPES": "image/jpeg,image/png,image/webp",
-        "MVP_MAX_FILE_BYTES": "2097152",
-        "MVP_MAX_STORAGE_BYTES": "524288000",
-        "ALLOWED_UPLOAD_TYPES": "application/pdf,text/csv,application/zip,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png,image/webp"
-      }
-    },
-    "production": {
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "proqtrack-production"
-        }
-      ],
-      "r2_buckets": [
-        {
-          "binding": "FILES",
-          "bucket_name": "proqtrack-production-files"
-        }
-      ],
-      "vars": {
-        "ENVIRONMENT": "production",
-        "APP_MILESTONE": "M7",
-        "CORE_DATA_API_ENABLED": "true",
-        "CORE_EVIDENCE_API_ENABLED": "true",
-    "CORE_BULK_API_ENABLED": "true",
-        "MVP_DATA_API_ENABLED": "false",
-        "MVP_FILE_API_ENABLED": "false",
-        "API_AUTH_REQUIRED": "true",
-        "API_SESSION_TTL_SECONDS": "28800",
-        "API_RATE_LIMIT_PER_MINUTE": "120",
-        "API_LOGIN_RATE_LIMIT_PER_MINUTE": "10",
-        "API_SYNC_RATE_LIMIT_PER_MINUTE": "60",
-        "API_EVIDENCE_RATE_LIMIT_PER_MINUTE": "30",
-        "API_REPORT_RATE_LIMIT_PER_MINUTE": "20",
-        "API_WORKFLOW_RATE_LIMIT_PER_MINUTE": "30",
-    "API_ADMIN_RATE_LIMIT_PER_MINUTE": "30",
-    "API_BULK_RATE_LIMIT_PER_MINUTE": "60",
+        "API_ADMIN_RATE_LIMIT_PER_MINUTE": "30",
+        "API_BULK_RATE_LIMIT_PER_MINUTE": "60",
         "REPORT_MAX_ROWS": "20000",
         "REPORT_BATCH_ROWS": "1000",
         "REPORT_QUEUE_MAX_JOBS": "3",

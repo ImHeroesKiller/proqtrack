@@ -420,30 +420,9 @@
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="./assets/vendor/leaflet/leaflet.css" />
+<script defer src="./assets/vendor/leaflet/leaflet.js"></script>
 
-<script type="module">
-  import './assets/logo.js';
-
-  function applyBrand() {
-    document.querySelectorAll('.login-logo,.sidebar-logo').forEach(el => {
-      el.querySelectorAll('img,iframe').forEach(node => node.remove());
-      if (el.textContent.trim()) el.textContent = '';
-      el.setAttribute('aria-label', 'ProQTrack');
-    });
-    document.querySelectorAll('.login-card h1').forEach(h => {
-      h.style.cssText = 'position:absolute;width:1px;height:1px;overflow:hidden;';
-    });
-    document.querySelectorAll('.sidebar-logo-text').forEach(t => { t.style.display = 'none'; });
-  }
-
-  const obs = new MutationObserver(() => applyBrand());
-  obs.observe(document.documentElement, { childList: true, subtree: true });
-  applyBrand();
-
-  await import('./src/bootstrap.js');
-  applyBrand();
-</script>
+<script type="module" src="./src/entry.js"></script>
 </body>
 </html>

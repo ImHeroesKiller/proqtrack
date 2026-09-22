@@ -89,6 +89,7 @@ async function saveFieldPhotoM4(event, visitId, outletId) {
     if (btn) { btn.disabled = true; btn.textContent = 'Menyimpan evidence...'; }
 
     localPhoto = createFieldPhoto({
+      id: evidenceId,
       projectId: context.projectId,
       visitId: visitId || null,
       outletId,
