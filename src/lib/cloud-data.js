@@ -178,6 +178,7 @@ function p2OperationalMigrationChanges(localDb = {}, remoteData = {}, account = 
   const outlets = new Set((remoteData.outlets || []).map(row => String(row.id || '')));
   const products = new Set((remoteData.products || []).map(row => String(row.id || '')));
   const employees = new Set((remoteData.employees || []).map(row => String(row.id || '')));
+  const visits = new Set((remoteData.visits || []).map(row => String(row.id || '')));
   const competitorProducts = new Set((remoteData.competitorProducts || []).map(row => String(row.id || '')));
   const changes = [];
 
@@ -192,6 +193,7 @@ function p2OperationalMigrationChanges(localDb = {}, remoteData = {}, account = 
       const projectId = String(row.projectId || '');
       if (!projectId || !projects.has(projectId) || !owner || !employees.has(owner)) continue;
       if (entity !== 'outletProposals' && !outlets.has(String(row.outletId || ''))) continue;
+      if (row.visitId && !visits.has(String(row.visitId))) row.visitId = null;
       if (entity === 'priceObservations' && !products.has(String(row.productId || ''))) continue;
       if (entity === 'competitorIntel') {
         if (row.productId && !products.has(String(row.productId))) row.productId = null;
@@ -569,7 +571,11 @@ export async function bootstrapOperationalData(localDb, account = {}) {
     remote = await migrateP2OperationalCollections(localDb, remote, account);
     revision = Number(remote.revision || revision);
     remote.data = remote.data || {};
-    remote.data.fieldPhotos = await fetchCloudFieldPhotos();
+    try {
+      remote.data.fieldPhotos = await fetchCloudFieldPhotos();
+    } catch (error) {
+      console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
+    }
   } catch (error) {
     ready = false;
     lastError = error.code || error.message || String(error);
