@@ -17,6 +17,7 @@ const UI_TEMPLATE_FILES = [
   'src/bulk-employees.js',
   'src/bulk-master.js',
   'src/account-settings.js',
+  'src/types/index.js',
   'src/m4-bootstrap.js',
 ];
 
@@ -27,7 +28,7 @@ test('active UI templates use delegated data actions instead of executable inlin
     assert.doesNotMatch(source, /(?:^|[\s<])on(?:click|submit|change|input|keydown)\s*=/m, path);
     delegatedCount += (source.match(/data-pqt-on(?:click|submit|change|input|keydown)\s*=/g) || []).length;
   }
-  assert.ok(delegatedCount >= 248, `expected migrated actions, got ${delegatedCount}`);
+  assert.ok(delegatedCount >= 271, `expected migrated actions, got ${delegatedCount}`);
 });
 
 test('delegated UI dispatcher executes only the supported grammar without eval', async () => {
@@ -126,7 +127,7 @@ test('P3 runtime and PWA baseline wires maintenance modules explicitly', async (
   assert.match(bootstrap, /p3-runtime-2026-09-23/);
   assert.match(bootstrap, /\.\/lib\/ui-events\.js/);
   assert.match(bootstrap, /uiEvents: Boolean\(window\.ProQUIEvents\)/);
-  assert.match(sw, /proqtrack-v12\.8/);
+  assert.match(sw, /proqtrack-v12\.9/);
   assert.match(sw, /\.\/src\/lib\/ui-events\.js/);
   assert.match(sw, /\.\/src\/lib\/document-export\.js/);
 });
