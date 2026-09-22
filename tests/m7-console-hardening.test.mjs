@@ -87,7 +87,17 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.2/);
+  assert.match(serviceWorker, /proqtrack-v12\.3/);
+});
+
+test('global superadmin session selects an active tenant before bootstrap', async () => {
+  const cutover = await read('src/cloud-cutover.js');
+  const selectIndex = cutover.indexOf("cloudAccount.role === 'superadmin' && !cloudAccount.organizationId");
+  const bootstrapIndex = cutover.indexOf('bootstrapOperationalData(db, cloudAccount)', selectIndex);
+  assert.ok(selectIndex >= 0 && bootstrapIndex > selectIndex);
+  assert.match(cutover, /syncCloudOrganizations\(\)/);
+  assert.match(cutover, /switchApiOrganization\(preferred\.id\)/);
+  assert.match(cutover, /db\.currentOrganizationId = preferred\.id/);
 });
 
 test('successful cloud login refreshes only the hashed offline credential', async () => {

@@ -6,7 +6,8 @@ import {
   pairCloudAuthenticatedSalesDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
-import { clearApiToken, getApiToken } from './lib/uploads.js';
+import { clearApiToken, getApiToken, switchApiOrganization } from './lib/uploads.js';
+import { syncCloudOrganizations } from './lib/cloud-organizations.js';
 import {
   applyRemoteDataToLocal,
   bootstrapOperationalData,
@@ -80,6 +81,21 @@ async function cloudFirstLogin(event) {
     if (!cloudAccount) {
       window.showToast?.(cloudError?.message || 'Login server gagal. Periksa kredensial atau koneksi lalu coba lagi.', 'error');
       return;
+    }
+
+    if (cloudAccount.role === 'superadmin' && !cloudAccount.organizationId) {
+      try {
+        const organizations = await syncCloudOrganizations();
+        const active = organizations.filter(row => String(row.status || 'active') === 'active');
+        const preferred = active.find(row => String(row.id) === String(db.currentOrganizationId || '')) || active[0];
+        if (!preferred) throw new Error('ORGANIZATION_ACCESS_NOT_CONFIGURED');
+        cloudAccount = await switchApiOrganization(preferred.id);
+        db.currentOrganizationId = preferred.id;
+      } catch (error) {
+        await logoutCloudSession().catch(() => {});
+        window.showToast?.('Tidak ada organisasi aktif untuk workspace superadmin.', 'error');
+        return;
+      }
     }
 
     let bootstrap;
