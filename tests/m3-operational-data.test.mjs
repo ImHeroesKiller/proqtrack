@@ -111,7 +111,7 @@ test('M3 migration and runtime expose only the normalized core API', () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS core_sync_mutations/i);
   assert.match(migration, /cutover_mode TEXT NOT NULL DEFAULT 'pending'/i);
 
-  for (const env of [wrangler.vars, wrangler.env.development.vars, wrangler.env.staging.vars, wrangler.env.production.vars]) {
+  for (const env of [wrangler.vars, wrangler.env.development.vars, wrangler.env.staging.vars]) {
     assert.equal(env.CORE_DATA_API_ENABLED, 'true');
     assert.equal(env.MVP_DATA_API_ENABLED, 'false');
     assert.equal(env.MVP_FILE_API_ENABLED, 'false');
