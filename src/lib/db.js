@@ -1637,17 +1637,31 @@ export function updateVisit(id, data) {
   const db = getDB();
   const idx = db.visits.findIndex(v => v.id === id);
   if (idx === -1) return null;
-  assertCanAccessEmployee(db.visits[idx].employeeId);
-  if (data.employeeId && data.employeeId !== db.visits[idx].employeeId) {
-    assertCanAccessEmployee(data.employeeId);
+  const actor = assertLoggedIn();
+  const current = db.visits[idx];
+  assertCanAccessEmployee(current.employeeId);
+  if (data.employeeId && data.employeeId !== current.employeeId) assertCanAccessEmployee(data.employeeId);
+  if (!isOrgAdminRole(actor.role)) {
+    if (['completed','cancelled','rejected'].includes(String(current.status || ''))) throw new Error('Kunjungan final tidak dapat diubah. Gunakan workflow koreksi.');
+    for (const key of ['employeeId','projectId','outletId','checkInTime','startedAt','lat','lng']) {
+      if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
+        throw new Error('Evidence kunjungan tidak dapat diubah setelah tercatat.');
+      }
+    }
+    const nextStatus = String(data.status || current.status || 'planned');
+    const allowed = current.status === 'planned'
+      ? ['planned','in_progress','checked-in','cancelled']
+      : ['in_progress','checked-in','completed'];
+    if (!allowed.includes(nextStatus)) throw new Error('Perubahan status kunjungan tidak diizinkan.');
   }
-  db.visits[idx] = { ...db.visits[idx], ...data };
+  db.visits[idx] = { ...current, ...data };
   saveDB();
   return db.visits[idx];
 }
 
 export function deleteVisit(id) {
-  assertLoggedIn();
+  const actor = assertLoggedIn();
+  if (!isOrgAdminRole(actor.role)) throw new Error('Kunjungan tidak dapat dihapus. Gunakan workflow koreksi.');
   const db = getDB();
   const visit = (db.visits || []).find(v => v.id === id);
   if (!visit) return;
@@ -1736,8 +1750,22 @@ export function updateAttendance(id, data) {
   const db = getDB();
   const idx = db.attendance.findIndex(a => a.id === id);
   if (idx === -1) return null;
-  assertCanAccessEmployee(db.attendance[idx].employeeId);
-  db.attendance[idx] = { ...db.attendance[idx], ...data };
+  const actor = assertLoggedIn();
+  const current = db.attendance[idx];
+  assertCanAccessEmployee(current.employeeId);
+  if (!isOrgAdminRole(actor.role)) {
+    for (const key of ['employeeId','projectId','date','workDate','status','checkInAt','checkInTime','lat','lng','checkInLatitude','checkInLongitude']) {
+      if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
+        throw new Error('Absensi tercatat tidak dapat dikoreksi langsung. Gunakan workflow koreksi.');
+      }
+    }
+    for (const key of ['checkOutAt','checkOutTime','checkOutLatitude','checkOutLongitude']) {
+      if (current[key] !== undefined && current[key] !== null && current[key] !== '' && data[key] !== undefined && String(data[key]) !== String(current[key])) {
+        throw new Error('Check-out yang sudah tercatat tidak dapat diubah.');
+      }
+    }
+  }
+  db.attendance[idx] = { ...current, ...data };
   saveDB();
   return db.attendance[idx];
 }
@@ -1942,23 +1970,24 @@ export function updateLeave(id, data) {
   const current = db.leaves[idx];
   assertCanAccessEmployee(current.employeeId);
   const nextStatus = data.status || current.status;
+  if (!isOrgAdminRole(actor.role) && ['approved','rejected'].includes(String(current.status || ''))) {
+    throw new Error('Pengajuan cuti final tidak dapat diubah.');
+  }
   if (nextStatus !== current.status && !isProjectAdminRole(actor.role) && actor.role !== 'supervisor') {
     throw new Error('Akses ditolak');
   }
+  if (actor.role === 'employee' && nextStatus !== 'pending') throw new Error('Akses ditolak');
   db.leaves[idx] = { ...current, ...data };
   saveDB();
   return db.leaves[idx];
 }
 
 export function deleteLeave(id) {
-  assertLoggedIn();
+  const actor = assertLoggedIn();
+  if (!isOrgAdminRole(actor.role)) throw new Error('Pengajuan cuti tidak dapat dihapus. Gunakan status persetujuan.');
   const db = getDB();
   const leave = (db.leaves || []).find(l => l.id === id);
   if (!leave) return;
-  const actor = assertLoggedIn();
-  if (!isProjectAdminRole(actor.role) && leave.employeeId !== actor.employeeId) {
-    throw new Error('Akses ditolak');
-  }
   db.leaves = db.leaves.filter(l => l.id !== id);
   saveDB();
 }
