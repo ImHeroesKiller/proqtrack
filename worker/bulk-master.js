@@ -62,10 +62,10 @@ async function context(env, claims) {
 
 function normalizeProjectStatus(value) {
   const v = lower(value);
-  if (['draft','active','paused','closed','archived'].includes(v)) return v;
+  if (['draft','active','paused','closed','archived','on_hold','completed','cancelled'].includes(v)) return v;
   if (['planning','plan'].includes(v)) return 'draft';
-  if (['on_hold','hold'].includes(v)) return 'paused';
-  if (['completed','cancelled','canceled'].includes(v)) return 'closed';
+  if (v === 'hold') return 'on_hold';
+  if (v === 'canceled') return 'cancelled';
   return 'active';
 }
 
@@ -93,7 +93,7 @@ function normalizeMaster(entity, input, index, ctx, claims) {
       id: existing?.id || uid('CL'),
       code,
       name,
-      status: boolStatus(input.status,['active','inactive','archived'],'active'),
+      status: boolStatus(input.status,['active','inactive','archived','prospect'],'active'),
       legalName: str(input.legal_name || input.legalName),
       industry: str(input.industry),
       npwp: str(input.npwp),
