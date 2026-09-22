@@ -25,6 +25,9 @@ export const ENTITY_COLLECTIONS = Object.freeze({
   attendancePoints: 'attendancePoints',
   leaves: 'leaves',
   stocks: 'stocks',
+  priceObservations: 'priceObservations',
+  competitorIntel: 'competitorIntel',
+  outletProposals: 'outletProposals',
 });
 
 const ENTITY_TABLES = Object.freeze({
@@ -45,10 +48,13 @@ const ENTITY_TABLES = Object.freeze({
   attendancePoints: 'core_attendance_points',
   leaves: 'core_leaves',
   stocks: 'core_stocks',
+  priceObservations: 'core_price_observations',
+  competitorIntel: 'core_competitor_intel',
+  outletProposals: 'core_outlet_proposals',
 });
 
 const ADMIN_ENTITIES = new Set(['clients', 'projects', 'employees', 'projectAssignments', 'outlets', 'products', 'surveyTemplates', 'projectProducts', 'competitors', 'competitorProducts', 'attendancePoints']);
-const FIELD_ENTITIES = new Set(['visits', 'attendance', 'productSales', 'surveyResponses', 'leaves', 'stocks']);
+const FIELD_ENTITIES = new Set(['visits', 'attendance', 'productSales', 'surveyResponses', 'leaves', 'stocks', 'priceObservations', 'competitorIntel', 'outletProposals']);
 const BROAD_ROLES = new Set(['superadmin', 'head', 'admin']);
 const MAX_CHANGES = 250;
 const MAX_IMPORT_ROWS = 10000;
@@ -157,6 +163,10 @@ export function canonicalizeLegacySnapshot(snapshot = {}, organizationId = '') {
   data.visits = data.visits.filter(row => str(row.id) && outletsById.has(str(row.outletId)) && employeesById.has(str(row.employeeId))).map(row => ({ ...row, organizationId, projectId: inferProject(row) }));
   data.attendance = data.attendance.filter(row => str(row.id) && employeesById.has(str(row.employeeId))).map(row => ({ ...row, organizationId, projectId: inferProject(row) }));
   data.productSales = data.productSales.filter(row => str(row.id) && outletsById.has(str(row.outletId)) && employeesById.has(str(row.employeeId)) && productsById.has(str(row.productId))).map(row => ({ ...row, organizationId, projectId: inferProject(row) }));
+  data.priceObservations = data.priceObservations.filter(row => str(row.id) && outletsById.has(str(row.outletId)) && productsById.has(str(row.productId)) && employeesById.has(str(row.employeeId || row.recordedBy))).map(row => ({ ...row, organizationId, employeeId: str(row.employeeId || row.recordedBy), recordedBy: str(row.employeeId || row.recordedBy), projectId: inferProject(row) }));
+  const competitorProductIds = new Set((data.competitorProducts || []).map(row => str(row.id)).filter(Boolean));
+  data.competitorIntel = data.competitorIntel.filter(row => str(row.id) && outletsById.has(str(row.outletId)) && employeesById.has(str(row.employeeId || row.recordedBy))).map(row => ({ ...row, organizationId, employeeId: str(row.employeeId || row.recordedBy), recordedBy: str(row.employeeId || row.recordedBy), productId: productsById.has(str(row.productId)) ? str(row.productId) : null, competitorProductId: competitorProductIds.has(str(row.competitorProductId)) ? str(row.competitorProductId) : null, projectId: inferProject(row) }));
+  data.outletProposals = data.outletProposals.filter(row => str(row.id) && employeesById.has(str(row.employeeId || row.submittedBy))).map(row => ({ ...row, organizationId, employeeId: str(row.employeeId || row.submittedBy), submittedBy: str(row.employeeId || row.submittedBy), projectId: inferProject(row) }));
   data.leaves = data.leaves.filter(row => str(row.id) && employeesById.has(str(row.employeeId))).map(row => ({ ...row, organizationId }));
   data.stocks = data.stocks.filter(row => str(row.id) && outletsById.has(str(row.outletId)) && productsById.has(str(row.productId))).map(row => ({ ...row, organizationId, projectId: inferProject(row) }));
   data.surveyTemplates = data.surveyTemplates.filter(row => str(row.id)).map(row => ({ ...row, organizationId, clientId: clientsById.has(str(row.clientId)) ? str(row.clientId) : fallbackClientId, projectId: projectsById.has(str(row.projectId)) ? str(row.projectId) : fallbackProjectId }));
@@ -363,6 +373,9 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'attendancePoints': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Attendance Point'), type: safeStatus(row.type, ['office','meeting','store','point'], 'point'), outletId: nullable(str(row.outletId)), latitude: num(row.latitude ?? row.lat), longitude: num(row.longitude ?? row.lng), radiusM: num(row.radiusM), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'leaves': return { ...base, id: str(row.id), employeeId: str(row.employeeId), type: str(row.type || 'Cuti Tahunan'), startDate: str(row.startDate), endDate: str(row.endDate), days: Math.max(1, Number(row.days) || 1), reason: str(row.reason), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), approverId: nullable(str(row.approverId)), submittedAt: str(row.submittedAt || new Date().toISOString().slice(0,10)), approvedAt: nullable(str(row.approvedAt)) };
     case 'stocks': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), quantity: Math.max(0, Number(row.quantity) || 0), minStock: Math.max(0, Number(row.minStock) || 0), updatedBy: nullable(str(row.updatedBy)), lastUpdated: str(row.lastUpdated || new Date().toISOString().slice(0,10)) };
+    case 'priceObservations': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), observedPrice: Math.max(0, Number(row.observedPrice) || 0), discountPercent: Math.min(100, Math.max(0, Number(row.discountPercent) || 0)), discountAmount: Math.max(0, Number(row.discountAmount) || 0), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
+    case 'competitorIntel': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: nullable(str(row.productId)), competitorProductId: nullable(str(row.competitorProductId)), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), ourPrice: Math.max(0, Number(row.ourPrice) || 0), competitorPrice: Math.max(0, Number(row.competitorPrice) || 0), shelfShare: Math.min(100, Math.max(0, Number(row.shelfShare) || 0)), visibility: safeStatus(row.visibility, ['high','medium','low'], 'medium'), hasPromo: !!row.hasPromo, promoType: str(row.promoType), promoNotes: str(row.promoNotes || row.promoNote), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
+    case 'outletProposals': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId || row.submittedBy), submittedBy: str(row.employeeId || row.submittedBy), name: str(row.name || 'Outlet'), address: str(row.address), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), supervisorStatus: safeStatus(row.supervisorStatus, ['pending','approved','rejected'], 'pending'), managerStatus: safeStatus(row.managerStatus, ['pending','approved','rejected'], 'pending'), submittedAt: str(row.submittedAt || new Date().toISOString()) };
     default: return base;
   }
 }
@@ -399,6 +412,9 @@ function upsertStatements(env, entity, rawRow, organizationId, extras = {}) {
     case 'attendancePoints': return [p(`INSERT INTO core_attendance_points(id,organization_id,code,name,type,address,outlet_id,latitude,longitude,radius_m,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,type=excluded.type,address=excluded.address,outlet_id=excluded.outlet_id,latitude=excluded.latitude,longitude=excluded.longitude,radius_m=excluded.radius_m,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_attendance_points.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_attendance_points.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.type,nullable(row.address),nullable(row.outletId),num(row.latitude),num(row.longitude),num(row.radiusM),row.status,m])];
     case 'leaves': return [p(`INSERT INTO core_leaves(id,organization_id,employee_id,type,start_date,end_date,days,reason,status,approver_id,submitted_at,approved_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET employee_id=excluded.employee_id,type=excluded.type,start_date=excluded.start_date,end_date=excluded.end_date,days=excluded.days,reason=excluded.reason,status=excluded.status,approver_id=excluded.approver_id,submitted_at=excluded.submitted_at,approved_at=excluded.approved_at,metadata_json=excluded.metadata_json,row_version=core_leaves.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_leaves.organization_id=excluded.organization_id`, [row.id,organizationId,row.employeeId,row.type,row.startDate,row.endDate,row.days,nullable(row.reason),row.status,row.approverId,row.submittedAt,row.approvedAt,m])];
     case 'stocks': return [p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_stocks.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.quantity,row.minStock,row.updatedBy,row.lastUpdated,m])];
+    case 'priceObservations': return [p(`INSERT INTO core_price_observations(id,organization_id,project_id,outlet_id,product_id,employee_id,visit_id,observed_price,discount_percent,discount_amount,notes,recorded_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,observed_price=excluded.observed_price,discount_percent=excluded.discount_percent,discount_amount=excluded.discount_amount,notes=excluded.notes,recorded_at=excluded.recorded_at,metadata_json=excluded.metadata_json,row_version=core_price_observations.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_price_observations.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.employeeId,row.visitId,row.observedPrice,row.discountPercent,row.discountAmount,nullable(row.notes),row.recordedAt,m])];
+    case 'competitorIntel': return [p(`INSERT INTO core_competitor_intel(id,organization_id,project_id,outlet_id,product_id,competitor_product_id,employee_id,visit_id,our_price,competitor_price,shelf_share,visibility,has_promo,promo_type,promo_notes,notes,recorded_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,competitor_product_id=excluded.competitor_product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,our_price=excluded.our_price,competitor_price=excluded.competitor_price,shelf_share=excluded.shelf_share,visibility=excluded.visibility,has_promo=excluded.has_promo,promo_type=excluded.promo_type,promo_notes=excluded.promo_notes,notes=excluded.notes,recorded_at=excluded.recorded_at,metadata_json=excluded.metadata_json,row_version=core_competitor_intel.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitor_intel.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.competitorProductId,row.employeeId,row.visitId,row.ourPrice,row.competitorPrice,row.shelfShare,row.visibility,row.hasPromo?1:0,nullable(row.promoType),nullable(row.promoNotes),nullable(row.notes),row.recordedAt,m])];
+    case 'outletProposals': return [p(`INSERT INTO core_outlet_proposals(id,organization_id,project_id,outlet_id,submitted_by,name,address,status,supervisor_status,manager_status,submitted_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,submitted_by=excluded.submitted_by,name=excluded.name,address=excluded.address,status=excluded.status,supervisor_status=excluded.supervisor_status,manager_status=excluded.manager_status,submitted_at=excluded.submitted_at,metadata_json=excluded.metadata_json,row_version=core_outlet_proposals.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_outlet_proposals.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.submittedBy,row.name,nullable(row.address),row.status,row.supervisorStatus,row.managerStatus,row.submittedAt,m])];
     default: return [];
   }
 }
@@ -494,6 +510,9 @@ function decodeRows(entity, rows, relationMap = new Map()) {
       case 'attendancePoints': return { ...common, code: dbRow.code, name: dbRow.name, type: dbRow.type, address: dbRow.address, outletId: dbRow.outlet_id, lat: dbRow.latitude, lng: dbRow.longitude, radiusM: dbRow.radius_m, status: dbRow.status };
       case 'leaves': return { ...common, employeeId: dbRow.employee_id, type: dbRow.type, startDate: dbRow.start_date, endDate: dbRow.end_date, days: dbRow.days, reason: dbRow.reason, status: dbRow.status, approverId: dbRow.approver_id, submittedAt: dbRow.submitted_at, approvedAt: dbRow.approved_at };
       case 'stocks': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, quantity: dbRow.quantity, minStock: dbRow.min_stock, updatedBy: dbRow.updated_by, lastUpdated: dbRow.last_updated };
+      case 'priceObservations': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, employeeId: dbRow.employee_id, recordedBy: dbRow.employee_id, visitId: dbRow.visit_id, observedPrice: dbRow.observed_price, discountPercent: dbRow.discount_percent, discountAmount: dbRow.discount_amount, notes: dbRow.notes || '', recordedAt: dbRow.recorded_at };
+      case 'competitorIntel': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, competitorProductId: dbRow.competitor_product_id, employeeId: dbRow.employee_id, recordedBy: dbRow.employee_id, visitId: dbRow.visit_id, ourPrice: dbRow.our_price, competitorPrice: dbRow.competitor_price, shelfShare: dbRow.shelf_share, visibility: dbRow.visibility, hasPromo: !!dbRow.has_promo, promoType: dbRow.promo_type || '', promoNotes: dbRow.promo_notes || '', notes: dbRow.notes || '', recordedAt: dbRow.recorded_at };
+      case 'outletProposals': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, employeeId: dbRow.submitted_by, submittedBy: dbRow.submitted_by, name: dbRow.name, address: dbRow.address || '', status: dbRow.status, supervisorStatus: dbRow.supervisor_status, managerStatus: dbRow.manager_status, submittedAt: dbRow.submitted_at };
       default: return common;
     }
   });
@@ -501,7 +520,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
 
 async function bootstrapData(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks] = await Promise.all([
+  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,priceObservations,competitorIntel,outletProposals] = await Promise.all([
     allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
@@ -520,6 +539,9 @@ async function bootstrapData(env, claims) {
     allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_leaves WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_stocks WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_price_observations WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_competitor_intel WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_outlet_proposals WHERE organization_id=?').bind(org)),
   ]);
   const outletProjects = new Map();
   for (const row of projectOutlets) { if (!outletProjects.has(str(row.outlet_id))) outletProjects.set(str(row.outlet_id), []); outletProjects.get(str(row.outlet_id)).push(str(row.project_id)); }
@@ -542,6 +564,9 @@ async function bootstrapData(env, claims) {
     attendancePoints: decodeRows('attendancePoints', attendancePoints),
     leaves: decodeRows('leaves', leaves),
     stocks: decodeRows('stocks', stocks),
+    priceObservations: decodeRows('priceObservations', priceObservations),
+    competitorIntel: decodeRows('competitorIntel', competitorIntel),
+    outletProposals: decodeRows('outletProposals', outletProposals),
     projectProducts: projectProducts.map ? [] : projectProducts,
   };
   data.projectProducts = projectProducts instanceof Map ? [...projectProducts.entries()].flatMap(([productId, ids]) => ids.map(projectId => ({ id: `PP-${projectId}-${productId}`, organizationId: org, projectId, productId, status: 'active' }))) : [];
@@ -557,7 +582,7 @@ async function bootstrapData(env, claims) {
     data.outlets = data.outlets.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.products = data.products.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.projectProducts = data.projectProducts.filter(row => allowedProjects.has(str(row.projectId)));
-    for (const key of ['visits','attendance','productSales','surveyResponses']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
+    for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
     data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
     data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
@@ -629,7 +654,7 @@ async function handleImport(request, env, claims) {
 
   const { statements: authStatements, userIdByEmployee } = await importAuthStatements(env, canonical, claims, organizationId);
   const statements = [...authStatements];
-  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','surveyTemplates','surveyResponses','leaves','stocks'];
+  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','priceObservations','competitorIntel','outletProposals','surveyTemplates','surveyResponses','leaves','stocks'];
   for (const entity of order) {
     for (const row of canonical[entity] || []) {
       const extras = entity === 'employees' ? { authUserId: userIdByEmployee.get(str(row.id)) || null } : {};
