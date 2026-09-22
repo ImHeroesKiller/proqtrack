@@ -13,7 +13,7 @@
 
 ```text
 Browser/PWA
-  ├─ index.html + src/app.js
+  ├─ index.html → src/entry.js → src/bootstrap.js → src/app.js
   ├─ cache/offline compatibility
   └─ Bearer-authenticated /api/*
           ↓
@@ -129,24 +129,25 @@ Jangan commit `dist/`, `.wrangler/`, database lokal, token, atau recovery artifa
 
 ## Arah pengembangan
 
-1. UAT seluruh role setelah authority Leave/Stock.
-2. Tentukan authority collection laporan yang masih local-only.
-3. Tambahkan E2E login → tenant → bootstrap → CRUD → logout.
-4. Tambahkan test conflict dua device/offline recovery.
-5. Self-host dependency CDN bila reliability diperlukan.
+1. UAT seluruh role setelah authority P2: Price Observation, Competitor Intel, Outlet Proposal, evidence photo.
+2. Tambahkan E2E login → tenant → bootstrap → CRUD → logout.
+3. Tambahkan UAT conflict dua device dan UX review/merge perubahan offline yang ditahan.
+4. Migrasikan inline event attributes ke event listener agar `script-src-attr 'unsafe-inline'` dapat dihapus.
+5. Evaluasi self-host library export dokumen yang saat ini lazy-loaded exact-version.
 6. Rapikan label M7/M8 setelah stabil tanpa mengubah resource live.
 
 ## Runtime bootstrap rule
 
 Runtime production wajib memiliki satu entry graph yang eksplisit.
 
-1. `index.html` hanya memuat branding dan `src/bootstrap.js`.
-2. `assets/logo.js` hanya untuk asset/stylesheet/manifest/theme registration. Jangan menambahkan import feature, auth, sync, reports, atau offline ke file ini.
-3. Semua module side-effect browser ditambahkan melalui `src/bootstrap.js` dengan urutan yang disengaja.
-4. Pertahankan urutan kompatibilitas utama: extension/report modules → `cloud-cutover.js` → `m4-bootstrap.js` → M6 client → `app.js`. Cloud cutover memasang online handler lebih dulu; offline login kemudian membungkusnya hanya untuk kondisi offline.
-5. Perubahan runtime graph wajib memperbarui `tests/runtime-bootstrap.test.mjs`.
-6. Jangan membuat direct import baru ke `src/app.js` dari `index.html`; gunakan bootstrap.
-7. Setelah perubahan bootstrap/PWA, bump cache version di `sw.js` agar client lama tidak tertahan pada graph sebelumnya.
+1. `index.html` hanya memuat static styles, self-hosted vendor runtime, dan `src/entry.js`.
+2. `src/entry.js` hanya mengorkestrasi branding + `src/bootstrap.js`; jangan menambahkan business module ke entry.
+3. `assets/logo.js` hanya untuk asset/stylesheet/manifest/theme registration. Jangan menambahkan import feature, auth, sync, reports, atau offline ke file ini.
+4. Semua module side-effect browser ditambahkan melalui `src/bootstrap.js` dengan urutan yang disengaja.
+5. Pertahankan urutan kompatibilitas utama: extension/report modules → `cloud-cutover.js` → `m4-bootstrap.js` → M6 client → `app.js`. Cloud cutover memasang online handler lebih dulu; offline login kemudian membungkusnya hanya untuk kondisi offline.
+6. Perubahan runtime graph wajib memperbarui `tests/runtime-bootstrap.test.mjs`.
+7. Jangan membuat direct import baru ke `src/app.js` dari `index.html`; gunakan bootstrap.
+8. Setelah perubahan bootstrap/PWA, bump cache version di `sw.js` agar client lama tidak tertahan pada graph sebelumnya.
 
 Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_BOOT__`. Jangan menampilkan nama D1, Cloudflare, GitHub, module path, atau istilah implementasi lain sebagai popup pengguna.
 
@@ -160,3 +161,16 @@ Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_B
 - Approval dan report schedule tidak boleh disimpan sebagai local authority. Gunakan `window.ProQTrackM6.workflows` dan `window.ProQTrackM6.schedules`.
 - Jangan menambahkan reusable password/recovery verifier ke migration atau source. Fresh environment harus fail-closed dan credential provisioning dilakukan secara eksplisit.
 - Server password hashing baseline adalah PBKDF2-HMAC-SHA256 `600000` iterations; verifikasi hash lama hanya untuk migration-on-login.
+
+## P2 reliability and runtime rules
+
+- Collection operasional yang memengaruhi laporan/keputusan lintas perangkat harus server-authoritative. Jangan menambah collection tenant lokal baru tanpa keputusan authority eksplisit.
+- `fieldPhotos` adalah metadata projection dari evidence authority; binary evidence tetap lewat evidence API/R2 dan tidak dimasukkan ke core sync.
+- Revision conflict wajib fail-closed. Jangan auto-replay snapshot penuh setelah menerima server revision yang lebih baru.
+- Target live adalah konfigurasi default Wrangler. Jangan membuat named environment baru yang tampak seperti live tanpa migrasi resource, runbook, dan deployment gate terpisah.
+- Runtime dependency kritis harus self-hosted bila memungkinkan. Library export eksternal harus exact-version dan URL allowlisted.
+- Executable script element tidak boleh bergantung pada `'unsafe-inline'`. Legacy event attributes diisolasi sementara melalui `script-src-attr`.
+- Service Worker registration hanya dari `src/m4-bootstrap.js`.
+- Precache harus berdasarkan runtime application shell, bukan seluruh source tree. Source yang tidak runtime-reachable tetap boleh ada di `dist` untuk module fetch, tetapi tidak otomatis masuk install cache.
+- Compatibility module tanpa caller/test owner harus dihapus, bukan terus dimuat untuk berjaga-jaga.
+
