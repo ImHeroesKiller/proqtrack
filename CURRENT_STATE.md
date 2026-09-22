@@ -1,0 +1,75 @@
+# Current Production State
+
+Snapshot kondisi pada **22 September 2026**, setelah PR #46. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
+
+## Baseline
+
+| Area | Kondisi |
+|---|---|
+| URL | `https://proqtrack.arywibowo.workers.dev` |
+| Runtime | Cloudflare Worker + static assets |
+| D1 live | binding `DB` → `proqtrack-mvp` |
+| R2 live | binding `FILES` → `proqtrack-mvp-files` |
+| Milestone config | `M7` |
+| Service Worker | `proqtrack-v12.5` |
+| Migrasi terakhir | `0023_cloud_leaves_stocks.sql` |
+| Test baseline | 187 passing |
+| Deploy | PR → merge `main` → GitHub Actions |
+
+Fitur bulk master sering disebut M8, tetapi `APP_MILESTONE` dan health masih `M7`. Ubah label hanya jika workflow, health assertion, dokumentasi, dan test diperbarui bersama.
+
+## Cloud-authoritative collections
+
+Collection berikut berasal dari D1 melalui bootstrap/sync:
+
+- clients, projects, employees, projectAssignments
+- outlets, products, projectProducts
+- visits, attendance, productSales
+- surveyTemplates, surveyResponses
+- competitors, competitorProducts, attendancePoints
+- leaves, stocks
+
+Daftar client di `CLOUD_COLLECTIONS` (`src/lib/cloud-data.js`) dan daftar server di `ENTITY_COLLECTIONS`/`ENTITY_TABLES` (`worker/operations.js`) harus selalu konsisten.
+
+Browser hanya cache/compatibility layer saat organisasi sudah `cutover_mode='cloud'`. `proqtrack_db_v6` adalah key utama; `proqtrack_db_v7` mirror. Beberapa collection laporan/pengaturan masih local/legacy dan belum boleh dianggap multi-device.
+
+## Dataset DEMO
+
+| Entity | Jumlah |
+|---|---:|
+| Client / Project | 2 / 2 |
+| Employee / Assignment | 6 / 6 |
+| Outlet / Product | 6 / 6 |
+| Attendance / Visit | 6 / 5 |
+| Product Sales | 3 |
+| Competitor / Product | 2 / 2 |
+| Attendance Point | 1 |
+| Leave / Outlet Stock | 3 / 6 |
+
+Dua stock berada di bawah minimum. Leave berisi satu `pending`, `approved`, dan `rejected`.
+
+Tenant nyata `ORG-MKB` aktif. Deployment gate memastikan akun Head nyata aktif dan synthetic UAT MKB tidak kembali.
+
+## Audit dan perbaikan
+
+Audit PR #36 menghasilkan **13 gap**. Seluruh Critical/High yang diketahui ditutup melalui PR #37/#38, meliputi retry idempotent, payload hash, revision race, tenant/actor isolation, role boundaries, shared relations, archive retention, status round-trip, schema health, dan auth-boundary smoke.
+
+UAT production menemukan tambahan masalah provisioning/login superadmin, stale tenant, cache PWA, global bootstrap, serta data Demo. Perbaikannya berada di PR #39–#46.
+
+## Risiko/temuan yang masih perlu diperhatikan
+
+1. Full multi-role UAT perlu diulang setelah migrasi `0023`.
+2. Offline conflict recovery perlu diuji dengan dua device.
+3. Histori/report legacy yang masih local dapat berbeda antar-device.
+4. Leaflet CDN adalah dependency eksternal runtime.
+5. Named environment berbeda dari target workflow live; salah `--env` dapat memakai database lain.
+6. PR #36 masih draft/divergen dan tidak boleh di-merge.
+7. Technical logs boleh ada di console, tetapi toast/modal tidak boleh menyebut D1, R2, Worker, Cloudflare, GitHub, schema, atau stack trace.
+
+## Production-ready gate
+
+- Test, build, dry-run, dan migrasi dari database kosong lulus.
+- CI PR dan deployment hijau.
+- Health, security headers, auth boundary lulus.
+- Login, tenant switch, bootstrap, dan referential checks production lulus.
+- Smoke test seluruh role serta viewport mobile/desktop selesai.
