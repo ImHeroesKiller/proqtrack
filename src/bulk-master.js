@@ -194,8 +194,8 @@ function renderPreview(){
       </tbody>
     </table></div>
     <div class="bulk-actions">
-      <button class="btn btn-secondary" onclick="BulkMaster.reset()" type="button">Ganti File</button>
-      <button class="btn btn-primary" onclick="BulkMaster.commit()" type="button" ${s.errors?'disabled':''}>Commit ${s.valid} Rows</button>
+      <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.reset()" type="button">Ganti File</button>
+      <button class="btn btn-primary" data-pqt-onclick="BulkMaster.commit()" type="button" ${s.errors?'disabled':''}>Commit ${s.valid} Rows</button>
     </div>
   `;
 }
@@ -249,11 +249,11 @@ async function commit(){
       updated+=Number(data.summary?.updates||0);
     }
     await refreshCloud();
-    if(root) root.innerHTML=`<div class="bulk-success"><div class="bulk-success-mark">✓</div><h3>Bulk upload berhasil</h3><p>${inserted} baru · ${updated} diperbarui.</p><button class="btn btn-primary" onclick="FT.closeModal()">Tutup</button></div>`;
+    if(root) root.innerHTML=`<div class="bulk-success"><div class="bulk-success-mark">✓</div><h3>Bulk upload berhasil</h3><p>${inserted} baru · ${updated} diperbarui.</p><button class="btn btn-primary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>`;
     window.showToast?.(`Bulk ${SCHEMAS[state.entity].label} selesai.`,'success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }catch(error){
-    if(root) root.innerHTML=`<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message||error)}<br><br>${inserted} baru · ${updated} diperbarui sebelum proses berhenti. Lanjutkan dengan file yang sama.<br><button class="btn btn-primary" onclick="BulkMaster.commit()">Lanjutkan</button></div>`;
+    if(root) root.innerHTML=`<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message||error)}<br><br>${inserted} baru · ${updated} diperbarui sebelum proses berhenti. Lanjutkan dengan file yang sama.<br><button class="btn btn-primary" data-pqt-onclick="BulkMaster.commit()">Lanjutkan</button></div>`;
     window.showToast?.('Bulk upload belum selesai.','error');
   }finally{state.busy=false;}
 }
@@ -284,20 +284,20 @@ function open(entity){
   const root=document.getElementById('modalRoot');
   if(!root) return;
   root.innerHTML=`
-    <div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()">
+    <div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()">
       <div class="modal animate-up bulk-modal">
         <div class="modal-handle"></div>
-        <div class="modal-header"><div><h3>Bulk Upload ${esc(schema.label)}</h3><div class="bulk-muted">CSV/XLSX · sheet pertama · maksimal ${MAX_FILE_ROWS} rows</div></div><button class="modal-close" onclick="FT.closeModal()">✕</button></div>
+        <div class="modal-header"><div><h3>Bulk Upload ${esc(schema.label)}</h3><div class="bulk-muted">CSV/XLSX · sheet pertama · maksimal ${MAX_FILE_ROWS} rows</div></div><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div>
         <div class="modal-body">
           <div class="bulk-guide">
             <strong>1. Download template</strong>
             <span>Kolom wajib: ${schema.required.map(esc).join(', ')}</span>
-            <button class="btn btn-secondary" onclick="BulkMaster.downloadTemplate()" type="button">Download Template</button>
+            <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.downloadTemplate()" type="button">Download Template</button>
           </div>
           <div class="bulk-guide">
             <strong>2. Upload file</strong>
             <span>Pratinjau diperiksa terhadap data organisasi aktif sebelum disimpan.</span>
-            <input class="input" id="bulkMasterFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="BulkMaster.handleFile(this)">
+            <input class="input" id="bulkMasterFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-pqt-onchange="BulkMaster.handleFile(this)">
           </div>
           <div id="bulkMasterPreview"><div class="bulk-empty">Pilih file untuk preview.</div></div>
         </div>

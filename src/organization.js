@@ -76,7 +76,7 @@ export function renderOrganizations() {
           <div class="card-subtitle" style="margin:0">Setiap organisasi punya klien, project, karyawan, dan aset sendiri</div>
         </div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="ORG.open()">+ Organisasi baru</button>
+        <button class="btn btn-primary" data-pqt-onclick="ORG.open()">+ Organisasi baru</button>
       </div>
       <div class="org-grid">
         ${rows.map(org => {
@@ -98,8 +98,8 @@ export function renderOrganizations() {
             </div>
             <div class="am-actions">
               <a class="btn btn-primary btn-sm" href="#/organizations/${org.id}">Buka workspace</a>
-              ${active ? '' : `<button class="btn btn-secondary btn-sm" onclick="ORG.switchTo('${org.id}')">Jadikan aktif</button>`}
-              <button class="btn btn-secondary btn-sm" onclick="ORG.open('${org.id}')">Edit</button>
+              ${active ? '' : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="ORG.switchTo('${org.id}')">Jadikan aktif</button>`}
+              <button class="btn btn-secondary btn-sm" data-pqt-onclick="ORG.open('${org.id}')">Edit</button>
             </div>
           </article>`;
         }).join('')}
@@ -122,12 +122,12 @@ export function renderOrganizationHub(id) {
           <div class="card-subtitle">${esc(org.legalName || '')} · ${esc(org.industry || '-')} · ${esc(org.city || '-')}</div>
         </div>
         <div class="spacer"></div>
-        ${active ? '<span class="org-pill">Workspace aktif</span>' : `<button class="btn btn-primary" onclick="ORG.switchTo('${org.id}')">Aktifkan workspace ini</button>`}
+        ${active ? '<span class="org-pill">Workspace aktif</span>' : `<button class="btn btn-primary" data-pqt-onclick="ORG.switchTo('${org.id}')">Aktifkan workspace ini</button>`}
       </div>
       <p class="am-muted">${esc(org.notes || 'Workspace terpisah: data klien, project, dan karyawan tidak bercampur dengan organisasi lain.')}</p>
     </div>
     <div class="org-hub">
-      ${HUB_LINKS.map(([href, title, sub]) => `<a class="org-tile" href="${href}" onclick="return ORG.ensureActive(event,'${org.id}','${href}')">
+      ${HUB_LINKS.map(([href, title, sub]) => `<a class="org-tile" href="${href}" data-pqt-onclick="return ORG.ensureActive(event,'${org.id}','${href}')">
         <strong>${esc(title)}</strong>
         <span>${esc(sub)}</span>
       </a>`).join('')}
@@ -139,7 +139,7 @@ export function renderOrganizationHub(id) {
 }
 
 function form(existing) {
-  return `<form onsubmit="ORG.save(event,'${existing?.id || ''}')">
+  return `<form data-pqt-onsubmit="ORG.save(event,'${existing?.id || ''}')">
     <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
     <div class="form-group"><label class="label">Nama legal</label><input class="input" name="legalName" value="${esc(existing?.legalName || '')}"></div>
     <div class="form-row">
@@ -156,7 +156,7 @@ function form(existing) {
       </div>
     </div>
     <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(existing?.notes || '')}</textarea></div>
-    <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
   </form>`;
 }
 
@@ -201,7 +201,7 @@ window.ORG = {
   open(id = '') {
     const existing = id ? getOrganization(id) : null;
     window.FT.closeModal?.();
-    document.getElementById('modalRoot').innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${existing ? 'Edit organisasi' : 'Organisasi baru'}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${form(existing)}</div></div></div>`;
+    document.getElementById('modalRoot').innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${existing ? 'Edit organisasi' : 'Organisasi baru'}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${form(existing)}</div></div></div>`;
   },
   async save(event, id) {
     event.preventDefault();
@@ -256,7 +256,7 @@ export function orgSwitcherHtml() {
   const orgs = getOrganizations(true);
   if (orgs.length < 2) return '';
   const current = getCurrentOrgId();
-  return `<select class="select org-switch" onchange="ORG.switchTo(this.value)">${orgs.map(o => `<option value="${o.id}" ${o.id === current ? 'selected' : ''}>${esc(o.code)} · ${esc(o.name)}</option>`).join('')}</select>`;
+  return `<select class="select org-switch" data-pqt-onchange="ORG.switchTo(this.value)">${orgs.map(o => `<option value="${o.id}" ${o.id === current ? 'selected' : ''}>${esc(o.code)} · ${esc(o.name)}</option>`).join('')}</select>`;
 }
 
 export {};

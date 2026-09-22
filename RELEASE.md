@@ -78,8 +78,8 @@ Jalankan setidaknya:
 5. Verifikasi Employees, Outlets, Products, Product Sales, Outlet Stock, Attendance, Leave, Competitors, Price Observation, Competitor Intel, Outlet Proposal, dan evidence photo sesuai scope.
 6. Untuk Leave dan Outlet Stock, pastikan ringkasan dan baris tabel konsisten setelah reload.
 7. Uji create/update/delete yang berubah, duplicate submission, dan stale revision/conflict.
-8. Pastikan offline/reconnect tidak menggandakan data. Pada revision conflict, server state harus tampil dan perubahan lokal harus tetap tersimpan untuk review—bukan auto-overwrite.
-9. Periksa console serta network untuk error aplikasi; source-map CDN yang diblokir CSP tidak boleh mengubah alur utama, tetapi tetap dicatat sebagai risiko teknis.
+8. Pastikan offline/reconnect tidak menggandakan data. Pada revision conflict, server state harus tampil, salinan lokal berstatus review, dan uji kedua pilihan UI: `Tinjau nanti` serta `Gunakan versi terbaru`.
+9. Periksa console, network, dan CSP violations. Runtime executable tidak boleh meminta script dari CDN dan tidak boleh membutuhkan inline event execution.
 
 ## Rollback
 

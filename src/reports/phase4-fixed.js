@@ -87,7 +87,7 @@ function templatesPage() {
   const settings = db.reportSettings || {};
   const form = `<div class="rpt-builder">
     <div class="rpt-warning">Template dan identitas dokumen adalah preferensi presentasi pada perangkat ini. Approval dan jadwal bersumber dari server.</div>
-    <form class="rpt-filters" onsubmit="ReportPhase4.saveSettings(event)">
+    <form class="rpt-filters" data-pqt-onsubmit="ReportPhase4.saveSettings(event)">
       <div><label class="label">Nama perusahaan</label><input class="input" name="companyName" value="${esc(settings.companyName)}"></div>
       <div><label class="label">Logo perusahaan</label><input class="input" type="file" name="companyLogoFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="companyLogo" value="${esc(settings.companyLogo || '')}" placeholder="Atau URL / path"></div>
       <div><label class="label">Prefix nomor dokumen</label><input class="input" name="documentPrefix" value="${esc(settings.documentPrefix)}"></div>
@@ -103,10 +103,10 @@ function templatesPage() {
     esc(template.name), esc(template.type), esc(template.layout || '-'),
     template.includeCompanyLogo ? 'Ya' : 'Tidak', template.includeClientLogo ? 'Ya' : 'Tidak',
     template.requireApproval ? 'Ya' : 'Tidak', `<span class="rpt-badge">${esc(template.status)}</span>`,
-    `<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.editTemplate(${arg(template.id)})" ${canManage() ? '' : 'disabled'}>Edit</button>`,
+    `<button class="btn btn-secondary btn-sm" data-pqt-onclick="ReportPhase4.editTemplate(${arg(template.id)})" ${canManage() ? '' : 'disabled'}>Edit</button>`,
   ]);
   return page('Template Dokumen', 'Preferensi layout dan branding dokumen.', form +
-    `<div class="rpt-page-title"><div><h3>Daftar Template</h3><p>Konfigurasi presentasi lokal.</p></div><button class="btn btn-primary btn-sm" onclick="ReportPhase4.newTemplate()" ${canManage() ? '' : 'disabled'}>Tambah Template</button></div>` +
+    `<div class="rpt-page-title"><div><h3>Daftar Template</h3><p>Konfigurasi presentasi lokal.</p></div><button class="btn btn-primary btn-sm" data-pqt-onclick="ReportPhase4.newTemplate()" ${canManage() ? '' : 'disabled'}>Tambah Template</button></div>` +
     table(['Nama','Jenis','Layout','Logo Perusahaan','Logo Klien','Approval','Status','Aksi'], rows));
 }
 
@@ -118,7 +118,7 @@ function approvalsPage() {
 function schedulesPage() {
   const projects = (read().projects || []);
   const form = `<div class="rpt-builder">
-    <form class="rpt-filters" onsubmit="ReportPhase4.saveSchedule(event)">
+    <form class="rpt-filters" data-pqt-onsubmit="ReportPhase4.saveSchedule(event)">
       <div><label class="label">Nama jadwal</label><input class="input" name="name" required></div>
       <div><label class="label">Jenis laporan</label><select class="select" name="reportType">
         <option value="attendance">Kehadiran</option><option value="activity">Aktivitas Lapangan</option>
@@ -157,7 +157,7 @@ async function refreshApprovals() {
       `<span class="rpt-badge">${esc(item.status || '-')}</span>`,
       esc(item.current_step || '-'),
       item.status === 'pending' && canApprove()
-        ? `<button class="btn btn-primary btn-sm" onclick="ReportPhase4.approve(${arg(item.id)})">Setujui</button> <button class="btn btn-danger btn-sm" onclick="ReportPhase4.reject(${arg(item.id)})">Tolak</button>`
+        ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="ReportPhase4.approve(${arg(item.id)})">Setujui</button> <button class="btn btn-danger btn-sm" data-pqt-onclick="ReportPhase4.reject(${arg(item.id)})">Tolak</button>`
         : '-',
     ]);
     root.innerHTML = table(['Report ID','Pemohon','Waktu','Status','Step','Aksi'], rows);
@@ -176,7 +176,7 @@ async function refreshSchedules() {
       esc(item.name), esc(item.report_type), esc(item.project_id || 'Semua'),
       esc(item.cadence), esc(String(item.run_hour ?? '-')), fmt(item.next_run_at),
       `<span class="rpt-badge">${esc(item.status)}</span>`,
-      `<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.toggleSchedule(${arg(item.id)},${arg(item.status)})" ${canManage() ? '' : 'disabled'}>${item.status === 'active' ? 'Jeda' : 'Aktifkan'}</button>`,
+      `<button class="btn btn-secondary btn-sm" data-pqt-onclick="ReportPhase4.toggleSchedule(${arg(item.id)},${arg(item.status)})" ${canManage() ? '' : 'disabled'}>${item.status === 'active' ? 'Jeda' : 'Aktifkan'}</button>`,
     ]);
     root.innerHTML = table(['Nama','Jenis','Project','Frekuensi','Jam','Jadwal Berikutnya','Status','Aksi'], rows);
   } catch (error) {

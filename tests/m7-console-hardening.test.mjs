@@ -4,14 +4,15 @@ import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('CSP keeps executable scripts external except legacy event attributes', async () => {
+test('CSP keeps executable scripts self-hosted with no inline event execution', async () => {
   const [headers, hardening, html] = await Promise.all([read('_headers'), read('worker/hardening.js'), read('index.html')]);
   for (const source of [headers, hardening]) {
     assert.match(source, /https:\/\/fonts\.googleapis\.com/);
     assert.match(source, /https:\/\/fonts\.gstatic\.com/);
-    assert.match(source, /script-src-attr 'unsafe-inline'/);
-    assert.match(source, /script-src-elem 'self' https:\/\/cdn\.jsdelivr\.net/);
-    assert.doesNotMatch(source, /https:\/\/unpkg\.com/);
+    assert.match(source, /script-src 'self'/);
+    assert.match(source, /script-src-elem 'self'/);
+    assert.doesNotMatch(source, /script-src-attr 'unsafe-inline'/);
+    assert.doesNotMatch(source, /https:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net)/);
     assert.doesNotMatch(source, /script-src 'self' 'unsafe-inline'/);
   }
   assert.match(html, /\.\/assets\/vendor\/leaflet\/leaflet\.js/);
@@ -91,7 +92,7 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.7/);
+  assert.match(serviceWorker, /proqtrack-v12\.8/);
 });
 
 test('global superadmin session selects an active tenant before bootstrap', async () => {

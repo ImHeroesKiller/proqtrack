@@ -41,10 +41,10 @@ function renderProjectStoreSettings() {
   return `
         <div class="card-title">Outlet catalog per project</div>
         <div class="card-subtitle">Enable New Outlet and set Segment, Type, Ownership, and Notes options for this project.</div>
-        <form class="am-form" onsubmit="AM.saveStoreCatalog(event)">
+        <form class="am-form" data-pqt-onsubmit="AM.saveStoreCatalog(event)">
           <div class="form-group">
             <label class="label">Project</label>
-            <select class="select" name="projectId" onchange="AM.pickStoreProject(this.value)">
+            <select class="select" name="projectId" data-pqt-onchange="AM.pickStoreProject(this.value)">
               ${projects.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
             </select>
           </div>
@@ -70,7 +70,7 @@ function renderAttendanceSettings() {
   return `
         <div class="card-title">Attendance policy</div>
         <div class="card-subtitle">Set where people must check in. Assign a specific point on each employee record when mode is Specific point.</div>
-        <form class="am-form" onsubmit="AM.saveAttendancePolicy(event)">
+        <form class="am-form" data-pqt-onsubmit="AM.saveAttendancePolicy(event)">
           <div class="form-group">
             <label class="label">Required check-in location</label>
             <select class="select" name="attendanceMode">
@@ -96,9 +96,9 @@ function renderAttendanceSettings() {
             <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
           </div>
           <div class="spacer"></div>
-          <button class="btn btn-secondary" type="button" onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
+          <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
         </div>
-        <form class="am-form" onsubmit="AM.addAttendancePoint(event)">
+        <form class="am-form" data-pqt-onsubmit="AM.addAttendancePoint(event)">
           <div class="form-row">
             <div class="form-group"><label class="label">Name</label><input class="input" name="pointName" required></div>
             <div class="form-group"><label class="label">Type</label>
@@ -164,7 +164,7 @@ export function renderSettings() {
         <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
       <nav class="am-tabs" aria-label="Pengaturan">
-        ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
+        ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" data-pqt-onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
       </nav>
       <div class="card am-tab-body">
         <section ${pane('profil')}>
@@ -178,7 +178,7 @@ export function renderSettings() {
               <div class="am-muted">Login terakhir: ${acc.lastLoginAt ? formatDate(acc.lastLoginAt) : 'Baru saja'}</div>
             </div>
           </div>
-          <form class="am-form" onsubmit="AM.saveProfile(event)">
+          <form class="am-form" data-pqt-onsubmit="AM.saveProfile(event)">
             <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" required></div>
             <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(acc.email)}" required></div>
             ${emp ? `
@@ -194,7 +194,7 @@ export function renderSettings() {
         <section ${pane('keamanan')}>
           <div class="card-title">Keamanan</div>
           <div class="card-subtitle">Ganti password akun ini. Minimal 8 karakter.</div>
-          <form class="am-form" onsubmit="AM.savePassword(event)">
+          <form class="am-form" data-pqt-onsubmit="AM.savePassword(event)">
             <div class="form-group"><label class="label">Password saat ini</label><input class="input" type="password" name="currentPassword" autocomplete="current-password" required></div>
             <div class="form-group"><label class="label">Password baru</label><input class="input" type="password" name="nextPassword" minlength="8" autocomplete="new-password" required></div>
             <div class="form-group"><label class="label">Ulangi password baru</label><input class="input" type="password" name="confirmPassword" minlength="8" autocomplete="new-password" required></div>
@@ -204,7 +204,7 @@ export function renderSettings() {
 
         <section ${pane('tampilan')}>
           <div class="card-title">Preferensi tampilan</div>
-          <form class="am-form" onsubmit="AM.savePrefs(event)">
+          <form class="am-form" data-pqt-onsubmit="AM.savePrefs(event)">
             <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
             <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
             <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
@@ -222,14 +222,14 @@ export function renderSettings() {
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
           <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
-          <form class="am-form" onsubmit="AM.saveOrg(event)">
+          <form class="am-form" data-pqt-onsubmit="AM.saveOrg(event)">
             <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
             <div class="form-group emp-photo-field">
               <label class="label">Logo organisasi</label>
               <div class="employee-photo-editor">
                 <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
                 <div>
-                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" onchange="AM.previewLogo(this)">
+                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" data-pqt-onchange="AM.previewLogo(this)">
                   <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
                   <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
                 </div>
@@ -274,7 +274,7 @@ export function renderSettings() {
           })() : ''}
           ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
           <div class="am-actions">
-            <button class="btn btn-secondary" type="button" onclick="FT.logout()">Keluar</button>
+            <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.logout()">Keluar</button>
           </div>
         </section>
       </div>
@@ -320,22 +320,22 @@ export function renderAccounts() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" oninput="AM.filterAccounts(this.value)">
-        <select class="select" style="width:auto" onchange="AM.filterRole(this.value)">
+        <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" data-pqt-oninput="AM.filterAccounts(this.value)">
+        <select class="select" style="width:auto" data-pqt-onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
           <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
           <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>\n          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
         </select>
-        <select class="select" style="width:auto" onchange="AM.filterStatus(this.value)">
+        <select class="select" style="width:auto" data-pqt-onchange="AM.filterStatus(this.value)">
           <option value="">Semua status</option>
           <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Aktif</option>
           <option value="suspended" ${statusFilter === 'suspended' ? 'selected' : ''}>Ditangguhkan</option>
           <option value="inactive" ${statusFilter === 'inactive' ? 'selected' : ''}>Nonaktif</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="AM.openAccount()">+ Tambah Akun</button>
+        <button class="btn btn-primary" data-pqt-onclick="AM.openAccount()">+ Tambah Akun</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table">
@@ -353,11 +353,11 @@ export function renderAccounts() {
                 <td>${statusBadge(a.status)}</td>
                 <td>${device}</td>
                 <td>
-                  <button class="btn btn-secondary btn-sm" onclick="AM.openAccount('${a.id}')">Edit</button>
-                  ${a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>
+                  ${a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
                   ${a.status === 'active'
-                    ? `<button class="btn btn-danger btn-sm" onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
-                    : `<button class="btn btn-secondary btn-sm" onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
+                    ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
+                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
                 </td>
               </tr>`;
             }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Tidak ada akun</h3></div></td></tr>'}
@@ -374,7 +374,7 @@ function accountForm(existing) {
   const options = employees.filter(e => !used.has(e.id) || e.id === existing?.employeeId);
   const projects = (getDB().projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
   return `
-    <form onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
+    <form data-pqt-onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
       <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" required></div>
       <div class="form-row">
@@ -408,10 +408,10 @@ function accountForm(existing) {
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
         ${(existing.deviceBound || existing.deviceId) ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
+        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" data-pqt-onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
       </div>` : ''}
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -571,7 +571,7 @@ window.AM = {
     window.FT.closeModal?.();
     const root = document.getElementById('modalRoot');
     if (!root) return;
-    root.innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
+    root.innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
   },
   async refreshAccounts() {
     if (accountSyncInFlight) return;

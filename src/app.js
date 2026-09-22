@@ -522,10 +522,10 @@ function render() {
   app.innerHTML = `
     <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${roleSkin}">
       ${renderSidebar()}
-      <div class="sidebar-backdrop" onclick="FT.closeSidebar()" style="display:none;"></div>
+      <div class="sidebar-backdrop" data-pqt-onclick="FT.closeSidebar()" style="display:none;"></div>
       <div class="main-area">
         <div class="topbar ${fieldRole && route === '#/myday' ? 'topbar-hidden-mobile' : ''}">
-          <button class="mobile-menu-btn" onclick="FT.toggleSidebar()">
+          <button class="mobile-menu-btn" data-pqt-onclick="FT.toggleSidebar()">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div>
@@ -583,7 +583,7 @@ function renderSidebar() {
         const low = getStocks().filter(s => s.quantity <= s.minStock).length;
         if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
       }
-      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" title="${esc(item.label)}" onclick="return FT.goNav(event,'${item.route}')">
+      navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" title="${esc(item.label)}" data-pqt-onclick="return FT.goNav(event,'${item.route}')">
         <span class="nav-icon" data-vector="1" data-icon="${item.icon}">${iconSvg(item.icon)}</span>
         <span class="nav-label">${item.label}</span>
         ${badge}
@@ -596,20 +596,20 @@ function renderSidebar() {
       <div class="sidebar-header">
         <div class="sidebar-logo">${getAppSettings().companyLogo ? `<img src="${esc(getAppSettings().companyLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
         <div class="sidebar-logo-text">${esc(getAppSettings().companyName || 'ProQTrack')}<small>Monitoring System</small></div>
-        <button class="sidebar-toggle" type="button" onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
+        <button class="sidebar-toggle" type="button" data-pqt-onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
         </button>
       </div>
       ${orgSwitcherHtml()}
       <nav class="sidebar-nav">${navHTML}</nav>
       <div class="sidebar-footer">
-        <div class="sidebar-user" onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
+        <div class="sidebar-user" data-pqt-onclick="location.hash='#/settings'" style="cursor:pointer" title="Pengaturan akun">
           <div class="sidebar-avatar">${getInitials(state.user.name)}</div>
           <div class="sidebar-user-info">
             <div class="name">${esc(state.user.name)}</div>
             <div class="role">${esc(state.user.role)}</div>
           </div>
-          <button class="logout-btn" onclick="FT.logout()" title="Keluar">
+          <button class="logout-btn" data-pqt-onclick="FT.logout()" title="Keluar">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
           </button>
         </div>
@@ -635,12 +635,12 @@ function renderFieldDock(route) {
     <nav class="field-dock" aria-label="Menu cepat">
       ${tabs.map(t => {
         const active = route === t.route || (t.route === '#/' && (route === '#' || route === '#/'));
-        return `<a href="${t.route}" class="field-dock-item ${active ? 'active' : ''}" onclick="return FT.goNav(event,'${t.route}')">
+        return `<a href="${t.route}" class="field-dock-item ${active ? 'active' : ''}" data-pqt-onclick="return FT.goNav(event,'${t.route}')">
           <span class="field-dock-icon">${iconSvg(t.icon)}</span>
           <span>${t.label}</span>
         </a>`;
       }).join('')}
-      <button type="button" class="field-dock-item" onclick="FT.toggleSidebar()">
+      <button type="button" class="field-dock-item" data-pqt-onclick="FT.toggleSidebar()">
         <span class="field-dock-icon">${iconSvg('projects')}</span>
         <span>Menu</span>
       </button>
@@ -656,7 +656,7 @@ function renderLogin() {
         <div class="login-logo">PQ</div>
         <h1>ProQTrack</h1>
         <div class="subtitle">Field Team Real-time Monitoring System</div>
-        <form onsubmit="FT.handleLogin(event)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
+        <form data-pqt-onsubmit="FT.handleLogin(event)" data-pqt-onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
           <div class="form-group">
             <label class="label">Email</label>
             <input class="input" type="email" id="loginEmail" placeholder="email@proqtrack.id" autocomplete="username" required autofocus>
@@ -665,7 +665,7 @@ function renderLogin() {
             <label class="label">Password</label>
             <div class="password-field">
               <input class="input" type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
-              <button class="password-toggle" type="button" onclick="FT.toggleLoginPassword(this)" aria-label="Tampilkan password" aria-pressed="false">
+              <button class="password-toggle" type="button" data-pqt-onclick="FT.toggleLoginPassword(this)" aria-label="Tampilkan password" aria-pressed="false">
                 <span class="password-eye" aria-hidden="true">${iconSvg('eye')}</span>
               </button>
             </div>
@@ -810,7 +810,7 @@ function renderSupervisorDashboard() {
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Tim hari ini</div>
-        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" onclick="FT.focusEmployee('${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">No team members yet.</p>'}
+        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" data-pqt-onclick="FT.focusEmployee('${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">No team members yet.</p>'}
       </div>
       <div class="card">
         <div class="card-title">Perlu tindakan</div>
@@ -862,18 +862,18 @@ function renderTracking() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" placeholder="Cari nama, area, telepon" value="${esc(state._trackQuery || '')}" oninput="FT.filterTracking(this.value)">
-        <select class="select" style="width:auto" onchange="FT.filterTrackingArea(this.value)">
+        <input class="input search-input" placeholder="Cari nama, area, telepon" value="${esc(state._trackQuery || '')}" data-pqt-oninput="FT.filterTracking(this.value)">
+        <select class="select" style="width:auto" data-pqt-onchange="FT.filterTrackingArea(this.value)">
           <option value="">Semua area</option>
           ${areas.map(a => `<option value="${esc(a)}" ${state._trackArea===a?'selected':''}>${esc(a)}</option>`).join('')}
         </select>
-        <select class="select" style="width:auto" onchange="FT.filterTrackingField(this.value)">
+        <select class="select" style="width:auto" data-pqt-onchange="FT.filterTrackingField(this.value)">
           <option value="">Semua status</option>
           <option value="today" ${state._trackField==='today'?'selected':''}>Check-in hari ini</option>
           <option value="hasloc" ${state._trackField==='hasloc'?'selected':''}>Punya last location</option>
           <option value="noloc" ${state._trackField==='noloc'?'selected':''}>Belum ada last location</option>
         </select>
-        <button class="btn btn-secondary" type="button" onclick="FT.fitTracking()">Tampilkan semua</button>
+        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.fitTracking()">Tampilkan semua</button>
       </div>
     </div>
     <div class="map-container" style="position:relative;">
@@ -890,12 +890,12 @@ function renderTracking() {
             return `
               <div class="map-emp-item" data-emp="${e.id}">
                 <div class="emp-status-dot" style="background:${loc ? 'var(--green-500)' : 'var(--gray-300)'};"></div>
-                <div class="emp-info" onclick="FT.focusEmployee('${e.id}')" style="cursor:pointer;flex:1">
+                <div class="emp-info" data-pqt-onclick="FT.focusEmployee('${e.id}')" style="cursor:pointer;flex:1">
                   <div class="emp-name">${esc(e.name)}</div>
                   <div class="emp-area">${esc(e.area)} · ${lastLabel}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:4px">
-                  <button class="btn btn-secondary btn-sm" onclick="FT.focusEmployee('${e.id}')">Fokus</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.focusEmployee('${e.id}')">Fokus</button>
                   <a class="btn btn-secondary btn-sm" href="${maps}" target="_blank" rel="noreferrer">Navigasi</a>
                   ${e.phone ? `<a class="btn btn-secondary btn-sm" href="https://wa.me/${String(e.phone).replace(/\D/g,'')}" target="_blank">WA</a>` : ''}
                 </div>
@@ -980,19 +980,19 @@ function renderVisits() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." oninput="FT.filterVisits()">
-        <select class="select" id="visitStatusFilter" style="width:180px;" onchange="FT.filterVisits()">
+        <input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits()">
+        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits()">
           <option value="">Semua Status</option>
           <option value="completed">Selesai</option>
           <option value="checked-in">Sedang Berlangsung</option>
           <option value="planned">Direncanakan</option>
         </select>
-        <select class="select" id="visitEmpFilter" style="width:200px;" onchange="FT.filterVisits()">
+        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits()">
           <option value="">Semua Karyawan</option>
           ${getEmployees().map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="visitsTable">
@@ -1031,7 +1031,7 @@ function renderVisits() {
                   <td>${statusBadge(v.status)}</td>
                   <td style="color:#fbbf24;">${stars}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" onclick="FT.viewVisit('${v.id}')">Detail</button>
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${v.id}')">Detail</button>
                   </td>
                 </tr>
               `;
@@ -1070,7 +1070,7 @@ window.FT.openVisitModal = function() {
   const employees = getEmployees();
   const outlets = getOutlets();
   openModal('Tambah Kunjungan', `
-    <form onsubmit="FT.createVisit(event)">
+    <form data-pqt-onsubmit="FT.createVisit(event)">
       <div class="form-group">
         <label class="label">Karyawan</label>
         <select class="select" name="employeeId" required>
@@ -1112,7 +1112,7 @@ window.FT.openVisitModal = function() {
         <textarea class="textarea" name="notes" placeholder="Catatan kunjungan..."></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -1152,8 +1152,8 @@ window.FT.viewVisit = function(id) {
     ${renderVisitDetailHtml(id)}
     ${canAct && v.status !== 'completed' ? `
       <div style="margin-top:8px; display:flex; gap:8px;">
-        ${v.status === 'planned' ? `<button class="btn btn-primary btn-sm" onclick="FT.checkInVisit('${v.id}')">Check In</button>` : ''}
-        ${v.status === 'checked-in' ? `<button class="btn btn-primary btn-sm" onclick="FT.checkOutVisit('${v.id}')">Check Out</button>` : ''}
+        ${v.status === 'planned' ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="FT.checkInVisit('${v.id}')">Check In</button>` : ''}
+        ${v.status === 'checked-in' ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="FT.checkOutVisit('${v.id}')">Check Out</button>` : ''}
       </div>
     ` : ''}
   `);
@@ -1221,15 +1221,15 @@ function renderEmployees() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="empSearch" placeholder="🔍 Cari karyawan..." oninput="FT.filterEmployees()">
-        <select class="select" id="empRoleFilter" style="width:180px;" onchange="FT.filterEmployees()">
+        <input class="input search-input" id="empSearch" placeholder="🔍 Cari karyawan..." data-pqt-oninput="FT.filterEmployees()">
+        <select class="select" id="empRoleFilter" style="width:180px;" data-pqt-onchange="FT.filterEmployees()">
           <option value="">Semua Role</option>
           <option value="Field Sales">Field Sales</option>
           <option value="Supervisor">Supervisor</option>
         </select>
         <div class="spacer"></div>
-        ${isProjectAdmin() ? `<button class="btn btn-secondary" onclick="BulkEmployees.open()">Bulk Upload</button>` : ``}
-        <button class="btn btn-primary" onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>
+        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkEmployees.open()">Bulk Upload</button>` : ``}
+        <button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="empTable">
@@ -1268,8 +1268,8 @@ function renderEmployees() {
                   <td>${e.totalVisits}</td>
                   <td>${statusBadge(e.status)}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" onclick="location.hash='#/employee/${e.id}'">Detail</button>
-                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteEmployee('${e.id}')">Hapus</button>
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Hapus</button>
                   </td>
                 </tr>
               `;
@@ -1301,7 +1301,7 @@ function employeePhotoField(current = '') {
       <div class="employee-photo-editor">
         <img class="employee-photo-preview" alt="Preview" src="${src || ''}" onerror="this.style.opacity=.3">
         <div>
-          <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" onchange="FT.previewEmployeePhoto(this)">
+          <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" data-pqt-onchange="FT.previewEmployeePhoto(this)">
           <input type="hidden" name="photo" value="${esc(src)}">
           <div class="employee-photo-help">Gunakan satu foto profil yang jelas.</div>
         </div>
@@ -1326,7 +1326,7 @@ window.FT.openEmployeeModal = function() {
   let projects = (getDB().projects || []).filter(p => !['completed','cancelled','closed','archived'].includes(p.status));
   if (actor?.role === 'manager' && actor.projectId) projects = projects.filter(p => p.id === actor.projectId);
   openModal('Tambah Karyawan', `
-    <form onsubmit="FT.createEmployee(event)">
+    <form data-pqt-onsubmit="FT.createEmployee(event)">
       ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
       <div class="form-row">
         <div class="form-group"><label class="label">Kode Karyawan</label><input class="input" name="employeeCode" required placeholder="EMP-001"></div>
@@ -1365,7 +1365,7 @@ window.FT.openEmployeeModal = function() {
         </select>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -1447,8 +1447,8 @@ function renderEmployeeDetail(id) {
           <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(emp.lat)) ? `${Number(emp.lat).toFixed(4)}, ${Number(emp.lng).toFixed(4)}` : '—'}</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:20px;">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/employees'">← Kembali</button>
-          <button class="btn btn-primary btn-sm" onclick="FT.editEmployee('${emp.id}')">Edit</button>
+          <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employees'">← Kembali</button>
+          <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editEmployee('${emp.id}')">Edit</button>
         </div>
       </div>
       <div style="flex:1; min-width:300px;">
@@ -1485,7 +1485,7 @@ window.FT.editEmployee = function(id) {
   const emp = getEmployees().find(e => e.id === id);
   if (!emp) return;
   openModal('Edit Karyawan', `
-    <form onsubmit="FT.updateEmployee(event, '${id}')">
+    <form data-pqt-onsubmit="FT.updateEmployee(event, '${id}')">
       ${employeePhotoField(emp.photo || defaultPortrait(emp))}
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(emp.name)}" required></div>
       <div class="form-row">
@@ -1507,7 +1507,7 @@ window.FT.editEmployee = function(id) {
         </select>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -1543,16 +1543,16 @@ function renderOutlets() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="outletSearch" placeholder="🔍 Cari outlet..." oninput="FT.filterOutlets()">
-        <select class="select" id="outletTypeFilter" style="width:180px;" onchange="FT.filterOutlets()">
+        <input class="input search-input" id="outletSearch" placeholder="🔍 Cari outlet..." data-pqt-oninput="FT.filterOutlets()">
+        <select class="select" id="outletTypeFilter" style="width:180px;" data-pqt-onchange="FT.filterOutlets()">
           <option value="">Semua Tipe</option>
           <option>Toko Kelontong</option><option>Minimarket</option><option>Restoran</option>
           <option>Warung Kopi</option><option>Apotek</option><option>Toko Bangunan</option>
           <option>Toko Elektronik</option><option>Bakery</option><option>Toko Fashion</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-secondary" onclick="BulkMaster.open('outlets')">Bulk Upload</button>
-        <button class="btn btn-primary" onclick="FT.openOutletModal()">+ Tambah Outlet</button>
+        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('outlets')">Bulk Upload</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openOutletModal()">+ Tambah Outlet</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="outletTable">
@@ -1571,8 +1571,8 @@ function renderOutlets() {
                 <td>${esc(displayValue(o.visitFrequency))}</td>
                 <td>${statusBadge(o.status)}</td>
                 <td>
-                  <button class="btn btn-secondary btn-sm" onclick="location.hash='#/outlet/${o.id}'">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteOutlet('${o.id}')">Hapus</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/${o.id}'">Detail</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet('${o.id}')">Hapus</button>
                 </td>
               </tr>
             `).join('')}
@@ -1617,14 +1617,14 @@ window.FT.syncManagerOutletCatalog = function(projectId) {
 window.FT.openOutletModal = function() {
   const cat = defaultStoreCatalog();
   openModal('New Outlet', `
-    <form onsubmit="FT.createOutlet(event)">
+    <form data-pqt-onsubmit="FT.createOutlet(event)">
       <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
-      ${entityScopeFields().replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required onchange="FT.syncManagerOutletCatalog(this.value)">')}
+      ${entityScopeFields().replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required data-pqt-onchange="FT.syncManagerOutletCatalog(this.value)">')}
       <div class="form-group">
         <label class="label">Lokasi di peta</label>
         <div class="filter-row" style="margin-bottom:8px">
           <input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat...">
-          <button type="button" class="btn btn-secondary" onclick="FS.searchOutletMap()">Cari</button>
+          <button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button>
         </div>
         <div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div>
         <div class="am-muted" id="outletMapHint" style="margin-top:6px">Klik peta untuk menandai titik toko. Alamat terisi otomatis.</div>
@@ -1661,7 +1661,7 @@ window.FT.openOutletModal = function() {
         </div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -1715,8 +1715,8 @@ function renderOutletDetail(id) {
           <div class="detail-label">Frekuensi</div><div class="detail-value">${o.visitFrequency}</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:20px;">
-          <button class="btn btn-secondary btn-sm" onclick="location.hash='#/outlets'">← Kembali</button>
-          <button class="btn btn-primary btn-sm" onclick="FT.editOutlet('${o.id}')">Edit</button>
+          <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlets'">← Kembali</button>
+          <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editOutlet('${o.id}')">Edit</button>
         </div>
       </div>
       <div style="flex:1; min-width:300px;">
@@ -1748,7 +1748,7 @@ window.FT.editOutlet = function(id) {
   const o = getOutlets().find(x => x.id === id);
   if (!o) return;
   openModal('Edit Outlet', `
-    <form onsubmit="FT.updateOutlet(event, '${id}')">
+    <form data-pqt-onsubmit="FT.updateOutlet(event, '${id}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(o.name)}" required></div>
       ${entityScopeFields(o)}
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${esc(o.address)}" required></div>
@@ -1772,7 +1772,7 @@ window.FT.editOutlet = function(id) {
         <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${o.status==='active'?'selected':''}>Active</option><option value="inactive" ${o.status==='inactive'?'selected':''}>Inactive</option></select></div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -1844,22 +1844,22 @@ function renderMyDay() {
   const activeOut = active ? outletMap[active.outletId] : null;
   const attMaps = att && (att.lat || att.lng) ? mapsDir(att.lat, att.lng) : (activeOut ? mapsDir(activeOut.lat, activeOut.lng) : '');
   const alerts = getLeaves().filter(l => l.employeeId === empId && l.status === 'pending').length;
-  const tile = (label, iconName, onclick) => `<button type="button" class="mq-tile" onclick="${onclick}">
+  const tile = (label, iconName, onclick) => `<button type="button" class="mq-tile" data-pqt-onclick="${onclick}">
     <span class="mq-tile-ico">${iconSvg(iconName)}</span><span>${label}</span></button>`;
 
   return `
     <div class="mq-home">
       <header class="mq-head">
-        <button type="button" class="mq-icon-btn" onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <button type="button" class="mq-icon-btn" data-pqt-onclick="FT.toggleSidebar()" aria-label="Menu"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <div class="mq-hello">
           <h1>${greetingNow()}, ${esc(firstName(emp.name))}! 👋</h1>
           <p>${esc(longDateId())}</p>
         </div>
-        <button type="button" class="mq-icon-btn" onclick="location.hash='#/myleaves'" aria-label="Notifikasi">
+        <button type="button" class="mq-icon-btn" data-pqt-onclick="location.hash='#/myleaves'" aria-label="Notifikasi">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3s3-2 3-9"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
           ${alerts ? `<span class="mq-badge">${alerts}</span>` : ''}
         </button>
-        <button type="button" class="mq-avatar" style="background:${colors[cIdx]}" onclick="location.hash='#/settings'">${getInitials(emp.name)}</button>
+        <button type="button" class="mq-avatar" style="background:${colors[cIdx]}" data-pqt-onclick="location.hash='#/settings'">${getInitials(emp.name)}</button>
       </header>
 
       <section class="mq-card mq-progress">
@@ -1911,7 +1911,7 @@ function renderMyDay() {
             ? `<a class="mq-tile" href="${mapsDir(activeOut.lat, activeOut.lng)}" target="_blank" rel="noreferrer"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></a>`
             : `<span class="mq-tile"><span class="mq-tile-ico">${iconSvg('tracking')}</span><span>Rute</span></span>`}
         </div>
-        <button type="button" class="mq-checkout" onclick="FT.mobileCheckOut('${active.id}')">CHECK OUT →</button>
+        <button type="button" class="mq-checkout" data-pqt-onclick="FT.mobileCheckOut('${active.id}')">CHECK OUT →</button>
       </section>` : ''}
 
       <section class="mq-card mq-next">
@@ -1931,7 +1931,7 @@ function renderMyDay() {
               <p>${esc(o.address || '')}</p>
               <div class="mq-meta-line">${v.checkInTime ? esc(v.checkInTime) : 'Terjadwal'} ${km != null ? ` · ${km} km` : ''}</div>
             </div>
-            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Rute</a>` : `<button type="button" class="mq-route" onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
+            ${dir ? `<a class="mq-route" href="${dir}" target="_blank" rel="noreferrer">${iconSvg('tracking')} Rute</a>` : `<button type="button" class="mq-route" data-pqt-onclick="FT.mobileCheckIn('${v.id}')">Check in</button>`}
           </div>`;
         }).join('') : `<div class="empty-state" style="padding:20px"><h3>Tidak ada jadwal berikutnya</h3></div>`}
       </section>
@@ -1967,7 +1967,7 @@ function renderMyVisits() {
                   <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
                   <td>${statusBadge(v.status)}</td>
-                  <td><button class="btn btn-secondary btn-sm" type="button" onclick="FS.openVisitDetail('${v.id}')">Detail</button></td>
+                  <td><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.openVisitDetail('${v.id}')">Detail</button></td>
                 </tr>
               `;
             }).join('')}
@@ -2033,12 +2033,12 @@ function renderProductSales({ mine } = {}) {
     </div>`}
     <div class="card">
       <div class="card-title">${mine ? 'Record a sale' : 'New sale'}</div>
-      <form onsubmit="FT.submitProductSale(event)">
+      <form data-pqt-onsubmit="FT.submitProductSale(event)">
         ${!mine ? `<div class="form-group"><label class="label">Employee</label>
           <select class="select" name="employeeId" required>${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="employeeId" value="${esc(empId || '')}">`}
         <div class="form-row">
           <div class="form-group"><label class="label">Product</label>
-            <select class="select" name="productId" required onchange="FT.fillSalePrice(this)">
+            <select class="select" name="productId" required data-pqt-onchange="FT.fillSalePrice(this)">
               <option value="">Select product</option>
               ${products.map(p => `<option value="${p.id}" data-price="${p.price || 0}">${esc(p.name)} (${esc(p.sku || '-')})</option>`).join('')}
             </select>
@@ -2072,7 +2072,7 @@ function renderProductSales({ mine } = {}) {
               <td>${esc(s.outletId ? formatOutletLabel(outMap[s.outletId]) : '—')}</td>
               <td>${s.qty}</td>
               <td>${formatCurrency(s.amount)}</td>
-              <td><button class="btn btn-danger btn-sm" onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
+              <td><button class="btn btn-danger btn-sm" data-pqt-onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
             </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><h3>No sales yet</h3></div></td></tr>`}
         </tbody>
       </table></div>
@@ -2134,23 +2134,23 @@ function renderProducts() {
     </div>
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand..." oninput="FT.filterProducts()">
-        <select class="select" id="productCatFilter" style="width:140px;" onchange="FT.filterProducts()">
+        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand..." data-pqt-oninput="FT.filterProducts()">
+        <select class="select" id="productCatFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Kategori</option>
           ${cats.map(c => `<option value="${c}">${c}</option>`).join('')}
         </select>
-        <select class="select" id="productBrandFilter" style="width:140px;" onchange="FT.filterProducts()">
+        <select class="select" id="productBrandFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Brand</option>
           ${brands.map(b => `<option value="${b}">${b}</option>`).join('')}
         </select>
-        <select class="select" id="productStatusFilter" style="width:120px;" onchange="FT.filterProducts()">
+        <select class="select" id="productStatusFilter" style="width:120px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Status</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-secondary" onclick="BulkMaster.open('products')">Bulk Upload</button>
-        <button class="btn btn-primary" onclick="FT.openProductModal()">+ Tambah Produk</button>
+        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('products')">Bulk Upload</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
       <datalist id="catList">${cats.map(c => `<option value="${c}">`).join('')}</datalist>
       <div class="visits-table-wrapper">
@@ -2176,8 +2176,8 @@ function renderProducts() {
                 <td style="font-size:12px;color:var(--gray-500);">${p.margin != null ? p.margin + '%' : '—'}</td>
                 <td>${statusBadge(p.status)}</td>
                 <td style="white-space:nowrap;">
-                  <button class="btn btn-secondary btn-sm" onclick="FT.editProduct('${p.id}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteProductConfirm('${p.id}')">Hapus</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct('${p.id}')">Edit</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteProductConfirm('${p.id}')">Hapus</button>
                 </td>
               </tr>
             `).join('')}
@@ -2206,10 +2206,10 @@ window.FT.filterProducts = function() {
 
 window.FT.openProductModal = function() {
   openModal('Tambah Produk', `
-    <form onsubmit="FT.createProduct(event)">
+    <form data-pqt-onsubmit="FT.createProduct(event)">
       ${productFormFields()}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -2231,10 +2231,10 @@ window.FT.editProduct = function(id) {
   const p = getProducts().find(x => x.id === id);
   if (!p) return;
   openModal('Edit Produk', `
-    <form onsubmit="FT.updateProduct(event,'${id}')">
+    <form data-pqt-onsubmit="FT.updateProduct(event,'${id}')">
       ${productFormFields(p)}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -2279,18 +2279,18 @@ function renderStocks() {
     ` : ''}
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." oninput="FT.filterStocks()">
-        <select class="select" id="stockOutletFilter" style="width:200px;" onchange="FT.filterStocks()">
+        <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." data-pqt-oninput="FT.filterStocks()">
+        <select class="select" id="stockOutletFilter" style="width:200px;" data-pqt-onchange="FT.filterStocks()">
           <option value="">Semua Outlet</option>
           ${getOutlets().map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
         </select>
-        <select class="select" id="stockStatusFilter" style="width:160px;" onchange="FT.filterStocks()">
+        <select class="select" id="stockStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterStocks()">
           <option value="">Semua Status</option>
           <option value="low">Stok Menipis</option>
           <option value="ok">Stok Aman</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="FT.openStockModal()">+ Tambah Stok</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openStockModal()">+ Tambah Stok</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="stockTable">
@@ -2310,8 +2310,8 @@ function renderStocks() {
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" onclick="FT.editStock('${s.id}')">Edit</button>
-                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteStock('${s.id}')">Hapus</button>
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Edit</button>
+                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteStock('${s.id}')">Hapus</button>
                   </td>
                 </tr>
               `;
@@ -2337,7 +2337,7 @@ window.FT.filterStocks = function() {
 
 window.FT.openStockModal = function() {
   openModal('Tambah Stok', `
-    <form onsubmit="FT.createStock(event)">
+    <form data-pqt-onsubmit="FT.createStock(event)">
       <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${p.name} (${p.sku})</option>`).join('')}</select></div>
       <div class="form-row">
@@ -2345,7 +2345,7 @@ window.FT.openStockModal = function() {
         <div class="form-group"><label class="label">Min. Stok</label><input class="input" type="number" name="minStock" value="5" required></div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -2368,14 +2368,14 @@ window.FT.editStock = function(id) {
   const pMap = Object.fromEntries(getProducts().map(p=>[p.id,p]));
   const oMap = Object.fromEntries(getOutlets().map(o=>[o.id,o]));
   openModal('Edit Stok', `
-    <form onsubmit="FT.updateStock(event,'${id}')">
+    <form data-pqt-onsubmit="FT.updateStock(event,'${id}')">
       <div class="form-group"><label class="label">Outlet / Produk</label><div style="padding:10px 12px; background:var(--gray-50); border-radius:10px; font-size:14px;">${oMap[s.outletId]?.name||'-'} → ${pMap[s.productId]?.name||'-'}</div></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Quantity</label><input class="input" type="number" name="quantity" value="${s.quantity}" required></div>
         <div class="form-group"><label class="label">Min. Stok</label><input class="input" type="number" name="minStock" value="${s.minStock}" required></div>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -2404,13 +2404,13 @@ function renderAttendanceManager() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="attSearch" placeholder="🔍 Cari karyawan..." oninput="FT.filterAttendance()">
-        <select class="select" id="attStatusFilter" style="width:160px;" onchange="FT.filterAttendance()">
+        <input class="input search-input" id="attSearch" placeholder="🔍 Cari karyawan..." data-pqt-oninput="FT.filterAttendance()">
+        <select class="select" id="attStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterAttendance()">
           <option value="">Semua Status</option>
           <option>hadir</option><option>terlambat</option><option>tidak hadir</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-secondary" type="button" onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
+        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
@@ -2439,13 +2439,13 @@ function renderAttendanceManager() {
 
 window.FT.openAttendancePointModal = function() {
   openModal('Titik absensi', `
-    <form onsubmit="FS.addAttendancePoint(event)">
+    <form data-pqt-onsubmit="FS.addAttendancePoint(event)">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" required placeholder="Kantor pusat / Meeting point Senayan"></div>
       <div class="form-group"><label class="label">Jenis</label>
         <select class="select" name="type"><option value="office">Kantor</option><option value="meeting">Meeting point</option><option value="store">Toko</option></select>
       </div>
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address"></div>
-      <div class="modal-footer"><button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
     </form>`);
 };
 
@@ -2476,8 +2476,8 @@ function renderLeavesManager() {
     ` : ''}
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="leaveSearch" placeholder="🔍 Cari pengajuan..." oninput="FT.filterLeaves()">
-        <select class="select" id="leaveStatusFilter" style="width:160px;" onchange="FT.filterLeaves()">
+        <input class="input search-input" id="leaveSearch" placeholder="🔍 Cari pengajuan..." data-pqt-oninput="FT.filterLeaves()">
+        <select class="select" id="leaveStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterLeaves()">
           <option value="">Semua Status</option>
           <option>pending</option><option>approved</option><option>rejected</option>
         </select>
@@ -2503,9 +2503,9 @@ function renderLeavesManager() {
                   <td style="font-size:12px; color:var(--gray-400);">${l.status === 'pending' ? '-' : (accMap[l.approverId] || '-')}</td>
                   <td>
                     ${l.status === 'pending' ? `
-                      <button class="btn btn-primary btn-sm" style="background:var(--green-600);border-color:var(--green-600);" onclick="FT.approveLeave('${l.id}')">✓ Setujui</button>
-                      <button class="btn btn-danger btn-sm" style="margin-left:4px;margin-top:4px;" onclick="FT.rejectLeave('${l.id}')">✕ Tolak</button>
-                    ` : `<button class="btn btn-secondary btn-sm" onclick="FT.viewLeave('${l.id}')">Detail</button>`}
+                      <button class="btn btn-primary btn-sm" style="background:var(--green-600);border-color:var(--green-600);" data-pqt-onclick="FT.approveLeave('${l.id}')">✓ Setujui</button>
+                      <button class="btn btn-danger btn-sm" style="margin-left:4px;margin-top:4px;" data-pqt-onclick="FT.rejectLeave('${l.id}')">✕ Tolak</button>
+                    ` : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>`}
                   </td>
                 </tr>
               `;
@@ -2556,7 +2556,7 @@ window.FT.viewLeave = function(id) {
       <div class="detail-label">Approver</div><div class="detail-value">${accMap[l.approverId] || '-'}</div>
     </div>
     <div class="modal-footer" style="padding:24px 0 0;">
-      <button class="btn btn-secondary" onclick="FT.closeModal()">Tutup</button>
+      <button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>
     </div>
   `);
 };
@@ -2618,7 +2618,7 @@ function renderMyLeaves() {
       <div class="filter-row">
         <div class="card-title" style="margin:0;">Pengajuan Ijin & Cuti Saya</div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="FT.openMyLeaveModal()">+ Ajukan Ijin/Cuti</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openMyLeaveModal()">+ Ajukan Ijin/Cuti</button>
       </div>
       <div class="visits-table-wrapper" style="margin-top:16px;">
         <table class="table">
@@ -2646,7 +2646,7 @@ function renderMyLeaves() {
 window.FT.openMyLeaveModal = function() {
   const leaveTypes = getLeaveTypes();
   openModal('Ajukan Ijin / Cuti', `
-    <form onsubmit="FT.createMyLeave(event)">
+    <form data-pqt-onsubmit="FT.createMyLeave(event)">
       <div class="form-group">
         <label class="label">Tipe</label>
         <select class="select" name="type" required>
@@ -2654,8 +2654,8 @@ window.FT.openMyLeaveModal = function() {
         </select>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Tanggal Mulai</label><input class="input" type="date" name="startDate" id="leaveStart" required onchange="FT.calcLeaveDays()"></div>
-        <div class="form-group"><label class="label">Tanggal Selesai</label><input class="input" type="date" name="endDate" id="leaveEnd" required onchange="FT.calcLeaveDays()"></div>
+        <div class="form-group"><label class="label">Tanggal Mulai</label><input class="input" type="date" name="startDate" id="leaveStart" required data-pqt-onchange="FT.calcLeaveDays()"></div>
+        <div class="form-group"><label class="label">Tanggal Selesai</label><input class="input" type="date" name="endDate" id="leaveEnd" required data-pqt-onchange="FT.calcLeaveDays()"></div>
       </div>
       <div class="form-group">
         <label class="label">Durasi (hari)</label>
@@ -2666,7 +2666,7 @@ window.FT.openMyLeaveModal = function() {
         <textarea class="textarea" name="reason" placeholder="Jelaskan alasan pengajuan..." required></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
       </div>
     </form>
@@ -2733,10 +2733,10 @@ function renderMyStocks() {
                 <div style="font-weight:600;">${o?.name || v.outletId}</div>
                 <div style="font-size:12px; color:var(--gray-400);">Check in: ${v.checkInTime}</div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Update Stok</button>
-              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Catat Harga</button>
-              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitIntelInput('${v.id}', '${v.outletId}')">Intel</button>
-              <button class="btn btn-secondary btn-sm" onclick="FT.openVisitPhotoInput('${v.id}', '${v.outletId}')">Foto</button>
+              <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openVisitStockInput('${v.id}', '${v.outletId}')">Update Stok</button>
+              <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">Catat Harga</button>
+              <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openVisitIntelInput('${v.id}', '${v.outletId}')">Intel</button>
+              <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openVisitPhotoInput('${v.id}', '${v.outletId}')">Foto</button>
             </div>
           `;
         }).join('')}
@@ -2780,7 +2780,7 @@ function renderMyStocks() {
                   <td style="color:var(--gray-400);">${s.minStock}</td>
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px;color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
-                  ${teamView ? '' : `<td><button class="btn btn-secondary btn-sm" onclick="FT.editStock('${s.id}')">Edit</button></td>`}
+                  ${teamView ? '' : `<td><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Edit</button></td>`}
                 </tr>
               `;
             }).join('')}
@@ -2833,7 +2833,7 @@ function renderMyPrices() {
                 <div style="font-weight:600;">${o?.name || v.outletId}</div>
                 <div style="font-size:12px; color:var(--gray-400);">Check in: ${v.checkInTime}</div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">+ Catat Harga/Diskon</button>
+              <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openVisitPriceInput('${v.id}', '${v.outletId}')">+ Catat Harga/Diskon</button>
             </div>
           `;
         }).join('')}
@@ -2862,7 +2862,7 @@ function renderMyPrices() {
       <div class="filter-row">
         <div class="card-title" style="margin:0;">Riwayat Harga & Diskon</div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="FT.openPriceObsModal()">+ Catat Observasi</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openPriceObsModal()">+ Catat Observasi</button>
       </div>
       <div class="card-subtitle" style="margin-top:8px;">${teamView ? 'Data dari kunjungan tim Anda' : 'Data dari outlet yang pernah Anda kunjungi'}</div>
       ${observations.length === 0 ? `<div class="empty-state"><div class="empty-icon">💰</div><h3>Belum ada data harga</h3><p>Catat harga saat kunjungan ke outlet</p></div>` : `
@@ -2926,10 +2926,10 @@ window.FT.openVisitStockInput = function(visitId, outletId) {
     <div style="margin-bottom:16px; padding:12px; background:var(--blue-50); border-radius:10px; font-size:13px; color:var(--blue-700);">
       📍 Update stok produk di outlet ini berdasarkan pengamatan lapangan
     </div>
-    <form onsubmit="FT.saveVisitStock(event, '${visitId}', '${outletId}')">
+    <form data-pqt-onsubmit="FT.saveVisitStock(event, '${visitId}', '${outletId}')">
       ${productPickerRows('stock', outletId)}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Stok</button>
       </div>
     </form>
@@ -2977,14 +2977,14 @@ window.FT.openVisitPriceInput = function(visitId, outletId) {
     <div style="margin-bottom:16px; padding:12px; background:#fffbeb; border-radius:10px; font-size:13px; color:var(--amber-700);">
       💰 Catat harga jual dan diskon yang teramati di outlet ini
     </div>
-    <form onsubmit="FT.saveVisitPrice(event, '${visitId}', '${outletId}')">
+    <form data-pqt-onsubmit="FT.saveVisitPrice(event, '${visitId}', '${outletId}')">
       ${productPickerRows('price', outletId)}
       <div class="form-group">
         <label class="label">Catatan</label>
         <textarea class="textarea" name="notes" placeholder="Promo, kompetitor, perubahan harga, dll..."></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Observasi</button>
       </div>
     </form>
@@ -3025,7 +3025,7 @@ window.FT.openPriceObsModal = function() {
   const myVisits = getVisits().filter(v => v.employeeId === empId);
 
   openModal('Catat Observasi Harga', `
-    <form onsubmit="FT.saveStandalonePrice(event)">
+    <form data-pqt-onsubmit="FT.saveStandalonePrice(event)">
       <div class="form-group">
         <label class="label">Outlet (yang pernah dikunjungi)</label>
         <select class="select" name="outletId" required>
@@ -3059,7 +3059,7 @@ window.FT.openPriceObsModal = function() {
         <textarea class="textarea" name="notes" placeholder="Keterangan tambahan..."></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -3119,10 +3119,10 @@ function renderCompetitors() {
         <div class="card-title" style="margin:0;">Master Kompetitor</div>
         <div class="spacer"></div>
         ${isOrgAdmin() ? `
-        <button class="btn btn-secondary" onclick="BulkMaster.open('competitors')">Bulk Merek</button>
-        <button class="btn btn-secondary" onclick="BulkMaster.open('competitorProducts')">Bulk Produk</button>
-        <button class="btn btn-secondary" onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
-        <button class="btn btn-primary" onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
+        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('competitors')">Bulk Merek</button>
+        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('competitorProducts')">Bulk Produk</button>
+        <button class="btn btn-secondary" data-pqt-onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
         ` : ''}
       </div>
       <div class="card-subtitle">Kelola merek pesaing & katalog produknya</div>
@@ -3141,9 +3141,9 @@ function renderCompetitors() {
                   ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${esc(c.notes)}</div>` : ''}
                 </div>
                 <div style="display:${isOrgAdmin() ? 'flex' : 'none'};gap:6px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary btn-sm" onclick="FT.openCompetitorProductModal(${jsArg(c.id)})">+ Produk</button>
-                  <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitor(${jsArg(c.id)})">Edit</button>
-                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm(${jsArg(c.id)})">Arsipkan</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openCompetitorProductModal(${jsArg(c.id)})">+ Produk</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editCompetitor(${jsArg(c.id)})">Edit</button>
+                  <button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteCompetitorConfirm(${jsArg(c.id)})">Arsipkan</button>
                 </div>
               </div>
               ${prods.length ? `
@@ -3159,8 +3159,8 @@ function renderCompetitors() {
                           <td>${esc(p.unit)}</td>
                           <td>${statusBadge(p.status)}</td>
                           <td style="display:${isOrgAdmin() ? 'table-cell' : 'none'};">
-                            <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct(${jsArg(p.id)})">Edit</button>
-                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm(${jsArg(p.id)})">Arsipkan</button>
+                            <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editCompetitorProduct(${jsArg(p.id)})">Edit</button>
+                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteCompetitorProductConfirm(${jsArg(p.id)})">Arsipkan</button>
                           </td>
                         </tr>
                       `).join('')}
@@ -3180,7 +3180,7 @@ function renderCompetitors() {
 window.FT.openCompetitorModal = function() {
   if (!isProjectAdmin()) return;
   openModal('Tambah Merek Kompetitor', `
-    <form onsubmit="FT.saveCompetitor(event)">
+    <form data-pqt-onsubmit="FT.saveCompetitor(event)">
       <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" required placeholder="Danone, P&G..."></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" placeholder="Susu, Kebersihan..."></div>
@@ -3188,7 +3188,7 @@ window.FT.openCompetitorModal = function() {
       </div>
       <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes" placeholder="Posisi pasar, brand strength..."></textarea></div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -3208,7 +3208,7 @@ window.FT.editCompetitor = function(id) {
   const c = getCompetitors().find(x => x.id === id);
   if (!c) return;
   openModal('Edit Kompetitor', `
-    <form onsubmit="FT.updateCompetitorForm(event,${jsArg(id)})">
+    <form data-pqt-onsubmit="FT.updateCompetitorForm(event,${jsArg(id)})">
       <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" value="${esc(c.name)}" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(c.category||'')}"></div>
@@ -3222,7 +3222,7 @@ window.FT.editCompetitor = function(id) {
       </div>
       <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes||'')}</textarea></div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -3247,7 +3247,7 @@ window.FT.openCompetitorProductModal = function(competitorId) {
   if (!isProjectAdmin()) return;
   const competitors = getCompetitors().filter(c => c.status === 'active');
   openModal('Tambah Produk Kompetitor', `
-    <form onsubmit="FT.saveCompetitorProduct(event)">
+    <form data-pqt-onsubmit="FT.saveCompetitorProduct(event)">
       <div class="form-group"><label class="label">Merek Kompetitor</label>
         <select class="select" name="competitorId" required>
           <option value="">— Pilih —</option>
@@ -3261,7 +3261,7 @@ window.FT.openCompetitorProductModal = function(competitorId) {
       </div>
       <div class="form-group"><label class="label">Harga Tipikal (Rp)</label><input class="input" type="number" name="typicalPrice" required min="0"></div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -3282,7 +3282,7 @@ window.FT.editCompetitorProduct = function(id) {
   if (!p) return;
   const competitors = getCompetitors();
   openModal('Edit Produk Kompetitor', `
-    <form onsubmit="FT.updateCompetitorProductForm(event,${jsArg(id)})">
+    <form data-pqt-onsubmit="FT.updateCompetitorProductForm(event,${jsArg(id)})">
       <div class="form-group"><label class="label">Merek</label>
         <select class="select" name="competitorId" required>
           ${competitors.map(c => `<option value="${esc(c.id)}" ${c.id===p.competitorId?'selected':''}>${esc(c.name)}</option>`).join('')}
@@ -3303,7 +3303,7 @@ window.FT.editCompetitorProduct = function(id) {
         </div>
       </div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
@@ -3508,7 +3508,7 @@ function renderMyIntel() {
                 <div style="font-weight:600;">${o?.name || v.outletId}</div>
                 <div style="font-size:12px;color:var(--gray-400);">Check in: ${v.checkInTime}</div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="FT.openVisitIntelInput('${v.id}','${v.outletId}')">+ Catat Intel</button>
+              <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openVisitIntelInput('${v.id}','${v.outletId}')">+ Catat Intel</button>
             </div>
           `;
         }).join('')}
@@ -3537,7 +3537,7 @@ function renderMyIntel() {
       <div class="filter-row">
         <div class="card-title" style="margin:0;">${teamView ? 'Intel tim' : 'Riwayat Intel Saya'}</div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" onclick="FT.openStandaloneIntelModal()">+ Catat Intel</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openStandaloneIntelModal()">+ Catat Intel</button>
       </div>
       <div class="card-subtitle">${teamView ? 'Mengikuti aktivitas kunjungan tim' : 'Hanya outlet yang pernah Anda kunjungi'}</div>
       ${intel.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada intel</h3><p>Catat saat check-in di outlet</p></div>` : `
@@ -3596,7 +3596,7 @@ function intelFormHTML(visitId, outletId, opts = {}) {
   const promoTypes = getPromoTypes();
 
   return `
-    <form onsubmit="FT.saveCompetitorIntel(event, ${visitId ? `'${visitId}'` : 'null'}, ${outletId ? `'${outletId}'` : 'null'})">
+    <form data-pqt-onsubmit="FT.saveCompetitorIntel(event, ${visitId ? `'${visitId}'` : 'null'}, ${outletId ? `'${outletId}'` : 'null'})">
       ${!outletId && outlets ? `
         <div class="form-group">
           <label class="label">Outlet (pernah dikunjungi)</label>
@@ -3608,14 +3608,14 @@ function intelFormHTML(visitId, outletId, opts = {}) {
       ` : `<input type="hidden" name="outletId" value="${outletId||''}">`}
       <div class="form-group">
         <label class="label">Produk Kita</label>
-        <select class="select" name="productId" id="intelOurProduct" required onchange="FT.prefillOurPrice()">
+        <select class="select" name="productId" id="intelOurProduct" required data-pqt-onchange="FT.prefillOurPrice()">
           <option value="">— Pilih produk —</option>
           ${products.map(p => `<option value="${p.id}" data-price="${p.price}">${p.brand ? p.brand+' · ' : ''}${p.name} (${formatCurrency(p.price)})</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
         <label class="label">Produk Kompetitor</label>
-        <select class="select" name="competitorProductId" id="intelCompProduct" required onchange="FT.prefillCompPrice()">
+        <select class="select" name="competitorProductId" id="intelCompProduct" required data-pqt-onchange="FT.prefillCompPrice()">
           <option value="">— Pilih —</option>
           ${cpd.map(p => {
             const c = competitors.find(x => x.id === p.competitorId);
@@ -3649,14 +3649,14 @@ function intelFormHTML(visitId, outletId, opts = {}) {
       </div>
       <div class="form-group">
         <label class="label" style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" name="hasPromo" value="true" id="intelHasPromo" onchange="FT.toggleIntelPromoFields(this.checked)">
+          <input type="checkbox" name="hasPromo" value="true" id="intelHasPromo" data-pqt-onchange="FT.toggleIntelPromoFields(this.checked)">
           Ada promo kompetitor / di rak
         </label>
       </div>
       <div id="intelPromoFields" style="display:none;">
         <div class="form-group">
           <label class="label">Jenis Promo <span style="color:var(--red);">*</span></label>
-          <select class="select" name="promoType" id="intelPromoType" onchange="FT.toggleIntelPromoCustom(this.value)">
+          <select class="select" name="promoType" id="intelPromoType" data-pqt-onchange="FT.toggleIntelPromoCustom(this.value)">
             <option value="">— Pilih jenis promo —</option>
             ${promoTypes.map(t => `
               <option value="${t.code}">${t.label}${t.strategic ? ' ★ strategis' : ''}</option>
@@ -3678,7 +3678,7 @@ function intelFormHTML(visitId, outletId, opts = {}) {
         <textarea class="textarea" name="notes" placeholder="Posisi rak, reaksi owner, dsb..."></textarea>
       </div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Intel</button>
         <button type="submit" class="btn btn-secondary" data-more="1">Simpan & produk lain</button>
       </div>
@@ -3846,7 +3846,7 @@ function renderFieldPhotosGallery({ managerView }) {
                 <div style="font-weight:600;">${o?.name || v.outletId}</div>
                 <div style="font-size:12px;color:var(--gray-400);">Check in: ${v.checkInTime || '—'}</div>
               </div>
-              <button class="btn btn-primary btn-sm" onclick="FT.openVisitPhotoInput('${v.id}','${v.outletId}')">+ Foto</button>
+              <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openVisitPhotoInput('${v.id}','${v.outletId}')">+ Foto</button>
             </div>
           `;
         }).join('')}
@@ -3901,7 +3901,7 @@ function renderFieldPhotosGallery({ managerView }) {
                   ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${esc(comp.name)}</div>` : ''}
                   <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || p.createdAt || '').slice(0, 10))}</div>
                   ${(!managerView || isProjectAdmin()) ? `
-                    <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" data-pqt-onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
                   ` : ''}
                 </div>
               </div>
@@ -3938,17 +3938,17 @@ window.FT.openVisitPhotoInput = function(visitId, outletId) {
     <div style="margin-bottom:12px;padding:12px;background:var(--blue-50);border-radius:10px;font-size:13px;color:var(--blue-600);">
       Ambil dari kamera atau pilih galeri. Gambar dikompres otomatis (~800px JPEG).
     </div>
-    <form id="fieldPhotoForm" onsubmit="FT.saveFieldPhoto(event, '${visitId}', '${outletId}')">
+    <form id="fieldPhotoForm" data-pqt-onsubmit="FT.saveFieldPhoto(event, '${visitId}', '${outletId}')">
       <div class="form-group">
         <label class="label">Jenis Foto</label>
-        <select class="select" name="type" id="photoType" required onchange="FT.onPhotoTypeChange(this.value)">
+        <select class="select" name="type" id="photoType" required data-pqt-onchange="FT.onPhotoTypeChange(this.value)">
           ${FIELD_PHOTO_TYPES.map(t => `<option value="${t.code}">${t.label}</option>`).join('')}
         </select>
       </div>
       <div class="form-group">
         <label class="label">Foto (kamera / galeri)</label>
         <input class="input" type="file" name="photoFile" id="photoFileInput" accept="image/*" capture="environment" required
-          onchange="FT.onPhotoFileSelected(event)">
+          data-pqt-onchange="FT.onPhotoFileSelected(event)">
         <div id="photoPreview" style="margin-top:10px;display:none;">
           <img id="photoPreviewImg" alt="Preview" style="max-width:100%;max-height:200px;border-radius:10px;border:1px solid var(--gray-200);">
           <div id="photoPreviewMeta" style="font-size:11px;color:var(--gray-400);margin-top:4px;"></div>
@@ -3974,7 +3974,7 @@ window.FT.openVisitPhotoInput = function(visitId, outletId) {
         </select>
       </div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
-        <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary" id="photoSaveBtn">Simpan Foto</button>
       </div>
     </form>
@@ -4118,7 +4118,7 @@ function renderMobileSim() {
       </div>
       <div class="mobile-sim-body">
         <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
+          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
         </div>
 
         <div class="mobile-card" style="background:linear-gradient(135deg,#ea580c,#c2410c); color:white; border:none;">
@@ -4151,7 +4151,7 @@ function renderMobileSim() {
                   <div style="font-size:14px; font-weight:600;">${o?.name || '?'}</div>
                   <div style="font-size:12px; color:var(--gray-400);">${o?.address || ''}</div>
                 </div>
-                <button class="btn btn-primary btn-sm" onclick="FT.mobileCheckIn('${v.id}')">Check In</button>
+                <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.mobileCheckIn('${v.id}')">Check In</button>
               </div>
             </div>
           `; }).join('')
@@ -4167,7 +4167,7 @@ function renderMobileSim() {
                   <div style="font-size:14px; font-weight:600;">${o?.name || '?'}</div>
                   <div style="font-size:12px; color:var(--blue-600);">⏱️ Check in: ${v.checkInTime}</div>
                 </div>
-                <button class="btn btn-primary btn-sm" onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
+                <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
               </div>
             </div>
           `; }).join('')
@@ -4179,7 +4179,7 @@ function renderMobileSim() {
       <div class="mobile-sim-header"><h2>Kunjungan Saya</h2></div>
       <div class="mobile-sim-body">
         <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
+          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
         </div>
         <div class="mobile-section-title">Hari Ini (27 Jul 2024)</div>
         ${visits.length === 0 ? `<div class="mobile-card" style="text-align:center; color:var(--gray-400);">Belum ada kunjungan</div>` :
@@ -4209,7 +4209,7 @@ function renderMobileSim() {
       <div class="mobile-sim-header"><h2>Rute Kunjungan</h2></div>
       <div class="mobile-sim-body">
         <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
+          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
         </div>
         <div class="mobile-card" style="background:var(--blue-50); border-color:var(--blue-200); margin-bottom:16px;">
           <div style="font-size:13px; color:var(--blue-700); font-weight:600;">📍 ${todayPlanned.length} kunjungan tersisa · ${completed.length} selesai</div>
@@ -4259,7 +4259,7 @@ function renderMobileSim() {
             <div class="progress-bar"><div class="progress-fill" style="width:${current ? Math.round(current.todayVisits/current.targetVisits*100) : 0}%;"></div></div>
           </div>
         </div>
-        <button class="btn btn-danger" style="width:100%; justify-content:center;" onclick="FT.logout()">Keluar</button>
+        <button class="btn btn-danger" style="width:100%; justify-content:center;" data-pqt-onclick="FT.logout()">Keluar</button>
       </div>
     `;
   }
@@ -4274,7 +4274,7 @@ function renderMobileSim() {
         <div class="mobile-sim-screen">${screenContent}</div>
         <div class="mobile-bottom-nav">
           ${tabs.map(t => `
-            <button class="mobile-nav-item ${state.mobileTab === t.id ? 'active' : ''}" onclick="FT.setMobileTab('${t.id}')">
+            <button class="mobile-nav-item ${state.mobileTab === t.id ? 'active' : ''}" data-pqt-onclick="FT.setMobileTab('${t.id}')">
               <span class="mobile-nav-icon">${t.icon}</span>
               <span>${t.label}</span>
             </button>
@@ -4301,12 +4301,12 @@ window.FT.mobileCheckOut = function(visitId) {
 function openModal(title, content) {
   const root = document.getElementById('modalRoot');
   root.innerHTML = `
-    <div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()">
+    <div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()">
       <div class="modal animate-up">
         <div class="modal-handle" aria-hidden="true"></div>
         <div class="modal-header">
           <h3>${title}</h3>
-          <button class="modal-close" onclick="FT.closeModal()" aria-label="Tutup">✕</button>
+          <button class="modal-close" data-pqt-onclick="FT.closeModal()" aria-label="Tutup">✕</button>
         </div>
         <div class="modal-body">${content}</div>
       </div>

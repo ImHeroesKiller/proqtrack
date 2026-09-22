@@ -1,6 +1,6 @@
 # Current Production State
 
-Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P2. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
+Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P3. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
 
 ## Baseline
 
@@ -11,9 +11,9 @@ Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P2. Perbarui
 | D1 live | binding `DB` → `proqtrack-mvp` |
 | R2 live | binding `FILES` → `proqtrack-mvp-files` |
 | Milestone config | `M7` |
-| Service Worker | `proqtrack-v12.7` |
+| Service Worker | `proqtrack-v12.8` |
 | Migrasi terakhir | `0024_p2_operational_cloud_authority.sql` |
-| Test baseline | 204 tests pada suite P2 |
+| Test baseline | 210 tests pada suite P3 |
 | Deploy | PR → merge `main` → GitHub Actions |
 
 Fitur bulk master sering disebut M8, tetapi `APP_MILESTONE` dan health masih `M7`. Ubah label hanya jika workflow, health assertion, dokumentasi, dan test diperbarui bersama.
@@ -59,11 +59,11 @@ UAT production menemukan tambahan masalah provisioning/login superadmin, stale t
 
 ## Risiko/temuan yang masih perlu diperhatikan
 
-1. Full multi-role UAT perlu diulang setelah migrasi `0024`, khususnya Price Observation, Competitor Intel, Outlet Proposal, dan evidence photo lintas perangkat.
-2. Conflict dua perangkat sekarang fail-closed dan snapshot lokal ditahan; UX untuk review/merge eksplisit masih menjadi enhancement berikutnya.
+1. Full authenticated multi-role UAT masih perlu diulang untuk seluruh role dan viewport setelah P3, khususnya offline/reconnect serta report export.
+2. Conflict dua perangkat sekarang blocked sampai keputusan eksplisit. UI saat ini menyediakan server-wins atau tinjau nanti; field-level merge/client-wins belum tersedia dan tidak boleh diotomatisasi.
 3. Template/branding dokumen dan riwayat file export client bersifat lokal by design.
-4. Export XLSX/DOCX/PDF/ZIP masih lazy-load library exact-version dari jsDelivr; runtime aplikasi utama dan Leaflet sudah self-hosted.
-5. Inline event attributes legacy masih memerlukan `script-src-attr 'unsafe-inline'`; executable script element tidak lagi mendapat `unsafe-inline`.
+4. `src/app.js` masih monolitik dan menjadi target maintainability berikutnya; pecah modul hanya setelah regression browser coverage memadai.
+5. Inline executable JS sudah ditutup, tetapi inline style masih diizinkan oleh CSP untuk kompatibilitas UI saat ini.
 6. PR #36 masih draft/divergen dan tidak boleh di-merge.
 7. Technical logs boleh ada di console, tetapi toast/modal tidak boleh menyebut D1, R2, Worker, Cloudflare, GitHub, schema, atau stack trace.
 
@@ -87,7 +87,7 @@ Baseline P0:
 - `src/m4-bootstrap.js` tetap memasang offline engine, evidence queue, offline login, dan registrasi service worker.
 - Report core, Phase 4 report extensions, serta M6 client dimuat dari bootstrap yang sama.
 - `window.__PROQTRACK_BOOT__` menyediakan status diagnostik `loading|ready|degraded` tanpa menampilkan istilah teknis ke UI.
-- PWA cache baseline saat ini `proqtrack-v12.7`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
+- PWA cache baseline saat ini `proqtrack-v12.8`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
 - `assets/logo.js` tidak boleh lagi menjadi tempat import side-effect aplikasi.
 
 Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
@@ -118,3 +118,15 @@ Enam temuan P2 ditutup pada baseline ini:
 
 Regression guard berada di `tests/p2-hardening.test.mjs`.
 
+## P3 maintainability baseline — 23 September 2026
+
+Empat kelompok maintainability debt ditutup pada baseline ini:
+
+1. Seluruh active UI template berpindah dari executable `on*=...` attributes ke `data-pqt-on*` + delegated dispatcher `src/lib/ui-events.js`. Dispatcher memakai grammar terbatas dan tidak memakai `eval` atau `new Function`.
+2. XLSX/DOCX/ZIP/PDF report export tidak lagi memuat JSZip/jsPDF dari CDN. Packaging dilakukan lokal melalui `src/lib/document-export.js`, sehingga executable CSP dapat menjadi self-only.
+3. Snapshot offline yang mengalami revision conflict diberi `requiresReview` dan tidak dapat auto-replay pada reconnect/login berikutnya. User dapat mempertahankan salinan untuk review atau memilih versi server secara eksplisit.
+4. Runtime bootstrap naik ke `p3-runtime-2026-09-23` dan service-worker cache ke `proqtrack-v12.8`.
+
+CSP executable baseline: `script-src 'self'` dan `script-src-elem 'self'`; `script-src-attr 'unsafe-inline'` tidak lagi diperlukan.
+
+Regression guard berada di `tests/p3-maintainability.test.mjs`. Baseline P3: **210 PASS / 0 FAIL**.

@@ -21,7 +21,7 @@ function empId() {
 function openModal(title, body) {
   const root = document.getElementById('modalRoot');
   if (!root) return;
-  root.innerHTML = `<div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${esc(title)}</h3><button class="modal-close" onclick="FT.closeModal()">✕</button></div><div class="modal-body">${body}</div></div></div>`;
+  root.innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${esc(title)}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${body}</div></div></div>`;
 }
 
 export function renderLastLocation() {
@@ -129,7 +129,7 @@ export function attendanceCheckinCard() {
   }
   return `<div>
     <p class="am-muted" style="margin:0 0 10px">${esc(hint)}</p>
-    ${options ? `<form onsubmit="FS.checkInAttendance(event)">
+    ${options ? `<form data-pqt-onsubmit="FS.checkInAttendance(event)">
       <div class="form-group">
         <label class="label">Check-in location</label>
         <select class="select" name="point" required>
@@ -176,7 +176,7 @@ export function renderVisitDetailHtml(visitId) {
       const src = safePhotoUrl(p.dataUrl || p.photoUrl);
       return src ? `<img src="${src}" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:8px">` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
     }).join('')}</div>` : '<p class="am-muted">Belum ada foto.</p>'}
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="FT.closeModal()">Tutup</button></div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>
   `;
 }
 
@@ -184,13 +184,13 @@ export function photoFilterBar(managerView) {
   const f = window.FT.state._photoFilters || {};
   const outlets = getOutlets();
   return `<div class="filter-row" style="flex-wrap:wrap;gap:8px">
-    <input class="input search-input" placeholder="Cari caption, toko, jenis..." value="${esc(f.q || '')}" oninput="FS.setPhotoFilter('q',this.value)">
-    <input class="input" type="date" value="${esc(f.date || '')}" onchange="FS.setPhotoFilter('date',this.value)" title="Tanggal">
-    <select class="select" style="width:auto;min-width:160px" onchange="FS.setPhotoFilter('outletId',this.value)">
+    <input class="input search-input" placeholder="Cari caption, toko, jenis..." value="${esc(f.q || '')}" data-pqt-oninput="FS.setPhotoFilter('q',this.value)">
+    <input class="input" type="date" value="${esc(f.date || '')}" data-pqt-onchange="FS.setPhotoFilter('date',this.value)" title="Tanggal">
+    <select class="select" style="width:auto;min-width:160px" data-pqt-onchange="FS.setPhotoFilter('outletId',this.value)">
       <option value="">Semua toko</option>
       ${outlets.map(o => `<option value="${o.id}" ${f.outletId === o.id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}
     </select>
-    <select class="select" style="width:auto;min-width:140px" onchange="FS.setPhotoFilter('type',this.value)">
+    <select class="select" style="width:auto;min-width:140px" data-pqt-onchange="FS.setPhotoFilter('type',this.value)">
       <option value="">Semua jenis</option>
       ${FIELD_PHOTO_TYPES.map(t => `<option value="${t.code}" ${f.type === t.code ? 'selected' : ''}>${t.label}</option>`).join('')}
     </select>
@@ -218,7 +218,7 @@ export function productPickerRows(kind, outletId) {
   return `<div id="${kind}Rows">
     ${productRow(kind, products, existing, 0)}
   </div>
-  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" onclick="FS.addProductRow('${kind}','${outletId}')">${appIcon('plus')} Tambah produk lain</button>`;
+  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" data-pqt-onclick="FS.addProductRow('${kind}','${outletId}')">${appIcon('plus')} Tambah produk lain</button>`;
 }
 
 function productRow(kind, products, existing, idx) {
@@ -316,11 +316,11 @@ export function renderOutletProposalForm() {
     <div class="card">
       <div class="card-title">Ajukan toko baru</div>
       <div class="card-subtitle">Ambil lokasi dari perangkat. Alamat terisi otomatis. Project mengikuti assignment Anda.</div>
-      <form onsubmit="FS.submitOutlet(event)">
+      <form data-pqt-onsubmit="FS.submitOutlet(event)">
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
         <div class="form-group">
           <label class="label">Lokasi toko</label>
-          <button type="button" class="btn btn-primary" id="outletLocBtn" onclick="FS.captureOutletLocation()" style="width:100%">Ambil lokasi / buka peta</button>
+          <button type="button" class="btn btn-primary" id="outletLocBtn" data-pqt-onclick="FS.captureOutletLocation()" style="width:100%">Ambil lokasi / buka peta</button>
           <div class="am-muted" id="outletMapHint" style="margin-top:8px">Satu tombol: GPS perangkat, isi alamat otomatis, lalu buka aplikasi peta untuk konfirmasi.</div>
           <a id="outletOpenMaps" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noreferrer" style="display:none;margin-top:8px">Buka aplikasi peta</a>
           <input type="hidden" name="lat" id="outletLat" required>
@@ -367,8 +367,8 @@ export function renderOutletProposalForm() {
                   <select class="select" id="proj-${p.id}" style="min-width:140px;margin-bottom:6px">
                     ${projects.map(pr => `<option value="${pr.id}" ${p.projectId === pr.id ? 'selected' : ''}>${esc(pr.code || pr.name)}</option>`).join('')}
                   </select>
-                  <button class="btn btn-primary btn-sm" onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
-                  <button class="btn btn-danger btn-sm" onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
+                  <button class="btn btn-primary btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
+                  <button class="btn btn-danger btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
                 </td>` : (role !== 'employee' ? '<td></td>' : '')}
               </tr>`).join('') : '<tr><td colspan="5"><div class="empty-state"><h3>Belum ada pengajuan</h3></div></td></tr>'}
           </tbody>
