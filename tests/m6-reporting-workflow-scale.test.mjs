@@ -105,7 +105,7 @@ test('analytics cursor codec uses Worker-standard encoding primitives', async ()
 });
 
 test('M6 browser bridge exposes analytics reports schedules workflows and notifications', async () => {
-  const [client, bootstrap] = await Promise.all([read('src/lib/m6-client.js'), read('assets/logo.js')]);
+  const [client, bootstrap] = await Promise.all([read('src/lib/m6-client.js'), read('src/bootstrap.js')]);
   assert.match(client, /window\.ProQTrackM6 = M6/);
   assert.match(client, /\/api\/analytics\/overview/);
   assert.match(client, /\/api\/reports/);
