@@ -91,6 +91,10 @@ jobs:
           set -euo pipefail
           result="$(npx wrangler d1 execute DB --remote --env="" --json --command "
             SELECT
+              (SELECT COUNT(*) FROM auth_users
+                WHERE lower(email)='superadmin@proqtrack.id'
+                  AND role='superadmin'
+                  AND status='active') AS production_superadmin,
               (SELECT COUNT(*) FROM core_organizations
                 WHERE id='ORG-MKB' AND code='MKB' AND status='active') AS organizations,
               (SELECT COUNT(*) FROM core_sync_state
@@ -138,6 +142,7 @@ jobs:
             const entry = Array.isArray(parsed) ? parsed.find(x => Array.isArray(x?.results)) : parsed;
             const row = entry?.results?.[0];
             if (!row) throw new Error("MKB real-tenant verification row missing");
+            if (Number(row.production_superadmin) !== 1) throw new Error("Production superadmin is not active");
             if (Number(row.organizations) !== 1) throw new Error("ORG-MKB is not active");
             if (Number(row.cloud_cutover) !== 1) throw new Error("ORG-MKB cloud cutover missing");
             if (Number(row.akbar_head) !== 1) throw new Error("akbar@mkb.com is not the active MKB Head");
