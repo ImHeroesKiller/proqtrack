@@ -27,3 +27,10 @@ test('follow-up migration replaces the incorrect recovery credential hash', asyn
   assert.match(migration, /role='superadmin'/);
   assert.match(migration, /status='active'/);
 });
+
+test('final recovery hash follows the server legacy verifier format', async () => {
+  const migration = await read('migrations/0021_align_superadmin_hash_with_server_verifier.sql');
+  assert.match(migration, /password \+ "\|proqtrack\.v1"/);
+  assert.match(migration, /password_hash='sha256\$53d8df577ff12695fb02c03d92e4e3d119a717e2ed89036a7ffbb053cef924d3'/);
+  assert.doesNotMatch(migration, /da2c6d434e34d4d9ee60f04dab3d74f43a685ebca713fff2ca1fac5a3e24734d/);
+});
