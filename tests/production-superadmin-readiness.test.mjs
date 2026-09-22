@@ -19,3 +19,11 @@ test('production deployment fails closed when superadmin readiness is missing', 
   assert.match(workflow, /AS production_superadmin/);
   assert.match(workflow, /Production superadmin is not active/);
 });
+
+test('follow-up migration replaces the incorrect recovery credential hash', async () => {
+  const migration = await read('migrations/0020_correct_superadmin_password_hash.sql');
+  assert.match(migration, /password_hash='sha256\$[a-f0-9]{64}'/);
+  assert.doesNotMatch(migration, /899169b9613ef73ec345b82b78242916491ff2535b3743c99e74606125e4375c/);
+  assert.match(migration, /role='superadmin'/);
+  assert.match(migration, /status='active'/);
+});
