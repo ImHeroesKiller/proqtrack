@@ -190,11 +190,112 @@ export function validateImportSnapshot(snapshot = {}) {
   return { ok: issues.length === 0, issues, count };
 }
 
+const finalVisitStatuses = new Set(['completed','cancelled','rejected']);
+const finalLeaveStatuses = new Set(['approved','rejected']);
+
+const firstValue = (row, keys) => {
+  for (const key of keys) {
+    if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
+  }
+  return null;
+};
+
+const unchangedIfProvided = (incoming, existing, incomingKeys, existingKeys = incomingKeys) => {
+  const next = firstValue(incoming, incomingKeys);
+  if (next === null) return true;
+  const current = firstValue(existing, existingKeys);
+  return String(next) === String(current ?? '');
+};
+
+export function operationalTransitionAllowed(claims, entity, change, context = {}) {
+  const role = roleOf(claims);
+  if (BROAD_ROLES.has(role)) return true;
+  const op = str(change?.op || 'upsert');
+  const row = change?.row || {};
+  const existing = context.existing || null;
+  if (!existing) return op === 'upsert';
+  if (op === 'delete' && ['visits','attendance','leaves'].includes(entity)) return false;
+
+  if (entity === 'visits') {
+    if (finalVisitStatuses.has(str(existing.status))) return false;
+    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['outletId','outlet_id'], ['outlet_id','outletId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['startedAt','checkInAt','checkInTime','started_at'], ['started_at','startedAt','checkInAt','checkInTime'])) return false;
+    if (!unchangedIfProvided(row, existing, ['startLatitude','lat','start_latitude'], ['start_latitude','startLatitude','lat'])) return false;
+    if (!unchangedIfProvided(row, existing, ['startLongitude','lng','start_longitude'], ['start_longitude','startLongitude','lng'])) return false;
+    if (firstValue(existing, ['completed_at','completedAt','checkOutAt','checkOutTime']) !== null
+        && !unchangedIfProvided(row, existing, ['completedAt','checkOutAt','checkOutTime','completed_at'], ['completed_at','completedAt','checkOutAt','checkOutTime'])) return false;
+    const currentStatus = str(existing.status || 'planned');
+    const nextStatus = str(row.status || currentStatus);
+    const allowed = currentStatus === 'planned'
+      ? new Set(['planned','in_progress','cancelled'])
+      : currentStatus === 'in_progress'
+        ? new Set(['in_progress','completed'])
+        : new Set([currentStatus]);
+    return allowed.has(nextStatus);
+  }
+
+  if (entity === 'attendance') {
+    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['workDate','date','work_date'], ['work_date','workDate','date'])) return false;
+    if (!unchangedIfProvided(row, existing, ['status'], ['status'])) return false;
+    for (const pair of [
+      [['checkInAt','checkInTime','check_in_at'],['check_in_at','checkInAt','checkInTime']],
+      [['checkInLatitude','lat','check_in_latitude'],['check_in_latitude','checkInLatitude','lat']],
+      [['checkInLongitude','lng','check_in_longitude'],['check_in_longitude','checkInLongitude','lng']],
+      [['checkOutAt','checkOutTime','check_out_at'],['check_out_at','checkOutAt','checkOutTime']],
+      [['checkOutLatitude','check_out_latitude'],['check_out_latitude','checkOutLatitude']],
+      [['checkOutLongitude','check_out_longitude'],['check_out_longitude','checkOutLongitude']],
+    ]) {
+      const current = firstValue(existing, pair[1]);
+      if (current !== null && !unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+    }
+    return true;
+  }
+
+  if (entity === 'leaves') {
+    if (finalLeaveStatuses.has(str(existing.status))) return false;
+    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
+    const nextStatus = str(row.status || existing.status || 'pending');
+    if (role === 'employee') return nextStatus === 'pending';
+    return ['pending','approved','rejected'].includes(nextStatus);
+  }
+
+  return true;
+}
+
+async function crossTenantIdConflict(env, organizationId, entries = []) {
+  const grouped = new Map();
+  for (const entry of entries) {
+    const entity = str(entry?.entity);
+    const id = str(entry?.row?.id);
+    if (!id || entity === 'projectProducts' || !ENTITY_TABLES[entity]) continue;
+    if (!grouped.has(entity)) grouped.set(entity, new Set());
+    grouped.get(entity).add(id);
+  }
+  for (const [entity, idSet] of grouped) {
+    const table = ENTITY_TABLES[entity];
+    const ids = [...idSet];
+    for (let offset = 0; offset < ids.length; offset += 80) {
+      const chunk = ids.slice(offset, offset + 80);
+      const placeholders = chunk.map(() => '?').join(',');
+      const result = await env.DB.prepare(
+        `SELECT id,organization_id FROM ${table} WHERE id IN (${placeholders}) AND organization_id<>? LIMIT 1`
+      ).bind(...chunk, organizationId).first();
+      if (result) return { entity, id: str(result.id) };
+    }
+  }
+  return null;
+}
+
 export function authorizeOperationalChange(claims, entity, change, context = {}) {
   const role = roleOf(claims);
   const row = change?.row || context.existing || {};
   if (!ENTITY_TABLES[entity]) return false;
   if (BROAD_ROLES.has(role)) return true;
+  if (!operationalTransitionAllowed(claims, entity, change, context)) return false;
   const projectId = str(row.projectId || row.project_id || context.existing?.project_id || context.existing?.projectId);
   const employeeId = str(row.employeeId || row.updatedBy || row.employee_id || context.existing?.employee_id || context.existing?.updated_by || context.existing?.employeeId);
   if (entity === 'leaves' && ['manager','supervisor','employee'].includes(role)) {
@@ -509,6 +610,9 @@ async function handleImport(request, env, claims) {
   const canonical = canonicalizeLegacySnapshot(body.snapshot || {}, organizationId);
   const validation = validateImportSnapshot(canonical);
   if (!validation.ok) return json({ error: 'IMPORT_VALIDATION_FAILED', ...validation }, 422);
+  const importEntries = Object.keys(ENTITY_TABLES).flatMap(entity => (canonical[entity] || []).map(row => ({ entity, row })));
+  const importConflict = await crossTenantIdConflict(env, organizationId, importEntries);
+  if (importConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: importConflict.entity, id: importConflict.id }, 409);
   if (body.dryRun === true) return json({ ok: true, dryRun: true, ...validation, summary: Object.fromEntries(Object.keys(ENTITY_COLLECTIONS).map(key => [key, canonical[key].length])) });
 
   const existing = await env.DB.prepare(`SELECT
@@ -557,6 +661,9 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
   const currentRevision = Number(state.revision || 0);
   if (currentRevision !== baseRevision) return json({ error: 'REVISION_CONFLICT', revision: currentRevision }, 409);
 
+  const idConflict = await crossTenantIdConflict(env, organizationId, changes);
+  if (idConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: idConflict.entity, id: idConflict.id }, 409);
+
   const accessibleEmployeeIds = await employeeAccess(env, claims);
   const batchAssignments = changes.filter(change => change?.entity === 'projectAssignments' && change?.op !== 'delete').map(change => change.row || {});
   const statements = [];
@@ -564,9 +671,13 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     const entity = str(change?.entity);
     const op = str(change?.op);
     if (!ENTITY_TABLES[entity] || !['upsert','delete'].includes(op)) return json({ error: 'INVALID_CHANGE', entity, op }, 400);
-    const row = change.row || {};
+    const row = { ...(change.row || {}) };
     const existing = await existingRow(env, entity, organizationId, row);
-    if (!authorizeOperationalChange(claims, entity, change, { existing, accessibleEmployeeIds, batchAssignments })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
+      row.approverId = claims.sub;
+      row.approvedAt = new Date().toISOString();
+    }
     if (op === 'delete') statements.push(...deleteStatements(env, entity, row, organizationId));
     else {
       let extras = {};
