@@ -2068,7 +2068,7 @@ export function getCompetitor(id) {
 }
 
 export function createCompetitor(data) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const c = {
     id: uid('CMP'),
     status: 'active',
@@ -2083,7 +2083,7 @@ export function createCompetitor(data) {
 }
 
 export function updateCompetitor(id, data) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const db = getDB();
   const idx = db.competitors.findIndex(c => c.id === id);
   if (idx === -1) return null;
@@ -2093,10 +2093,10 @@ export function updateCompetitor(id, data) {
 }
 
 export function deleteCompetitor(id) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const db = getDB();
-  db.competitors = db.competitors.filter(c => c.id !== id);
-  db.competitorProducts = (db.competitorProducts || []).filter(p => p.competitorId !== id);
+  const competitor = db.competitors.find(c => c.id === id);
+  if (competitor) competitor.status = 'archived';
   saveDB();
 }
 
@@ -2109,7 +2109,7 @@ export function getCompetitorProductsByCompetitor(competitorId) {
 }
 
 export function createCompetitorProduct(data) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const p = {
     id: uid('CPD'),
     status: 'active',
@@ -2125,7 +2125,7 @@ export function createCompetitorProduct(data) {
 }
 
 export function updateCompetitorProduct(id, data) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const db = getDB();
   const idx = db.competitorProducts.findIndex(p => p.id === id);
   if (idx === -1) return null;
@@ -2137,9 +2137,10 @@ export function updateCompetitorProduct(id, data) {
 }
 
 export function deleteCompetitorProduct(id) {
-  assertProjectAdmin();
+  assertOrgAdmin();
   const db = getDB();
-  db.competitorProducts = db.competitorProducts.filter(p => p.id !== id);
+  const product = db.competitorProducts.find(p => p.id === id);
+  if (product) product.status = 'archived';
   saveDB();
 }
 

@@ -155,7 +155,29 @@ function stableMutationSuffix(changes = []) {
 
 async function migrateLegacyMasterCollections(localDb, remote, account = {}) {
   const organizationId = String(account?.organizationId || account?.organization?.id || localDb?.currentOrganizationId || '');
-  const changes = legacyMasterMigrationChanges(localDb, remote?.data || {}, organizationId);
+  const pendingKey = `proqtrack_pending_catalog_${organizationId}`;
+  const orgAdmin = ['head','admin','superadmin'].includes(String(account.role || '').toLowerCase());
+  if (orgAdmin && typeof localStorage !== 'undefined') {
+    const pending = JSON.parse(localStorage.getItem(pendingKey) || '[]');
+    localDb = {...localDb};
+    for (const entity of ['competitors','competitorProducts']) {
+      const rows = new Map((localDb[entity] || []).map(row=>[row.id,row]));
+      for (const change of pending.filter(change=>change.entity===entity)) if (!rows.has(change.row.id)) rows.set(change.row.id,change.row);
+      localDb[entity] = [...rows.values()];
+    }
+  }
+  let changes = legacyMasterMigrationChanges(localDb, remote?.data || {}, organizationId);
+  if (!orgAdmin) {
+    const catalog = changes.filter(change=>['competitors','competitorProducts'].includes(change.entity));
+    // Preserve unsynced legacy catalog for an administrator; never grant migration-only write access.
+    if (catalog.length && typeof localStorage !== 'undefined') {
+      const key = `proqtrack_pending_catalog_${organizationId}`;
+      const prior = JSON.parse(localStorage.getItem(key) || '[]');
+      const rows = new Map([...prior,...catalog].map(change=>[`${change.entity}:${change.row.id}`,change]));
+      localStorage.setItem(key,JSON.stringify([...rows.values()]));
+    }
+    changes = changes.filter(change=>!['competitors','competitorProducts'].includes(change.entity));
+  }
   if (!changes.length) return remote;
 
   let baseRevision = Number(remote?.revision || 0);
@@ -178,7 +200,9 @@ async function migrateLegacyMasterCollections(localDb, remote, account = {}) {
     }
     baseRevision = Number(result?.revision ?? baseRevision);
   }
-  return apiJson('/api/core/bootstrap');
+  const refreshed = await apiJson('/api/core/bootstrap');
+  if (orgAdmin && typeof localStorage !== 'undefined') localStorage.removeItem(pendingKey);
+  return refreshed;
 }
 
 function snapshotCollections(db, includeAccounts = false) {
@@ -473,7 +497,7 @@ export function scheduleOperationalSync(db) {
 }
 
 export function cloudDataStatus() {
-  return { ready, syncing, revision, cutoverMode, error: lastError };
+  return { ready, syncing, queued:!!queuedSnapshot, revision, cutoverMode, error: lastError };
 }
 
 export function resetCloudDataBridge() {

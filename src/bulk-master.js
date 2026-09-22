@@ -1,6 +1,6 @@
 import { authHeaders } from './lib/uploads.js';
 import { getDB } from './lib/db.js';
-import { bootstrapOperationalData, applyRemoteDataToLocal } from './lib/cloud-data.js';
+import { bootstrapOperationalData, applyRemoteDataToLocal, cloudDataStatus } from './lib/cloud-data.js';
 import { parseBulkMatrix, normalizeRowsForSchema, templateCsvForHeaders } from './lib/bulk-upload.js';
 
 const MAX_FILE_ROWS = 1000;
@@ -148,7 +148,8 @@ async function refreshCloud(){
   const db=getDB();
   const account=window.FT?.state?.account||{};
   const remote=await bootstrapOperationalData(db,account);
-  if(remote?.mode==='cloud' && remote.data) applyRemoteDataToLocal(db,remote.data);
+  if(remote?.mode!=='cloud' || !remote.data) throw new Error('Data tersimpan, tetapi refresh cloud belum berhasil. Coba lanjutkan kembali.');
+  applyRemoteDataToLocal(db,remote.data);
 }
 
 function summary(){
@@ -212,6 +213,7 @@ async function handleFile(input){
     if(!rows.length) throw new Error('File tidak memiliki data.');
     if(rows.length>MAX_FILE_ROWS) throw new Error(`Maksimal ${MAX_FILE_ROWS} rows per file.`);
     state.fileName=file.name;
+    state.importId='';
     state.rows=rows;
     state.preview=await previewAll(state.entity,rows);
     renderPreview();
@@ -223,11 +225,13 @@ async function handleFile(input){
 
 async function commit(){
   if(state.busy||!state.rows.length) return;
+  const cloud = cloudDataStatus();
+  if (cloud.syncing || cloud.queued || cloud.error) { window.showToast?.('Tunggu sinkronisasi data selesai sebelum bulk upload.','error'); return; }
   const s=summary();
   if(s.errors){ window.showToast?.('Perbaiki semua error sebelum commit.','error'); return; }
   if(!confirm(`Commit ${s.valid} ${SCHEMAS[state.entity].label} ke cloud?`)) return;
   state.busy=true;
-  const importId=`MASTER-${crypto.randomUUID()}`;
+  const importId=state.importId ||= `MASTER-${crypto.randomUUID()}`;
   const groups=chunks(state.rows,COMMIT_CHUNK);
   const root=document.getElementById('bulkMasterPreview');
   let inserted=0,updated=0;
@@ -238,6 +242,7 @@ async function commit(){
         entity:state.entity,
         importId,
         chunkId:String(i+1),
+        totalChunks:groups.length,
         rows:groups[i],
       },{retries:2});
       inserted+=Number(data.summary?.inserts||0);
@@ -248,12 +253,14 @@ async function commit(){
     window.showToast?.(`Bulk ${SCHEMAS[state.entity].label} selesai.`,'success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   }catch(error){
-    if(root) root.innerHTML=`<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message||error)}<br><br>Chunk sukses tetap idempotent; upload ulang file yang sama aman.</div>`;
+    if(root) root.innerHTML=`<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message||error)}<br><br>${inserted} baru · ${updated} diperbarui sebelum proses berhenti. Lanjutkan dengan file yang sama.<br><button class="btn btn-primary" onclick="BulkMaster.commit()">Lanjutkan</button></div>`;
     window.showToast?.('Bulk upload belum selesai.','error');
   }finally{state.busy=false;}
 }
 
 function reset(){
+  if(state.busy) return;
+  state.importId='';
   state.rows=[];state.preview=[];state.fileName='';
   const input=document.getElementById('bulkMasterFile');
   if(input) input.value='';
@@ -267,9 +274,11 @@ function downloadTemplate(){
 }
 
 function open(entity){
+  if(state.busy) return;
   const schema=SCHEMAS[entity];
   if(!schema){ window.showToast?.('Tipe bulk upload belum didukung.','error'); return; }
   const role=String(window.FT?.state?.account?.role||'').toLowerCase();
+  if(['competitors','competitorProducts'].includes(entity) && !['superadmin','head','admin'].includes(role)){ window.showToast?.('Katalog kompetitor dikelola Head/Admin/Superadmin.','error'); return; }
   if(!['superadmin','head','admin','manager'].includes(role)){ window.showToast?.('Akses bulk upload ditolak.','error'); return; }
   state={entity,rows:[],preview:[],fileName:'',busy:false};
   const root=document.getElementById('modalRoot');

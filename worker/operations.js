@@ -203,7 +203,8 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
       return projectIds.length > 0 && projectIds.every(id => projectAllowed(claims, id));
     }
-    if (['competitors','competitorProducts','attendancePoints'].includes(entity)) return true;
+    if (['competitors','competitorProducts'].includes(entity)) return false;
+    if (entity === 'attendancePoints') return true;
     if (entity === 'projectAssignments' || entity === 'projectProducts' || entity === 'surveyTemplates') return projectAllowed(claims, projectId);
     if (FIELD_ENTITIES.has(entity)) return projectAllowed(claims, projectId) && (!employeeId || context.accessibleEmployeeIds?.has(employeeId));
     return false;
@@ -285,6 +286,9 @@ function deleteStatements(env, entity, row, organizationId) {
   if (entity === 'projectProducts') return [p('DELETE FROM core_project_products WHERE organization_id=? AND project_id=? AND product_id=?', [organizationId,str(row.projectId),str(row.productId)])];
   if (!id) return [];
   const table = ENTITY_TABLES[entity];
+  if (['competitors','competitorProducts'].includes(entity)) {
+    return [p(`UPDATE ${table} SET status='archived',row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE organization_id=? AND id=?`, [organizationId,id])];
+  }
   const statements = [];
   if (entity === 'outlets') statements.push(p('DELETE FROM core_project_outlets WHERE organization_id=? AND outlet_id=?', [organizationId,id]));
   if (entity === 'products') statements.push(p('DELETE FROM core_project_products WHERE organization_id=? AND product_id=?', [organizationId,id]));
@@ -512,7 +516,7 @@ async function existingRow(env, entity, organizationId, row) {
   return env.DB.prepare(`SELECT * FROM ${table} WHERE organization_id=? AND id=? LIMIT 1`).bind(organizationId,str(row.id)).first();
 }
 
-async function handleSync(request, env, claims) {
+async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
   const mutationId = str(body.mutationId || request.headers.get('idempotency-key'));
@@ -550,18 +554,27 @@ async function handleSync(request, env, claims) {
     if (entity === 'projectAssignments') statements.push(membershipRefreshStatement(env, organizationId, str(row.employeeId || existing?.employee_id), str(row.projectId || existing?.project_id)));
   }
   const nextRevision = currentRevision + 1;
+  statements.unshift(env.DB.prepare('INSERT INTO core_sync_revision_guards(organization_id,mutation_id,expected_revision) VALUES(?,?,?)').bind(organizationId,mutationId,currentRevision));
+  if (bulkReceipt) statements.push(env.DB.prepare(`INSERT INTO core_master_bulk_receipts(organization_id,actor_user_id,import_id,chunk_id,total_chunks,entity,payload_hash,summary_json,applied_revision) VALUES(?,?,?,?,?,?,?,?,?)`).bind(organizationId,claims.sub,bulkReceipt.importId,bulkReceipt.chunkId,bulkReceipt.totalChunks,bulkReceipt.entity,bulkReceipt.payloadHash,JSON.stringify(bulkReceipt.summary),nextRevision));
   statements.push(env.DB.prepare('INSERT INTO core_sync_mutations(organization_id,mutation_id,actor_user_id,base_revision,applied_revision,change_count) VALUES(?,?,?,?,?,?)').bind(organizationId,mutationId,claims.sub,currentRevision,nextRevision,changes.length));
+  statements.push(env.DB.prepare('DELETE FROM core_sync_revision_guards WHERE organization_id=? AND mutation_id=?').bind(organizationId,mutationId));
   statements.push(env.DB.prepare('UPDATE core_sync_state SET revision=?,last_mutation_id=?,updated_at=CURRENT_TIMESTAMP WHERE organization_id=? AND revision=?').bind(nextRevision,mutationId,organizationId,currentRevision));
-  await env.DB.batch(statements);
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    const latest = await syncState(env, organizationId);
+    if (Number(latest.revision) !== currentRevision) return json({ error:'REVISION_CONFLICT', revision:Number(latest.revision) },409);
+    throw error;
+  }
   return json({ ok: true, revision: nextRevision, applied: changes.length });
 }
 
-export async function handleOperationalRoute(request, env, claims, url = new URL(request.url)) {
+export async function handleOperationalRoute(request, env, claims, url = new URL(request.url), bulkReceipt = null) {
   if (!url.pathname.startsWith('/api/core/')) return null;
   if (env.CORE_DATA_API_ENABLED !== 'true') return json({ error: 'CORE_DATA_API_LOCKED' }, 503);
   if (!claims?.organizationId) return json({ error: 'ORGANIZATION_REQUIRED' }, 409);
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(env, claims);
   if (url.pathname === '/api/core/import' && request.method === 'POST') return handleImport(request, env, claims);
-  if (url.pathname === '/api/core/sync' && request.method === 'POST') return handleSync(request, env, claims);
+  if (url.pathname === '/api/core/sync' && request.method === 'POST') return handleSync(request, env, claims, bulkReceipt);
   return json({ error: 'NOT_FOUND' }, 404);
 }
