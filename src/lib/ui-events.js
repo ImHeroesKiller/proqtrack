@@ -36,6 +36,37 @@ function decodeQuoted(token) {
   return out;
 }
 
+export function splitUiStatements(source = '') {
+  const text = String(source || '').trim();
+  if (!text) return [];
+  const statements = [];
+  let current = '';
+  let quote = '';
+  let escaped = false;
+  let depth = 0;
+  for (const char of text) {
+    if (escaped) { current += char; escaped = false; continue; }
+    if (char === '\\' && quote) { current += char; escaped = true; continue; }
+    if (quote) {
+      current += char;
+      if (char === quote) quote = '';
+      continue;
+    }
+    if (char === "'" || char === '"') { quote = char; current += char; continue; }
+    if (char === '(' || char === '[' || char === '{') { depth += 1; current += char; continue; }
+    if (char === ')' || char === ']' || char === '}') { depth -= 1; current += char; continue; }
+    if (char === ';' && depth === 0) {
+      if (current.trim()) statements.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  if (quote || depth !== 0) throw new Error('UNSUPPORTED_UI_STATEMENTS');
+  if (current.trim()) statements.push(current.trim());
+  return statements;
+}
+
 export function splitUiArgs(source = '') {
   const text = String(source || '').trim();
   if (!text) return [];
@@ -106,6 +137,13 @@ export function dispatchUiHandler(expression, element, event, root = globalThis)
   const source = String(expression || '').trim();
   if (!source) return undefined;
 
+  const statements = splitUiStatements(source);
+  if (statements.length > 1) {
+    let result;
+    for (const statement of statements) result = dispatchUiHandler(statement, element, event, root);
+    return result;
+  }
+
   const overlayClose = source.match(/^if\(event\.target===this\)([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+\(\))$/);
   if (overlayClose) {
     if (event?.target === element) return invokeCall(overlayClose[1], element, event, root);
@@ -175,5 +213,5 @@ export function installUiEvents() {
 installUiEvents();
 
 if (typeof window !== 'undefined') {
-  window.ProQUIEvents = Object.freeze({ dispatchUiHandler, splitUiArgs, resolveUiArg });
+  window.ProQUIEvents = Object.freeze({ dispatchUiHandler, splitUiArgs, splitUiStatements, resolveUiArg });
 }
