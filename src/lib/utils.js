@@ -132,7 +132,9 @@ export function formatDuration(checkIn, checkOut) {
 }
 
 export function uid(prefix = 'ID') {
-  return `${prefix}${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return `${prefix}-${uuid}`;
+  return `${prefix}-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
 }
 
 export function formatCurrency(n) {

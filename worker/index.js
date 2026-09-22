@@ -2,6 +2,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export const MIN_SECRET_LENGTH = 32;
+export const PASSWORD_KDF_ITERATIONS = 600000;
 export const FORBIDDEN_SECRETS = Object.freeze([
   'proqtrack-mvp-session-secret-change-me',
 ]);
@@ -111,9 +112,18 @@ async function pbkdf2Bits(password, salt, iterations) {
 
 export async function hashPassword(plain) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 100000;
+  const iterations = PASSWORD_KDF_ITERATIONS;
   const derived = await pbkdf2Bits(String(plain ?? ''), salt, iterations);
   return `pbkdf2$sha256$${iterations}$${b64urlEncode(salt)}$${b64urlEncode(derived)}`;
+}
+
+export function passwordNeedsUpgrade(stored) {
+  const current = String(stored ?? '');
+  if (current.startsWith('sha256$')) return true;
+  if (!current.startsWith('pbkdf2$sha256$')) return true;
+  const [, , iterRaw] = current.split('$');
+  const iterations = Number(iterRaw);
+  return !Number.isFinite(iterations) || iterations < PASSWORD_KDF_ITERATIONS;
 }
 
 export async function verifyPassword(stored, plain) {
@@ -289,6 +299,14 @@ async function handleLogin(request, env, id) {
   if (!ok) {
     await audit(env, { requestId: id, action: 'login', resourceType: 'session', outcome: 'denied', detail: 'INVALID_CREDENTIALS' });
     return json({ error: 'INVALID_CREDENTIALS', requestId: id }, 401);
+  }
+  if (passwordNeedsUpgrade(user.password_hash)) {
+    try {
+      user.password_hash = await hashPassword(password);
+      await env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?').bind(user.password_hash, user.id).run();
+    } catch (error) {
+      console.warn('password_hash_upgrade_failed', error?.message || error);
+    }
   }
   const { token, claims } = await issueSessionForUser(user, secret);
   try {

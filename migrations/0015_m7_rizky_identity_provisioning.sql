@@ -1,6 +1,6 @@
 -- M7 authenticated UAT readiness — provision missing MKB supervisor identity safely.
--- The credential hash is intentionally non-user-facing and the MKB organization membership
--- starts suspended. A Superadmin/Head must set the final password and activate the account
+-- No reusable credential is stored in source. Both the global identity and MKB organization membership
+-- start suspended. A Superadmin/Head must set the final password and activate the account
 -- through Account Management before human use.
 
 INSERT INTO auth_users(
@@ -9,9 +9,9 @@ INSERT INTO auth_users(
 SELECT
   'USR-MKB-RIZKY-PROVISIONED',
   'rizky.pratama@proqtrack.id',
-  'pbkdf2$sha256$100000$71Fae_AKKQKhXUymr_YhVw$b0Pt2Y15H4oG8c1Nr0sN3P_UaAQ_3twNzf3JXbIhhfk',
+  'disabled$uat-identity-no-login',
   'supervisor',
-  'active',
+  'suspended',
   '[]',
   '[]',
   CURRENT_TIMESTAMP

@@ -48,3 +48,11 @@
 - Saat insiden, simpan request ID/waktu tanpa token dan evaluasi blast radius sebelum restore.
 
 Kerentanan yang berisi exploit, credential, atau data pengguna harus dilaporkan privat kepada pemilik repository, bukan melalui issue publik.
+
+## Password storage dan recovery
+
+- Password server memakai PBKDF2-HMAC-SHA256 dengan work factor `600000` dan salt acak per password.
+- Hash PBKDF2 lama dengan work factor lebih rendah serta verifier legacy `sha256$` tetap dapat diverifikasi hanya untuk migrasi; setelah login sukses hash langsung di-upgrade.
+- Migration repository tidak boleh berisi reusable recovery password verifier. Fresh environment membuat placeholder superadmin dalam status `suspended` dan memerlukan provisioning operator secara eksplisit.
+- Untuk membuat hash provisioning tanpa mencetak plaintext, gunakan `PROQTRACK_BOOTSTRAP_PASSWORD=... node scripts/generate-password-hash.mjs`, kemudian terapkan hash melalui jalur administrasi database yang terkontrol. Jangan commit password atau hash provisioning khusus environment ke repository.
+

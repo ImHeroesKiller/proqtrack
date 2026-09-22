@@ -150,3 +150,13 @@ Runtime production wajib memiliki satu entry graph yang eksplisit.
 
 Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_BOOT__`. Jangan menampilkan nama D1, Cloudflare, GitHub, module path, atau istilah implementasi lain sebagai popup pengguna.
 
+## P1 security and integrity rules
+
+- Semua user-controlled value yang masuk HTML wajib memakai `esc()` atau safe DOM API. Untuk inline handler argument gunakan helper yang menghasilkan JSON string lalu HTML-escape; jangan interpolasi ID/string mentah.
+- Master competitor menggunakan write sanitization sebagai defense-in-depth, tetapi output encoding tetap wajib.
+- ID baru harus dibuat melalui `uid()`/UUID. Jangan membuat predictable tenant-local ID untuk entity cloud-authoritative.
+- Perubahan sync/import tidak boleh menyamarkan cross-tenant ID collision sebagai sukses.
+- Visit/attendance/leave yang sudah menjadi evidence final tidak boleh di-hard-delete atau dikoreksi langsung oleh field role. Gunakan workflow koreksi/exception.
+- Approval dan report schedule tidak boleh disimpan sebagai local authority. Gunakan `window.ProQTrackM6.workflows` dan `window.ProQTrackM6.schedules`.
+- Jangan menambahkan reusable password/recovery verifier ke migration atau source. Fresh environment harus fail-closed dan credential provisioning dilakukan secara eksplisit.
+- Server password hashing baseline adalah PBKDF2-HMAC-SHA256 `600000` iterations; verifikasi hash lama hanya untuk migration-on-login.

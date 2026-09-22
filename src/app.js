@@ -42,6 +42,9 @@ import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
 
+const safeColor = value => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : '#64748b';
+const jsArg = value => esc(JSON.stringify(String(value ?? '')));
+
 // Make utils available globally for inline handlers
 window.FT = {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
@@ -2168,7 +2171,7 @@ function renderProducts() {
                 </td>
                 <td><span style="font-size:12px; font-weight:600; color:var(--brand-dark);">${p.brand || '—'}</span></td>
                 <td><span style="font-size:11px; background:var(--gray-100); padding:3px 8px; border-radius:99px;">${p.category}</span></td>
-                <td>${p.unit}</td>
+                <td>${esc(p.unit)}</td>
                 <td style="font-weight:700;">${formatCurrency(p.price)}</td>
                 <td style="font-size:12px;color:var(--gray-500);">${p.margin != null ? p.margin + '%' : '—'}</td>
                 <td>${statusBadge(p.status)}</td>
@@ -3131,16 +3134,16 @@ function renderCompetitors() {
           return `
             <div style="border:1px solid var(--gray-200); border-radius:var(--radius); padding:14px; background:var(--gray-50);">
               <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-                <div style="width:14px;height:14px;border-radius:4px;background:${c.color||'#64748b'};margin-top:4px;flex-shrink:0;"></div>
+                <div style="width:14px;height:14px;border-radius:4px;background:${safeColor(c.color)};margin-top:4px;flex-shrink:0;"></div>
                 <div style="flex:1;min-width:140px;">
-                  <div style="font-weight:700;font-size:15px;color:var(--gray-900);">${c.name} ${statusBadge(c.status)}</div>
-                  <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${c.category || '—'} · ${prods.length} produk</div>
-                  ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${c.notes}</div>` : ''}
+                  <div style="font-weight:700;font-size:15px;color:var(--gray-900);">${esc(c.name)} ${statusBadge(c.status)}</div>
+                  <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${esc(c.category || '—')} · ${prods.length} produk</div>
+                  ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${esc(c.notes)}</div>` : ''}
                 </div>
                 <div style="display:${isOrgAdmin() ? 'flex' : 'none'};gap:6px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary btn-sm" onclick="FT.openCompetitorProductModal('${c.id}')">+ Produk</button>
-                  <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitor('${c.id}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm('${c.id}')">Arsipkan</button>
+                  <button class="btn btn-secondary btn-sm" onclick="FT.openCompetitorProductModal(${jsArg(c.id)})">+ Produk</button>
+                  <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitor(${jsArg(c.id)})">Edit</button>
+                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm(${jsArg(c.id)})">Arsipkan</button>
                 </div>
               </div>
               ${prods.length ? `
@@ -3150,14 +3153,14 @@ function renderCompetitors() {
                     <tbody>
                       ${prods.map(p => `
                         <tr>
-                          <td style="font-family:monospace;font-size:11px;color:var(--gray-500);">${p.sku||'—'}</td>
-                          <td style="font-weight:600;">${p.name}</td>
+                          <td style="font-family:monospace;font-size:11px;color:var(--gray-500);">${esc(p.sku||'—')}</td>
+                          <td style="font-weight:600;">${esc(p.name)}</td>
                           <td>${formatCurrency(p.typicalPrice)}</td>
-                          <td>${p.unit}</td>
+                          <td>${esc(p.unit)}</td>
                           <td>${statusBadge(p.status)}</td>
                           <td style="display:${isOrgAdmin() ? 'table-cell' : 'none'};">
-                            <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct('${p.id}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm('${p.id}')">Arsipkan</button>
+                            <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct(${jsArg(p.id)})">Edit</button>
+                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm(${jsArg(p.id)})">Arsipkan</button>
                           </td>
                         </tr>
                       `).join('')}
@@ -3205,11 +3208,11 @@ window.FT.editCompetitor = function(id) {
   const c = getCompetitors().find(x => x.id === id);
   if (!c) return;
   openModal('Edit Kompetitor', `
-    <form onsubmit="FT.updateCompetitorForm(event,'${id}')">
-      <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" value="${c.name}" required></div>
+    <form onsubmit="FT.updateCompetitorForm(event,${jsArg(id)})">
+      <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" value="${esc(c.name)}" required></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${c.category||''}"></div>
-        <div class="form-group"><label class="label">Warna</label><input class="input" type="color" name="color" value="${c.color||'#64748b'}" style="height:44px;padding:4px;"></div>
+        <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(c.category||'')}"></div>
+        <div class="form-group"><label class="label">Warna</label><input class="input" type="color" name="color" value="${safeColor(c.color)}" style="height:44px;padding:4px;"></div>
       </div>
       <div class="form-group"><label class="label">Status</label>
         <select class="select" name="status">
@@ -3217,7 +3220,7 @@ window.FT.editCompetitor = function(id) {
           <option value="inactive" ${c.status==='inactive'?'selected':''}>Inactive</option>
         </select>
       </div>
-      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${c.notes||''}</textarea></div>
+      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes||'')}</textarea></div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -3248,7 +3251,7 @@ window.FT.openCompetitorProductModal = function(competitorId) {
       <div class="form-group"><label class="label">Merek Kompetitor</label>
         <select class="select" name="competitorId" required>
           <option value="">— Pilih —</option>
-          ${competitors.map(c => `<option value="${c.id}" ${c.id===competitorId?'selected':''}>${c.name}</option>`).join('')}
+          ${competitors.map(c => `<option value="${esc(c.id)}" ${c.id===competitorId?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" required></div>
@@ -3279,16 +3282,16 @@ window.FT.editCompetitorProduct = function(id) {
   if (!p) return;
   const competitors = getCompetitors();
   openModal('Edit Produk Kompetitor', `
-    <form onsubmit="FT.updateCompetitorProductForm(event,'${id}')">
+    <form onsubmit="FT.updateCompetitorProductForm(event,${jsArg(id)})">
       <div class="form-group"><label class="label">Merek</label>
         <select class="select" name="competitorId" required>
-          ${competitors.map(c => `<option value="${c.id}" ${c.id===p.competitorId?'selected':''}>${c.name}</option>`).join('')}
+          ${competitors.map(c => `<option value="${esc(c.id)}" ${c.id===p.competitorId?'selected':''}>${esc(c.name)}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${p.name}" required></div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(p.name)}" required></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p.sku||''}"></div>
-        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="${p.unit}" required></div>
+        <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(p.sku||'')}"></div>
+        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="${esc(p.unit)}" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Harga Tipikal</label><input class="input" type="number" name="typicalPrice" value="${p.typicalPrice}" required></div>

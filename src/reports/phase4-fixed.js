@@ -1,31 +1,333 @@
 import { getDB, persistDB } from '../lib/db.js';
-const ROUTES=new Set(['#/reports/templates','#/reports/approvals','#/reports/schedules']);
-const esc=(v='')=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const read=()=>getDB();
-const write=db=>{
-  const live=getDB();
-  if(db&&db!==live)Object.assign(live,db);
-  persistDB('report-phase4');
+
+const ROUTES = new Set(['#/reports/templates', '#/reports/approvals', '#/reports/schedules']);
+const esc = (value = '') => String(value ?? '').replace(/[&<>"']/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
+}[char]));
+const arg = value => esc(JSON.stringify(String(value ?? '')));
+const read = () => getDB();
+const account = () => window.FT?.state?.account || {};
+const role = () => String(account().role || '').toLowerCase();
+const canManage = () => ['superadmin', 'head', 'manager', 'admin'].includes(role());
+const canApprove = () => ['superadmin', 'head', 'admin'].includes(role());
+const now = () => new Date().toISOString();
+const uid = prefix => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+const fmt = value => value ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '-';
+
+function writeLocal(db) {
+  const live = getDB();
+  if (db && db !== live) Object.assign(live, db);
+  persistDB('report-presentation-settings');
+}
+
+function initLocalPresentation() {
+  const db = read();
+  let changed = false;
+  for (const key of ['reportTemplates', 'reportExports', 'reportJobs', 'auditLogs']) {
+    if (!Array.isArray(db[key])) { db[key] = []; changed = true; }
+  }
+  if (!db.reportSettings) {
+    db.reportSettings = {
+      companyName: 'ProQTrack',
+      companyLogo: './assets/logo-light.svg',
+      documentPrefix: 'PQT/RPT',
+      nextNumber: 1,
+      signatureName: '',
+      signatureTitle: '',
+      signatureImage: '',
+      updatedAt: now(),
+    };
+    changed = true;
+  }
+  if (changed) writeLocal(db);
+}
+
+function auditLocal(db, action, entityType, entityId, description) {
+  db.auditLogs.push({
+    id: uid('AUD'),
+    createdAt: now(),
+    actorId: account().id || null,
+    actorName: account().email || account().name || '-',
+    action,
+    entityType,
+    entityId,
+    description,
+  });
+}
+
+function documentNumber(db) {
+  const settings = db.reportSettings || {};
+  return `${settings.documentPrefix || 'PQT/RPT'}/${String(settings.nextNumber || 1).padStart(5, '0')}/${new Date().getFullYear()}`;
+}
+
+function tabs() {
+  const links = [
+    ['#/reports', 'Ringkasan'], ['#/reports/attendance', 'Kehadiran'], ['#/reports/employees', 'Karyawan'],
+    ['#/reports/projects', 'Klien & Project'], ['#/reports/field', 'Aktivitas Lapangan'], ['#/reports/stocks', 'Stok'],
+    ['#/reports/prices', 'Harga'], ['#/reports/competitors', 'Kompetitor'], ['#/reports/supervisors', 'Supervisor'],
+    ['#/reports/custom', 'Custom'], ['#/reports/audit', 'Audit'], ['#/reports/templates', 'Template'],
+    ['#/reports/approvals', 'Approval'], ['#/reports/schedules', 'Terjadwal'],
+  ];
+  return `<nav class="rpt-nav" aria-label="Navigasi laporan">${links.map(([route, label]) =>
+    `<a href="${route}" class="${location.hash === route ? 'active' : ''}">${label}</a>`).join('')}</nav>`;
+}
+
+function table(headers, rows) {
+  return rows.length
+    ? `<div class="rpt-table-wrap"><table class="rpt-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(row => `<tr>${row.map(value => `<td>${value}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+    : '<div class="rpt-empty">Belum ada data.</div>';
+}
+
+function page(title, subtitle, body) {
+  return `<div class="rpt-wrap">${tabs()}<div class="rpt-page-title"><div><h3>${esc(title)}</h3><p>${esc(subtitle)}</p></div></div>${body}</div>`;
+}
+
+function templatesPage() {
+  const db = read();
+  const settings = db.reportSettings || {};
+  const form = `<div class="rpt-builder">
+    <div class="rpt-warning">Template dan identitas dokumen adalah preferensi presentasi pada perangkat ini. Approval dan jadwal bersumber dari server.</div>
+    <form class="rpt-filters" onsubmit="ReportPhase4.saveSettings(event)">
+      <div><label class="label">Nama perusahaan</label><input class="input" name="companyName" value="${esc(settings.companyName)}"></div>
+      <div><label class="label">Logo perusahaan</label><input class="input" type="file" name="companyLogoFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="companyLogo" value="${esc(settings.companyLogo || '')}" placeholder="Atau URL / path"></div>
+      <div><label class="label">Prefix nomor dokumen</label><input class="input" name="documentPrefix" value="${esc(settings.documentPrefix)}"></div>
+      <div><label class="label">Nomor berikutnya</label><input class="input" type="number" min="1" name="nextNumber" value="${Number(settings.nextNumber || 1)}"></div>
+      <div><label class="label">Nama penandatangan</label><input class="input" name="signatureName" value="${esc(settings.signatureName)}"></div>
+      <div><label class="label">Jabatan</label><input class="input" name="signatureTitle" value="${esc(settings.signatureTitle)}"></div>
+      <div><label class="label">Gambar tanda tangan</label><input class="input" type="file" name="signatureImageFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="signatureImage" value="${esc(settings.signatureImage || '')}" placeholder="Atau URL"></div>
+      <div class="rpt-actions"><button class="btn btn-primary" ${canManage() ? '' : 'disabled'}>Simpan Identitas</button></div>
+    </form>
+    <div class="rpt-warning">Nomor dokumen berikutnya: <strong>${esc(documentNumber(db))}</strong></div>
+  </div>`;
+  const rows = (db.reportTemplates || []).map(template => [
+    esc(template.name), esc(template.type), esc(template.layout || '-'),
+    template.includeCompanyLogo ? 'Ya' : 'Tidak', template.includeClientLogo ? 'Ya' : 'Tidak',
+    template.requireApproval ? 'Ya' : 'Tidak', `<span class="rpt-badge">${esc(template.status)}</span>`,
+    `<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.editTemplate(${arg(template.id)})" ${canManage() ? '' : 'disabled'}>Edit</button>`,
+  ]);
+  return page('Template Dokumen', 'Preferensi layout dan branding dokumen.', form +
+    `<div class="rpt-page-title"><div><h3>Daftar Template</h3><p>Konfigurasi presentasi lokal.</p></div><button class="btn btn-primary btn-sm" onclick="ReportPhase4.newTemplate()" ${canManage() ? '' : 'disabled'}>Tambah Template</button></div>` +
+    table(['Nama','Jenis','Layout','Logo Perusahaan','Logo Klien','Approval','Status','Aksi'], rows));
+}
+
+function approvalsPage() {
+  return page('Approval Laporan', 'Workflow approval tersimpan terpusat dan konsisten antar perangkat.',
+    '<div id="r4-cloud-approvals" class="rpt-empty">Memuat approval...</div>');
+}
+
+function schedulesPage() {
+  const projects = (read().projects || []);
+  const form = `<div class="rpt-builder">
+    <form class="rpt-filters" onsubmit="ReportPhase4.saveSchedule(event)">
+      <div><label class="label">Nama jadwal</label><input class="input" name="name" required></div>
+      <div><label class="label">Jenis laporan</label><select class="select" name="reportType">
+        <option value="attendance">Kehadiran</option><option value="activity">Aktivitas Lapangan</option>
+        <option value="sales">Penjualan</option><option value="surveys">Survey</option>
+        <option value="operational_summary">Ringkasan Operasional</option>
+      </select></div>
+      <div><label class="label">Project</label><select class="select" name="projectId"><option value="">Semua yang diizinkan</option>${projects.map(p => `<option value="${esc(p.id)}">${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}</select></div>
+      <div><label class="label">Frekuensi</label><select class="select" name="cadence"><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div>
+      <div><label class="label">Jam</label><input class="input" type="number" min="0" max="23" name="runHour" value="8"></div>
+      <div><label class="label">Hari</label><input class="input" type="number" min="1" max="28" name="runDay" value="1"></div>
+      <div><label class="label">Format</label><select class="select" name="format"><option value="csv">CSV</option><option value="json">JSON</option></select></div>
+      <div><label class="label"><input type="checkbox" name="requiresApproval" value="1"> Perlu approval sebelum publish</label></div>
+      <div class="rpt-actions"><button class="btn btn-primary" ${canManage() ? '' : 'disabled'}>Simpan Jadwal</button></div>
+    </form>
+  </div>
+  <div id="r4-cloud-schedules" class="rpt-empty">Memuat jadwal...</div>`;
+  return page('Laporan Terjadwal', 'Jadwal report bersumber dari server dan berlaku lintas perangkat.', form);
+}
+
+function cloud() {
+  const api = window.ProQTrackM6;
+  if (!api) throw new Error('Layanan laporan belum siap. Muat ulang halaman.');
+  return api;
+}
+
+async function refreshApprovals() {
+  const root = document.getElementById('r4-cloud-approvals');
+  if (!root) return;
+  try {
+    const data = await cloud().workflows.list({ type: 'report_publish', limit: 100 });
+    if (!root.isConnected || location.hash !== '#/reports/approvals') return;
+    const rows = (data.workflows || []).map(item => [
+      esc(item.subject_id || '-'),
+      esc(item.requested_by || '-'),
+      fmt(item.created_at),
+      `<span class="rpt-badge">${esc(item.status || '-')}</span>`,
+      esc(item.current_step || '-'),
+      item.status === 'pending' && canApprove()
+        ? `<button class="btn btn-primary btn-sm" onclick="ReportPhase4.approve(${arg(item.id)})">Setujui</button> <button class="btn btn-danger btn-sm" onclick="ReportPhase4.reject(${arg(item.id)})">Tolak</button>`
+        : '-',
+    ]);
+    root.innerHTML = table(['Report ID','Pemohon','Waktu','Status','Step','Aksi'], rows);
+  } catch (error) {
+    root.innerHTML = `<div class="rpt-empty">${esc(error.message || 'Gagal memuat approval.')}</div>`;
+  }
+}
+
+async function refreshSchedules() {
+  const root = document.getElementById('r4-cloud-schedules');
+  if (!root) return;
+  try {
+    const data = await cloud().schedules.list();
+    if (!root.isConnected || location.hash !== '#/reports/schedules') return;
+    const rows = (data.schedules || []).map(item => [
+      esc(item.name), esc(item.report_type), esc(item.project_id || 'Semua'),
+      esc(item.cadence), esc(String(item.run_hour ?? '-')), fmt(item.next_run_at),
+      `<span class="rpt-badge">${esc(item.status)}</span>`,
+      `<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.toggleSchedule(${arg(item.id)},${arg(item.status)})" ${canManage() ? '' : 'disabled'}>${item.status === 'active' ? 'Jeda' : 'Aktifkan'}</button>`,
+    ]);
+    root.innerHTML = table(['Nama','Jenis','Project','Frekuensi','Jam','Jadwal Berikutnya','Status','Aksi'], rows);
+  } catch (error) {
+    root.innerHTML = `<div class="rpt-empty">${esc(error.message || 'Gagal memuat jadwal.')}</div>`;
+  }
+}
+
+function render(force = false) {
+  if (location.hash === '#/reports/archive' || location.hash === '#/reports/exports') {
+    location.hash = '#/reports';
+    return true;
+  }
+  if (!ROUTES.has(location.hash)) return false;
+  const root = document.querySelector('.content');
+  if (!root) return false;
+  if (!force && root.dataset.reportPhase4Route === location.hash && root.querySelector('.rpt-wrap')) return true;
+
+  let html = templatesPage();
+  if (location.hash === '#/reports/approvals') html = approvalsPage();
+  else if (location.hash === '#/reports/schedules') html = schedulesPage();
+
+  root.innerHTML = html;
+  root.dataset.reportPhase4Route = location.hash;
+  const title = document.querySelector('.topbar-title');
+  if (title) title.textContent = 'Reports';
+  if (location.hash === '#/reports/approvals') void refreshApprovals();
+  if (location.hash === '#/reports/schedules') void refreshSchedules();
+  return true;
+}
+
+window.ReportPhase4 = {
+  async saveSettings(event) {
+    event.preventDefault();
+    if (!canManage()) return;
+    const db = read();
+    const form = event.target;
+    const fields = Object.fromEntries(new FormData(form));
+    if (window.R2?.uploadAsset) {
+      try {
+        if (form.companyLogoFile?.files?.[0]) {
+          const uploaded = await window.R2.uploadAsset(form.companyLogoFile.files[0], { category: 'company-logo', projectId: 'general' });
+          fields.companyLogo = uploaded.url;
+        }
+        if (form.signatureImageFile?.files?.[0]) {
+          const uploaded = await window.R2.uploadAsset(form.signatureImageFile.files[0], { category: 'signature', projectId: 'general' });
+          fields.signatureImage = uploaded.url;
+        }
+      } catch {
+        window.showToast?.('Unggah file gagal. Coba lagi.', 'error');
+      }
+    }
+    delete fields.companyLogoFile;
+    delete fields.signatureImageFile;
+    db.reportSettings = { ...db.reportSettings, ...fields, nextNumber: Math.max(1, Number(fields.nextNumber || 1)), updatedAt: now() };
+    auditLocal(db, 'update', 'report_settings', 'primary', 'Memperbarui identitas dokumen lokal');
+    writeLocal(db);
+    render(true);
+  },
+
+  newTemplate() {
+    if (!canManage()) return;
+    const name = prompt('Nama template');
+    if (!name) return;
+    const db = read();
+    db.reportTemplates.push({
+      id: uid('TPL'), name: String(name).trim(), type: 'custom', layout: 'portrait',
+      includeCompanyLogo: true, includeClientLogo: false, requireApproval: false,
+      status: 'active', columns: [], createdAt: now(),
+    });
+    writeLocal(db);
+    render(true);
+  },
+
+  editTemplate(id) {
+    if (!canManage()) return;
+    const db = read();
+    const template = db.reportTemplates.find(item => item.id === id);
+    if (!template) return;
+    const name = prompt('Nama template', template.name);
+    if (!name) return;
+    template.name = String(name).trim();
+    template.layout = template.layout === 'portrait' ? 'landscape' : 'portrait';
+    template.updatedAt = now();
+    writeLocal(db);
+    render(true);
+  },
+
+  async approve(id) {
+    try {
+      await cloud().workflows.action(id, 'approve');
+      window.showToast?.('Approval tersimpan', 'success');
+      await refreshApprovals();
+    } catch (error) {
+      window.showToast?.(error.message || 'Approval gagal', 'error');
+    }
+  },
+
+  async reject(id) {
+    const reason = prompt('Alasan penolakan') || '';
+    try {
+      await cloud().workflows.action(id, 'reject', reason);
+      window.showToast?.('Penolakan tersimpan', 'success');
+      await refreshApprovals();
+    } catch (error) {
+      window.showToast?.(error.message || 'Penolakan gagal', 'error');
+    }
+  },
+
+  async saveSchedule(event) {
+    event.preventDefault();
+    if (!canManage()) return;
+    const fields = Object.fromEntries(new FormData(event.target));
+    try {
+      await cloud().schedules.create({
+        name: fields.name,
+        reportType: fields.reportType,
+        projectId: fields.projectId || null,
+        cadence: fields.cadence,
+        runHour: Number(fields.runHour || 8),
+        runDay: Number(fields.runDay || 1),
+        timezone: read().appSettings?.timezone || 'Asia/Jakarta',
+        format: fields.format || 'csv',
+        requiresApproval: fields.requiresApproval === '1',
+        filters: {},
+      });
+      event.target.reset();
+      window.showToast?.('Jadwal tersimpan', 'success');
+      await refreshSchedules();
+    } catch (error) {
+      window.showToast?.(error.message || 'Jadwal gagal disimpan', 'error');
+    }
+  },
+
+  async toggleSchedule(id, status) {
+    if (!canManage()) return;
+    const next = status === 'active' ? 'paused' : 'active';
+    try {
+      await cloud().schedules.setStatus(id, next);
+      window.showToast?.('Status jadwal diperbarui', 'success');
+      await refreshSchedules();
+    } catch (error) {
+      window.showToast?.(error.message || 'Status jadwal gagal diperbarui', 'error');
+    }
+  },
 };
-const account=()=>window.FT?.state?.account||{};
-const manager=()=>['superadmin','head','manager','admin'].includes(String(account().role||'').toLowerCase());
-const now=()=>new Date().toISOString();
-const uid=p=>`${p}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
-const fmt=v=>v?new Intl.DateTimeFormat('id-ID',{dateStyle:'medium',timeStyle:'short'}).format(new Date(v)):'-';
-function init(){const db=read();let changed=false;for(const k of ['reportTemplates','reportApprovals','reportSchedules','reportExports','reportJobs','auditLogs'])if(!Array.isArray(db[k])){db[k]=[];changed=true}if(!db.reportSettings){db.reportSettings={companyName:'ProQTrack',companyLogo:'./assets/logo-light.svg',documentPrefix:'PQT/RPT',nextNumber:1,signatureName:'',signatureTitle:'',signatureImage:'',updatedAt:now()};changed=true}if(changed)write(db)}
-function audit(db,action,entityType,entityId,description){db.auditLogs.push({id:uid('AUD'),createdAt:now(),actorId:account().id||null,actorName:account().email||account().name||'-',action,entityType,entityId,description})}
-function number(db){const s=db.reportSettings||{};return `${s.documentPrefix||'PQT/RPT'}/${String(s.nextNumber||1).padStart(5,'0')}/${new Date().getFullYear()}`}
-function tabs(){const links=[['#/reports','Ringkasan'],['#/reports/attendance','Kehadiran'],['#/reports/employees','Karyawan'],['#/reports/projects','Klien & Project'],['#/reports/field','Aktivitas Lapangan'],['#/reports/stocks','Stok'],['#/reports/prices','Harga'],['#/reports/competitors','Kompetitor'],['#/reports/supervisors','Supervisor'],['#/reports/custom','Custom'],['#/reports/audit','Audit'],['#/reports/templates','Template'],['#/reports/approvals','Approval'],['#/reports/schedules','Terjadwal']];return `<nav class="rpt-nav" aria-label="Navigasi laporan">${links.map(([r,l])=>`<a href="${r}" class="${location.hash===r?'active':''}">${l}</a>`).join('')}</nav>`}
-function table(headers,rows){return rows.length?`<div class="rpt-table-wrap"><table class="rpt-table"><thead><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(v=>`<td>${v}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`:'<div class="rpt-empty">Belum ada data.</div>'}
-function page(title,subtitle,body){return `<div class="rpt-wrap">${tabs()}<div class="rpt-page-title"><div><h3>${esc(title)}</h3><p>${esc(subtitle)}</p></div></div>${body}</div>`}
-function templatesPage(){const db=read(),s=db.reportSettings||{};const form=`<div class="rpt-builder"><form class="rpt-filters" onsubmit="ReportPhase4.saveSettings(event)"><div><label class="label">Nama perusahaan</label><input class="input" name="companyName" value="${esc(s.companyName)}"></div><div><label class="label">Logo perusahaan</label><input class="input" type="file" name="companyLogoFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="companyLogo" value="${esc(s.companyLogo||'')}" placeholder="Atau URL / path"></div><div><label class="label">Prefix nomor dokumen</label><input class="input" name="documentPrefix" value="${esc(s.documentPrefix)}"></div><div><label class="label">Nomor berikutnya</label><input class="input" type="number" min="1" name="nextNumber" value="${Number(s.nextNumber||1)}"></div><div><label class="label">Nama penandatangan</label><input class="input" name="signatureName" value="${esc(s.signatureName)}"></div><div><label class="label">Jabatan</label><input class="input" name="signatureTitle" value="${esc(s.signatureTitle)}"></div><div><label class="label">Gambar tanda tangan</label><input class="input" type="file" name="signatureImageFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="signatureImage" value="${esc(s.signatureImage||'')}" placeholder="Atau URL"></div><div class="rpt-actions"><button class="btn btn-primary" ${manager()?'':'disabled'}>Simpan Identitas</button></div></form><div class="rpt-warning">Nomor dokumen berikutnya: <strong>${esc(number(db))}</strong></div></div>`;const rows=(db.reportTemplates||[]).map(t=>[esc(t.name),esc(t.type),esc(t.layout||'-'),t.includeCompanyLogo?'Ya':'Tidak',t.includeClientLogo?'Ya':'Tidak',t.requireApproval?'Ya':'Tidak',`<span class="rpt-badge">${esc(t.status)}</span>`,`<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.editTemplate('${esc(t.id)}')" ${manager()?'':'disabled'}>Edit</button>`]);return page('Template Dokumen','Atur branding, kolom, layout, logo klien, dan approval.',form+`<div class="rpt-page-title"><div><h3>Daftar Template</h3><p>Konfigurasi template tanpa mengubah kode.</p></div><button class="btn btn-primary btn-sm" onclick="ReportPhase4.newTemplate()" ${manager()?'':'disabled'}>Tambah Template</button></div>`+table(['Nama','Jenis','Layout','Logo Perusahaan','Logo Klien','Approval','Status','Aksi'],rows))}
-function approvalsPage(){const db=read();const rows=(db.reportApprovals||[]).slice().reverse().map(a=>[esc(a.documentNumber),esc(a.title),esc(a.requestedByName||'-'),fmt(a.requestedAt),`<span class="rpt-badge">${esc(a.status)}</span>`,esc(a.approvedByName||'-'),manager()&&a.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="ReportPhase4.approve('${a.id}')">Setujui</button> <button class="btn btn-danger btn-sm" onclick="ReportPhase4.reject('${a.id}')">Tolak</button>`:'-']);return page('Approval Laporan','Persetujuan dokumen sebelum dinyatakan final.',`<div class="rpt-page-title"><div><h3>Permintaan Approval</h3></div><button class="btn btn-secondary btn-sm" onclick="ReportPhase4.requestApproval()">Buat Permintaan</button></div>${table(['Nomor','Dokumen','Pemohon','Waktu','Status','Approver','Aksi'],rows)}`)}
-function schedulesPage(){const db=read();const rows=(db.reportSchedules||[]).map(s=>[esc(s.name),esc(s.reportType),esc(s.frequency),esc(s.time||'-'),fmt(s.nextRunAt),`<span class="rpt-badge">${esc(s.status)}</span>`,`<button class="btn btn-secondary btn-sm" onclick="ReportPhase4.toggleSchedule('${s.id}')" ${manager()?'':'disabled'}>${s.status==='active'?'Jeda':'Aktifkan'}</button>`]);const form=`<div class="rpt-builder"><form class="rpt-filters" onsubmit="ReportPhase4.saveSchedule(event)"><div><label class="label">Nama jadwal</label><input class="input" name="name" required></div><div><label class="label">Jenis laporan</label><select class="select" name="reportType"><option value="attendance">Kehadiran</option><option value="projects">Klien & Project</option><option value="field">Aktivitas Lapangan</option><option value="stocks">Stok</option><option value="prices">Harga</option><option value="competitors">Kompetitor</option></select></div><div><label class="label">Frekuensi</label><select class="select" name="frequency"><option value="daily">Harian</option><option value="weekly">Mingguan</option><option value="monthly">Bulanan</option></select></div><div><label class="label">Jam</label><input class="input" type="time" name="time" value="08:00"></div><div><label class="label">Format</label><select class="select" name="format"><option>pdf</option><option>xlsx</option><option>docx</option><option>zip</option></select></div><div class="rpt-actions"><button class="btn btn-primary" ${manager()?'':'disabled'}>Simpan Jadwal</button></div></form></div>`;return page('Laporan Terjadwal','Kelola jadwal pembuatan laporan berulang.',form+table(['Nama','Jenis','Frekuensi','Jam','Jadwal Berikutnya','Status','Aksi'],rows))}
-function archivePage(){const db=read();const rows=(db.reportExports||[]).filter(x=>x.r2Key||x.storageStatus).slice().reverse().map(x=>[fmt(x.createdAt),esc(x.title||'-'),esc(String(x.format||'').toUpperCase()),esc(x.fileName||'-'),`<span class="rpt-badge">${esc(x.storageStatus||'stored')}</span>`,esc(x.r2Key||'-')]);return page('Arsip Laporan','Simpan hasil laporan final dengan aman.',`<div class="rpt-builder"><form onsubmit="ReportPhase4.uploadR2(event)"><label class="label">Pilih file laporan</label><input class="input" type="file" name="file" required accept=".pdf,.xlsx,.csv,.docx,.zip,application/pdf,image/jpeg,image/png"><label class="label" style="margin-top:10px">Project</label><select class="select" name="projectId"><option value="general">Umum</option>${(db.projects||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.code||p.id)} — ${esc(p.name)}</option>`).join('')}</select><button class="btn btn-primary" style="margin-top:12px">Simpan arsip</button></form><div id="r4-r2-status" class="rpt-warning">File tersimpan setelah sesi unggah aktif.</div></div>${table(['Waktu','Laporan','Format','File','Status','Kunci penyimpanan'],rows)}`)}
-function render(force=false){if(location.hash==='#/reports/archive'||location.hash==='#/reports/exports'){location.hash='#/reports';return true}if(!ROUTES.has(location.hash))return false;const root=document.querySelector('.content');if(!root)return false;if(!force&&root.dataset.reportPhase4Route===location.hash&&root.querySelector('.rpt-wrap'))return true;let html=templatesPage();if(location.hash==='#/reports/approvals')html=approvalsPage();else if(location.hash==='#/reports/schedules')html=schedulesPage();root.innerHTML=html;root.dataset.reportPhase4Route=location.hash;const title=document.querySelector('.topbar-title');if(title)title.textContent='Reports';return true}
-function nextRun(frequency,time){const d=new Date();const [h,m]=String(time||'08:00').split(':').map(Number);d.setHours(h,m,0,0);if(d<=new Date())d.setDate(d.getDate()+1);if(frequency==='weekly')d.setDate(d.getDate()+7);if(frequency==='monthly')d.setMonth(d.getMonth()+1,1);return d.toISOString()}
-window.ReportPhase4={async saveSettings(e){e.preventDefault();if(!manager())return;const db=read(),form=e.target,f=Object.fromEntries(new FormData(form));if(window.R2?.uploadAsset){try{if(form.companyLogoFile?.files?.[0]){const up=await window.R2.uploadAsset(form.companyLogoFile.files[0],{category:'company-logo',projectId:'general'});f.companyLogo=up.url;}if(form.signatureImageFile?.files?.[0]){const up=await window.R2.uploadAsset(form.signatureImageFile.files[0],{category:'signature',projectId:'general'});f.signatureImage=up.url;}}catch(error){window.showToast?.('Unggah file gagal. Coba lagi.','error')}}delete f.companyLogoFile;delete f.signatureImageFile;db.reportSettings={...db.reportSettings,...f,nextNumber:Math.max(1,Number(f.nextNumber||1)),updatedAt:now()};audit(db,'update','report_settings','primary','Memperbarui identitas dokumen');write(db);render(true)},newTemplate(){if(!manager())return;const name=prompt('Nama template');if(!name)return;const db=read();db.reportTemplates.push({id:uid('TPL'),name,type:'custom',layout:'portrait',includeCompanyLogo:true,includeClientLogo:false,requireApproval:false,status:'active',columns:[],createdAt:now()});write(db);render(true)},editTemplate(id){if(!manager())return;const db=read(),t=db.reportTemplates.find(x=>x.id===id);if(!t)return;const name=prompt('Nama template',t.name);if(!name)return;t.name=name;t.layout=t.layout==='portrait'?'landscape':'portrait';t.updatedAt=now();write(db);render(true)},requestApproval(){const title=prompt('Judul dokumen yang diajukan');if(!title)return;const db=read(),item={id:uid('APR'),documentNumber:number(db),title,status:'pending',requestedAt:now(),requestedBy:account().id,requestedByName:account().name||account().email};db.reportApprovals.push(item);db.reportSettings.nextNumber=Number(db.reportSettings.nextNumber||1)+1;write(db);render(true)},approve(id){if(!manager())return;const db=read(),a=db.reportApprovals.find(x=>x.id===id);if(!a)return;a.status='approved';a.approvedAt=now();a.approvedByName=account().name||account().email;write(db);render(true)},reject(id){if(!manager())return;const db=read(),a=db.reportApprovals.find(x=>x.id===id);if(!a)return;a.status='rejected';a.reason=prompt('Alasan penolakan')||'Tidak disetujui';write(db);render(true)},saveSchedule(e){e.preventDefault();if(!manager())return;const f=Object.fromEntries(new FormData(e.target)),db=read();db.reportSchedules.push({id:uid('SCH'),...f,status:'active',filters:{},nextRunAt:nextRun(f.frequency,f.time),createdAt:now(),createdBy:account().id});write(db);render(true)},toggleSchedule(id){if(!manager())return;const db=read(),s=db.reportSchedules.find(x=>x.id===id);if(!s)return;s.status=s.status==='active'?'paused':'active';write(db);render(true)},async uploadR2(e){e.preventDefault();const file=e.target.file.files[0],status=document.getElementById('r4-r2-status');if(!file)return;status.textContent='Mengunggah...';try{const projectId=e.target.projectId.value||'general';const data=await window.R2.uploadAsset(file,{category:'report',projectId,name:file.name});const db=read();db.reportExports.push({id:uid('RPE'),title:'Arsip Laporan',format:file.name.split('.').pop(),fileName:file.name,rowCount:0,status:'completed',storageStatus:'stored',r2Key:data.key,createdAt:now(),createdBy:account().id||null});write(db);status.textContent='Tersimpan';render(true)}catch(error){status.textContent='Unggah gagal. Coba lagi.'}}};
-function sync(){render(false)}
-window.addEventListener('hashchange',()=>setTimeout(sync,40));
-window.addEventListener('proqtrack:db-updated',()=>{if(ROUTES.has(location.hash))render(true)});
-init();setTimeout(sync,60);export {};
+
+function sync() { render(false); }
+window.addEventListener('hashchange', () => setTimeout(sync, 40));
+window.addEventListener('proqtrack:db-updated', () => { if (ROUTES.has(location.hash)) render(true); });
+window.addEventListener('proqtrack:m6-ready', () => { if (location.hash === '#/reports/approvals') void refreshApprovals(); if (location.hash === '#/reports/schedules') void refreshSchedules(); });
+initLocalPresentation();
+setTimeout(sync, 60);
+
+export {};
