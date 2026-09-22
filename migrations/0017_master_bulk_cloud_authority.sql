@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS core_attendance_points (
   UNIQUE (id, organization_id),
   FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE RESTRICT,
   FOREIGN KEY (outlet_id, organization_id)
-    REFERENCES core_outlets(id, organization_id) ON DELETE SET NULL
+    REFERENCES core_outlets(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_attendance_points_scope
