@@ -119,14 +119,7 @@ export async function hashPassword(plain) {
 
 export function passwordNeedsUpgrade(stored) {
   const current = String(stored ?? '');
-  if (current.startsWith('sha256$')) return true;
-  if (!current.startsWith('pbkdf2$sha256$')) return true;
-  const [, , iterRaw] = current.split('$');
-  const iterations = Number(iterRaw);
-  return !Number.isFinite(iterations) || iterations < PASSWORD_KDF_ITERATIONS;
-}
-
-export async function verifyPassword(stored, plain) {
+  if (current.startsWith('sha256
   const current = String(stored ?? '');
   const incoming = String(plain ?? '');
   if (!current || !incoming) return false;
@@ -513,6 +506,9 @@ export default {
 };
 )) return true;
   if (!current.startsWith('pbkdf2$sha256
+  const current = String(stored ?? '');
+  const incoming = String(plain ?? '');
+  if (!current || !incoming) return false;
   if (current.startsWith('pbkdf2$sha256$')) {
     const [, , iterRaw, saltPart, hashPart] = current.split('$');
     const iterations = Number(iterRaw);
@@ -888,6 +884,9 @@ export default {
 };
 )) return true;
   const [, , iterRaw] = current.split('
+  const current = String(stored ?? '');
+  const incoming = String(plain ?? '');
+  if (!current || !incoming) return false;
   if (current.startsWith('pbkdf2$sha256$')) {
     const [, , iterRaw, saltPart, hashPart] = current.split('$');
     const iterations = Number(iterRaw);
