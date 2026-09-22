@@ -27,7 +27,7 @@ function activateOfflineSession(account) {
   window.dispatchEvent(new CustomEvent('proqtrack:offline-status', {
     detail: { status: 'offline-session', organizationId: account.organizationId || null, online: false },
   }));
-  window.showToast?.('Offline session aktif. Data akan disinkronkan setelah login server tersedia.', 'success');
+  window.showToast?.('Mode offline aktif. Data akan diperbarui saat koneksi kembali.', 'success');
 }
 
 async function offlineLogin(event, original) {
@@ -43,7 +43,7 @@ async function offlineLogin(event, original) {
   const candidate = (db.accounts || []).find(row => String(row.email || '').toLowerCase() === email) || null;
   const organizationId = candidate?.organizationId || db.currentOrganizationId || getCurrentOrgId();
   if (!candidate?.cloudIdentity || !isCloudCutoverRemembered(organizationId)) {
-    window.showToast?.('Offline login belum diizinkan. Akun harus pernah tervalidasi oleh D1 pada device ini.', 'error');
+    window.showToast?.('Login offline belum tersedia untuk akun ini di perangkat tersebut.', 'error');
     return;
   }
 
@@ -74,7 +74,7 @@ export function installOfflineLogin() {
     window.FT.__m4OfflineLoginInstalled = true;
     window.addEventListener('online', () => {
       if (window.FT?.state?.account?.offlineSession) {
-        window.showToast?.('Koneksi kembali. Login ulang untuk mengirim antrean offline ke server.', 'success');
+        window.showToast?.('Koneksi kembali. Silakan login ulang untuk memperbarui data.', 'success');
       }
     });
   };

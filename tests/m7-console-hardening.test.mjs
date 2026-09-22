@@ -74,7 +74,7 @@ test('online M7 login is cloud-authoritative and single-flight', async () => {
   assert.match(cutover, /localCandidate\?\.role === 'superadmin'/);
   assert.match(cutover, /\? ''/);
   assert.match(cutover, /if \(!cloudAccount\) \{/);
-  assert.match(cutover, /Login server gagal/);
+  assert.match(cutover, /Login gagal\. Periksa email, password, dan koneksi/);
   assert.doesNotMatch(cutover, /sesi lokal sementara dipertahankan/);
   assert.match(cutover, /await logoutCloudSession\(\)\.catch/);
 });
@@ -87,7 +87,7 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.3/);
+  assert.match(serviceWorker, /proqtrack-v12\.4/);
 });
 
 test('global superadmin session selects an active tenant before bootstrap', async () => {

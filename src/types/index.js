@@ -1045,7 +1045,7 @@ window.PM = {
           finish();
         })
         .catch(error => {
-          window.showToast?.(`Logo R2 gagal: ${error.message || error}`, 'error');
+          window.showToast?.('Logo belum dapat diunggah. Coba lagi.', 'error');
           finish();
         });
       return;

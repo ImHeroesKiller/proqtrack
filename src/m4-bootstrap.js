@@ -13,7 +13,7 @@ function installStatusBridge() {
       window.showToast?.('Mode offline aktif. Perubahan operasional aman di perangkat.', 'success');
     } else if (status === 'conflict-rebased' && last !== status) {
       last = status;
-      window.showToast?.('Perubahan lokal sudah direbase ke revisi D1 terbaru.', 'success');
+      window.showToast?.('Data berhasil diperbarui ke versi terbaru.', 'success');
     } else if (status === 'synced') {
       last = '';
     }

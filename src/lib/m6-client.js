@@ -1,7 +1,7 @@
 import { authHeaders, getApiToken } from './uploads.js';
 
 function assertSession() {
-  if (!getApiToken()) throw new Error('Sesi cloud belum tersedia. Login server diperlukan.');
+  if (!getApiToken()) throw new Error('Sesi berakhir. Silakan login kembali.');
 }
 
 async function api(path, options = {}) {
