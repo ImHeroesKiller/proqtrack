@@ -123,7 +123,7 @@ async function saveFieldPhotoM4(event, visitId, outletId) {
     window.showToast?.(
       navigator.onLine === false
         ? 'Foto aman di perangkat. Evidence akan diunggah saat online.'
-        : 'Foto masuk antrean evidence R2.',
+        : 'Foto masuk antrean unggah.',
       'success',
     );
     window.dispatchEvent(new HashChangeEvent('hashchange'));

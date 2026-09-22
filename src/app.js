@@ -653,14 +653,19 @@ function renderLogin() {
         <div class="login-logo">PQ</div>
         <h1>ProQTrack</h1>
         <div class="subtitle">Field Team Real-time Monitoring System</div>
-        <form onsubmit="FT.handleLogin(event)">
+        <form onsubmit="FT.handleLogin(event)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
           <div class="form-group">
             <label class="label">Email</label>
-            <input class="input" type="email" id="loginEmail" placeholder="email@proqtrack.id" required>
+            <input class="input" type="email" id="loginEmail" placeholder="email@proqtrack.id" autocomplete="username" required autofocus>
           </div>
           <div class="form-group">
             <label class="label">Password</label>
-            <input class="input" type="password" id="loginPassword" placeholder="••••••••" required>
+            <div class="password-field">
+              <input class="input" type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
+              <button class="password-toggle" type="button" onclick="FT.toggleLoginPassword(this)" aria-label="Tampilkan password" aria-pressed="false">
+                <span class="password-eye" aria-hidden="true">${iconSvg('eye')}</span>
+              </button>
+            </div>
           </div>
           <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:8px;">
             Masuk ke Dashboard
@@ -673,6 +678,16 @@ function renderLogin() {
     </div>
   `;
 }
+
+window.FT.toggleLoginPassword = function(button) {
+  const input = document.getElementById('loginPassword');
+  if (!input) return;
+  const visible = input.type === 'text';
+  input.type = visible ? 'password' : 'text';
+  button?.setAttribute('aria-label', visible ? 'Tampilkan password' : 'Sembunyikan password');
+  button?.setAttribute('aria-pressed', visible ? 'false' : 'true');
+  input.focus();
+};
 
 window.FT.handleLogin = function(e) {
   e.preventDefault();
@@ -1285,7 +1300,7 @@ function employeePhotoField(current = '') {
         <div>
           <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" onchange="FT.previewEmployeePhoto(this)">
           <input type="hidden" name="photo" value="${esc(src)}">
-          <div class="employee-photo-help">Satu foto, disimpan di database aplikasi (bukan R2).</div>
+          <div class="employee-photo-help">Gunakan satu foto profil yang jelas.</div>
         </div>
       </div>
     </div>`;
@@ -1348,7 +1363,7 @@ window.FT.openEmployeeModal = function() {
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan ke Cloud</button>
+        <button type="submit" class="btn btn-primary">Simpan</button>
       </div>
     </form>
   `);
@@ -1366,7 +1381,7 @@ window.FT.createEmployee = async function(e) {
     data.photo = await photoFromEmployeeForm(form, '');
     delete data.photoFile;
     await window.BulkEmployees.createSingleEmployee(data);
-    closeModal(); showToast('Karyawan, assignment, dan akun login cloud berhasil dibuat', 'success'); render();
+    closeModal(); showToast('Karyawan, penugasan, dan akun login berhasil dibuat', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }
 };
 
@@ -1374,7 +1389,7 @@ window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const current = getEmployees().find(row => row.id === id);
   if (!current) return;
-  if (!confirm('Nonaktifkan karyawan ini? Login cloud aktif akan dicabut.')) return;
+  if (!confirm('Nonaktifkan karyawan ini? Akses login aktif akan dicabut.')) return;
   try {
     const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
     const projectId = assignment?.projectId || getActor()?.projectId || '';
@@ -1394,7 +1409,7 @@ window.FT.deleteEmployee = async function(id) {
       photo: current.photo || '',
       joinDate: current.joinDate || '',
     });
-    showToast('Karyawan dinonaktifkan dan sesi login cloud dicabut', 'success');
+    showToast('Karyawan dinonaktifkan dan sesi login dicabut', 'success');
     render();
   } catch (error) {
     showToast(error.message || error, 'error');
@@ -1515,7 +1530,7 @@ window.FT.updateEmployee = async function(e, id) {
     if (!data.projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
     data.joinDate = current?.joinDate || '';
     await window.BulkEmployees.updateSingleEmployee(data);
-    closeModal(); showToast('Data operasional karyawan diperbarui di cloud', 'success'); render();
+    closeModal(); showToast('Data operasional karyawan berhasil diperbarui', 'success'); render();
   } catch (error) { showToast(error.message, 'error'); }
 };
 
@@ -4026,7 +4041,7 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
       photoUrl = uploaded.url;
       r2Key = uploaded.key;
     } catch (error) {
-      showToast(`R2 gagal, foto disimpan lokal: ${error.message || error}`, 'error');
+      showToast('Unggah tertunda. Foto tetap aman di perangkat.', 'error');
     }
   }
   if (!dataUrl && !photoUrl) {
@@ -4049,7 +4064,7 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
     recordedAt: new Date().toISOString(),
   });
   closeModal();
-  showToast(r2Key ? 'Foto tersimpan di R2' : 'Foto lapangan tersimpan lokal', 'success');
+  showToast(r2Key ? 'Foto berhasil disimpan' : 'Foto tersimpan dan akan diunggah saat koneksi tersedia', 'success');
   render();
 };
 

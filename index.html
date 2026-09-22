@@ -5,8 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>ProQTrack — Field Team Monitoring</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
   :root {
     --brand: #ea580c;
     --brand-dark: #c2410c;
@@ -113,6 +111,15 @@
   .input:focus, .select:focus, .textarea:focus {
     outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(234,88,12,.12);
   }
+  .password-field { position: relative; }
+  .password-field .input { padding-right: 46px; }
+  .password-toggle {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    width: 36px; height: 36px; border: 0; border-radius: 8px; cursor: pointer;
+    display: grid; place-items: center; background: transparent; color: var(--gray-500);
+  }
+  .password-toggle:hover, .password-toggle:focus-visible { background: var(--gray-100); color: var(--gray-800); outline: none; }
+  .password-eye, .password-eye svg { width: 19px; height: 19px; display: block; }
   .textarea { min-height: 80px; resize: vertical; }
   .select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
 
@@ -414,7 +421,7 @@
 <div id="toastRoot"></div>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script type="module">
   import './assets/logo.js';

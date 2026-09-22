@@ -61,7 +61,7 @@ test('offline login requires prior cloud identity, remembered cutover and never 
   assert.match(source, /isCloudCutoverRemembered/);
   assert.match(source, /authenticate\(email, password, getDeviceIdentity\(\)\)/);
   assert.match(source, /clearApiToken\(\)/);
-  assert.match(source, /Offline login belum diizinkan/);
+  assert.match(source, /Login offline belum tersedia/);
   const gateStart = source.indexOf("if (!candidate?.cloudIdentity");
   const authStart = source.indexOf('let account = null', gateStart);
   assert.ok(gateStart >= 0 && authStart > gateStart);

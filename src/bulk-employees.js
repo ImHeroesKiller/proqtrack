@@ -203,7 +203,7 @@ function renderSuccess(summaryTotal) {
       <h3>Bulk upload berhasil</h3>
       <p>${summaryTotal.inserted} karyawan baru · ${summaryTotal.updated} diperbarui · ${summaryTotal.loginCreated} login baru · ${summaryTotal.loginLinked} login ditautkan.</p>
       ${generatedCredentials.length ? `
-        <div class="bulk-credential-warning"><strong>Simpan initial password sekarang.</strong> Password plaintext tidak disimpan di D1 dan hanya ditampilkan dari response commit ini.</div>
+        <div class="bulk-credential-warning"><strong>Simpan password awal sekarang.</strong> Password hanya ditampilkan satu kali setelah proses berhasil.</div>
         <button class="btn btn-primary" type="button" onclick="BulkEmployees.downloadCredentials()">Download Login Credentials</button>
       ` : ''}
       <button class="btn btn-secondary" type="button" onclick="FT.closeModal()">Tutup</button>
@@ -427,12 +427,12 @@ export function open() {
         <div class="modal-body">
           <div class="bulk-guide">
             <strong>1. Download template</strong>
-            <span>Isi employee_code, full_name dan project_code. create_login=YA untuk membuat login server.</span>
+            <span>Isi employee_code, full_name dan project_code. create_login=YA untuk membuat akun login.</span>
             <button class="btn btn-secondary" type="button" onclick="BulkEmployees.downloadTemplate()">Download Template CSV</button>
           </div>
           <div class="bulk-guide">
             <strong>2. Upload file</strong>
-            <span>XLSX dibaca langsung di browser tanpa mengirim file mentah ke server. Server hanya menerima row JSON yang sudah diparsing untuk validasi.</span>
+            <span>File diperiksa secara aman, lalu hanya data yang diperlukan yang diproses.</span>
             <input class="input" id="bulkEmployeeFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="BulkEmployees.handleFile(this)">
           </div>
           <div id="bulkEmployeePreview"><div class="bulk-empty">Pilih file untuk preview.</div></div>

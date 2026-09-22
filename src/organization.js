@@ -37,7 +37,7 @@ const HUB_LINKS = [
   ['#/outlets', 'Toko / Outlet', 'Titik kunjungan'],
   ['#/products', 'Produk', 'SKU organisasi'],
   ['#/competitors', 'Kompetitor', 'Intel merek lawan'],
-  ['#/field-photos', 'Aset & Foto', 'Bukti lapangan di R2'],
+  ['#/field-photos', 'Aset & Foto', 'Bukti aktivitas lapangan'],
   ['#/reports', 'Reporting', 'Analitik organisasi'],
   ['#/visits', 'Kunjungan', 'Aktivitas harian'],
   ['#/attendance', 'Absensi', 'Kehadiran tim'],
@@ -56,7 +56,7 @@ function scheduleOrganizationRefresh() {
       organizationsSynced = true;
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      window.showToast?.(`Sinkronisasi organisasi gagal: ${error.message || error}`, 'error');
+      window.showToast?.('Daftar organisasi belum dapat dimuat. Coba lagi.', 'error');
     } finally {
       organizationSyncInFlight = false;
     }
@@ -172,7 +172,7 @@ window.ORG = {
     try {
       if (window.FT?.state?.account?.role !== 'superadmin') throw new Error('Akses ditolak');
       if (navigator.onLine === false || window.FT?.state?.account?.offlineSession) {
-        throw new Error('Ganti organisasi memerlukan sesi cloud online.');
+        throw new Error('Ganti organisasi memerlukan koneksi internet.');
       }
       const { account } = await switchCloudOrganization(getDB(), target);
       setCurrentOrgId(target);
@@ -212,7 +212,7 @@ window.ORG = {
         : await createCloudOrganization(data);
       organizationsSynced = true;
       window.FT.closeModal?.();
-      window.showToast?.(id ? 'Organisasi cloud diperbarui' : 'Organisasi cloud dibuat', 'success');
+      window.showToast?.(id ? 'Organisasi berhasil diperbarui' : 'Organisasi berhasil dibuat', 'success');
 
       if (!id) {
         const switched = await this.switchTo(org.id, `#/organizations/${org.id}`);

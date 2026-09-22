@@ -95,7 +95,7 @@ export async function issueUploadSession(account, credentials = {}) {
   if (!res.ok) {
     clearApiTokenIfCurrent(generation);
     if (res.status === 409 && data.error === 'ORGANIZATION_REQUIRED') {
-      const error = new Error('Pilih organisasi sebelum membuat sesi cloud.');
+      const error = new Error('Pilih organisasi untuk melanjutkan.');
       error.code = data.error;
       error.organizations = data.organizations || [];
       throw error;
@@ -170,7 +170,7 @@ export async function revokeApiSession({ all = false } = {}) {
 
 export async function uploadAsset(file, { category = 'attachment', projectId = '', clientId = '', name } = {}) {
   if (!file) throw new Error('File belum dipilih.');
-  if (!getApiToken()) throw new Error('Sesi unggah cloud belum tersedia. Login server diperlukan.');
+  if (!getApiToken()) throw new Error('Sesi unggah belum tersedia. Silakan login kembali.');
   const params = new URLSearchParams({
     name: name || file.name || 'file',
     category,
@@ -218,7 +218,7 @@ export function bindAssetFields(root = document) {
     input.addEventListener('change', async () => {
       const file = input.files?.[0];
       if (!file) return;
-      if (status) status.textContent = 'Mengunggah ke R2...';
+      if (status) status.textContent = 'Mengunggah...';
       try {
         const result = await uploadAsset(file, {
           category: box.dataset.r2Category || 'attachment',
@@ -230,11 +230,11 @@ export function bindAssetFields(root = document) {
           if (preview.tagName === 'IMG') preview.src = result.url;
           else preview.innerHTML = `<img alt="Preview" src="${result.url}">`;
         }
-        if (status) status.textContent = 'Tersimpan di R2';
+        if (status) status.textContent = 'Tersimpan';
         window.showToast?.('File tersimpan di cloud storage', 'success');
       } catch (error) {
         if (status) status.textContent = error.message || String(error);
-        window.showToast?.(`Unggah R2 gagal: ${error.message || error}`, 'error');
+        window.showToast?.('Unggah file gagal. Periksa koneksi lalu coba lagi.', 'error');
       }
     });
   });

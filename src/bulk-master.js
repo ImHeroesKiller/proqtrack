@@ -229,7 +229,7 @@ async function commit(){
   if (cloud.syncing || cloud.queued || cloud.error) { window.showToast?.('Tunggu sinkronisasi data selesai sebelum bulk upload.','error'); return; }
   const s=summary();
   if(s.errors){ window.showToast?.('Perbaiki semua error sebelum commit.','error'); return; }
-  if(!confirm(`Commit ${s.valid} ${SCHEMAS[state.entity].label} ke cloud?`)) return;
+  if(!confirm(`Simpan ${s.valid} ${SCHEMAS[state.entity].label}?`)) return;
   state.busy=true;
   const importId=state.importId ||= `MASTER-${crypto.randomUUID()}`;
   const groups=chunks(state.rows,COMMIT_CHUNK);
@@ -296,7 +296,7 @@ function open(entity){
           </div>
           <div class="bulk-guide">
             <strong>2. Upload file</strong>
-            <span>Preview divalidasi terhadap data D1 organisasi aktif sebelum commit.</span>
+            <span>Pratinjau diperiksa terhadap data organisasi aktif sebelum disimpan.</span>
             <input class="input" id="bulkMasterFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="BulkMaster.handleFile(this)">
           </div>
           <div id="bulkMasterPreview"><div class="bulk-empty">Pilih file untuk preview.</div></div>

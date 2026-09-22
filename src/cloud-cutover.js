@@ -45,7 +45,7 @@ async function cloudFirstLogin(event) {
   try {
     clearApiToken();
     if (navigator.onLine === false) {
-      window.showToast?.('Login offline hanya tersedia untuk akun cloud yang sudah tervalidasi pada device ini.', 'error');
+      window.showToast?.('Login offline hanya tersedia untuk akun yang pernah digunakan di perangkat ini.', 'error');
       return;
     }
 
@@ -79,7 +79,7 @@ async function cloudFirstLogin(event) {
     }
 
     if (!cloudAccount) {
-      window.showToast?.(cloudError?.message || 'Login server gagal. Periksa kredensial atau koneksi lalu coba lagi.', 'error');
+      window.showToast?.(cloudError?.message || 'Login gagal. Periksa email, password, dan koneksi lalu coba lagi.', 'error');
       return;
     }
 
@@ -110,18 +110,18 @@ async function cloudFirstLogin(event) {
       }
     } catch (error) {
       await logoutCloudSession().catch(() => {});
-      window.showToast?.(`Sinkronisasi D1 gagal: ${error.message || error}`, 'error');
+      window.showToast?.('Data belum dapat dimuat. Periksa koneksi lalu coba lagi.', 'error');
       return;
     }
 
     if (bootstrap.mode === 'pending') {
-      window.showToast?.('Workspace belum cutover ke D1. Migrasi admin eksplisit diperlukan sebelum operasional cloud.', 'error');
+      window.showToast?.('Organisasi belum siap digunakan. Hubungi administrator.', 'error');
     }
 
     const account = localAccount;
     if (!account) {
       await logoutCloudSession().catch(() => {});
-      window.showToast?.('Akun cloud tidak dapat dipulihkan ke cache lokal.', 'error');
+      window.showToast?.('Sesi akun tidak dapat dipulihkan. Silakan login kembali.', 'error');
       return;
     }
     if (account.role === 'superadmin') {
@@ -136,7 +136,7 @@ async function cloudFirstLogin(event) {
     state.route = account.mustChangePassword ? '#/settings' : defaultRouteFor(account);
     forceRoute(state.route);
     if (account.mustChangePassword) window.showToast?.('Wajib ganti password sebelum memakai aplikasi.', 'error');
-    else window.showToast?.('Data operasional terhubung ke D1.', 'success');
+    else window.showToast?.('Login berhasil. Data operasional siap digunakan.', 'success');
   } finally {
     loginInFlight = false;
   }
@@ -201,10 +201,10 @@ function install() {
     const status = event.detail?.status;
     if (status === 'conflict' && lastNotice !== 'conflict') {
       lastNotice = 'conflict';
-      window.showToast?.('Data berubah di perangkat lain. Sistem sedang mengambil revisi D1 terbaru.', 'error');
+      window.showToast?.('Data berubah di perangkat lain. Aplikasi sedang memuat versi terbaru.', 'error');
     } else if (status === 'error' && lastNotice !== 'error') {
       lastNotice = 'error';
-      window.showToast?.('Sinkronisasi D1 tertunda. Perubahan lokal tetap tersimpan di perangkat.', 'error');
+      window.showToast?.('Pembaruan data tertunda. Perubahan tetap aman di perangkat.', 'error');
     } else if (status === 'synced') {
       lastNotice = '';
     }
