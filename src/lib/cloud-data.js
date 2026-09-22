@@ -19,6 +19,9 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'attendancePoints',
   'leaves',
   'stocks',
+  'priceObservations',
+  'competitorIntel',
+  'outletProposals',
 ]);
 
 const DB_KEY = 'proqtrack_db_v6';
@@ -145,6 +148,130 @@ export function legacyMasterMigrationChanges(localDb = {}, remoteData = {}, orga
   return changes;
 }
 
+const P2_OPERATIONAL_COLLECTIONS = Object.freeze(['priceObservations','competitorIntel','outletProposals']);
+
+function operationalOwnerId(entity, row = {}) {
+  if (entity === 'outletProposals') return String(row.submittedBy || row.employeeId || '');
+  return String(row.recordedBy || row.employeeId || '');
+}
+
+function localActorEmployeeId(localDb = {}, account = {}) {
+  const accountId = String(account.sub || account.id || '');
+  const email = String(account.email || '').toLowerCase();
+  const linked = (localDb.employees || []).find(row =>
+    String(row.authUserId || '') === accountId
+    || (email && String(row.email || '').toLowerCase() === email)
+  );
+  if (linked?.id) return String(linked.id);
+  const localAccount = (localDb.accounts || []).find(row =>
+    String(row.id || '') === accountId || (email && String(row.email || '').toLowerCase() === email)
+  );
+  return String(localAccount?.employeeId || '');
+}
+
+function p2OperationalMigrationChanges(localDb = {}, remoteData = {}, account = {}) {
+  const organizationId = String(account.organizationId || account.organization?.id || localDb.currentOrganizationId || '');
+  if (!organizationId) return [];
+  const broad = ['superadmin','head','admin'].includes(String(account.role || '').toLowerCase());
+  const ownEmployeeId = localActorEmployeeId(localDb, account);
+  const projects = new Set((remoteData.projects || []).map(row => String(row.id || '')));
+  const outlets = new Set((remoteData.outlets || []).map(row => String(row.id || '')));
+  const products = new Set((remoteData.products || []).map(row => String(row.id || '')));
+  const employees = new Set((remoteData.employees || []).map(row => String(row.id || '')));
+  const competitorProducts = new Set((remoteData.competitorProducts || []).map(row => String(row.id || '')));
+  const changes = [];
+
+  for (const entity of P2_OPERATIONAL_COLLECTIONS) {
+    const remoteIds = new Set((remoteData[entity] || []).map(row => String(row.id || '')));
+    for (const source of Array.isArray(localDb[entity]) ? localDb[entity] : []) {
+      const row = clone(source);
+      const id = String(row.id || '');
+      if (!id || remoteIds.has(id) || !sameOrganization(row, organizationId)) continue;
+      const owner = operationalOwnerId(entity, row);
+      if (!broad && (!ownEmployeeId || owner !== ownEmployeeId)) continue;
+      const projectId = String(row.projectId || '');
+      if (!projectId || !projects.has(projectId) || !owner || !employees.has(owner)) continue;
+      if (entity !== 'outletProposals' && !outlets.has(String(row.outletId || ''))) continue;
+      if (entity === 'priceObservations' && !products.has(String(row.productId || ''))) continue;
+      if (entity === 'competitorIntel') {
+        if (row.productId && !products.has(String(row.productId))) row.productId = null;
+        if (row.competitorProductId && !competitorProducts.has(String(row.competitorProductId))) row.competitorProductId = null;
+      }
+      row.organizationId = organizationId;
+      if (!row.employeeId) row.employeeId = owner;
+      changes.push({ entity, op: 'upsert', row });
+    }
+  }
+  return changes;
+}
+
+async function migrateP2OperationalCollections(localDb, remote, account = {}) {
+  const organizationId = String(account.organizationId || account.organization?.id || localDb?.currentOrganizationId || '');
+  if (!organizationId) return remote;
+  const changes = p2OperationalMigrationChanges(localDb, remote?.data || {}, account);
+  if (!changes.length) return remote;
+  let baseRevision = Number(remote?.revision || 0);
+  for (let offset = 0; offset < changes.length; offset += 100) {
+    const chunk = changes.slice(offset, offset + 100);
+    const mutationId = 'P2-CLOUD-' + organizationId + '-' + stableMutationSuffix(chunk);
+    const send = () => apiJson('/api/core/sync', {
+      method: 'POST',
+      headers: { 'idempotency-key': mutationId },
+      body: JSON.stringify({ mutationId, baseRevision, changes: chunk }),
+    });
+    let result;
+    try {
+      result = await send();
+    } catch (error) {
+      if (error?.code !== 'REVISION_CONFLICT') throw error;
+      const latest = await apiJson('/api/core/bootstrap');
+      baseRevision = Number(latest?.revision || baseRevision);
+      result = await send();
+    }
+    baseRevision = Number(result?.revision ?? baseRevision);
+  }
+  return apiJson('/api/core/bootstrap');
+}
+
+function evidencePhotoType(type = '') {
+  return ({
+    field_location:'location', product_photo:'product', rack_shelf:'shelf',
+    competitor_photo:'competitor', rack_before:'rack_before', rack_after:'rack_after',
+    selfie:'selfie',
+  })[String(type)] || String(type || 'location');
+}
+
+async function fetchCloudFieldPhotos() {
+  const rows = [];
+  let offset = 0;
+  for (let page = 0; page < 40; page += 1) {
+    const payload = await apiJson('/api/evidence?limit=250&offset=' + offset);
+    for (const item of payload.evidence || []) {
+      const type = evidencePhotoType(item.evidenceType);
+      rows.push({
+        id: String(item.id),
+        evidenceId: String(item.id),
+        organizationId: item.organizationId,
+        projectId: item.projectId,
+        outletId: item.outletId || '',
+        employeeId: item.employeeId,
+        recordedBy: item.employeeId,
+        visitId: item.visitId || null,
+        type,
+        photoType: type,
+        photoUrl: '/api/evidence/' + encodeURIComponent(item.id),
+        dataUrl: null,
+        recordedAt: item.capturedAt || item.createdAt,
+        evidenceStatus: item.storageStatus || 'ready',
+        contentType: item.contentType,
+        sizeBytes: item.sizeBytes,
+      });
+    }
+    if (payload.nextOffset == null) break;
+    offset = Number(payload.nextOffset);
+  }
+  return rows;
+}
 function stableMutationSuffix(changes = []) {
   const input = changes.map(change => change.entity + ':' + (change.row?.id || '')).sort().join('|');
   let hash = 2166136261;
@@ -292,6 +419,14 @@ export function applyRemoteDataToLocal(localDb, remoteData = {}) {
   for (const key of CLOUD_COLLECTIONS) {
     if (Array.isArray(remoteData[key])) localDb[key] = clone(remoteData[key]);
   }
+  if (Array.isArray(remoteData.fieldPhotos)) {
+    const remote = new Map(remoteData.fieldPhotos.map(row => [String(row.id || row.evidenceId || ''), clone(row)]));
+    for (const row of Array.isArray(localDb.fieldPhotos) ? localDb.fieldPhotos : []) {
+      const id = String(row.id || row.evidenceId || '');
+      if (id && !remote.has(id) && row.evidenceStatus === 'queued') remote.set(id, clone(row));
+    }
+    localDb.fieldPhotos = [...remote.values()];
+  }
   persistLocalCache(localDb);
   return localDb;
 }
@@ -431,6 +566,10 @@ export async function bootstrapOperationalData(localDb, account = {}) {
   try {
     remote = await migrateLegacyMasterCollections(localDb, remote, account);
     revision = Number(remote.revision || revision);
+    remote = await migrateP2OperationalCollections(localDb, remote, account);
+    revision = Number(remote.revision || revision);
+    remote.data = remote.data || {};
+    remote.data.fieldPhotos = await fetchCloudFieldPhotos();
   } catch (error) {
     ready = false;
     lastError = error.code || error.message || String(error);
