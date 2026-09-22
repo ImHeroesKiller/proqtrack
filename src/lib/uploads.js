@@ -100,6 +100,12 @@ export async function issueUploadSession(account, credentials = {}) {
       error.organizations = data.organizations || [];
       throw error;
     }
+    if (res.status === 403 && data.error === 'ORGANIZATION_ACCESS_DENIED') {
+      const error = new Error('Organisasi tersimpan sudah tidak aktif. Muat ulang aplikasi lalu login kembali.');
+      error.code = data.error;
+      error.status = res.status;
+      throw error;
+    }
     if ([400, 401, 403, 404, 405, 410, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }

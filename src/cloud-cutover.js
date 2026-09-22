@@ -63,7 +63,12 @@ async function cloudFirstLogin(event) {
       return;
     }
 
-    const organizationId = localCandidate?.organizationId || db.currentOrganizationId || getCurrentOrgId();
+    // A superadmin must authenticate globally first. Reusing a stale tenant id
+    // from localStorage can turn valid credentials into a 403 after a tenant
+    // was archived or removed.
+    const organizationId = localCandidate?.role === 'superadmin'
+      ? ''
+      : (localCandidate?.organizationId || db.currentOrganizationId || getCurrentOrgId());
     let cloudAccount = null;
     let cloudError = null;
     try {
