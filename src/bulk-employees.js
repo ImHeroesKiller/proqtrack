@@ -167,8 +167,8 @@ function renderPreview() {
     </table></div>
     ${currentPreview.length > visible.length ? `<div class="bulk-muted">Menampilkan 100 dari ${currentPreview.length} row. Semua row tetap divalidasi.</div>` : ''}
     <div class="bulk-actions">
-      <button class="btn btn-secondary" type="button" onclick="BulkEmployees.reset()">Ganti File</button>
-      <button class="btn btn-primary" type="button" onclick="BulkEmployees.commit()" ${s.errors ? 'disabled' : ''}>Commit ${s.valid} Karyawan</button>
+      <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkEmployees.reset()">Ganti File</button>
+      <button class="btn btn-primary" type="button" data-pqt-onclick="BulkEmployees.commit()" ${s.errors ? 'disabled' : ''}>Commit ${s.valid} Karyawan</button>
     </div>
   `;
 }
@@ -204,9 +204,9 @@ function renderSuccess(summaryTotal) {
       <p>${summaryTotal.inserted} karyawan baru · ${summaryTotal.updated} diperbarui · ${summaryTotal.loginCreated} login baru · ${summaryTotal.loginLinked} login ditautkan.</p>
       ${generatedCredentials.length ? `
         <div class="bulk-credential-warning"><strong>Simpan password awal sekarang.</strong> Password hanya ditampilkan satu kali setelah proses berhasil.</div>
-        <button class="btn btn-primary" type="button" onclick="BulkEmployees.downloadCredentials()">Download Login Credentials</button>
+        <button class="btn btn-primary" type="button" data-pqt-onclick="BulkEmployees.downloadCredentials()">Download Login Credentials</button>
       ` : ''}
-      <button class="btn btn-secondary" type="button" onclick="FT.closeModal()">Tutup</button>
+      <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.closeModal()">Tutup</button>
     </div>
   `;
 }
@@ -297,7 +297,7 @@ export async function commit() {
     window.showToast?.('Bulk upload karyawan selesai.', 'success');
   } catch (error) {
     const detail = error.payload?.rows?.flatMap(row => row.errors || []).slice(0, 8).join(', ');
-    if (root) root.innerHTML = `<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message || error)}${detail ? `<br><span class="bulk-muted">${esc(detail)}</span>` : ''}<br><br>Chunk yang sudah sukses aman dan idempotent. Upload ulang file yang sama untuk melanjutkan/update.${generatedCredentials.length ? '<br><br><button class="btn btn-primary" type="button" onclick="BulkEmployees.downloadCredentials()">Download credential yang sudah berhasil dibuat</button>' : ''}</div>`;
+    if (root) root.innerHTML = `<div class="bulk-error-box"><strong>Commit berhenti.</strong><br>${esc(error.message || error)}${detail ? `<br><span class="bulk-muted">${esc(detail)}</span>` : ''}<br><br>Chunk yang sudah sukses aman dan idempotent. Upload ulang file yang sama untuk melanjutkan/update.${generatedCredentials.length ? '<br><br><button class="btn btn-primary" type="button" data-pqt-onclick="BulkEmployees.downloadCredentials()">Download credential yang sudah berhasil dibuat</button>' : ''}</div>`;
     window.showToast?.('Bulk upload belum selesai.', 'error');
   } finally {
     busy = false;
@@ -420,20 +420,20 @@ export function open() {
   const root = document.getElementById('modalRoot');
   if (!root) return;
   root.innerHTML = `
-    <div class="modal-overlay" onclick="if(event.target===this)FT.closeModal()">
+    <div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()">
       <div class="modal animate-up bulk-modal">
         <div class="modal-handle"></div>
-        <div class="modal-header"><div><h3>Bulk Upload Karyawan</h3><div class="bulk-muted">CSV atau XLSX · sheet pertama · maksimal ${MAX_FILE_ROWS} row</div></div><button class="modal-close" onclick="FT.closeModal()">✕</button></div>
+        <div class="modal-header"><div><h3>Bulk Upload Karyawan</h3><div class="bulk-muted">CSV atau XLSX · sheet pertama · maksimal ${MAX_FILE_ROWS} row</div></div><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div>
         <div class="modal-body">
           <div class="bulk-guide">
             <strong>1. Download template</strong>
             <span>Isi employee_code, full_name dan project_code. create_login=YA untuk membuat akun login.</span>
-            <button class="btn btn-secondary" type="button" onclick="BulkEmployees.downloadTemplate()">Download Template CSV</button>
+            <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkEmployees.downloadTemplate()">Download Template CSV</button>
           </div>
           <div class="bulk-guide">
             <strong>2. Upload file</strong>
             <span>File diperiksa secara aman, lalu hanya data yang diperlukan yang diproses.</span>
-            <input class="input" id="bulkEmployeeFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onchange="BulkEmployees.handleFile(this)">
+            <input class="input" id="bulkEmployeeFile" type="file" accept=".csv,.tsv,.txt,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" data-pqt-onchange="BulkEmployees.handleFile(this)">
           </div>
           <div id="bulkEmployeePreview"><div class="bulk-empty">Pilih file untuk preview.</div></div>
         </div>
