@@ -16,19 +16,18 @@ Dokumen ini adalah prosedur resmi untuk merilis ProQTrack. Utamakan stabilitas `
 
 ## Target live saat ini
 
-> **Peringatan:** deployment live saat ini menggunakan konfigurasi default Wrangler (`--env=""`), D1 `proqtrack-mvp`, dan R2 `proqtrack-mvp-files`.
+Konfigurasi default Wrangler adalah **canonical live target**: D1 `proqtrack-mvp` dan R2 `proqtrack-mvp-files`. Named environment `production` sengaja tidak didefinisikan agar tidak ada resource kedua yang terlihat seperti live.
 
-Named environment `production` di `wrangler.jsonc` menggunakan resource berbeda. Jangan menjalankan `npm run deploy:production`, `wrangler deploy --env production`, atau migrasi `--env production` untuk live tanpa keputusan migrasi environment yang eksplisit, backup, dan UAT lengkap.
-
-Perintah target live yang berlaku:
+Gunakan command resmi berikut:
 
 ```bash
-npm run build
-npx wrangler d1 migrations apply DB --remote --env=""
-npx wrangler deploy --env=""
+npm run db:migrate:live
+npm run deploy:live
 ```
 
-Periksa binding dan output dry-run sebelum menjalankan perintah remote. Jangan menebak target dari nama script.
+Alias `db:migrate:production` dan `deploy:production` mengarah ke target live yang sama untuk kompatibilitas. Jangan menggunakan `--env production`; environment tersebut tidak ada. Development dan staging tetap memakai named environment masing-masing.
+
+Periksa binding dan output dry-run sebelum menjalankan perintah remote.
 
 ## Checklist sebelum merge
 
@@ -76,10 +75,10 @@ Jalankan setidaknya:
 2. Login dengan akun UAT aktif; jangan menaruh kredensial di dokumentasi atau tiket.
 3. Verifikasi bootstrap selesai tanpa `409`, `403`, atau retry loop.
 4. Periksa role yang terdampak dan pastikan data organisasi lain tidak terlihat.
-5. Verifikasi Employees, Outlets, Products, Product Sales, Outlet Stock, Attendance, Leave, dan Competitors sesuai scope.
+5. Verifikasi Employees, Outlets, Products, Product Sales, Outlet Stock, Attendance, Leave, Competitors, Price Observation, Competitor Intel, Outlet Proposal, dan evidence photo sesuai scope.
 6. Untuk Leave dan Outlet Stock, pastikan ringkasan dan baris tabel konsisten setelah reload.
 7. Uji create/update/delete yang berubah, duplicate submission, dan stale revision/conflict.
-8. Pastikan offline/reconnect tidak menggandakan data dan tidak menampilkan data lama sebagai authoritative.
+8. Pastikan offline/reconnect tidak menggandakan data. Pada revision conflict, server state harus tampil dan perubahan lokal harus tetap tersimpan untuk review—bukan auto-overwrite.
 9. Periksa console serta network untuk error aplikasi; source-map CDN yang diblokir CSP tidak boleh mengubah alur utama, tetapi tetap dicatat sebagai risiko teknis.
 
 ## Rollback
