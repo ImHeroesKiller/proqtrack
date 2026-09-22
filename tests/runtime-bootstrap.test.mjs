@@ -4,16 +4,19 @@ import { readFile } from 'node:fs/promises';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
-test('production HTML uses one explicit runtime bootstrap', async () => {
-  const [html, logo] = await Promise.all([
+test('production HTML uses one explicit external runtime entry', async () => {
+  const [html, entry, logo] = await Promise.all([
     read('index.html'),
+    read('src/entry.js'),
     read('assets/logo.js'),
   ]);
 
-  assert.match(html, /import '\.\/assets\/logo\.js';/);
-  assert.match(html, /await import\('\.\/src\/bootstrap\.js'\)/);
-  assert.doesNotMatch(html, /await import\('\.\/src\/app\.js'\)/);
-  assert.doesNotMatch(html, /await import\('\.\/src\/types\/index\.js'\)/);
+  assert.match(html, /<script type="module" src="\.\/src\/entry\.js"><\/script>/);
+  assert.doesNotMatch(html, /<script type="module">/);
+  assert.match(entry, /import '\.\.\/assets\/logo\.js';/);
+  assert.match(entry, /await import\('\.\/bootstrap\.js'\)/);
+  assert.doesNotMatch(html, /src\/app\.js/);
+  assert.doesNotMatch(html, /src\/types\/index\.js/);
 
   assert.doesNotMatch(logo, /src\/cloud-cutover\.js/);
   assert.doesNotMatch(logo, /src\/m4-bootstrap\.js/);
@@ -74,7 +77,8 @@ test('P0 runtime modules keep cloud, offline, evidence and reporting responsibil
 
 test('service worker advances cache and precaches the explicit bootstrap', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.6/);
+  assert.match(sw, /proqtrack-v12\.7/);
+  assert.match(sw, /'\.\/src\/entry\.js'/);
   assert.match(sw, /'\.\/src\/bootstrap\.js'/);
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);
 });
