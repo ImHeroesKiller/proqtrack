@@ -129,11 +129,11 @@ Jangan commit `dist/`, `.wrangler/`, database lokal, token, atau recovery artifa
 
 ## Arah pengembangan
 
-1. UAT seluruh role setelah authority P2: Price Observation, Competitor Intel, Outlet Proposal, evidence photo.
-2. Tambahkan E2E login → tenant → bootstrap → CRUD → logout.
-3. Tambahkan UAT conflict dua device dan UX review/merge perubahan offline yang ditahan.
-4. Migrasikan inline event attributes ke event listener agar `script-src-attr 'unsafe-inline'` dapat dihapus.
-5. Evaluasi self-host library export dokumen yang saat ini lazy-loaded exact-version.
+1. Ulangi authenticated UAT seluruh role setelah P3, termasuk Price Observation, Competitor Intel, Outlet Proposal, evidence photo, report export, dan offline/reconnect.
+2. Tambahkan browser E2E login → tenant → bootstrap → CRUD → conflict → logout.
+3. Rancang field-level conflict review/merge jika kebutuhan bisnis menuntut client-wins; jangan mengembalikan auto-replay whole snapshot.
+4. Pecah `src/app.js` secara bertahap setelah browser regression coverage cukup.
+5. Evaluasi pemindahan inline style ke class/CSS agar CSP style dapat diperketat tanpa regression visual.
 6. Rapikan label M7/M8 setelah stabil tanpa mengubah resource live.
 
 ## Runtime bootstrap rule
@@ -153,7 +153,7 @@ Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_B
 
 ## P1 security and integrity rules
 
-- Semua user-controlled value yang masuk HTML wajib memakai `esc()` atau safe DOM API. Untuk inline handler argument gunakan helper yang menghasilkan JSON string lalu HTML-escape; jangan interpolasi ID/string mentah.
+- Semua user-controlled value yang masuk HTML wajib memakai `esc()` atau safe DOM API. Untuk `data-pqt-on*` argument gunakan helper yang menghasilkan literal aman lalu HTML-escape; jangan interpolasi ID/string mentah.
 - Master competitor menggunakan write sanitization sebagai defense-in-depth, tetapi output encoding tetap wajib.
 - ID baru harus dibuat melalui `uid()`/UUID. Jangan membuat predictable tenant-local ID untuk entity cloud-authoritative.
 - Perubahan sync/import tidak boleh menyamarkan cross-tenant ID collision sebagai sukses.
@@ -174,3 +174,11 @@ Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_B
 - Precache harus berdasarkan runtime application shell, bukan seluruh source tree. Source yang tidak runtime-reachable tetap boleh ada di `dist` untuk module fetch, tetapi tidak otomatis masuk install cache.
 - Compatibility module tanpa caller/test owner harus dihapus, bukan terus dimuat untuk berjaga-jaga.
 
+## P3 maintainability rules
+
+- Jangan menambahkan executable `onclick`, `onsubmit`, `onchange`, `oninput`, atau `onkeydown` ke template. Gunakan `data-pqt-on*` dan grammar dispatcher yang sudah diuji, atau event listener eksplisit.
+- `src/lib/ui-events.js` tidak boleh memakai `eval`, `new Function`, atau `unsafe-eval`. Jika sebuah interaction tidak cocok dengan grammar terbatas, gunakan listener/module khusus.
+- Executable browser dependency harus self-hosted atau diganti implementasi lokal. Jangan menambah script CDN ke CSP tanpa threat/supply-chain review.
+- Report document packaging berada di `src/lib/document-export.js`; jaga ZIP/PDF implementation dependency-free dan covered oleh regression tests.
+- Snapshot dengan `requiresReview` adalah blocked conflict. Jangan menghapus atau replay otomatis. Resolusi server-wins harus merupakan tindakan user eksplisit.
+- Perubahan shell/runtime P3 wajib bump service-worker cache dan update `tests/p3-maintainability.test.mjs`.
