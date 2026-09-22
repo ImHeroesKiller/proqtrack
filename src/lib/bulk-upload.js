@@ -206,6 +206,39 @@ export function normalizeRows(matrix = []) {
     });
 }
 
+export async function parseBulkMatrix(file) {
+  const name = String(file?.name || '').toLowerCase();
+  if (name.endsWith('.xlsx')) return parseXlsx(await file.arrayBuffer());
+  return parseDelimited(await file.text());
+}
+
+export function normalizeRowsForSchema(matrix = [], { headers = [], aliases = {}, required = [] } = {}) {
+  if (!matrix.length) return [];
+  const lookup = new Map();
+  for (const canonical of headers) {
+    lookup.set(normalizeHeader(canonical), canonical);
+    for (const alias of aliases[canonical] || []) lookup.set(normalizeHeader(alias), canonical);
+  }
+  const mapped = matrix[0].map(value => lookup.get(normalizeHeader(value)) || '');
+  const present = new Set(mapped.filter(Boolean));
+  for (const key of required) {
+    if (!present.has(key)) throw new Error(`Kolom wajib tidak ditemukan: ${key}`);
+  }
+  return matrix.slice(1)
+    .filter(row => row.some(cell => String(cell ?? '').trim() !== ''))
+    .map((row, index) => {
+      const out = { _row_number: index + 2 };
+      mapped.forEach((key, column) => {
+        if (key) out[key] = String(row[column] ?? '').trim();
+      });
+      return out;
+    });
+}
+
+export function templateCsvForHeaders(headers = []) {
+  return '\uFEFF' + headers.join(',') + '\n';
+}
+
 export async function parseBulkEmployeeFile(file) {
   const name = String(file?.name || '').toLowerCase();
   if (name.endsWith('.xlsx')) return normalizeRows(await parseXlsx(await file.arrayBuffer()));
