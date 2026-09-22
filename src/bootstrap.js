@@ -3,7 +3,7 @@
 // Branding stays in assets/logo.js; application/runtime side effects live here.
 
 const boot = {
-  version: 'p0-runtime-2026-09-22',
+  version: 'p2-runtime-2026-09-23',
   stage: 'loading',
   modules: [],
   checks: {},
@@ -29,7 +29,6 @@ await load('./reports/index-v2.js', 'reports-core');
 await load('./types/reports-export.js', 'reports-export');
 await load('./reports/phase4-fixed.js', 'reports-phase4');
 await load('./reports/phase4-preview.js', 'reports-preview');
-await load('./uat-fixes.js', 'uat-fixes');
 await load('./operational-mapping.js', 'operational-mapping');
 await load('./report-nav-stability.js', 'report-nav-stability');
 await load('./dashboard-deep-links.js', 'dashboard-deep-links');
