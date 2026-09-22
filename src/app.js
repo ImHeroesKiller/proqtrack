@@ -3100,10 +3100,12 @@ function renderCompetitors() {
       <div class="filter-row">
         <div class="card-title" style="margin:0;">Master Kompetitor</div>
         <div class="spacer"></div>
+        ${isOrgAdmin() ? `
         <button class="btn btn-secondary" onclick="BulkMaster.open('competitors')">Bulk Merek</button>
         <button class="btn btn-secondary" onclick="BulkMaster.open('competitorProducts')">Bulk Produk</button>
         <button class="btn btn-secondary" onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
         <button class="btn btn-primary" onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
+        ` : ''}
       </div>
       <div class="card-subtitle">Kelola merek pesaing & katalog produknya</div>
 
@@ -3120,10 +3122,10 @@ function renderCompetitors() {
                   <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${c.category || '—'} · ${prods.length} produk</div>
                   ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${c.notes}</div>` : ''}
                 </div>
-                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                <div style="display:${isOrgAdmin() ? 'flex' : 'none'};gap:6px;flex-wrap:wrap;">
                   <button class="btn btn-secondary btn-sm" onclick="FT.openCompetitorProductModal('${c.id}')">+ Produk</button>
                   <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitor('${c.id}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm('${c.id}')">Hapus</button>
+                  <button class="btn btn-danger btn-sm" onclick="FT.deleteCompetitorConfirm('${c.id}')">Arsipkan</button>
                 </div>
               </div>
               ${prods.length ? `
@@ -3138,9 +3140,9 @@ function renderCompetitors() {
                           <td>${formatCurrency(p.typicalPrice)}</td>
                           <td>${p.unit}</td>
                           <td>${statusBadge(p.status)}</td>
-                          <td>
+                          <td style="display:${isOrgAdmin() ? 'table-cell' : 'none'};">
                             <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct('${p.id}')">Edit</button>
-                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm('${p.id}')">Hapus</button>
+                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="FT.deleteCompetitorProductConfirm('${p.id}')">Arsipkan</button>
                           </td>
                         </tr>
                       `).join('')}
@@ -3217,10 +3219,10 @@ window.FT.updateCompetitorForm = function(e, id) {
 };
 
 window.FT.deleteCompetitorConfirm = function(id) {
-  if (!isProjectAdmin()) return;
-  if (!confirm('Hapus kompetitor dan semua produknya?')) return;
+  if (!isOrgAdmin()) return;
+  if (!confirm('Arsipkan kompetitor? Produk dan histori tetap tersimpan.')) return;
   deleteCompetitor(id);
-  showToast('Kompetitor dihapus', 'success'); render();
+  showToast('Kompetitor diarsipkan', 'success'); render();
 };
 
 window.FT.openCompetitorProductModal = function(competitorId) {
@@ -3298,10 +3300,10 @@ window.FT.updateCompetitorProductForm = function(e, id) {
 };
 
 window.FT.deleteCompetitorProductConfirm = function(id) {
-  if (!isProjectAdmin()) return;
-  if (!confirm('Hapus produk kompetitor ini?')) return;
+  if (!isOrgAdmin()) return;
+  if (!confirm('Arsipkan produk kompetitor ini? Histori tetap tersimpan.')) return;
   deleteCompetitorProduct(id);
-  showToast('Dihapus', 'success'); render();
+  showToast('Diarsipkan', 'success'); render();
 };
 
 // ===== Competitor Analysis (Manager) =====

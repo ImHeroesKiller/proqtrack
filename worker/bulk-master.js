@@ -18,6 +18,13 @@ const boolStatus = (value, allowed, fallback = 'active') => {
   return allowed.includes(v) ? v : fallback;
 };
 const uid = prefix => `${prefix}-${crypto.randomUUID()}`;
+const stable = value => Array.isArray(value) ? `[${value.map(stable).join(',')}]`
+  : value && typeof value === 'object' ? `{${Object.keys(value).sort().map(key=>`${JSON.stringify(key)}:${stable(value[key])}`).join(',')}}`
+  : JSON.stringify(value);
+async function digest(value) {
+  const bytes = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(stable(value)));
+  return [...new Uint8Array(bytes)].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 
 const allRows = async stmt => {
   const result = await stmt.all();
@@ -73,6 +80,7 @@ function normalizeMaster(entity, input, index, ctx, claims) {
   const rowNumber = Number(input._row_number || input.rowNumber || index + 2);
   const errors = [];
   const warnings = [];
+  if (['competitors','competitorProducts'].includes(entity) && !BROAD_ROLES.has(lower(claims.role))) errors.push('CATALOG_REQUIRES_ORG_ADMIN');
   let canonical = null;
   let action = 'create';
 
@@ -321,18 +329,36 @@ async function commit(request, env, claims) {
   const chunkId = str(body.chunkId || '1',80);
   if (!rows.length || rows.length > MAX_COMMIT_ROWS) return json({ error:'INVALID_ROW_COUNT', max:MAX_COMMIT_ROWS },400);
 
-  const normalized = await previewRows(entity,rows,env,claims);
-  if (normalized.some(row=>!row.valid)) {
-    return json({ error:'BULK_VALIDATION_FAILED', rows:normalized },422);
+  const chunkNumber = Number(chunkId), totalChunks = Number(body.totalChunks || 1);
+  if (!Number.isInteger(chunkNumber) || !Number.isInteger(totalChunks) || chunkNumber < 1 || totalChunks < chunkNumber || totalChunks > 20) return json({error:'INVALID_CHUNK_SEQUENCE'},400);
+  if (['competitors','competitorProducts'].includes(entity) && !BROAD_ROLES.has(lower(claims.role))) return json({error:'CATALOG_REQUIRES_ORG_ADMIN'},403);
+  const payloadHash = await digest({entity,rows,totalChunks});
+  const receipts = await allRows(env.DB.prepare('SELECT * FROM core_master_bulk_receipts WHERE organization_id=? AND actor_user_id=? AND import_id=? ORDER BY chunk_id').bind(claims.organizationId,claims.sub,importId));
+  const prior = receipts.find(row=>Number(row.chunk_id)===chunkNumber);
+  if (prior) {
+    if (prior.payload_hash !== payloadHash) return json({error:'IDEMPOTENCY_PAYLOAD_MISMATCH'},409);
+    return json({ok:true,entity,importId,chunkId,idempotent:true,revision:prior.applied_revision,summary:JSON.parse(prior.summary_json)});
   }
-
+  if (receipts.some(row=>row.entity!==entity || Number(row.total_chunks)!==totalChunks) || receipts.length !== chunkNumber-1) return json({error:'INVALID_CHUNK_SEQUENCE'},409);
   const state = await env.DB.prepare(
     'SELECT revision,cutover_mode FROM core_sync_state WHERE organization_id=? LIMIT 1',
   ).bind(claims.organizationId).first();
   if (state?.cutover_mode !== 'cloud') return json({ error:'CUTOVER_REQUIRED' },409);
+  const normalized = await previewRows(entity,rows,env,claims);
+  if (normalized.some(row=>!row.valid)) return json({error:'BULK_VALIDATION_FAILED',rows:normalized},422);
+  // Existing shared records must not lose links outside the submitted project.
+  for (const row of normalized) {
+    if (row.action !== 'update' || !['products','outlets'].includes(entity)) continue;
+    const table = entity === 'products' ? 'core_project_products' : 'core_project_outlets';
+    const column = entity === 'products' ? 'product_id' : 'outlet_id';
+    const links = await allRows(env.DB.prepare(`SELECT project_id FROM ${table} WHERE organization_id=? AND ${column}=?`).bind(claims.organizationId,row.canonical.id));
+    if (lower(claims.role)==='manager' && links.some(link=>!(claims.projectIds||[]).includes(link.project_id))) return json({error:'SHARED_MASTER_REQUIRES_ORG_ADMIN'},403);
+    row.canonical.projectIds = [...new Set([...links.map(link=>link.project_id),...row.canonical.projectIds])];
+  }
+  const receipt = {importId,chunkId:chunkNumber,totalChunks,entity,payloadHash,summary:{total:normalized.length,inserts:normalized.filter(row=>row.action==='create').length,updates:normalized.filter(row=>row.action==='update').length}};
 
   const syncBody = {
-    mutationId:`MASTER-BULK-${importId}-${chunkId}`,
+    mutationId:`MASTER-BULK-${await digest({actor:claims.sub,importId,chunkId})}`,
     baseRevision:Number(state?.revision || 0),
     changes:normalized.map(row=>({ entity, op:'upsert', row:row.canonical })),
   };
@@ -346,7 +372,7 @@ async function commit(request, env, claims) {
     },
     body:JSON.stringify(syncBody),
   });
-  const response = await handleOperationalRoute(syncRequest,env,claims,new URL(syncRequest.url));
+  const response = await handleOperationalRoute(syncRequest,env,claims,new URL(syncRequest.url),receipt);
   const result = await response.clone().json().catch(() => ({}));
   if (!response.ok) return json(result,response.status);
 
@@ -367,6 +393,7 @@ async function commit(request, env, claims) {
 
 export async function handleBulkMasterRoute(request, env, claims, url = new URL(request.url)) {
   if (!url.pathname.startsWith('/api/bulk/master')) return null;
+  if (env.CORE_BULK_API_ENABLED !== 'true') return json({error:'CORE_BULK_API_LOCKED'},503);
   if (!claims?.organizationId) return json({ error:'ORGANIZATION_REQUIRED' },409);
   if (!ALLOWED_ROLES.has(lower(claims.role))) return json({ error:'BULK_FORBIDDEN' },403);
   if (url.pathname === '/api/bulk/master/preview' && request.method === 'POST') return preview(request,env,claims);

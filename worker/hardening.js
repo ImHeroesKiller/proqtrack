@@ -216,12 +216,14 @@ export async function healthResponse(env, requestId) {
         'core_auth_devices',
         'core_competitors',
         'core_competitor_products',
-        'core_attendance_points'
+        'core_attendance_points',
+        'core_sync_revision_guards',
+        'core_master_bulk_receipts'
       )
     `).first();
     const orgColumns = await env.DB.prepare(`PRAGMA table_info(core_organizations)`).all();
     const orgColumnNames = new Set((orgColumns?.results || []).map(row => String(row.name)));
-    uatSchemaReady = Number(uatSchema?.count || 0) === 4 && orgColumnNames.has('metadata_json');
+    uatSchemaReady = Number(uatSchema?.count || 0) === 6 && orgColumnNames.has('metadata_json');
   } catch (error) {
     console.error('health_probe_failed', { requestId, error: error?.message || String(error) });
   }
