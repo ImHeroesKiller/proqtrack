@@ -73,7 +73,7 @@ test('canonical live deploy target has no divergent named production namespace',
   assert.equal(json.scripts['db:migrate:production'], 'npm run db:migrate:live');
 });
 
-test('executable runtime is self-hosted and CSP isolates legacy inline handlers', async () => {
+test('executable runtime is self-hosted and CSP can be tightened beyond the P2 baseline', async () => {
   const [html, headers, hardening, exportSource] = await Promise.all([
     read('index.html'), read('_headers'), read('worker/hardening.js'), read('src/types/reports-export.js'),
   ]);
@@ -82,14 +82,13 @@ test('executable runtime is self-hosted and CSP isolates legacy inline handlers'
   assert.doesNotMatch(html, /https:\/\/unpkg\.com/);
   assert.doesNotMatch(html, /<script type="module">/);
   for (const source of [headers, hardening]) {
-    assert.match(source, /script-src-attr 'unsafe-inline'/);
-    assert.match(source, /script-src-elem 'self' https:\/\/cdn\.jsdelivr\.net/);
-    assert.doesNotMatch(source, /script-src 'self' 'unsafe-inline'/);
-    assert.doesNotMatch(source, /https:\/\/unpkg\.com/);
+    assert.match(source, /script-src 'self'/);
+    assert.match(source, /script-src-elem 'self'/);
+    assert.doesNotMatch(source, /script-src-attr 'unsafe-inline'/);
+    assert.doesNotMatch(source, /https:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net)/);
   }
-  assert.match(exportSource, /const EXPORT_LIBS=Object\.freeze/);
-  assert.match(exportSource, /jszip@3\.10\.1/);
-  assert.match(exportSource, /jspdf@2\.5\.2/);
+  assert.match(exportSource, /document-export\.js/);
+  assert.doesNotMatch(exportSource, /jszip@|jspdf@|cdn\.jsdelivr\.net/);
 });
 
 test('legacy compatibility modules are retired from runtime and repository', async () => {
@@ -111,6 +110,6 @@ test('PWA precache is runtime-reachable instead of every source file', async () 
   assert.match(build, /runtimeGraph\("src\/entry\.js"\)/);
   assert.match(build, /localDependencies/);
   assert.match(build, /node_modules\/leaflet\/dist\/leaflet\.js/);
-  assert.match(sw, /proqtrack-v12\.7/);
+  assert.match(sw, /proqtrack-v12\.8/);
   assert.match(sw, /\.\/src\/entry\.js/);
 });
