@@ -1,6 +1,6 @@
 # Current Production State
 
-Snapshot kondisi pada **22 September 2026**, setelah PR #46. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
+Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P2. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
 
 ## Baseline
 
@@ -11,9 +11,9 @@ Snapshot kondisi pada **22 September 2026**, setelah PR #46. Perbarui dokumen in
 | D1 live | binding `DB` → `proqtrack-mvp` |
 | R2 live | binding `FILES` → `proqtrack-mvp-files` |
 | Milestone config | `M7` |
-| Service Worker | `proqtrack-v12.5` |
-| Migrasi terakhir | `0023_cloud_leaves_stocks.sql` |
-| Test baseline | 187 passing |
+| Service Worker | `proqtrack-v12.7` |
+| Migrasi terakhir | `0024_p2_operational_cloud_authority.sql` |
+| Test baseline | 204 tests pada suite P2 |
 | Deploy | PR → merge `main` → GitHub Actions |
 
 Fitur bulk master sering disebut M8, tetapi `APP_MILESTONE` dan health masih `M7`. Ubah label hanya jika workflow, health assertion, dokumentasi, dan test diperbarui bersama.
@@ -28,10 +28,11 @@ Collection berikut berasal dari D1 melalui bootstrap/sync:
 - surveyTemplates, surveyResponses
 - competitors, competitorProducts, attendancePoints
 - leaves, stocks
+- priceObservations, competitorIntel, outletProposals
 
 Daftar client di `CLOUD_COLLECTIONS` (`src/lib/cloud-data.js`) dan daftar server di `ENTITY_COLLECTIONS`/`ENTITY_TABLES` (`worker/operations.js`) harus selalu konsisten.
 
-Browser hanya cache/compatibility layer saat organisasi sudah `cutover_mode='cloud'`. `proqtrack_db_v6` adalah key utama; `proqtrack_db_v7` mirror. Approval laporan dan report schedule sudah cloud-authoritative. Template/branding dokumen dan riwayat file export client tetap lokal sebagai presentation/device preference, bukan workflow authority.
+Browser hanya cache/compatibility layer saat organisasi sudah `cutover_mode='cloud'`. `proqtrack_db_v6` adalah key utama; `proqtrack_db_v7` mirror. Metadata `fieldPhotos` dihydrate dari evidence API/R2 authority dan tidak dikirim ulang melalui core sync. Approval laporan dan report schedule cloud-authoritative. Template/branding dokumen dan riwayat file export client tetap lokal sebagai presentation/device preference, bukan workflow authority.
 
 ## Dataset DEMO
 
@@ -58,11 +59,11 @@ UAT production menemukan tambahan masalah provisioning/login superadmin, stale t
 
 ## Risiko/temuan yang masih perlu diperhatikan
 
-1. Full multi-role UAT perlu diulang setelah migrasi `0023`.
-2. Offline conflict recovery perlu diuji dengan dua device.
-3. Template/branding dokumen dan riwayat file export client bersifat lokal by design; approval dan jadwal laporan sudah server-authoritative.
-4. Leaflet CDN adalah dependency eksternal runtime.
-5. Named environment berbeda dari target workflow live; salah `--env` dapat memakai database lain.
+1. Full multi-role UAT perlu diulang setelah migrasi `0024`, khususnya Price Observation, Competitor Intel, Outlet Proposal, dan evidence photo lintas perangkat.
+2. Conflict dua perangkat sekarang fail-closed dan snapshot lokal ditahan; UX untuk review/merge eksplisit masih menjadi enhancement berikutnya.
+3. Template/branding dokumen dan riwayat file export client bersifat lokal by design.
+4. Export XLSX/DOCX/PDF/ZIP masih lazy-load library exact-version dari jsDelivr; runtime aplikasi utama dan Leaflet sudah self-hosted.
+5. Inline event attributes legacy masih memerlukan `script-src-attr 'unsafe-inline'`; executable script element tidak lagi mendapat `unsafe-inline`.
 6. PR #36 masih draft/divergen dan tidak boleh di-merge.
 7. Technical logs boleh ada di console, tetapi toast/modal tidak boleh menyebut D1, R2, Worker, Cloudflare, GitHub, schema, atau stack trace.
 
@@ -78,7 +79,7 @@ UAT production menemukan tambahan masalah provisioning/login superadmin, stale t
 
 Production browser startup sekarang memakai jalur eksplisit:
 
-`index.html` → `assets/logo.js` (branding only) → `src/bootstrap.js` → runtime modules → `src/app.js`.
+`index.html` → `src/entry.js` → `assets/logo.js` (branding only) + `src/bootstrap.js` → runtime modules → `src/app.js`.
 
 Baseline P0:
 - `src/bootstrap.js` adalah single source of truth untuk browser runtime graph.
@@ -86,7 +87,7 @@ Baseline P0:
 - `src/m4-bootstrap.js` tetap memasang offline engine, evidence queue, offline login, dan registrasi service worker.
 - Report core, Phase 4 report extensions, serta M6 client dimuat dari bootstrap yang sama.
 - `window.__PROQTRACK_BOOT__` menyediakan status diagnostik `loading|ready|degraded` tanpa menampilkan istilah teknis ke UI.
-- PWA cache baseline dinaikkan ke `proqtrack-v12.6` agar client lama mengambil entry graph baru.
+- PWA cache baseline saat ini `proqtrack-v12.7`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
 - `assets/logo.js` tidak boleh lagi menjadi tempat import side-effect aplikasi.
 
 Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
@@ -103,3 +104,17 @@ Enam temuan P1 audit ditutup pada baseline ini:
 6. Approval dan schedule report memakai M6 cloud API; state lokal hanya untuk presentation preference dan client export history.
 
 Regression coverage berada di `tests/p1-hardening.test.mjs`. Baseline test setelah hardening: 196 PASS / 0 FAIL.
+
+## P2 hardening baseline — 23 September 2026
+
+Enam temuan P2 ditutup pada baseline ini:
+
+1. `priceObservations`, `competitorIntel`, dan `outletProposals` menjadi cloud-authoritative melalui migrasi `0024`; evidence photo metadata dihydrate dari evidence authority.
+2. Revision conflict tidak lagi auto-replay whole-device snapshot. Server state dihydrate dan snapshot lokal ditahan untuk review eksplisit.
+3. Konfigurasi default Wrangler adalah satu-satunya target live; named `production` yang menunjuk resource berbeda dihapus.
+4. Leaflet self-hosted, inline module bootstrap dipindah ke `src/entry.js`, dan CSP memisahkan executable scripts dari legacy event attributes.
+5. Modul compatibility/UAT/report yang tidak direferensikan dihapus; service-worker registration hanya dari M4 bootstrap.
+6. Build membuat precache dari runtime dependency graph, bukan seluruh source tree; fallback observer cache lokal turun dari 1 detik menjadi 5 detik.
+
+Regression guard berada di `tests/p2-hardening.test.mjs`.
+
