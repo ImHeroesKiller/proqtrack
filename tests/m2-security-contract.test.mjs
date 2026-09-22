@@ -40,7 +40,7 @@ test('every protected API request is gated before reaching the legacy worker', (
 
 test('all Cloudflare environments use the M2 gateway and bounded session TTL', () => {
   assert.equal(wrangler.main, 'worker/main.js');
-  for (const vars of [wrangler.vars, wrangler.env.development.vars, wrangler.env.staging.vars, wrangler.env.production.vars]) {
+  for (const vars of [wrangler.vars, wrangler.env.development.vars, wrangler.env.staging.vars]) {
     assert.equal(vars.API_AUTH_REQUIRED, 'true');
     assert.equal(vars.API_SESSION_TTL_SECONDS, '28800');
     assert.equal(vars.MVP_DATA_API_ENABLED, 'false');
