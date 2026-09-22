@@ -2257,9 +2257,9 @@ window.FT.deleteProductConfirm = function(id) {
 
 // ===== Stocks Page (Manager) =====
 function renderStocks() {
-  const stocks = getStocks();
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const stocks = getStocks().filter(s => productMap[s.productId] && outletMap[s.outletId]);
   const lowStocks = stocks.filter(s => s.quantity <= s.minStock);
 
   return `
@@ -2459,8 +2459,8 @@ window.FT.filterAttendance = function() {
 
 // ===== Leaves Manager Page =====
 function renderLeavesManager() {
-  const leaves = getLeaves().sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const leaves = getLeaves().filter(l => empMap[l.employeeId]).sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
   const pending = leaves.filter(l => l.status === 'pending');
   return `
