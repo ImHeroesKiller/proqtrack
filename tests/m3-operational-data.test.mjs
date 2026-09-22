@@ -13,7 +13,7 @@ const wrangler = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.met
 const main = readFileSync(new URL('../worker/main.js', import.meta.url), 'utf8');
 const bridge = readFileSync(new URL('../src/lib/cloud-data.js', import.meta.url), 'utf8');
 const cutover = readFileSync(new URL('../src/cloud-cutover.js', import.meta.url), 'utf8');
-const logo = readFileSync(new URL('../assets/logo.js', import.meta.url), 'utf8');
+const runtimeBootstrap = readFileSync(new URL('../src/bootstrap.js', import.meta.url), 'utf8');
 
 function legacyFixture() {
   return {
@@ -131,5 +131,5 @@ test('browser bridge performs bootstrap/import/write-through sync with revision 
   assert.match(cutover, /establishCloudSession/);
   assert.match(cutover, /bootstrapOperationalData/);
   assert.match(cutover, /applyRemoteDataToLocal/);
-  assert.match(logo, /cloud-cutover\.js/);
+  assert.match(runtimeBootstrap, /cloud-cutover\.js/);
 });

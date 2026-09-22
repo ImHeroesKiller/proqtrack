@@ -30,6 +30,10 @@ function installStatusBridge() {
 
 installStatusBridge();
 
+if (typeof window !== 'undefined') {
+  window.__PROQTRACK_M4_BOOTSTRAP_LOADED__ = true;
+}
+
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(error => {
     console.warn('m4_service_worker_register_failed', error?.message || error);

@@ -135,3 +135,18 @@ Jangan commit `dist/`, `.wrangler/`, database lokal, token, atau recovery artifa
 4. Tambahkan test conflict dua device/offline recovery.
 5. Self-host dependency CDN bila reliability diperlukan.
 6. Rapikan label M7/M8 setelah stabil tanpa mengubah resource live.
+
+## Runtime bootstrap rule
+
+Runtime production wajib memiliki satu entry graph yang eksplisit.
+
+1. `index.html` hanya memuat branding dan `src/bootstrap.js`.
+2. `assets/logo.js` hanya untuk asset/stylesheet/manifest/theme registration. Jangan menambahkan import feature, auth, sync, reports, atau offline ke file ini.
+3. Semua module side-effect browser ditambahkan melalui `src/bootstrap.js` dengan urutan yang disengaja.
+4. Pertahankan urutan kompatibilitas utama: extension/report modules → `cloud-cutover.js` → `m4-bootstrap.js` → M6 client → `app.js`. Cloud cutover memasang online handler lebih dulu; offline login kemudian membungkusnya hanya untuk kondisi offline.
+5. Perubahan runtime graph wajib memperbarui `tests/runtime-bootstrap.test.mjs`.
+6. Jangan membuat direct import baru ke `src/app.js` dari `index.html`; gunakan bootstrap.
+7. Setelah perubahan bootstrap/PWA, bump cache version di `sw.js` agar client lama tidak tertahan pada graph sebelumnya.
+
+Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_BOOT__`. Jangan menampilkan nama D1, Cloudflare, GitHub, module path, atau istilah implementasi lain sebagai popup pengguna.
+

@@ -132,8 +132,8 @@ test('revision conflicts are recorded before client replay', async () => {
 });
 
 test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {
-  const [logo, bootstrap] = await Promise.all([read('assets/logo.js'), read('src/m4-bootstrap.js')]);
-  assert.match(logo, /m4-bootstrap\.js/);
+  const [runtimeBootstrap, bootstrap] = await Promise.all([read('src/bootstrap.js'), read('src/m4-bootstrap.js')]);
+  assert.match(runtimeBootstrap, /m4-bootstrap\.js/);
   assert.match(bootstrap, /offline-engine\.js/);
   assert.match(bootstrap, /evidence-client\.js/);
   assert.match(bootstrap, /offline-login\.js/);

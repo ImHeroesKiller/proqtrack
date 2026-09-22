@@ -73,3 +73,21 @@ UAT production menemukan tambahan masalah provisioning/login superadmin, stale t
 - Health, security headers, auth boundary lulus.
 - Login, tenant switch, bootstrap, dan referential checks production lulus.
 - Smoke test seluruh role serta viewport mobile/desktop selesai.
+
+## Runtime bootstrap baseline — 22 September 2026
+
+Production browser startup sekarang memakai jalur eksplisit:
+
+`index.html` → `assets/logo.js` (branding only) → `src/bootstrap.js` → runtime modules → `src/app.js`.
+
+Baseline P0:
+- `src/bootstrap.js` adalah single source of truth untuk browser runtime graph.
+- `src/cloud-cutover.js` tetap memasang cloud-first login/session, bootstrap D1, dan storage write-through.
+- `src/m4-bootstrap.js` tetap memasang offline engine, evidence queue, offline login, dan registrasi service worker.
+- Report core, Phase 4 report extensions, serta M6 client dimuat dari bootstrap yang sama.
+- `window.__PROQTRACK_BOOT__` menyediakan status diagnostik `loading|ready|degraded` tanpa menampilkan istilah teknis ke UI.
+- PWA cache baseline dinaikkan ke `proqtrack-v12.6` agar client lama mengambil entry graph baru.
+- `assets/logo.js` tidak boleh lagi menjadi tempat import side-effect aplikasi.
+
+Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
+
