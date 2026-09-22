@@ -11,7 +11,7 @@ const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(d
 const str = value => String(value ?? '').trim();
 const roleOf = claims => str(claims?.role).toLowerCase();
 const BROAD_ROLES = new Set(['superadmin', 'head', 'admin']);
-const MAX_LIST = 100;
+const MAX_LIST = 250;
 
 function projectAllowed(claims, projectId) {
   return BROAD_ROLES.has(roleOf(claims)) || (Array.isArray(claims?.projectIds) && claims.projectIds.includes(projectId));
@@ -211,13 +211,15 @@ async function handleList(env, claims, url) {
   const organizationId = claims.organizationId;
   const projectId = str(url.searchParams.get('projectId'));
   if (!organizationId || (projectId && !projectAllowed(claims, projectId))) return json({ error: 'EVIDENCE_SCOPE_DENIED' }, 403);
-  const limit = Math.min(MAX_LIST, Math.max(1, Number(url.searchParams.get('limit') || 50)));
+  const limit = Math.min(MAX_LIST, Math.max(1, Number(url.searchParams.get('limit') || 100)));
+  const offset = Math.min(10000, Math.max(0, Number(url.searchParams.get('offset') || 0)));
   const rows = projectId
-    ? await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND project_id=? AND storage_status='ready' ORDER BY created_at DESC LIMIT ?").bind(organizationId, projectId, limit).all()
-    : await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND storage_status='ready' ORDER BY created_at DESC LIMIT ?").bind(organizationId, limit).all();
+    ? await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND project_id=? AND storage_status='ready' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?").bind(organizationId, projectId, limit, offset).all()
+    : await env.DB.prepare("SELECT * FROM core_field_evidence WHERE organization_id=? AND storage_status='ready' ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?").bind(organizationId, limit, offset).all();
+  const raw = rows?.results || [];
   const visible = [];
-  for (const row of rows?.results || []) if (await authorizeExisting(env, claims, row)) visible.push(metadataRow(row));
-  return json({ ok: true, evidence: visible });
+  for (const row of raw) if (await authorizeExisting(env, claims, row)) visible.push(metadataRow(row));
+  return json({ ok: true, evidence: visible, nextOffset: raw.length === limit ? offset + limit : null });
 }
 
 async function handleRead(env, claims, evidenceId, metadataOnly = false) {
