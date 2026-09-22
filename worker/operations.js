@@ -278,6 +278,25 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return ['pending','approved','rejected'].includes(nextStatus);
   }
 
+  if (entity === 'outletProposals') {
+    if (['approved','rejected'].includes(str(existing.status))) return false;
+    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['submittedBy','employeeId','submitted_by'], ['submitted_by','employeeId','submittedBy'])) return false;
+    if (!unchangedIfProvided(row, existing, ['submittedAt','submitted_at'], ['submitted_at','submittedAt'])) return false;
+    if (role === 'employee') {
+      return unchangedIfProvided(row, existing, ['status'], ['status'])
+        && unchangedIfProvided(row, existing, ['supervisorStatus','supervisor_status'], ['supervisor_status','supervisorStatus'])
+        && unchangedIfProvided(row, existing, ['managerStatus','manager_status'], ['manager_status','managerStatus']);
+    }
+    if (role === 'supervisor') {
+      return unchangedIfProvided(row, existing, ['managerStatus','manager_status'], ['manager_status','managerStatus']);
+    }
+    if (role === 'manager') {
+      return unchangedIfProvided(row, existing, ['supervisorStatus','supervisor_status'], ['supervisor_status','supervisorStatus']);
+    }
+    return false;
+  }
+
   return true;
 }
 
@@ -312,7 +331,7 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
   if (BROAD_ROLES.has(role)) return true;
   if (!operationalTransitionAllowed(claims, entity, change, context)) return false;
   const projectId = str(row.projectId || row.project_id || context.existing?.project_id || context.existing?.projectId);
-  const employeeId = str(row.employeeId || row.updatedBy || row.employee_id || context.existing?.employee_id || context.existing?.updated_by || context.existing?.employeeId);
+  const employeeId = str(row.employeeId || row.recordedBy || row.submittedBy || row.updatedBy || row.employee_id || row.recorded_by || row.submitted_by || context.existing?.employee_id || context.existing?.recorded_by || context.existing?.submitted_by || context.existing?.employeeId);
   if (entity === 'leaves' && ['manager','supervisor','employee'].includes(role)) {
     if (!employeeId || !context.accessibleEmployeeIds?.has(employeeId)) return false;
     if (role === 'employee' && context.existing) {
@@ -375,7 +394,16 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'stocks': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), quantity: Math.max(0, Number(row.quantity) || 0), minStock: Math.max(0, Number(row.minStock) || 0), updatedBy: nullable(str(row.updatedBy)), lastUpdated: str(row.lastUpdated || new Date().toISOString().slice(0,10)) };
     case 'priceObservations': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), observedPrice: Math.max(0, Number(row.observedPrice) || 0), discountPercent: Math.min(100, Math.max(0, Number(row.discountPercent) || 0)), discountAmount: Math.max(0, Number(row.discountAmount) || 0), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
     case 'competitorIntel': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: nullable(str(row.productId)), competitorProductId: nullable(str(row.competitorProductId)), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), ourPrice: Math.max(0, Number(row.ourPrice) || 0), competitorPrice: Math.max(0, Number(row.competitorPrice) || 0), shelfShare: Math.min(100, Math.max(0, Number(row.shelfShare) || 0)), visibility: safeStatus(row.visibility, ['high','medium','low'], 'medium'), hasPromo: !!row.hasPromo, promoType: str(row.promoType), promoNotes: str(row.promoNotes || row.promoNote), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
-    case 'outletProposals': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId || row.submittedBy), submittedBy: str(row.employeeId || row.submittedBy), name: str(row.name || 'Outlet'), address: str(row.address), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), supervisorStatus: safeStatus(row.supervisorStatus, ['pending','approved','rejected'], 'pending'), managerStatus: safeStatus(row.managerStatus, ['pending','approved','rejected'], 'pending'), submittedAt: str(row.submittedAt || new Date().toISOString()) };
+    case 'outletProposals': {
+      const supervisorStatus = safeStatus(row.supervisorStatus, ['pending','approved','rejected'], 'pending');
+      const managerStatus = safeStatus(row.managerStatus, ['pending','approved','rejected'], 'pending');
+      const status = supervisorStatus === 'rejected' || managerStatus === 'rejected'
+        ? 'rejected'
+        : supervisorStatus === 'approved' && managerStatus === 'approved'
+          ? 'approved'
+          : 'pending';
+      return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId || row.submittedBy), submittedBy: str(row.employeeId || row.submittedBy), name: str(row.name || 'Outlet'), address: str(row.address), status, supervisorStatus, managerStatus, submittedAt: str(row.submittedAt || new Date().toISOString()) };
+    }
     default: return base;
   }
 }
