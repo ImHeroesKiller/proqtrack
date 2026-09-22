@@ -12,7 +12,7 @@ export async function handleM4Sync(request, env, claims, url = new URL(request.u
       await env.DB.prepare(`
         INSERT INTO core_sync_conflicts(
           id,organization_id,mutation_id,actor_user_id,client_revision,server_revision,resolution,details_json
-        ) VALUES(?,?,?,?,?,?,'client_replay',?)
+        ) VALUES(?,?,?,?,?,?,'manual',?)
       `).bind(
         crypto.randomUUID(),
         claims.organizationId,
