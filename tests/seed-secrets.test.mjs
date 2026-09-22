@@ -37,8 +37,8 @@ test('seed accounts store hashes only', () => {
   }
 });
 
-test('UAT seed accounts store hashes only and bump to v5', () => {
-  assert.equal(UAT_SEED_VERSION, 5);
+test('UAT seed accounts store hashes only and bump to v7', () => {
+  assert.equal(UAT_SEED_VERSION, 7);
   const accounts = buildUatDatabase().accounts;
   assert.ok(accounts.some(a => a.role === 'superadmin'));
   for (const account of accounts) {
