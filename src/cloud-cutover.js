@@ -201,7 +201,7 @@ function install() {
     const status = event.detail?.status;
     if (status === 'conflict' && lastNotice !== 'conflict') {
       lastNotice = 'conflict';
-      window.showToast?.('Data berubah di perangkat lain. Aplikasi sedang memuat versi terbaru.', 'error');
+      window.showToast?.('Data berubah di perangkat lain. Versi terbaru dimuat dan perubahan lokal tetap diamankan.', 'error');
     } else if (status === 'error' && lastNotice !== 'error') {
       lastNotice = 'error';
       window.showToast?.('Pembaruan data tertunda. Perubahan tetap aman di perangkat.', 'error');
