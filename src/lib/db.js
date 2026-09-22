@@ -2072,6 +2072,15 @@ export function getCompetitor(id) {
   return getCompetitors().find(c => c.id === id);
 }
 
+function sanitizeCompetitorInput(data = {}) {
+  const next = { ...data };
+  for (const key of ['name','category','notes','sku','unit']) {
+    if (key in next) next[key] = sanitizePlainText(next[key]);
+  }
+  if ('color' in next && !/^#[0-9a-f]{6}$/i.test(String(next.color || ''))) next.color = '#64748b';
+  return next;
+}
+
 export function createCompetitor(data) {
   assertOrgAdmin();
   const c = {
@@ -2080,7 +2089,7 @@ export function createCompetitor(data) {
     color: '#64748b',
     category: '',
     notes: '',
-    ...withOrg(data),
+    ...withOrg(sanitizeCompetitorInput(data)),
   };
   getDB().competitors.push(c);
   saveDB();
@@ -2092,7 +2101,7 @@ export function updateCompetitor(id, data) {
   const db = getDB();
   const idx = db.competitors.findIndex(c => c.id === id);
   if (idx === -1) return null;
-  db.competitors[idx] = { ...db.competitors[idx], ...data };
+  db.competitors[idx] = { ...db.competitors[idx], ...sanitizeCompetitorInput(data) };
   saveDB();
   return db.competitors[idx];
 }
@@ -2121,7 +2130,7 @@ export function createCompetitorProduct(data) {
     unit: 'pcs',
     typicalPrice: 0,
     sku: '',
-    ...withOrg(data),
+    ...withOrg(sanitizeCompetitorInput(data)),
   };
   if (p.typicalPrice != null) p.typicalPrice = Number(p.typicalPrice);
   getDB().competitorProducts.push(p);
@@ -2134,7 +2143,7 @@ export function updateCompetitorProduct(id, data) {
   const db = getDB();
   const idx = db.competitorProducts.findIndex(p => p.id === id);
   if (idx === -1) return null;
-  const next = { ...db.competitorProducts[idx], ...data };
+  const next = { ...db.competitorProducts[idx], ...sanitizeCompetitorInput(data) };
   if (next.typicalPrice != null) next.typicalPrice = Number(next.typicalPrice);
   db.competitorProducts[idx] = next;
   saveDB();
