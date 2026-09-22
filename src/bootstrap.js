@@ -3,7 +3,7 @@
 // Branding stays in assets/logo.js; application/runtime side effects live here.
 
 const boot = {
-  version: 'p2-runtime-2026-09-23',
+  version: 'p3-runtime-2026-09-23',
   stage: 'loading',
   modules: [],
   checks: {},
@@ -21,6 +21,7 @@ async function load(path, name) {
 // Preserve the proven legacy evaluation order while making it explicit.
 // Several modules install their FT hooks on the next task because app.js
 // intentionally loads after compatibility/runtime extensions.
+await load('./lib/ui-events.js', 'ui-events');
 await load('./phase0-data.js', 'phase0-data');
 await load('./data/uat-seed-v1.js', 'uat-seed');
 await load('./phase0-ui.js', 'phase0-ui');
@@ -47,6 +48,7 @@ await load('./app.js', 'app');
 await new Promise(resolve => setTimeout(resolve, 0));
 
 const checks = Object.freeze({
+  uiEvents: Boolean(window.ProQUIEvents),
   app: Boolean(window.FT?.state && window.FT?.handleLogin),
   cloudCutover: Boolean(window.FT?.__m3CloudCutoverInstalled),
   offlineLogin: Boolean(window.FT?.__m4OfflineLoginInstalled),
