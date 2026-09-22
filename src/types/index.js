@@ -532,7 +532,7 @@ function employee() {
 function role() {
   const a = account(),
     e = employee();
-  if (a?.role === "superadmin" || a?.role === "head") return "manager";
+  if (a?.role === "superadmin" || a?.role === "head" || a?.role === "admin") return "manager";
   if (a?.role === "manager") return "project-manager";
   if (
     a?.role === "supervisor" ||
@@ -574,6 +574,12 @@ function projectModules() {
 }
 function canManage() {
   return role() === "manager" || role() === "project-manager";
+}
+function canManageClients() {
+  return ["superadmin", "head", "admin"].includes(account()?.role);
+}
+function canCreateProject() {
+  return ["superadmin", "head", "admin"].includes(account()?.role);
 }
 function scopedEmployees(projectId = null) {
   const db = viewDB(),
@@ -690,7 +696,7 @@ function renderClients() {
       ["Aktif", rows.filter((x) => x.status === "active").length],
       ["Prospect", rows.filter((x) => x.status === "prospect").length],
       ["Project Terhubung", (db.projects || []).length],
-    ])}<div class="card"><div class="pm-toolbar"><button class="btn btn-secondary" onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" onclick="PM.openClient()">${svg("plus")} Tambah Klien</button><input class="input" placeholder="Cari klien, PIC, kota" oninput="PM.filterRows('clientRows',this.value)"><select class="select" onchange="PM.filterStatus('clientRows',this.value)"><option value="">Semua status</option><option>active</option><option>prospect</option><option>inactive</option></select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${canManageClients() ? `<button class="btn btn-secondary" onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}<input class="input" placeholder="Cari klien, PIC, kota" oninput="PM.filterRows('clientRows',this.value)"><select class="select" onchange="PM.filterStatus('clientRows',this.value)"><option value="">Semua status</option><option>active</option><option>prospect</option><option>inactive</option></select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows
       .map(
         (c) =>
           `<tr data-status="${esc(c.status)}" data-search="${esc(`${c.name} ${c.picName} ${c.city}`.toLowerCase())}"><td><div class="pm-client-cell"><span class="pm-client-logo">${esc(
@@ -699,7 +705,7 @@ function renderClients() {
               .map((x) => x[0])
               .slice(0, 2)
               .join(""),
-          )}</span><div><strong>${esc(c.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.legalName || "")}</div></div></div></td><td>${esc(c.industry)}</td><td><strong>${esc(c.picName || "-")}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.picRole || "")}</div></td><td>${esc([c.city, c.province].filter(Boolean).join(", "))}</td><td>${(db.projects || []).filter((p) => p.clientId === c.id).length}</td><td>${statusBadge(c.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" onclick="PM.viewClient('${c.id}')">${svg("eye")} Detail</button><button class="btn btn-secondary btn-sm" onclick="PM.openClient('${c.id}')">${svg("edit")} Edit</button></div></td></tr>`,
+          )}</span><div><strong>${esc(c.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.legalName || "")}</div></div></div></td><td>${esc(c.industry)}</td><td><strong>${esc(c.picName || "-")}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.picRole || "")}</div></td><td>${esc([c.city, c.province].filter(Boolean).join(", "))}</td><td>${(db.projects || []).filter((p) => p.clientId === c.id).length}</td><td>${statusBadge(c.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" onclick="PM.viewClient('${c.id}')">${svg("eye")} Detail</button>${canManageClients() ? `<button class="btn btn-secondary btn-sm" onclick="PM.openClient('${c.id}')">${svg("edit")} Edit</button>` : ""}</div></td></tr>`,
       )
       .join("")}</tbody></table></div></div>`,
   );
@@ -730,7 +736,7 @@ function renderProjects(readOnly = false) {
             x.status === "active" && rows.some((p) => p.id === x.projectId),
         ).length,
       ],
-    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" onclick="BulkMaster.open('projects')">Bulk Upload</button><button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}<input class="input" placeholder="Cari project, kode, klien" oninput="PM.filterRows('projectRows',this.value)"><select class="select" onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
       .map((p) => {
         const c = cm[p.clientId] || {},
           ass = (db.projectAssignments || []).filter(
@@ -939,7 +945,7 @@ window.PM = {
       );
   },
   openClient(id = "") {
-    if (!canManage()) return;
+    if (!canManageClients()) return;
     const db = viewDB(),
       c = (db.clients || []).find((x) => x.id === id) || {},
       pics = c.additionalPics || [];
@@ -950,7 +956,7 @@ window.PM = {
   },
   saveClient(e, id) {
     e.preventDefault();
-    if (!canManage()) return;
+    if (!canManageClients()) return;
     const db = viewDB(),
       fd = new FormData(e.target),
       rows = db.clients || [],
@@ -1058,7 +1064,7 @@ window.PM = {
     );
   },
   openProject(id = "") {
-    if (!canManage()) return;
+    if (!canManage() || (!id && !canCreateProject())) return;
     const db = viewDB(),
       p = (db.projects || []).find((x) => x.id === id) || {};
     if (!db.clients?.length) {
@@ -1072,7 +1078,7 @@ window.PM = {
   },
   saveProject(e, id) {
     e.preventDefault();
-    if (!canManage()) return;
+    if (!canManage() || (!id && !canCreateProject())) return;
     const db = viewDB(),
       fd = new FormData(e.target),
       rows = db.projects || [],
