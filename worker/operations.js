@@ -219,8 +219,15 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
 function normalizeRow(entity, row, organizationId, extras = {}) {
   const base = { ...row, organizationId };
   switch (entity) {
-    case 'clients': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Client'), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
-    case 'projects': return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name || 'Project'), status: ({ planning: 'draft', completed: 'closed', cancelled: 'closed' }[str(row.status)] || safeStatus(row.status, ['draft','active','paused','closed','archived'], 'active')) };
+    case 'clients': {
+      const uiStatus = safeStatus(row.status, ['active','inactive','archived','prospect'], 'active');
+      return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Client'), uiStatus, status: uiStatus === 'prospect' ? 'active' : uiStatus };
+    }
+    case 'projects': {
+      const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
+      const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
+      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name || 'Project'), uiStatus, status };
+    }
     case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName || 'Employee'), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
     case 'projectAssignments': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), status: ({ removed: 'ended', assigned: 'active' }[str(row.status)] || safeStatus(row.status, ['active','inactive','ended'], 'active')) };
     case 'outlets': return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.outletNumber || row.code || row.id), name: str(row.name || 'Outlet'), projectIds: unique(row.projectIds?.length ? row.projectIds : (row.projectId ? [row.projectId] : [])), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
@@ -344,8 +351,8 @@ function decodeRows(entity, rows, relationMap = new Map()) {
     const meta = parseMetadata(dbRow.metadata_json);
     const common = { ...meta, id: dbRow.id || meta.id, organizationId: dbRow.organization_id || meta.organizationId, rowVersion: Number(dbRow.row_version || meta.rowVersion || 1) };
     switch (entity) {
-      case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: dbRow.status };
-      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
+      case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status };
+      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
       case 'employees': return { ...common, authUserId: dbRow.auth_user_id || meta.authUserId, employeeCode: dbRow.employee_code, name: dbRow.full_name, email: dbRow.email, phone: dbRow.phone, status: dbRow.employment_status };
       case 'projectAssignments': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, supervisorUserId: dbRow.supervisor_user_id, positionName: dbRow.position_name, status: dbRow.status, startDate: dbRow.starts_on, endDate: dbRow.ends_on };
       case 'outlets': return { ...common, clientId: dbRow.client_id, outletNumber: dbRow.code, code: dbRow.code, name: dbRow.name, address: dbRow.address, lat: dbRow.latitude, lng: dbRow.longitude, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
@@ -484,7 +491,7 @@ async function handleImport(request, env, claims) {
 
   const { statements: authStatements, userIdByEmployee } = await importAuthStatements(env, canonical, claims, organizationId);
   const statements = [...authStatements];
-  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','visits','attendance','productSales','surveyTemplates','surveyResponses'];
+  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','surveyTemplates','surveyResponses'];
   for (const entity of order) {
     for (const row of canonical[entity] || []) {
       const extras = entity === 'employees' ? { authUserId: userIdByEmployee.get(str(row.id)) || null } : {};
