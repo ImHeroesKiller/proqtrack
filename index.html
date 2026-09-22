@@ -442,8 +442,7 @@
   obs.observe(document.documentElement, { childList: true, subtree: true });
   applyBrand();
 
-  await import('./src/app.js');
-  await import('./src/types/index.js');
+  await import('./src/bootstrap.js');
   applyBrand();
 </script>
 </body>
