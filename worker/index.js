@@ -119,7 +119,17 @@ export async function hashPassword(plain) {
 
 export function passwordNeedsUpgrade(stored) {
   const current = String(stored ?? '');
-  if (current.startsWith('sha256
+  if (current.startsWith('sha256$')) return true;
+  if (!current.startsWith('pbkdf2$sha256$')) return true;
+  const [, , iterRaw] = current.split('$');
+  const iterations = Number(iterRaw);
+  return !Number.isFinite(iterations) || iterations < PASSWORD_KDF_ITERATIONS;
+}
+
+export async function verifyPassword(stored, plain) {
+  const current = String(stored ?? '');
+  const incoming = String(plain ?? '');
+  if (!current || !incoming) return false;
   if (current.startsWith('pbkdf2$sha256$')) {
     const [, , iterRaw, saltPart, hashPart] = current.split('$');
     const iterations = Number(iterRaw);
