@@ -3156,7 +3156,7 @@ function renderCompetitors() {
                           <td style="font-family:monospace;font-size:11px;color:var(--gray-500);">${esc(p.sku||'—')}</td>
                           <td style="font-weight:600;">${esc(p.name)}</td>
                           <td>${formatCurrency(p.typicalPrice)}</td>
-                          <td>${p.unit}</td>
+                          <td>${esc(p.unit)}</td>
                           <td>${statusBadge(p.status)}</td>
                           <td style="display:${isOrgAdmin() ? 'table-cell' : 'none'};">
                             <button class="btn btn-secondary btn-sm" onclick="FT.editCompetitorProduct(${jsArg(p.id)})">Edit</button>
@@ -3208,7 +3208,7 @@ window.FT.editCompetitor = function(id) {
   const c = getCompetitors().find(x => x.id === id);
   if (!c) return;
   openModal('Edit Kompetitor', `
-    <form onsubmit="FT.updateCompetitorForm(event,'${id}')">
+    <form onsubmit="FT.updateCompetitorForm(event,${jsArg(id)})">
       <div class="form-group"><label class="label">Nama Merek</label><input class="input" name="name" value="${esc(c.name)}" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(c.category||'')}"></div>
@@ -3220,7 +3220,7 @@ window.FT.editCompetitor = function(id) {
           <option value="inactive" ${c.status==='inactive'?'selected':''}>Inactive</option>
         </select>
       </div>
-      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${c.notes||''}</textarea></div>
+      <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes||'')}</textarea></div>
       <div class="modal-footer" style="padding:0;margin-top:8px;">
         <button type="button" class="btn btn-secondary" onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan</button>
@@ -3282,7 +3282,7 @@ window.FT.editCompetitorProduct = function(id) {
   if (!p) return;
   const competitors = getCompetitors();
   openModal('Edit Produk Kompetitor', `
-    <form onsubmit="FT.updateCompetitorProductForm(event,'${id}')">
+    <form onsubmit="FT.updateCompetitorProductForm(event,${jsArg(id)})">
       <div class="form-group"><label class="label">Merek</label>
         <select class="select" name="competitorId" required>
           ${competitors.map(c => `<option value="${esc(c.id)}" ${c.id===p.competitorId?'selected':''}>${esc(c.name)}</option>`).join('')}
@@ -3291,7 +3291,7 @@ window.FT.editCompetitorProduct = function(id) {
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(p.name)}" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(p.sku||'')}"></div>
-        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="${p.unit}" required></div>
+        <div class="form-group"><label class="label">Unit</label><input class="input" name="unit" value="${esc(p.unit)}" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Harga Tipikal</label><input class="input" type="number" name="typicalPrice" value="${p.typicalPrice}" required></div>
