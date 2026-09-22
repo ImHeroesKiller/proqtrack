@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { dispatchUiHandler, splitUiArgs } from '../src/lib/ui-events.js';
+import { dispatchUiHandler, splitUiArgs, splitUiStatements } from '../src/lib/ui-events.js';
 import { createZipBuilder, createPdfBlob } from '../src/lib/document-export.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -44,6 +44,10 @@ test('delegated UI dispatcher executes only the supported grammar without eval',
     Reports: {
       customAddCol(value) { calls.push(['col', value]); },
     },
+    PM: {
+      toggleAssignment(value) { calls.push(['toggle', value]); },
+      openAssign(value) { calls.push(['assign', value]); },
+    },
     location: { hash: '' },
   };
   let submitted = false;
@@ -71,6 +75,9 @@ test('delegated UI dispatcher executes only the supported grammar without eval',
   assert.equal(submitted, true);
   assert.equal(prevented, true);
   assert.deepEqual(splitUiArgs("event,'abc',this.value,true,null"), ['event', "'abc'", 'this.value', 'true', 'null']);
+  assert.deepEqual(splitUiStatements("PM.toggleAssignment('A1');PM.openAssign('P1')"), ["PM.toggleAssignment('A1')", "PM.openAssign('P1')"]);
+  dispatchUiHandler("PM.toggleAssignment('A1');PM.openAssign('P1')", element, event, root);
+  assert.deepEqual(calls.slice(-2), [['toggle', 'A1'], ['assign', 'P1']]);
 });
 
 test('report packaging is browser-native and does not load executable CDN libraries', async () => {
@@ -127,7 +134,7 @@ test('P3 runtime and PWA baseline wires maintenance modules explicitly', async (
   assert.match(bootstrap, /p3-runtime-2026-09-23/);
   assert.match(bootstrap, /\.\/lib\/ui-events\.js/);
   assert.match(bootstrap, /uiEvents: Boolean\(window\.ProQUIEvents\)/);
-  assert.match(sw, /proqtrack-v12\.9/);
+  assert.match(sw, /proqtrack-v12\.10/);
   assert.match(sw, /\.\/src\/lib\/ui-events\.js/);
   assert.match(sw, /\.\/src\/lib\/document-export\.js/);
 });
