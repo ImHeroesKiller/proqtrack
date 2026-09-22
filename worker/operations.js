@@ -258,8 +258,13 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
   if (entity === 'leaves') {
     if (finalLeaveStatuses.has(str(existing.status))) return false;
     if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['submittedAt','submitted_at'], ['submitted_at','submittedAt'])) return false;
     const nextStatus = str(row.status || existing.status || 'pending');
-    if (role === 'employee') return nextStatus === 'pending';
+    if (role === 'employee') {
+      if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
+      if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
+      return nextStatus === 'pending';
+    }
     return ['pending','approved','rejected'].includes(nextStatus);
   }
 
