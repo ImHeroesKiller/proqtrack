@@ -48,5 +48,5 @@ test('browser refresh restores the authoritative bearer session before returning
 
 test('refresh hotfix forces a new service-worker generation', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v11/);
+  assert.match(sw, /proqtrack-v12/);
 });
