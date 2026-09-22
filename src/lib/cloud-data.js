@@ -17,6 +17,8 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'competitors',
   'competitorProducts',
   'attendancePoints',
+  'leaves',
+  'stocks',
 ]);
 
 const DB_KEY = 'proqtrack_db_v6';

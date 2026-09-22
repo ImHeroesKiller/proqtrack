@@ -1906,7 +1906,9 @@ export function deleteProduct(id) {
 }
 
 export function getLeaves() {
-  const rows = scoped(getDB().leaves);
+  const db = getDB();
+  const employeeIds = new Set(scoped(db.employees).map(row => row.id));
+  const rows = scoped(db.leaves).filter(row => employeeIds.has(row.employeeId));
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
@@ -1962,7 +1964,10 @@ export function deleteLeave(id) {
 }
 
 export function getStocks() {
-  return scoped(getDB().stocks);
+  const db = getDB();
+  const outletIds = new Set(scoped(db.outlets).map(row => row.id));
+  const productIds = new Set(scoped(db.products).map(row => row.id));
+  return scoped(db.stocks).filter(row => outletIds.has(row.outletId) && productIds.has(row.productId));
 }
 
 export function getStocksByOutlet(outletId) {

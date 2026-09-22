@@ -36,5 +36,5 @@ test('login page avoids render-blocking font and map resources', async () => {
 
 test('service worker cache is advanced for immediate client refresh', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.4/);
+  assert.match(sw, /proqtrack-v12\.5/);
 });
