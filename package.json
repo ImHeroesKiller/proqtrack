@@ -20,7 +20,7 @@
     "db:migrate:live": "wrangler d1 migrations apply DB --remote"
   },
   "devDependencies": {
-    "wrangler": "^4.123.0",
+    "wrangler": "^4.135.0",
     "leaflet": "1.9.4"
   }
 }
