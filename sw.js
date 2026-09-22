@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v12.6';
+const CACHE = 'proqtrack-v12.7';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -8,6 +8,9 @@ const FALLBACK_SHELL = [
   './assets/logo-dark.svg',
   './assets/logo-light.svg',
   './assets/icon-proqtrack.svg',
+  './assets/vendor/leaflet/leaflet.css',
+  './assets/vendor/leaflet/leaflet.js',
+  './src/entry.js',
   './src/bootstrap.js',
   './src/app.js',
   './src/cloud-cutover.js',
