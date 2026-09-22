@@ -224,7 +224,7 @@ test('a query-string token cannot authenticate any API route', async () => {
 
 test('PBKDF2 hashes verify and plaintext never matches', async () => {
   const hashed = await hashPassword('secret-pass');
-  assert.match(hashed, /^pbkdf2\$sha256\$100000\$/);
+  assert.match(hashed, /^pbkdf2\$sha256\$600000\$/);
   assert.equal(await verifyPassword(hashed, 'secret-pass'), true);
   assert.equal(await verifyPassword(hashed, 'wrong'), false);
   assert.equal(await verifyPassword('secret-pass', 'secret-pass'), false);
