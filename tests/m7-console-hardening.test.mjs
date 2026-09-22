@@ -71,10 +71,18 @@ test('online M7 login is cloud-authoritative and single-flight', async () => {
   assert.match(cutover, /let loginInFlight = false/);
   assert.match(cutover, /if \(loginInFlight\) return/);
   assert.match(cutover, /clearApiToken\(\)/);
+  assert.match(cutover, /localCandidate\?\.role === 'superadmin'/);
+  assert.match(cutover, /\? ''/);
   assert.match(cutover, /if \(!cloudAccount\) \{/);
   assert.match(cutover, /Login server gagal/);
   assert.doesNotMatch(cutover, /sesi lokal sementara dipertahankan/);
   assert.match(cutover, /await logoutCloudSession\(\)\.catch/);
+});
+
+test('stale tenant rejection is surfaced instead of hidden as a generic login failure', async () => {
+  const uploads = await read('src/lib/uploads.js');
+  assert.match(uploads, /data\.error === 'ORGANIZATION_ACCESS_DENIED'/);
+  assert.match(uploads, /Organisasi tersimpan sudah tidak aktif/);
 });
 
 test('successful cloud login refreshes only the hashed offline credential', async () => {
