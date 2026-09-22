@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS core_price_observations (
   FOREIGN KEY (outlet_id, organization_id) REFERENCES core_outlets(id, organization_id) ON DELETE CASCADE,
   FOREIGN KEY (product_id, organization_id) REFERENCES core_products(id, organization_id) ON DELETE CASCADE,
   FOREIGN KEY (employee_id, organization_id) REFERENCES core_employees(id, organization_id) ON DELETE CASCADE,
-  FOREIGN KEY (visit_id, organization_id) REFERENCES core_visits(id, organization_id) ON DELETE SET NULL
+  FOREIGN KEY (visit_id, organization_id) REFERENCES core_visits(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_price_observations_scope
@@ -57,10 +57,10 @@ CREATE TABLE IF NOT EXISTS core_competitor_intel (
   FOREIGN KEY (organization_id) REFERENCES core_organizations(id) ON DELETE CASCADE,
   FOREIGN KEY (project_id, organization_id) REFERENCES core_projects(id, organization_id) ON DELETE CASCADE,
   FOREIGN KEY (outlet_id, organization_id) REFERENCES core_outlets(id, organization_id) ON DELETE CASCADE,
-  FOREIGN KEY (product_id, organization_id) REFERENCES core_products(id, organization_id) ON DELETE SET NULL,
-  FOREIGN KEY (competitor_product_id, organization_id) REFERENCES core_competitor_products(id, organization_id) ON DELETE SET NULL,
+  FOREIGN KEY (product_id, organization_id) REFERENCES core_products(id, organization_id) ON DELETE RESTRICT,
+  FOREIGN KEY (competitor_product_id, organization_id) REFERENCES core_competitor_products(id, organization_id) ON DELETE RESTRICT,
   FOREIGN KEY (employee_id, organization_id) REFERENCES core_employees(id, organization_id) ON DELETE CASCADE,
-  FOREIGN KEY (visit_id, organization_id) REFERENCES core_visits(id, organization_id) ON DELETE SET NULL
+  FOREIGN KEY (visit_id, organization_id) REFERENCES core_visits(id, organization_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX IF NOT EXISTS idx_core_competitor_intel_scope
