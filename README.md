@@ -1,150 +1,78 @@
-# ProQTrack — Field Team Monitoring System
+# ProQTrack
 
-Sistem monitoring lapangan untuk **tim field sales / supervisor** di Indonesia.
+ProQTrack adalah aplikasi operasional field force untuk outsourcing, sales, merchandising, dan audit lapangan. Production berjalan sebagai Cloudflare Worker dengan D1 sebagai sumber data operasional utama dan R2 untuk bukti/file.
 
-- User guide: [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
-- Update 19 Agustus 2026: [docs/UPDATES-2026-08-19.md](docs/UPDATES-2026-08-19.md)
+**Production:** https://proqtrack.arywibowo.workers.dev
 
-Kunjungan outlet, absensi, stok, harga, intel kompetitor, foto bukti, project management, dan dashboard manager — prototype client-side berbasis localStorage.
+**Repository:** https://github.com/ImHeroesKiller/proqtrack
+**Baseline dokumentasi:** 22 September 2026, setelah PR #46
 
-## Fitur
+## Mulai dari sini
 
-- Dashboard & live tracking (Leaflet)
-- Kunjungan outlet (check-in / out)
-- Produk, stok outlet, observasi harga
-- Kompetitor + intel lapangan + jenis promo strategis
-- Foto lapangan (lokasi, produk, rak, kompetitor) — dikompres otomatis
-- Absensi & ijin/cuti
-- **Project Management v7**:
-  - master klien + PIC utama/tambahan
-  - project + kode unik + SoW + periode + target + nilai kontrak
-  - assignment supervisor/sales/viewer
-  - hierarchy supervisor → sales
-  - module flags per project
-  - menu Project Saya, Tim Saya, dan Komparasi Supervisor
-  - tagging `projectId` untuk visit, intel, foto, harga, dan stok baru
-- Role: Superadmin | Head (1 organisasi) | Manager (1 project) | Supervisor | Field Sales
+Developer dan coding agent wajib membaca dokumen root berikut:
 
-## Demo login
+1. [CURRENT_STATE.md](CURRENT_STATE.md) — kondisi production, fitur, audit, dan risiko.
+2. [DEVELOPMENT.md](DEVELOPMENT.md) — arsitektur, data authority, aturan dan batasan.
+3. [SECURITY.md](SECURITY.md) — autentikasi, tenant isolation, secret, dan upload.
+4. [RELEASE.md](RELEASE.md) — testing, migrasi, deployment, UAT, dan rollback.
+5. [AGENTS.md](AGENTS.md) — instruksi wajib untuk coding agent.
 
-Akun prototype lokal (password **tidak** dipublikasikan di repo publik ini):
+Dokumen milestone di `docs/production/` bersifat historis. Jika bertentangan, dokumen root adalah acuan terbaru.
 
-| Role | Email |
-|------|-------|
-| Superadmin | `superadmin@proqtrack.id` |
-| Head (1 org) | `head@proqtrack.id` or `manager@proqtrack.id` |
-| Manager (1 project) | `pm@proqtrack.id` |
-| Supervisor | `rizki.pratama@proqtrack.id` |
-| Field Sales | `budi.santoso@proqtrack.id` |
+## Kondisi singkat
 
-Minta password UAT ke pemilik repo. Setelah `git pull`, reset data demo jika login gagal — seed versi baru memakai hash yang berbeda. Password tidak ditampilkan di halaman login.
+- Production aktif; login cloud, session, multi-organization, dan role enforcement berjalan.
+- Data operasional utama menggunakan D1 dan cache browser untuk performa/offline terbatas.
+- Organisasi `DEMO` memiliki dataset saling terhubung untuk UAT.
+- Bulk master mendukung preview, validasi, chunk idempotent, dan revision guard.
+- Leave dan Outlet Stock cloud-authoritative sejak migrasi `0023`.
+- Service Worker baseline `proqtrack-v12.5`.
+- Automated test baseline: **187 passing**.
 
-## Jalankan lokal
+## Fitur utama
+
+- Organization, Client, Project, Employee, Assignment
+- Outlet, Product, Stock, Product Sales
+- Attendance, Leave, Visit, tracking
+- Survey dan aktivitas field
+- Competitor, Competitor Product, Attendance Point
+- Evidence/foto, reporting, workflow, analytics, audit, export
+- Bulk Employee dan multi-entity master
+- Role: Superadmin, Head/Admin, Manager, Supervisor, Employee
+
+## Menjalankan lokal
+
+Prasyarat: Node.js 22 dan npm.
 
 ```bash
-cd proqtrack
-git pull origin main
+npm ci
+npm test
+npm run build
 python3 -m http.server 8080
-# buka http://localhost:8080
 ```
 
-Butuh static server karena aplikasi memakai ES modules.
+Perintah utama:
 
-## Cara uji Project Management
-
-### Manager
-
-1. Login `manager@proqtrack.id`.
-2. Buka **Project → Klien** untuk tambah/edit klien dan PIC.
-3. Buka **Project → Project** untuk tambah/edit project, SoW, periode, target, dan nilai kontrak.
-4. Buka detail project untuk:
-   - assign/unassign employee
-   - memilih role project
-   - mengatur supervisor pelaporan
-   - mengaktifkan/nonaktifkan modul field
-5. Buka **Project → Assignment** untuk overview seluruh assignment.
-
-### Supervisor
-
-1. Login `rizky.supervisor@proqtrack.id`.
-2. Buka **Project Saya** untuk project read-only.
-3. Buka **Tim Saya** untuk sales dengan `supervisorId` yang sesuai.
-4. Buka **Komparasi Supervisor** untuk metrik agregat pada project yang sama.
-
-### Sales
-
-1. Login `budi.employee@proqtrack.id`.
-2. Buka **Project Saya**.
-3. Menu field mengikuti module flags project aktif yang di-assign.
-4. Saat membuat visit/intel/foto/harga/stok, pilih project bila assignment aktif lebih dari satu.
-
-## Reset data demo
-
-Di console browser:
-
-```js
-FT.resetDB();
-localStorage.removeItem('proqtrack_db_v7');
-location.reload();
+```bash
+npm run check
+npm run db:migrate:local
 ```
 
-## Cloudflare MVP foundation
+Jangan menjalankan migrasi remote atau deploy production manual tanpa mengikuti [RELEASE.md](RELEASE.md).
 
-- Static application + API Worker dideploy melalui GitHub Actions (`npm test` wajib lulus sebelum deploy).
-- D1 binding `DB` menyimpan snapshot aplikasi, metadata file, dan tabel `auth_users`.
-- R2 binding `FILES` disiapkan untuk foto/lampiran, **tetapi file API dikunci** (`MVP_FILE_API_ENABLED=false`) sampai login server hidup.
-- Upload dibatasi maksimal 2 MB per file dan total 500 MB pada level aplikasi.
-- `POST /api/auth/session` **tidak lagi** menerbitkan token dari `role`/`sub` yang dikirim klien (HTTP 410).
-- Token cloud hanya keluar dari `POST /api/auth/login` setelah email/password cocok dengan baris `auth_users` di D1. Role diambil dari database, bukan dari body request.
-- `API_AUTH_SECRET` wajib di-set lewat `wrangler secret put API_AUTH_SECRET` (minimal 32 karakter). Tidak ada fallback di source. Deploy workflow mengisi secret ini **hanya jika belum ada** (nilai tidak di-log).
-- Token hanya diterima di header `Authorization: Bearer`. Query `?access=` diabaikan.
-- Endpoint data tetap dikunci (`MVP_DATA_API_ENABLED=false`).
-- Endpoint publik: `GET /api/health`. Login: `POST /api/auth/login`.
-- Cloudflare Budget Alert tetap harus dibuat manual karena alert bukan spending cap.
+## Secret dan akun
 
-## Catatan teknis
+- Password, bearer token, API token, dan secret tidak boleh masuk source, dokumentasi, issue, PR, atau log.
+- Password UAT diperoleh dari pemilik sistem melalui kanal aman.
+- `API_AUTH_SECRET` dan credential Cloudflare hanya disimpan melalui secret manager/GitHub Environment.
 
-- **DB internal:** version 14
-- **Backward compatibility:** aplikasi inti memakai `proqtrack_db_v6`; `proqtrack_db_v7` hanya cermin otomatis dari v6 (bukan schema terpisah)
-- **Katalog dokumen:** `SCHEMA` di `src/lib/db.js` adalah daftar collection resmi. Tenant rows memakai `organizationId`; katalog global (`leaveTypes`, `promoTypes`, laporan) tidak di-scope per organisasi
-- **D1 bukan schema operasional:** tabel Worker (`app_snapshots`, `auth_users`, `file_metadata`, …) adalah sidecar. Jangan dinormalisasi ke tabel CRM
-- **Stack:** Vanilla JS ES modules, hash router, CSS mobile-first, Leaflet CDN
-- **Penyimpanan:** seluruh data operasional masih di localStorage browser, termasuk foto base64
-- Record lama memperoleh `projectId: null` dan tetap terlihat manager
-- Password seed disimpan sebagai hash `sha256$…` — bukan plaintext di repo
-- Device lock sales memakai `deviceId` + hash `deviceBinding` (bukan IMEI sungguhan — browser tidak bisa baca IMEI)
-- Jika penyimpanan penuh saat upload foto, hapus foto lama atau reset data demo
+## Branch dan deployment
 
-## Struktur
+- `main` adalah branch production dan wajib melalui Pull Request.
+- Push ke `main` memicu CI dan deployment.
+- Workflow live menggunakan binding default `--env=""`: D1 `proqtrack-mvp`, R2 `proqtrack-mvp-files`.
+- Named environment `production` di `wrangler.jsonc` menunjuk resource berbeda. Jangan mengganti target tanpa rencana migrasi.
 
-```text
-proqtrack/
-├── index.html
-├── README.md
-├── worker/index.js     # Cloudflare API + auth
-├── migrations/         # D1 schema
-├── tests/              # node:test (auth + password)
-├── assets/             # branding, PWA, visual phase 0
-└── src/
-    ├── app.js          # router + UI field existing
-    ├── phase0-data.js
-    ├── phase0-ui.js
-    ├── data/seed.js
-    ├── lib/db.js
-    ├── lib/utils.js
-    └── types/index.js  # domain + UI Project Management v7
-```
+## Status PR #36
 
-## Batasan prototype
-
-- Belum ada sync multi-device untuk data operasional (masih localStorage)
-- Kapasitas foto terbatas kuota localStorage browser
-- Enforcement role di UI + `src/lib/db.js` adalah **konvensi client-side**. Siapa pun yang mengedit `localStorage` bisa mengubah data. Itu disengaja untuk prototype; jangan anggap ini batas keamanan multi-tenant.
-- Role di sesi selalu di-rejoin dari baris `accounts[]` — mengubah `FT.state.account.role` di console tidak menaikkan hak.
-- Kunci perangkat sales menolak copy `deviceId` saja; menyalin **kedua** key `proqtrack_device_id_v1` + `proqtrack_device_secret_v1` masih bisa meniru device (batas browser).
-- Mesin tempat superadmin login ditandai host dan boleh masuk sebagai sales untuk UAT, tanpa merusak pairing HP sales.
-- Tabel `auth_users` kosong secara default — tidak ada akun cloud sampai diisi terpisah dari seed demo
-- Dependabot mengirim PR mingguan untuk npm + GitHub Actions. Branch `main` dilindungi ruleset (wajib PR).
-
----
-ProQTrack — Field Team Monitoring prototype
+PR #36 tetap draft dan **tidak boleh di-merge**. Implementasi stabil dilanjutkan melalui PR #37/#38; hardening production berikutnya melalui PR #39–#46. Tutup/arsipkan PR #36 setelah memastikan tidak ada commit unik yang dibutuhkan.
