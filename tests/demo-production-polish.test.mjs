@@ -31,10 +31,11 @@ test('login supports password visibility and keyboard submission', async () => {
 test('login page avoids render-blocking font and map resources', async () => {
   const html = await read('index.html');
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
-  assert.match(html, /<script defer src="https:\/\/unpkg\.com\/leaflet@1\.9\.4\/dist\/leaflet\.js"><\/script>/);
+  assert.match(html, /<script defer src="\.\/assets\/vendor\/leaflet\/leaflet\.js"><\/script>/);
+  assert.doesNotMatch(html, /https:\/\/unpkg\.com/);
 });
 
 test('service worker cache is advanced for immediate client refresh', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.6/);
+  assert.match(sw, /proqtrack-v12\.7/);
 });
