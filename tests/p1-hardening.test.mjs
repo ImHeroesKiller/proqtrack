@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { operationalTransitionAllowed } from '../worker/operations.js';
-import { PASSWORD_KDF_ITERATIONS, passwordNeedsUpgrade } from '../worker/index.js';
+import { PASSWORD_KDF_ITERATIONS, PASSWORD_KDF_RUNTIME_MAX_ITERATIONS, passwordNeedsUpgrade, verifyPassword } from '../worker/index.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -21,11 +21,12 @@ test('competitor UI encodes stored user content before HTML rendering', async ()
   assert.match(db, /sanitizePlainText/);
 });
 
-test('password policy uses current PBKDF2 work factor and detects upgrade candidates', () => {
-  assert.equal(PASSWORD_KDF_ITERATIONS, 600000);
+test('password policy stays inside the Cloudflare PBKDF2 runtime ceiling', async () => {
+  assert.equal(PASSWORD_KDF_RUNTIME_MAX_ITERATIONS, 100000);
+  assert.equal(PASSWORD_KDF_ITERATIONS, 100000);
   assert.equal(passwordNeedsUpgrade('sha256$abc'), true);
-  assert.equal(passwordNeedsUpgrade('pbkdf2$sha256$100000$salt$hash'), true);
-  assert.equal(passwordNeedsUpgrade('pbkdf2$sha256$600000$salt$hash'), false);
+  assert.equal(passwordNeedsUpgrade('pbkdf2$sha256$100000$salt$hash'), false);
+  assert.equal(await verifyPassword('pbkdf2$sha256$600000$c2FsdA$aGFzaA', 'irrelevant'), false);
 });
 
 test('repository migrations do not ship reusable recovery password verifiers', async () => {
