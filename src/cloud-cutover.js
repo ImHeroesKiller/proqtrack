@@ -6,7 +6,7 @@ import {
   pairCloudAuthenticatedSalesDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
-import { clearApiToken, getApiToken, switchApiOrganization } from './lib/uploads.js';
+import { clearApiToken, getApiToken } from './lib/uploads.js';
 import { syncCloudOrganizations } from './lib/cloud-organizations.js';
 import {
   applyRemoteDataToLocal,
@@ -28,7 +28,7 @@ const displayRole = account => {
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 };
-const defaultRouteFor = account => ['superadmin','head','admin','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday';
+const defaultRouteFor = account => account?.role === 'superadmin' && !account?.organizationId\n  ? '#/organizations'\n  : (['superadmin','head','admin','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday');
 let loginInFlight = false;
 
 function forceRoute(route) {
@@ -84,17 +84,14 @@ async function cloudFirstLogin(event) {
     }
 
     if (cloudAccount.role === 'superadmin' && !cloudAccount.organizationId) {
+      // Global superadmin login must never inherit or auto-select a tenant from
+      // browser state. Organization discovery is best-effort; tenant authority
+      // begins only after the user explicitly opens/switches a workspace.
+      db.currentOrganizationId = null;
       try {
-        const organizations = await syncCloudOrganizations();
-        const active = organizations.filter(row => String(row.status || 'active') === 'active');
-        const preferred = active.find(row => String(row.id) === String(db.currentOrganizationId || '')) || active[0];
-        if (!preferred) throw new Error('ORGANIZATION_ACCESS_NOT_CONFIGURED');
-        cloudAccount = await switchApiOrganization(preferred.id);
-        db.currentOrganizationId = preferred.id;
+        await syncCloudOrganizations();
       } catch (error) {
-        await logoutCloudSession().catch(() => {});
-        window.showToast?.('Tidak ada organisasi aktif untuk workspace superadmin.', 'error');
-        return;
+        console.warn('organization_list_refresh_failed', error?.code || error?.message || error);
       }
     }
 
@@ -136,6 +133,7 @@ async function cloudFirstLogin(event) {
     state.route = account.mustChangePassword ? '#/settings' : defaultRouteFor(account);
     forceRoute(state.route);
     if (account.mustChangePassword) window.showToast?.('Wajib ganti password sebelum memakai aplikasi.', 'error');
+    else if (account.role === 'superadmin' && !account.organizationId) window.showToast?.('Login berhasil. Pilih organisasi untuk membuka workspace.', 'success');
     else window.showToast?.('Login berhasil. Data operasional siap digunakan.', 'success');
   } finally {
     loginInFlight = false;
