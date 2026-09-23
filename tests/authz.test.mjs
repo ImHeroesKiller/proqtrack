@@ -54,6 +54,11 @@ function createEnv(seed = {}) {
           if (/FROM core_organizations WHERE id=\?/i.test(normalized)) {
             return state.orgs.find(row => row.id === this.args[0] && row.status === 'active') || null;
           }
+          if (/FROM core_organizations WHERE status='active' ORDER BY name,id LIMIT 1/i.test(normalized)) {
+            return state.orgs
+              .filter(row => row.status === 'active')
+              .sort((a,b) => String(a.name).localeCompare(String(b.name)) || String(a.id).localeCompare(String(b.id)))[0] || null;
+          }
           if (/FROM core_organization_users ou JOIN core_organizations o/i.test(normalized) && /LIMIT 1/i.test(normalized)) {
             const [userId, orgId] = this.args;
             const membership = state.orgUsers.find(row => row.user_id === userId && row.organization_id === orgId && row.status === 'active');
@@ -295,43 +300,70 @@ test('legacy signed token without a server session id is forced to re-authentica
   );
 });
 
-test('superadmin login is always global and tenant selection happens only through explicit switch', async () => {
+test('superadmin login is global in authority but always binds to an active workspace', async () => {
   const passwordHash = await hashPassword('correct-horse-battery');
   const { env } = createEnv({
     users: [{ id: 'SA-1', email: 'root@proqtrack.id', password_hash: passwordHash, role: 'superadmin', status: 'active' }],
-    orgs: [{ id: 'ORG-A', code: 'A', name: 'Org A', status: 'active' }],
-    clients: [{ id: 'CLI-A', organization_id: 'ORG-A', status: 'active' }],
-    projects: [{ id: 'PRJ-A', organization_id: 'ORG-A', client_id: 'CLI-A', status: 'active' }],
+    orgs: [
+      { id: 'ORG-A', code: 'A', name: 'Org A', status: 'active' },
+      { id: 'ORG-B', code: 'B', name: 'Org B', status: 'active' },
+    ],
+    clients: [
+      { id: 'CLI-A', organization_id: 'ORG-A', status: 'active' },
+      { id: 'CLI-B', organization_id: 'ORG-B', status: 'active' },
+    ],
+    projects: [
+      { id: 'PRJ-A', organization_id: 'ORG-A', client_id: 'CLI-A', status: 'active' },
+      { id: 'PRJ-B', organization_id: 'ORG-B', client_id: 'CLI-B', status: 'active' },
+    ],
   });
   __resetAuthGatewayForTests();
+
   const response = await loginAuthoritatively(request('/api/auth/login', {
     method: 'POST',
-    body: { email: 'root@proqtrack.id', password: 'correct-horse-battery', organizationId: 'ORG-A' },
+    body: { email: 'root@proqtrack.id', password: 'correct-horse-battery' },
   }), env, 'REQ-SA');
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.account.role, 'superadmin');
-  assert.equal(payload.account.organizationId, null);
-  assert.deepEqual(payload.account.projectIds, []);
-  assert.deepEqual(payload.account.clientIds, []);
+  assert.equal(payload.account.organizationId, 'ORG-A');
+  assert.deepEqual(payload.account.projectIds, ['PRJ-A']);
+  assert.deepEqual(payload.account.clientIds, ['CLI-A']);
 
-  const globalClaims = await authenticateAuthoritatively(request('/api/auth/session', {
+  const claims = await authenticateAuthoritatively(request('/api/auth/session', {
     headers: { authorization: `Bearer ${payload.token}` },
   }), env);
-  assert.equal(globalClaims.organizationId, null);
-  assert.equal(globalClaims.role, 'superadmin');
+  assert.equal(claims.organizationId, 'ORG-A');
+  assert.equal(claims.role, 'superadmin');
 
   const switched = await handleAuthRoute(request('/api/auth/switch-organization', {
     method: 'POST',
     headers: { authorization: `Bearer ${payload.token}` },
-    body: { organizationId: 'ORG-A' },
+    body: { organizationId: 'ORG-B' },
   }), env, new URL('https://proqtrack.test/api/auth/switch-organization'), 'REQ-SA-SWITCH');
   assert.equal(switched.status, 200);
   const switchedPayload = await switched.json();
-  assert.equal(switchedPayload.account.organizationId, 'ORG-A');
+  assert.equal(switchedPayload.account.organizationId, 'ORG-B');
   assert.equal(switchedPayload.account.role, 'superadmin');
-  assert.deepEqual(switchedPayload.account.projectIds, ['PRJ-A']);
-  assert.deepEqual(switchedPayload.account.clientIds, ['CLI-A']);
+  assert.deepEqual(switchedPayload.account.projectIds, ['PRJ-B']);
+  assert.deepEqual(switchedPayload.account.clientIds, ['CLI-B']);
+});
+
+test('superadmin ignores a stale requested organization and falls back to an active workspace', async () => {
+  const passwordHash = await hashPassword('correct-horse-battery');
+  const { env } = createEnv({
+    users: [{ id: 'SA-1', email: 'root@proqtrack.id', password_hash: passwordHash, role: 'superadmin', status: 'active' }],
+    orgs: [{ id: 'ORG-A', code: 'A', name: 'Org A', status: 'active' }],
+  });
+  __resetAuthGatewayForTests();
+  const response = await loginAuthoritatively(request('/api/auth/login', {
+    method: 'POST',
+    body: { email: 'root@proqtrack.id', password: 'correct-horse-battery', organizationId: 'ORG-STALE' },
+  }), env, 'REQ-SA-STALE');
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.account.role, 'superadmin');
+  assert.equal(payload.account.organizationId, 'ORG-A');
 });
 
 test('security gateway rejects legacy tokens before protected APIs and accepts authoritative sessions', async () => {
