@@ -228,4 +228,5 @@ test('PBKDF2 hashes verify and plaintext never matches', async () => {
   assert.equal(await verifyPassword(hashed, 'secret-pass'), true);
   assert.equal(await verifyPassword(hashed, 'wrong'), false);
   assert.equal(await verifyPassword('secret-pass', 'secret-pass'), false);
+  assert.equal(await verifyPassword('pbkdf2$sha256$100000$%%%$%%%','secret-pass'), false);
 });
