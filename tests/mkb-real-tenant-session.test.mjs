@@ -50,3 +50,20 @@ test('refresh hotfix forces a new service-worker generation', async () => {
   const sw = await read('sw.js');
   assert.match(sw, /proqtrack-v12/);
 });
+
+
+test('global superadmin login never auto-selects a tenant or bootstraps operational data before workspace selection', async () => {
+  const [cloudData, cutover, gateway, sw] = await Promise.all([
+    read('src/lib/cloud-data.js'),
+    read('src/cloud-cutover.js'),
+    read('worker/operations-gateway.js'),
+    read('sw.js'),
+  ]);
+  assert.match(cloudData, /account\?\.role \|\| ''\)\.toLowerCase\(\) === 'superadmin' && !account\?\.organizationId/);
+  assert.match(cloudData, /mode: 'global'/);
+  assert.match(cutover, /globalSuperadmin \? '#\/organizations'/);
+  assert.match(cutover, /db\.currentOrganizationId = null/);
+  assert.doesNotMatch(cutover, /cloudAccount = await switchApiOrganization\(preferred\.id\)/);
+  assert.match(gateway, /if \(!claims\?\.organizationId\)/);
+  assert.match(sw, /proqtrack-v12\.10/);
+});

@@ -57,6 +57,8 @@ Audit PR #36 menghasilkan **13 gap**. Seluruh Critical/High yang diketahui ditut
 
 UAT production menemukan tambahan masalah provisioning/login superadmin, stale tenant, cache PWA, global bootstrap, serta data Demo. Perbaikannya berada di PR #39–#46.
 
+Hotfix 23 Sep menegaskan kembali invariant superadmin: login superadmin selalu menghasilkan global session tanpa `organizationId`, tidak boleh mewarisi tenant dari browser, dan operational bootstrap hanya berjalan setelah superadmin memilih workspace organisasi secara eksplisit. Rule ini berlaku identik di UAT dan production.
+
 ## Risiko/temuan yang masih perlu diperhatikan
 
 1. Full authenticated multi-role UAT masih perlu diulang untuk seluruh role dan viewport setelah P3, khususnya offline/reconnect serta report export.

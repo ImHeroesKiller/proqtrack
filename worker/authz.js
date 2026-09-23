@@ -329,15 +329,23 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     return authJson({ error: 'SESSION_UNAVAILABLE', requestId }, 503);
   }
 
-  const validPassword = user
-    && user.status === 'active'
-    && await verifyPassword(user.password_hash, password);
+  let validPassword = false;
+  try {
+    validPassword = !!(user
+      && user.status === 'active'
+      && await verifyPassword(user.password_hash, password));
+  } catch (error) {
+    console.warn('password_verify_failed', error?.message || error);
+  }
   if (!validPassword) {
     await writeAuthAudit(env, { requestId, action: 'login', outcome: 'denied', detail: 'INVALID_CREDENTIALS' });
     return authJson({ error: 'INVALID_CREDENTIALS', requestId }, 401);
   }
 
-  let organizationId = requestedOrganizationId;
+  // Superadmin is always authenticated globally first. Browser/local tenant
+  // state must never scope or block superadmin login. Tenant authority is
+  // acquired only through the explicit switch-organization endpoint.
+  let organizationId = roleOf(user.role) === 'superadmin' ? '' : requestedOrganizationId;
   if (roleOf(user.role) !== 'superadmin') {
     const memberships = await activeOrganizationsForUser(env, user.id);
     if (!memberships.length) {

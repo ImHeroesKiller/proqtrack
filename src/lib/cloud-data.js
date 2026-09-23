@@ -447,8 +447,12 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
     email: cloudAccount.email || existing.email || '',
     name: existing.name || employee?.name || cloudAccount.email || id,
     role: cloudAccount.role || existing.role || 'employee',
-    organizationId: cloudAccount.organizationId || existing.organizationId || null,
-    projectId: cloudAccount.role === 'manager' ? (cloudAccount.projectIds?.[0] || existing.projectId || null) : (existing.projectId || null),
+    organizationId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
+      ? null
+      : (cloudAccount.organizationId || existing.organizationId || null),
+    projectId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
+      ? null
+      : (cloudAccount.role === 'manager' ? (cloudAccount.projectIds?.[0] || existing.projectId || null) : (existing.projectId || null)),
     employeeId: employee?.id || existing.employeeId || null,
     status: 'active',
     cloudIdentity: true,
@@ -502,12 +506,14 @@ export async function restoreCloudSession(localDb) {
   try {
     const session = await apiJson('/api/auth/session');
     const bootstrap = await bootstrapOperationalData(localDb, session);
-    if (bootstrap.mode !== 'cloud' || !bootstrap.data) {
+    if (bootstrap.mode === 'cloud' && bootstrap.data) {
+      applyRemoteDataToLocal(localDb, bootstrap.data);
+    } else if (bootstrap.mode !== 'global') {
       const error = new Error('ORGANIZATION_NOT_CUT_OVER');
       error.code = 'ORGANIZATION_NOT_CUT_OVER';
       throw error;
     }
-    applyRemoteDataToLocal(localDb, bootstrap.data);
+    if (bootstrap.mode === 'global') localDb.currentOrganizationId = null;
     const account = ensureCloudIdentity(localDb, session, null, '');
     if (!account) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
     return { account, session, bootstrap };
@@ -550,6 +556,19 @@ export async function importLegacySnapshotForAdmin(localDb) {
 
 export async function bootstrapOperationalData(localDb, account = {}) {
   if (!getApiToken()) return { mode: 'local', data: null };
+  if (String(account?.role || '').toLowerCase() === 'superadmin' && !account?.organizationId) {
+    ready = false;
+    syncing = false;
+    revision = 0;
+    cutoverMode = 'global';
+    baseline = {};
+    queuedSnapshot = null;
+    lastError = null;
+    clearTimeout(timer);
+    timer = null;
+    emitStatus('global-superadmin');
+    return { mode: 'global', data: null, revision: 0, cutoverMode: 'global' };
+  }
   let remote = await apiJson('/api/core/bootstrap');
   cutoverMode = remote.cutoverMode || 'pending';
   revision = Number(remote.revision || 0);

@@ -92,17 +92,21 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.9/);
+  assert.match(serviceWorker, /proqtrack-v12\.10/);
 });
 
-test('global superadmin session selects an active tenant before bootstrap', async () => {
-  const cutover = await read('src/cloud-cutover.js');
-  const selectIndex = cutover.indexOf("cloudAccount.role === 'superadmin' && !cloudAccount.organizationId");
-  const bootstrapIndex = cutover.indexOf('bootstrapOperationalData(db, cloudAccount)', selectIndex);
-  assert.ok(selectIndex >= 0 && bootstrapIndex > selectIndex);
+test('global superadmin session stays global until explicit workspace selection', async () => {
+  const [cutover, cloudData] = await Promise.all([
+    read('src/cloud-cutover.js'),
+    read('src/lib/cloud-data.js'),
+  ]);
+  const globalIndex = cutover.indexOf("cloudAccount.role === 'superadmin' && !cloudAccount.organizationId");
+  const bootstrapIndex = cutover.indexOf('bootstrapOperationalData(db, cloudAccount)', globalIndex);
+  assert.ok(globalIndex >= 0 && bootstrapIndex > globalIndex);
   assert.match(cutover, /syncCloudOrganizations\(\)/);
-  assert.match(cutover, /switchApiOrganization\(preferred\.id\)/);
-  assert.match(cutover, /db\.currentOrganizationId = preferred\.id/);
+  assert.match(cutover, /db\.currentOrganizationId = null/);
+  assert.doesNotMatch(cutover, /switchApiOrganization\(preferred\.id\)/);
+  assert.match(cloudData, /mode: 'global'/);
 });
 
 test('successful cloud login refreshes only the hashed offline credential', async () => {
