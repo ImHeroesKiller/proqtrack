@@ -1,0 +1,78 @@
+name: Full Production UAT
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - test/full-production-uat-2026-09-23-v1
+    paths:
+      - ".github/workflows/full-production-uat.yml"
+      - "scripts/full-production-uat-wrapper.sh"
+      - "scripts/full-production-browser-uat.mjs"
+      - "scripts/m7-authenticated-production-uat.sh"
+
+concurrency:
+  group: proqtrack-full-production-uat
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  full-production-uat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROQTRACK_BASE_URL: https://proqtrack.arywibowo.workers.dev
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify required production access
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::CLOUDFLARE_API_TOKEN is missing"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::CLOUDFLARE_ACCOUNT_ID is missing"; exit 1; }
+
+      - run: npm ci
+
+      - name: Install browser UAT runtime
+        shell: bash
+        run: |
+          npm install --no-save --no-package-lock playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Verify production health before UAT
+        shell: bash
+        run: |
+          body="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors "$PROQTRACK_BASE_URL/api/health")"
+          printf '%s' "$body" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const d = JSON.parse(raw);
+            if (d.ok !== true || d.service !== "ProQTrack" || d.milestone !== "M7") {
+              console.error(d);
+              process.exit(1);
+            }
+            console.log("Pre-UAT health PASS");
+          '
+
+      - name: Run full production UAT
+        shell: bash
+        run: bash scripts/full-production-uat-wrapper.sh
+
+      - name: Upload UAT evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proqtrack-full-production-uat-${{ github.run_id }}
+          path: uat-artifacts
+          retention-days: 30
+          if-no-files-found: warn
