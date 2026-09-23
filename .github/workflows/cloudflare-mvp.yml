@@ -193,6 +193,10 @@ jobs:
             console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
           '
 
+      - name: Verify superadmin production login
+        shell: bash
+        run: bash scripts/production-superadmin-smoke.sh
+
       - name: Verify security headers and auth boundaries
         shell: bash
         run: |
