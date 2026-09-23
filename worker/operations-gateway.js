@@ -197,6 +197,13 @@ async function bestEffortReconcile(env, organizationId, originalSnapshot = null)
 export async function handleOperationalGateway(request, env, claims, url = new URL(request.url)) {
   if (!url.pathname.startsWith('/api/core/')) return null;
 
+  // Global superadmin sessions intentionally have no tenant scope. Never run
+  // tenant reconciliation/bootstrap with a null organization; require an
+  // explicit workspace switch first.
+  if (!claims?.organizationId) {
+    return handleOperationalRoute(request, env, claims, url);
+  }
+
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') {
     await bestEffortReconcile(env, claims.organizationId);
     const response = await handleOperationalRoute(request, env, claims, url);
