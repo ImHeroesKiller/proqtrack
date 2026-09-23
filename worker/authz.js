@@ -78,6 +78,12 @@ async function activeOrganization(env, organizationId) {
   ).bind(organizationId).first();
 }
 
+async function firstActiveOrganization(env) {
+  return env.DB.prepare(
+    "SELECT id,code,name,status FROM core_organizations WHERE status='active' ORDER BY name,id LIMIT 1",
+  ).first();
+}
+
 async function organizationMembership(env, userId, organizationId) {
   return env.DB.prepare(`
     SELECT ou.organization_id, ou.role, ou.status, o.code, o.name
@@ -342,11 +348,28 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     return authJson({ error: 'INVALID_CREDENTIALS', requestId }, 401);
   }
 
-  // Superadmin is always authenticated globally first. Browser/local tenant
-  // state must never scope or block superadmin login. Tenant authority is
-  // acquired only through the explicit switch-organization endpoint.
-  let organizationId = roleOf(user.role) === 'superadmin' ? '' : requestedOrganizationId;
-  if (roleOf(user.role) !== 'superadmin') {
+  // Superadmin authority is global and never depends on organization membership.
+  // To keep production sessions compatible with every deployed schema/runtime,
+  // a successful superadmin login is attached to an active organization instead
+  // of creating an organization-less session. The superadmin role remains global
+  // and may switch to any other active organization explicitly.
+  const globalRole = roleOf(user.role);
+  let organizationId = requestedOrganizationId;
+  if (globalRole === 'superadmin') {
+    const requested = organizationId ? await activeOrganization(env, organizationId) : null;
+    const selected = requested || await firstActiveOrganization(env);
+    if (!selected) {
+      await writeAuthAudit(env, {
+        requestId,
+        actor: user,
+        action: 'login',
+        outcome: 'denied',
+        detail: 'ORGANIZATION_ACCESS_NOT_CONFIGURED',
+      });
+      return authJson({ error: 'ORGANIZATION_ACCESS_NOT_CONFIGURED', requestId }, 403);
+    }
+    organizationId = String(selected.id);
+  } else {
     const memberships = await activeOrganizationsForUser(env, user.id);
     if (!memberships.length) {
       await writeAuthAudit(env, { requestId, actor: user, action: 'login', outcome: 'denied', detail: 'ORGANIZATION_ACCESS_NOT_CONFIGURED' });
