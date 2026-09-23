@@ -5,6 +5,7 @@ import { hashPassword, signClaims, verifyToken } from '../worker/index.js';
 import {
   __resetAuthGatewayForTests,
   authenticateAuthoritatively,
+  handleAuthRoute,
   loginAuthoritatively,
   revokeSession,
 } from '../worker/authz.js';
@@ -294,7 +295,7 @@ test('legacy signed token without a server session id is forced to re-authentica
   );
 });
 
-test('superadmin can select an active tenant without tenant membership and receives server-derived broad scope', async () => {
+test('superadmin login is always global and tenant selection happens only through explicit switch', async () => {
   const passwordHash = await hashPassword('correct-horse-battery');
   const { env } = createEnv({
     users: [{ id: 'SA-1', email: 'root@proqtrack.id', password_hash: passwordHash, role: 'superadmin', status: 'active' }],
@@ -310,8 +311,27 @@ test('superadmin can select an active tenant without tenant membership and recei
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.account.role, 'superadmin');
-  assert.deepEqual(payload.account.projectIds, ['PRJ-A']);
-  assert.deepEqual(payload.account.clientIds, ['CLI-A']);
+  assert.equal(payload.account.organizationId, null);
+  assert.deepEqual(payload.account.projectIds, []);
+  assert.deepEqual(payload.account.clientIds, []);
+
+  const globalClaims = await authenticateAuthoritatively(request('/api/auth/session', {
+    headers: { authorization: `Bearer ${payload.token}` },
+  }), env);
+  assert.equal(globalClaims.organizationId, null);
+  assert.equal(globalClaims.role, 'superadmin');
+
+  const switched = await handleAuthRoute(request('/api/auth/switch-organization', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${payload.token}` },
+    body: { organizationId: 'ORG-A' },
+  }), env, new URL('https://proqtrack.test/api/auth/switch-organization'), 'REQ-SA-SWITCH');
+  assert.equal(switched.status, 200);
+  const switchedPayload = await switched.json();
+  assert.equal(switchedPayload.account.organizationId, 'ORG-A');
+  assert.equal(switchedPayload.account.role, 'superadmin');
+  assert.deepEqual(switchedPayload.account.projectIds, ['PRJ-A']);
+  assert.deepEqual(switchedPayload.account.clientIds, ['CLI-A']);
 });
 
 test('security gateway rejects legacy tokens before protected APIs and accepts authoritative sessions', async () => {
