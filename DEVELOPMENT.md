@@ -91,6 +91,8 @@ Menyembunyikan tombol bukan security boundary; enforcement wajib di Worker.
 
 Jangan mengirim stale tenant pada global login dan jangan bootstrap memakai global session tanpa tenant.
 
+Invariant ini berlaku di seluruh environment (development/UAT/staging/production): `superadmin` adalah global identity. Jangan membuat varian superadmin khusus tenant atau mengharuskan membership `core_organization_users` untuk login global.
+
 ## UI/UX constraints
 
 - Gunakan bahasa operasional yang mudah dipahami.
