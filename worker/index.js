@@ -130,7 +130,7 @@ export function passwordNeedsUpgrade(stored) {
   if (!current.startsWith('pbkdf2$sha256$')) return true;
   const [, , iterRaw] = current.split('$');
   const iterations = Number(iterRaw);
-  return !Number.isFinite(iterations) || iterations < PASSWORD_KDF_ITERATIONS;
+  return !Number.isFinite(iterations) || iterations !== PASSWORD_KDF_ITERATIONS;
 }
 
 export async function verifyPassword(stored, plain) {
