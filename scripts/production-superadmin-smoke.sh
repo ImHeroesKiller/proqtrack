@@ -16,6 +16,7 @@ cleanup() {
   set +e
   d1 "
     DELETE FROM core_auth_sessions WHERE user_id='$USER_ID';
+    DELETE FROM security_audit_logs WHERE actor_id='$USER_ID';
     DELETE FROM core_organization_users WHERE user_id='$USER_ID';
     DELETE FROM auth_users WHERE id='$USER_ID';
   " >/dev/null 2>&1 || true
