@@ -97,7 +97,7 @@ Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
 Enam temuan P1 audit ditutup pada baseline ini:
 
 1. Stored competitor content di-escape saat render dan disanitasi saat write.
-2. Password server memakai PBKDF2-HMAC-SHA256 work factor `600000`; hash lama di-upgrade setelah login sukses.
+2. Password server memakai PBKDF2-HMAC-SHA256 `100000` iterations, yaitu ceiling kompatibel Cloudflare Workers production. Audit UAT 23 Sep menemukan `600000` menyebabkan login HTTP 500 di edge; guard runtime sekarang menolak stored work factor yang unsupported tanpa meledakkan request.
 3. Repository tidak lagi menyimpan reusable superadmin/UAT recovery verifier; fresh bootstrap fail-closed.
 4. Visit, attendance, dan leave memiliki lifecycle guard; record final tidak dapat diedit/dihapus langsung oleh field role.
 5. ID baru menggunakan UUID dan cross-tenant ID collision ditolak sebelum sync/import mengubah revision.

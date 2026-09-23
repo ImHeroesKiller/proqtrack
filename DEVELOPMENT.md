@@ -160,7 +160,7 @@ Diagnostic browser yang diizinkan untuk engineering adalah `window.__PROQTRACK_B
 - Visit/attendance/leave yang sudah menjadi evidence final tidak boleh di-hard-delete atau dikoreksi langsung oleh field role. Gunakan workflow koreksi/exception.
 - Approval dan report schedule tidak boleh disimpan sebagai local authority. Gunakan `window.ProQTrackM6.workflows` dan `window.ProQTrackM6.schedules`.
 - Jangan menambahkan reusable password/recovery verifier ke migration atau source. Fresh environment harus fail-closed dan credential provisioning dilakukan secara eksplisit.
-- Server password hashing baseline adalah PBKDF2-HMAC-SHA256 `600000` iterations; verifikasi hash lama hanya untuk migration-on-login.
+- Server password hashing baseline adalah PBKDF2-HMAC-SHA256 `100000` iterations karena batas single-call PBKDF2 pada Cloudflare Workers production. Jangan menaikkan work factor WebCrypto di atas 100000; stronger KDF memerlukan implementasi baru + migration plan.
 
 ## P2 reliability and runtime rules
 
