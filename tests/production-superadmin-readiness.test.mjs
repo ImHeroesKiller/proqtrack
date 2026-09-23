@@ -31,3 +31,19 @@ test('legacy recovery migrations no longer reset credentials from source', async
     assert.doesNotMatch(migration, /sha256\$[a-f0-9]{64}/i);
   }
 });
+
+
+test('production deploy performs an isolated superadmin login smoke with cleanup', async () => {
+  const [workflow, smoke] = await Promise.all([
+    read('.github/workflows/cloudflare-mvp.yml'),
+    read('scripts/production-superadmin-smoke.sh'),
+  ]);
+  assert.match(workflow, /Verify superadmin production login/);
+  assert.match(workflow, /production-superadmin-smoke\.sh/);
+  assert.match(smoke, /openssl rand -hex 24/);
+  assert.match(smoke, /trap cleanup EXIT/);
+  assert.match(smoke, /'superadmin','active'/);
+  assert.match(smoke, /api\/auth\/login/);
+  assert.match(smoke, /api\/admin\/organizations/);
+  assert.match(smoke, /Superadmin production smoke PASS/);
+});
