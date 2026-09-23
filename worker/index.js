@@ -2,7 +2,11 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 export const MIN_SECRET_LENGTH = 32;
-export const PASSWORD_KDF_ITERATIONS = 600000;
+// Cloudflare Workers' production WebCrypto rejects a single PBKDF2 call above
+// 100,000 iterations (the local runtime does not enforce the same ceiling).
+// Do not raise this constant without changing the KDF implementation.
+export const PASSWORD_KDF_RUNTIME_MAX_ITERATIONS = 100000;
+export const PASSWORD_KDF_ITERATIONS = PASSWORD_KDF_RUNTIME_MAX_ITERATIONS;
 export const FORBIDDEN_SECRETS = Object.freeze([
   'proqtrack-mvp-session-secret-change-me',
 ]);
@@ -101,6 +105,9 @@ async function sha256Hex(message) {
 }
 
 async function pbkdf2Bits(password, salt, iterations) {
+  if (!Number.isInteger(iterations) || iterations < 1 || iterations > PASSWORD_KDF_RUNTIME_MAX_ITERATIONS) {
+    throw new Error('PASSWORD_KDF_UNSUPPORTED');
+  }
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']);
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
@@ -133,7 +140,7 @@ export async function verifyPassword(stored, plain) {
   if (current.startsWith('pbkdf2$sha256$')) {
     const [, , iterRaw, saltPart, hashPart] = current.split('$');
     const iterations = Number(iterRaw);
-    if (!iterations || !saltPart || !hashPart) return false;
+    if (!iterations || iterations > PASSWORD_KDF_RUNTIME_MAX_ITERATIONS || !saltPart || !hashPart) return false;
     const derived = await pbkdf2Bits(incoming, b64urlDecode(saltPart), iterations);
     return timingSafeEqual(b64urlEncode(derived), hashPart);
   }
