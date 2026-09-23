@@ -152,6 +152,18 @@ JSON
 P2_STATUS="$(http_status POST "$BASE_URL/api/core/sync" "$P2_FILE" -H "authorization: Bearer $NADIA_TOKEN" -H 'content-type: application/json' --data "$P2_BODY")"
 expect_status 200 "$P2_STATUS" "$P2_FILE" "P2 operational cloud sync"
 
+echo "Testing superadmin direct tenant login before global session"
+SUPER_DIRECT="$WRAP_TMP/super-direct.json"
+SUPER_DIRECT_STATUS="$(http_status POST "$BASE_URL/api/auth/login" "$SUPER_DIRECT" -H 'content-type: application/json' --data "$(printf '{"email":"%s","password":"%s","organizationId":"%s"}' "$UAT_SUPER_EMAIL" "$UAT_SUPER_PASS" "$UAT_ORG")")"
+expect_status 200 "$SUPER_DIRECT_STATUS" "$SUPER_DIRECT" "superadmin direct tenant login"
+SUPER_DIRECT_TOKEN="$(json_value "$SUPER_DIRECT" token)"
+SUPER_DIRECT_SESSION="$WRAP_TMP/super-direct-session.json"
+SUPER_DIRECT_SESSION_STATUS="$(http_status GET "$BASE_URL/api/auth/session" "$SUPER_DIRECT_SESSION" -H "authorization: Bearer $SUPER_DIRECT_TOKEN")"
+expect_status 200 "$SUPER_DIRECT_SESSION_STATUS" "$SUPER_DIRECT_SESSION" "superadmin direct tenant session"
+
+echo "Inspecting production auth session schema before global superadmin login"
+npx wrangler d1 execute DB --remote --env="" --command "PRAGMA table_info(core_auth_sessions);" || true
+
 echo "Testing superadmin global login and tenant switch"
 SUPER_LOGIN="$WRAP_TMP/super-login.json"
 SUPER_LOGIN_STATUS="$(http_status POST "$BASE_URL/api/auth/login" "$SUPER_LOGIN" -H 'content-type: application/json' --data "$(printf '{"email":"%s","password":"%s"}' "$UAT_SUPER_EMAIL" "$UAT_SUPER_PASS")")"
