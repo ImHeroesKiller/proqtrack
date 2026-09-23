@@ -72,7 +72,7 @@ Jangan hanya menambah tabel UI atau local seed. Itu dapat menghasilkan badge ber
 
 | Role | Scope |
 |---|---|
-| Superadmin | login global, lalu pilih tenant aktif sebelum bootstrap |
+| Superadmin | authority global; login terikat workspace aktif valid tanpa membership tenant |
 | Head/Admin | seluruh data satu organisasi |
 | Manager | project assigned; bukan owner katalog organisasi |
 | Supervisor | tim dan project assigned |
@@ -83,15 +83,15 @@ Menyembunyikan tombol bukan security boundary; enforcement wajib di Worker.
 ## Authentication flow
 
 1. Hapus bearer lama sebelum login.
-2. Superadmin login global tanpa tenant cache.
+2. Superadmin tidak bergantung tenant cache/membership; server mengikat sesi ke organisasi aktif yang valid.
 3. Ambil/pilih organisasi aktif.
-4. Terbitkan bearer tenant.
-5. Bootstrap setelah `organizationId` tersedia.
+4. Terbitkan bearer superadmin dengan `organizationId` aktif.
+5. Bootstrap langsung pada workspace aktif; perpindahan organisasi memakai switch authoritative.
 6. Isi cache lokal dari bootstrap cloud.
 
-Jangan mengirim stale tenant pada global login dan jangan bootstrap memakai global session tanpa tenant.
+Stale tenant dari browser tidak boleh menyebabkan login gagal. Untuk superadmin, server mengabaikan target yang tidak aktif/tidak valid dan memilih organisasi aktif yang valid.
 
-Invariant ini berlaku di seluruh environment (development/UAT/staging/production): `superadmin` adalah global identity. Jangan membuat varian superadmin khusus tenant atau mengharuskan membership `core_organization_users` untuk login global.
+Invariant ini berlaku di seluruh environment (development/UAT/staging/production): `superadmin` adalah global identity. Jangan membuat varian superadmin khusus tenant atau mengharuskan membership `core_organization_users`. Session boleh terikat ke workspace aktif untuk kompatibilitas runtime, tetapi authority superadmin tetap lintas organisasi.
 
 ## UI/UX constraints
 
