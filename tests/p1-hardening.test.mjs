@@ -97,3 +97,11 @@ test('report approvals and schedules use M6 cloud authority instead of local wor
   assert.doesNotMatch(source, /reportApprovals\.push/);
   assert.doesNotMatch(source, /reportSchedules\.push/);
 });
+
+
+test('security policy keeps a single canonical structure after password policy edits', async () => {
+  const security = await read('SECURITY.md');
+  assert.equal((security.match(/^# Security Policy and Boundaries$/gm) || []).length, 1);
+  assert.equal((security.match(/^## Password storage dan recovery$/gm) || []).length, 1);
+  assert.match(security, /Cloudflare Workers production/);
+});
