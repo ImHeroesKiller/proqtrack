@@ -60,8 +60,10 @@ async function cloudFirstLogin(event) {
     try {
       localAccount = authenticate(email, password, device);
     } catch (error) {
-      window.showToast?.(error.message || 'Login ditolak oleh kunci perangkat.', 'error');
-      return;
+      // Online authentication is cloud-authoritative. A stale local password,
+      // device binding, or tenant cache must never block a valid server login.
+      localAccount = null;
+      console.warn('local_login_hint_ignored', error?.message || error);
     }
 
     // A superadmin must authenticate globally first. Reusing a stale tenant id
@@ -157,7 +159,10 @@ async function restoreCloudSessionOnReload() {
 
     const current = String(location.hash || '');
     const preserved = current && current !== '#/login' ? current : '';
-    state.route = account.mustChangePassword ? '#/settings' : (preserved || defaultRouteFor(account));
+    const globalSuperadmin = account.role === 'superadmin' && !account.organizationId;
+    state.route = account.mustChangePassword
+      ? '#/settings'
+      : (globalSuperadmin ? '#/organizations' : (preserved || defaultRouteFor(account)));
     forceRoute(state.route);
     return true;
   } catch (error) {
