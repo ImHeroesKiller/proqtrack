@@ -100,9 +100,20 @@ export function productFormModel(product = {}, { projects = [], clients = [], ac
   const availableProjects = productAvailableProjects(projects, actor, isOrgAdmin);
   const selectedProjectIds = [...new Set((product.projectIds || []).map(String).filter(Boolean))];
   const clientMap = new Map((clients || []).map(client => [String(client.id), client]));
-  const projectOptions = availableProjects.map(project => ({
+  const projectMap = new Map((projects || []).map(project => [String(project.id), project]));
+  const allowedIds = new Set([
+    ...(Array.isArray(actor?.projectIds) ? actor.projectIds : []),
+    ...(actor?.projectId ? [actor.projectId] : []),
+  ].map(String));
+  const preservedSelected = selectedProjectIds
+    .map(id => projectMap.get(id))
+    .filter(project => project && (isOrgAdmin || allowedIds.has(String(project.id))));
+  const optionMap = new Map(
+    [...availableProjects, ...preservedSelected].map(project => [String(project.id), project])
+  );
+  const projectOptions = [...optionMap.values()].map(project => ({
     id:String(project.id),
-    label:`${clientMap.get(String(project.clientId))?.name || 'Tanpa klien'} — ${project.code || project.id} / ${project.name || ''}`,
+    label:`${clientMap.get(String(project.clientId))?.name || 'Tanpa klien'} — ${project.code || project.id} / ${project.name || ''}${!['active','planning'].includes(String(project.status || '')) ? ' (existing)' : ''}`,
     selected:selectedProjectIds.includes(String(project.id)),
   }));
   return {
