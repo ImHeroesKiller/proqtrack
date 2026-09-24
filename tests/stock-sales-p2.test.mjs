@@ -60,3 +60,17 @@ test('P2 Stock Sales translates common cloud conflict states to user feedback', 
   assert.match(app,/INVENTORY_CYCLE_OPENING_MISMATCH/);
   assert.match(app,/CLOUD_SYNC_TIMEOUT/);
 });
+
+
+test('P2 visit stock validates whole batch before creating ledger cycles', () => {
+  assert.match(app,/const entries = \[\]/);
+  assert.match(app,/if \(!entries\.length\) throw new Error\('Pilih minimal satu produk/);
+  assert.match(app,/for \(const entry of entries\) \{\s*createInventoryCycle/);
+  assert.match(app,/closingQty > openingQty \+ stockInQty/);
+});
+
+test('P2 Sales exposes pending correction recovery without resurrecting voided source', () => {
+  assert.match(app,/pendingCorrections/);
+  assert.match(app,/koreksi manual belum memiliki replacement/);
+  assert.match(app,/openManualSaleModal/);
+});
