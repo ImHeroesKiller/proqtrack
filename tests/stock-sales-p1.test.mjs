@@ -223,3 +223,10 @@ test('P1 Product Sales routes have an active renderer and governed correction UI
   assert.match(db,/export function voidProductSale\(/);
   assert.match(app,/Replacement Manual Sale/);
 });
+
+
+test('P1 stock and manual sales require explicit valid project scope in shared catalogs', () => {
+  assert.match(app,/function stockCommonProjectIds\(/);
+  assert.match(app,/name="projectId" required/);
+  assert.match(app,/Project tidak sesuai dengan relasi outlet dan produk/);
+});
