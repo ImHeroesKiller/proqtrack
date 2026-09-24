@@ -243,13 +243,16 @@ export function applyPhotoFilters(photos) {
   });
 }
 
-export function productPickerRows(kind, outletId) {
-  const products = getProducts().filter(p => p.status === 'active');
-  const existing = kind === 'stock' ? getStocksByOutlet(outletId) : [];
-  return `<div id="${kind}Rows">
+export function productPickerRows(kind, outletId, projectId = '') {
+  const products = getProducts().filter(p =>
+    p.status === 'active'
+    && (!projectId || (p.projectIds || []).map(String).includes(String(projectId)))
+  );
+  const existing = kind === 'stock' ? getStocksByOutlet(outletId).filter(s => !projectId || String(s.projectId || '') === String(projectId)) : [];
+  return `<div id="${kind}Rows" data-project-id="${esc(projectId)}">
     ${productRow(kind, products, existing, 0)}
   </div>
-  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" data-pqt-onclick="FS.addProductRow('${kind}','${outletId}')">${appIcon('plus')} Tambah produk lain</button>`;
+  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" data-pqt-onclick="FS.addProductRow('${kind}','${outletId}',${JSON.stringify(projectId)})">${appIcon('plus')} Tambah produk lain</button>`;
 }
 
 function productRow(kind, products, existing, idx) {
@@ -305,11 +308,18 @@ window.FS = {
     window.FT.navigate ? null : null;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
-  addProductRow(kind, outletId) {
+  addProductRow(kind, outletId, projectId = '') {
     const wrap = document.getElementById(kind + 'Rows');
     if (!wrap) return;
-    const products = getProducts().filter(p => p.status === 'active');
-    wrap.insertAdjacentHTML('beforeend', productRow(kind, products, [], wrap.children.length));
+    const scopedProjectId = String(projectId || wrap.dataset.projectId || '');
+    const products = getProducts().filter(p =>
+      p.status === 'active'
+      && (!scopedProjectId || (p.projectIds || []).map(String).includes(scopedProjectId))
+    );
+    const existing = kind === 'stock'
+      ? getStocksByOutlet(outletId).filter(s => !scopedProjectId || String(s.projectId || '') === scopedProjectId)
+      : [];
+    wrap.insertAdjacentHTML('beforeend', productRow(kind, products, existing, wrap.children.length));
   },
   addAttendancePoint(e) {
     e.preventDefault();
