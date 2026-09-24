@@ -323,6 +323,17 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return true;
   }
 
+  if (entity === 'projectAssignments') {
+    if (op === 'delete') return false;
+    if (!existing) return op === 'upsert' && ['active','assigned'].includes(str(row.status || 'active'));
+    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
+    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
+    const currentStatus = ({ removed:'ended', assigned:'active' }[str(existing.status)] || str(existing.status));
+    const nextStatus = ({ removed:'ended', assigned:'active' }[str(row.status || currentStatus)] || str(row.status || currentStatus));
+    if (currentStatus === 'ended') return false;
+    return currentStatus === 'active' && ['active','ended'].includes(nextStatus);
+  }
+
   if (BROAD_ROLES.has(role)) return true;
   if (!existing) return op === 'upsert';
   if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
@@ -925,6 +936,102 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   return null;
 }
 
+async function validateProjectAssignmentMutation(env, organizationId, row, existing = null) {
+  const id = str(row.id);
+  const projectId = str(row.projectId || existing?.project_id);
+  const employeeId = str(row.employeeId || existing?.employee_id);
+  const roleOnProject = str(row.roleOnProject || row.positionName || existing?.position_name);
+  const status = ({ removed:'ended', assigned:'active' }[str(row.status)] || str(row.status || existing?.status || 'active'));
+  const startDate = str(row.startDate || row.startsOn || existing?.starts_on);
+  const endDate = str(row.endDate || row.endsOn || existing?.ends_on);
+  const allocationPercent = Number(row.allocationPercent ?? parseMetadata(existing?.metadata_json)?.allocationPercent ?? 100);
+
+  if (!id) return { error:'ASSIGNMENT_ID_REQUIRED', status:400 };
+  if (!projectId) return { error:'ASSIGNMENT_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'ASSIGNMENT_EMPLOYEE_REQUIRED', status:422 };
+  if (!['supervisor','sales','viewer'].includes(roleOnProject)) return { error:'ASSIGNMENT_INVALID_ROLE', status:422 };
+  if (!['active','ended'].includes(status)) return { error:'ASSIGNMENT_INVALID_STATUS', status:422 };
+  if (!startDate || !endDate) return { error:'ASSIGNMENT_PERIOD_REQUIRED', status:422 };
+  if (!Number.isFinite(allocationPercent) || allocationPercent < 1 || allocationPercent > 100) return { error:'ASSIGNMENT_INVALID_ALLOCATION', status:422 };
+
+  const project = await env.DB.prepare(
+    'SELECT id,status,starts_on,ends_on,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project) return { error:'ASSIGNMENT_PROJECT_NOT_FOUND', status:422 };
+  const projectMeta = parseMetadata(project.metadata_json);
+  const projectStatus = str(projectMeta.uiStatus || project.status);
+  if (status === 'active' && !['active','draft'].includes(projectStatus)) return { error:'ASSIGNMENT_PROJECT_NOT_ASSIGNABLE', status:409 };
+  const projectStart = str(project.starts_on || projectMeta.startDate);
+  const projectEnd = str(project.ends_on || projectMeta.endDate);
+  if (!projectStart || !projectEnd || startDate < projectStart || endDate > projectEnd || endDate < startDate) {
+    return { error:'ASSIGNMENT_INVALID_PERIOD', status:422 };
+  }
+
+  const employee = await env.DB.prepare(
+    "SELECT id,auth_user_id,employment_status FROM core_employees WHERE organization_id=? AND id=? LIMIT 1"
+  ).bind(organizationId,employeeId).first();
+  if (!employee) return { error:'ASSIGNMENT_EMPLOYEE_NOT_FOUND', status:422 };
+  if (str(employee.employment_status) !== 'active') return { error:'ASSIGNMENT_EMPLOYEE_INACTIVE', status:409 };
+  if (!str(employee.auth_user_id)) return { error:'ASSIGNMENT_EMPLOYEE_LOGIN_REQUIRED', status:409 };
+
+  if (existing) {
+    if (str(existing.project_id) !== projectId || str(existing.employee_id) !== employeeId) {
+      return { error:'ASSIGNMENT_IDENTITY_IMMUTABLE', status:409 };
+    }
+    const currentStatus = str(existing.status);
+    if (currentStatus === 'ended') return { error:'ASSIGNMENT_FINAL', status:409 };
+    if (currentStatus === 'active' && !['active','ended'].includes(status)) return { error:'ASSIGNMENT_INVALID_TRANSITION', status:409 };
+  } else if (status !== 'active') {
+    return { error:'ASSIGNMENT_MUST_START_ACTIVE', status:422 };
+  }
+
+  if (status === 'active') {
+    const sameProject = await env.DB.prepare(
+      "SELECT id FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active' AND id<>? LIMIT 1"
+    ).bind(organizationId,projectId,employeeId,id).first();
+    if (sameProject) return { error:'ASSIGNMENT_ACTIVE_DUPLICATE', status:409 };
+
+    const overlapping = await allRows(env.DB.prepare(
+      "SELECT id,metadata_json FROM core_employee_project_assignments WHERE organization_id=? AND employee_id=? AND status='active' AND id<>? AND starts_on<=? AND ends_on>=?"
+    ).bind(organizationId,employeeId,id,endDate,startDate));
+    const allocated = overlapping.reduce((sum,item) => sum + Number(parseMetadata(item.metadata_json)?.allocationPercent || 100),0);
+    if (allocated + allocationPercent > 100) return { error:'ASSIGNMENT_CAPACITY_CONFLICT', status:409, allocated };
+
+    if (roleOnProject === 'supervisor') {
+      row.supervisorId = null;
+      row.supervisorUserId = null;
+    } else {
+      const supervisorId = str(row.supervisorId);
+      if (!supervisorId) return { error:'ASSIGNMENT_SUPERVISOR_REQUIRED', status:422 };
+      if (supervisorId === employeeId) return { error:'ASSIGNMENT_SELF_SUPERVISION', status:422 };
+      const supervisor = await env.DB.prepare(
+        "SELECT id,auth_user_id,employment_status FROM core_employees WHERE organization_id=? AND id=? LIMIT 1"
+      ).bind(organizationId,supervisorId).first();
+      if (!supervisor || str(supervisor.employment_status) !== 'active' || !str(supervisor.auth_user_id)) {
+        return { error:'ASSIGNMENT_SUPERVISOR_INVALID', status:422 };
+      }
+      const supervisorAssignments = await allRows(env.DB.prepare(
+        "SELECT id,position_name,starts_on,ends_on,metadata_json FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active' AND starts_on<=? AND ends_on>=?"
+      ).bind(organizationId,projectId,supervisorId,endDate,startDate));
+      const validSupervisor = supervisorAssignments.some(item => {
+        const meta = parseMetadata(item.metadata_json);
+        return str(meta.roleOnProject || item.position_name) === 'supervisor'
+          && str(item.starts_on || meta.startDate) <= startDate
+          && str(item.ends_on || meta.endDate) >= endDate;
+      });
+      if (!validSupervisor) return { error:'ASSIGNMENT_SUPERVISOR_NOT_COVERING_PERIOD', status:409 };
+      row.supervisorUserId = str(supervisor.auth_user_id);
+    }
+  }
+
+  row.roleOnProject = roleOnProject;
+  row.status = status;
+  row.allocationPercent = allocationPercent;
+  row.startDate = startDate;
+  row.endDate = endDate;
+  return null;
+}
+
 async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
@@ -970,6 +1077,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'projects' && op === 'upsert') {
       const projectError = await validateProjectMutation(env, organizationId, row, existing, { batchAssignments });
       if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
+    }
+    if (entity === 'projectAssignments' && op === 'upsert') {
+      const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing);
+      if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated }, assignmentError.status || 422);
     }
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
