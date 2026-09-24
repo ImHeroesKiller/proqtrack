@@ -708,6 +708,50 @@ async function flush() {
   }
 }
 
+export async function commitOperationalChanges(changes = []) {
+  const list = Array.isArray(changes) ? changes.filter(Boolean) : [];
+  if (!list.length) return { ok:true, revision, applied:0 };
+  if (!getApiToken() || cutoverMode !== 'cloud' || !ready) {
+    const error = new Error('CLOUD_SYNC_UNAVAILABLE');
+    error.code = 'CLOUD_SYNC_UNAVAILABLE';
+    throw error;
+  }
+  if (syncing) {
+    const error = new Error('CLOUD_SYNC_BUSY');
+    error.code = 'CLOUD_SYNC_BUSY';
+    throw error;
+  }
+  syncing = true;
+  clearTimeout(timer);
+  queuedSnapshot = null;
+  emitStatus('syncing', { source:'direct-commit' });
+  try {
+    const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}`;
+    const result = await apiJson('/api/core/sync', {
+      method:'POST',
+      headers:{ 'idempotency-key': mutationId },
+      body:JSON.stringify({ mutationId, baseRevision:revision, changes:list }),
+    });
+    revision = Number(result.revision);
+    baseline = applyChanges(baseline, list);
+    lastError = null;
+    emitStatus('synced', { source:'direct-commit' });
+    return result;
+  } catch (error) {
+    lastError = error.code || error.message || String(error);
+    if (error.code === 'REVISION_CONFLICT') {
+      ready = false;
+      revision = Number(error.payload?.revision || revision);
+      emitStatus('conflict', { conflict:true, source:'direct-commit' });
+    } else {
+      emitStatus('error', { source:'direct-commit' });
+    }
+    throw error;
+  } finally {
+    syncing = false;
+  }
+}
+
 export function scheduleOperationalSync(db) {
   if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return false;
   queuedSnapshot = snapshotCollections(db);
