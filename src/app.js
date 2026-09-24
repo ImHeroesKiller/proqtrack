@@ -3045,9 +3045,9 @@ function renderProductSales({ mine = false } = {}) {
       </div>
     </div>` : ''}
     <div class="grid-3" style="margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Transaksi aktif</div><div class="stat-value">${rows.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Qty terjual</div><div class="stat-value">${totalQty}</div></div>
-      <div class="stat-card"><div class="stat-label">Nilai penjualan</div><div class="stat-value" style="font-size:20px">${formatCurrency(totalAmount)}</div><div class="am-muted">${manualCount} manual exception</div></div>
+      <div class="stat-card"><div class="stat-label">Transaksi aktif</div><div class="stat-value" id="salesKpiTransactions">${rows.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Qty terjual</div><div class="stat-value" id="salesKpiQty">${totalQty}</div></div>
+      <div class="stat-card"><div class="stat-label">Nilai penjualan</div><div class="stat-value" id="salesKpiAmount" style="font-size:20px">${formatCurrency(totalAmount)}</div><div class="am-muted" id="salesKpiManual">${manualCount} manual exception</div></div>
     </div>
     <div class="card">
       <div class="filter-row">
@@ -3069,7 +3069,7 @@ function renderProductSales({ mine = false } = {}) {
             const manual=!['derived_stock','inventory_cycle'].includes(provenance);
             const date=String(row.soldAt || row.date || '').slice(0,10);
             const search=[employees[row.employeeId]?.name,row.employeeId,outlets[row.outletId]?.name,row.outletId,products[row.productId]?.name,products[row.productId]?.sku].filter(Boolean).join(' ').toLowerCase();
-            return `<tr data-search="${esc(search)}" data-source="${manual?'manual':'derived'}" data-date="${esc(date)}">
+            return `<tr data-search="${esc(search)}" data-source="${manual?'manual':'derived'}" data-date="${esc(date)}" data-qty="${Number(row.quantity ?? row.qty ?? 0)}" data-amount="${Number(row.totalAmount ?? row.amount ?? 0)}">
               <td>${formatDateShort(date)}</td>
               <td>${esc(employees[row.employeeId]?.name || row.employeeId || '-')}</td>
               <td>${esc(outlets[row.outletId]?.name || row.outletId || '-')}</td>
@@ -3092,15 +3092,24 @@ window.FT.filterProductSales = function() {
   const from=document.getElementById('salesFromFilter')?.value||'';
   const to=document.getElementById('salesToFilter')?.value||'';
   const rows=[...document.querySelectorAll('#productSalesTable tbody tr[data-search]')];
-  let visible=0;
+  let visible=0, visibleQty=0, visibleAmount=0, visibleManual=0;
   rows.forEach(row=>{
     const show=(!search || String(row.dataset.search||'').includes(search))
       && (!source || row.dataset.source===source)
       && (!from || String(row.dataset.date||'')>=from)
       && (!to || String(row.dataset.date||'')<=to);
     row.style.display=show?'':'none';
-    if(show) visible++;
+    if(show) {
+      visible++;
+      visibleQty += Number(row.dataset.qty || 0);
+      visibleAmount += Number(row.dataset.amount || 0);
+      if(row.dataset.source==='manual') visibleManual++;
+    }
   });
+  const tx=document.getElementById('salesKpiTransactions'); if(tx) tx.textContent=String(visible);
+  const qty=document.getElementById('salesKpiQty'); if(qty) qty.textContent=String(visibleQty);
+  const amount=document.getElementById('salesKpiAmount'); if(amount) amount.textContent=formatCurrency(visibleAmount);
+  const manual=document.getElementById('salesKpiManual'); if(manual) manual.textContent=`${visibleManual} manual exception`;
   const summary=document.getElementById('salesResultSummary');
   if(summary) summary.textContent=`${visible} dari ${rows.length} transaksi`;
   const empty=document.getElementById('salesEmptyFilter');
@@ -3114,8 +3123,10 @@ window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
   const productRows = getProducts().filter(row => row.status === 'active');
   const outletRows = getOutlets().filter(row => row.status !== 'archived');
   const projectRows = stockProjectRows();
+  const idempotencyKey=`manual-sale:${crypto.randomUUID?.() || (Date.now()+'-'+Math.random())}`;
   openModal(correctionOfSaleId ? 'Replacement Manual Sale' : 'Manual Sale Exception', `
     <form data-pqt-onsubmit="FT.saveManualSale(event,${jsArg(correctionOfSaleId)})">
+      <input type="hidden" name="idempotencyKey" value="${esc(idempotencyKey)}">
       <div class="form-group"><label class="label">Project</label><select class="select" name="projectId" required><option value="">Pilih project</option>${projectRows.map(row=>`<option value="${row.id}" ${source?.projectId===row.id?'selected':''}>${esc(row.name||row.code||row.id)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Employee</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${employeeRows.map(row=>`<option value="${row.id}" ${source?.employeeId===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${outletRows.map(row=>`<option value="${row.id}" ${source?.outletId===row.id?'selected':''}>${esc(formatOutletLabel(row))}</option>`).join('')}</select></div>
@@ -3143,7 +3154,7 @@ window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
       ...data, projectId, qty:Number(data.qty), unitPrice:Number(data.unitPrice),
       soldAt:`${data.date}T12:00:00+07:00`,
       correctionOfSaleId:correctionOfSaleId || null,
-      idempotencyKey:`manual-sale:${crypto.randomUUID?.() || Date.now()}`,
+      idempotencyKey:String(data.idempotencyKey || ''),
     });
     await waitForOperationalSync();
     await refreshOperationalData(getDB(),getActor());
@@ -3237,7 +3248,7 @@ function renderStocks() {
               return `
                 <tr data-project="${esc(s.projectId||'')}" data-outlet="${esc(s.outletId||'')}" data-status="${isLow?'low':'ok'}">
                   <td>${outletIcon(o.type)} ${esc(o.name)}</td>
-                  <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px; color:var(--gray-400);">${p.sku}</span></td>
+                  <td><span style="font-weight:600;">${esc(p.name)}</span><br><span style="font-size:11px; color:var(--gray-400);">${esc(p.sku||'-')}</span></td>
                   <td style="font-weight:700; color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
                   <td style="color:var(--gray-400);">${s.minStock}</td>
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
