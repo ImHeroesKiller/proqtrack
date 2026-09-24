@@ -1628,6 +1628,9 @@ export function createVisit(data) {
   assertCanAccessEmployee(data.employeeId);
   assertOperationalContext(getDB(), data);
   const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...withOrg(data) };
+  if ((visit.checkInTime || visit.status !== 'planned') && !visit.locationSource) {
+    visit.locationSource = 'administrative_entry';
+  }
   getDB().visits.push(visit);
   saveDB();
   return visit;
@@ -1643,7 +1646,10 @@ export function updateVisit(id, data) {
   if (data.employeeId && data.employeeId !== current.employeeId) assertCanAccessEmployee(data.employeeId);
   if (!isOrgAdminRole(actor.role)) {
     if (['completed','cancelled','rejected'].includes(String(current.status || ''))) throw new Error('Kunjungan final tidak dapat diubah. Gunakan workflow koreksi.');
-    for (const key of ['employeeId','projectId','outletId','checkInTime','startedAt','lat','lng']) {
+    for (const key of [
+      'employeeId','projectId','outletId','checkInTime','startedAt','lat','lng',
+      'checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt','locationSource'
+    ]) {
       if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
         throw new Error('Evidence kunjungan tidak dapat diubah setelah tercatat.');
       }

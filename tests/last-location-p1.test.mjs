@@ -1,0 +1,99 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import {
+  validCoordinatePair, visitLocationEvidence, locationFreshness, locationSourceLabel,
+} from '../src/lib/location-evidence.js';
+
+const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('Last Location accepts only complete valid coordinate pairs', () => {
+  assert.deepEqual(validCoordinatePair(-6.2,106.8), { lat:-6.2, lng:106.8 });
+  assert.equal(validCoordinatePair(-91,106.8), null);
+  assert.equal(validCoordinatePair(-6.2,181), null);
+  assert.equal(validCoordinatePair(-6.2,null), null);
+  assert.equal(validCoordinatePair('',106.8), null);
+});
+
+test('visit GPS evidence takes precedence and outlet coordinates remain reference-only', () => {
+  const outlet = { lat:-6.3, lng:106.9 };
+  const gps = visitLocationEvidence({
+    checkInLat:-6.21, checkInLng:106.81, checkInAccuracyM:12,
+    checkInCapturedAt:'2026-09-24T02:00:00.000Z', locationSource:'device_gps',
+  }, outlet);
+  assert.equal(gps.actual, true);
+  assert.equal(gps.source, 'device_gps');
+  assert.equal(gps.accuracyM, 12);
+  assert.deepEqual([gps.lat,gps.lng],[-6.21,106.81]);
+
+  const reference = visitLocationEvidence({}, outlet);
+  assert.equal(reference.actual, false);
+  assert.equal(reference.source, 'outlet_reference');
+  assert.equal(locationSourceLabel(reference), 'Referensi outlet');
+
+  const administrative = visitLocationEvidence({
+    checkInLat:-6.21, checkInLng:106.81, checkInAccuracyM:null,
+    locationSource:'administrative_checkin',
+  }, outlet);
+  assert.equal(administrative.actual, false);
+  assert.equal(administrative.accuracyM, null);
+});
+
+test('location freshness never calls outlet reference a current employee position', () => {
+  const reference = visitLocationEvidence({}, { lat:-6.3, lng:106.9 });
+  const refFreshness = locationFreshness(reference,{ date:'2026-09-24' },Date.parse('2026-09-24T03:00:00Z'),'2026-09-24');
+  assert.equal(refFreshness.key, 'reference');
+  assert.match(refFreshness.label, /bukan posisi perangkat/);
+
+  const gps = visitLocationEvidence({
+    checkInLat:-6.21, checkInLng:106.81, locationSource:'device_gps',
+    checkInCapturedAt:'2026-09-24T02:55:00.000Z',
+  }, null);
+  const fresh = locationFreshness(gps,{ date:'2026-09-24' },Date.parse('2026-09-24T03:00:00Z'),'2026-09-24');
+  assert.equal(fresh.key, 'fresh');
+  assert.match(fresh.label, /5 menit/);
+});
+
+test('self check-in captures immutable GPS evidence while administrative check-in stays non-device', async () => {
+  const [app, db] = await Promise.all([read('src/app.js'),read('src/lib/db.js')]);
+  assert.match(app, /const ownsVisit = !!actor\?\.employeeId/);
+  assert.match(app, /await captureDevicePosition\(\)/);
+  assert.match(app, /patch\.checkInLat = gps\.lat/);
+  assert.match(app, /patch\.checkInLng = gps\.lng/);
+  assert.match(app, /patch\.checkInAccuracyM = gps\.accuracyM/);
+  assert.match(app, /patch\.checkInCapturedAt = gps\.capturedAt/);
+  assert.match(app, /locationSource:ownsVisit \? 'device_gps' : 'administrative_checkin'/);
+  assert.match(db, /'checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt','locationSource'/);
+  assert.match(db, /administrative_entry/);
+});
+
+test('Last Location UI distinguishes evidence source and never says still at location', async () => {
+  const [app, field] = await Promise.all([read('src/app.js'),read('src/field-sales.js')]);
+  assert.match(app, /Referensi outlet — bukan posisi aktual perangkat/);
+  assert.match(app, /locationSourceLabel\(loc\.evidence\)/);
+  assert.match(app, /belum check-out/);
+  assert.doesNotMatch(app, /masih di lokasi/);
+  assert.match(field, /Referensi outlet bukan posisi aktual perangkat/);
+  assert.match(field, /locationSourceLabel\(evidence\)/);
+  assert.match(field, /belum check-out/);
+  assert.doesNotMatch(field, /masih di lokasi/);
+});
+
+test('Last Location refresh is guarded and active on route focus', async () => {
+  const app = await read('src/app.js');
+  assert.match(app, /const TRACKING_REFRESH_MS = 30000/);
+  assert.match(app, /refreshOperationalData\(getDB\(\), actor\)/);
+  assert.match(app, /window\.FT\.refreshTracking/);
+  assert.match(app, /configureTrackingRefresh\(route\)/);
+  assert.match(app, /if \(isTrackingRoute\(\)\) refreshTrackingData/);
+  assert.match(app, /trackingRefreshTimer/);
+});
+
+test('cloud visit authority maps UI checked-in to D1 in_progress and preserves GPS columns', async () => {
+  const ops = await read('worker/operations.js');
+  assert.match(ops, /uiStatus === 'checked-in'\s*\? 'in_progress'/);
+  assert.match(ops, /dbRow\.status === 'in_progress' \? 'checked-in'/);
+  assert.match(ops, /row\.startLatitude \?\? row\.checkInLat \?\? row\.lat/);
+  assert.match(ops, /row\.startLongitude \?\? row\.checkInLng \?\? row\.lng/);
+  assert.match(ops, /row\.startedAt \|\| row\.checkInCapturedAt \|\| row\.checkInAt/);
+});

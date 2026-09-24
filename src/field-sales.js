@@ -13,6 +13,7 @@ import {
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
+import { locationFreshness, locationSourceLabel, visitLocationEvidence } from './lib/location-evidence.js';
 
 function empId() {
   return window.FT?.state?.account?.employeeId || null;
@@ -31,6 +32,15 @@ export function renderLastLocation() {
   const todayRows = rows.filter(v => visitDay(v) === today);
   const outlets = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const uniqueToday = [...new Map(todayRows.map(v => [v.outletId, v])).values()];
+  const evidenceFor = visit => {
+    const outlet = outlets[visit.outletId] || null;
+    const evidence = visitLocationEvidence(visit,outlet);
+    return {
+      outlet,
+      evidence,
+      freshness:locationFreshness(evidence,visit,Date.now(),today),
+    };
+  };
   return `
     <div class="grid-3" style="margin-bottom:18px">
       <div class="stat-card"><div class="stat-icon">${appIcon('pin')}</div><div class="stat-label">Lokasi hari ini</div><div class="stat-value">${uniqueToday.length}</div></div>
@@ -39,17 +49,21 @@ export function renderLastLocation() {
     </div>
     <div class="card">
       <div class="card-title">Last Location</div>
-      <div class="card-subtitle">Posisi terakhir dari check-in di toko atau lokasi kerja. Boleh lebih dari satu toko per hari; riwayat tidak dihapus.</div>
-      ${!uniqueToday.length ? `<div class="empty-state">${appIcon('pin')}<h3>Belum ada check-in hari ini</h3><p>Check-in di kunjungan terjadwal agar last location tercatat.</p></div>` : `
+      <div class="card-subtitle">Sumber lokasi dibedakan antara GPS perangkat dan referensi outlet. Referensi outlet bukan posisi aktual perangkat.</div>
+      ${!uniqueToday.length ? `<div class="empty-state">${appIcon('pin')}<h3>Belum ada check-in hari ini</h3><p>Check-in di kunjungan terjadwal agar lokasi tercatat.</p></div>` : `
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
           ${uniqueToday.map(v => {
-            const o = outlets[v.outletId];
+            const { outlet:o, evidence, freshness } = evidenceFor(v);
+            const source = locationSourceLabel(evidence);
+            const accuracy = evidence?.accuracyM != null ? ` · akurasi ±${Math.round(evidence.accuracyM)} m` : '';
             return `<div style="display:flex;gap:12px;padding:14px;border-radius:12px;background:var(--gray-50)">
               <div class="stat-icon">${appIcon('pin')}</div>
               <div style="flex:1">
                 <strong>${esc(o?.name || v.outletId)}</strong>
                 <div class="am-muted">${esc(o?.address || '')}</div>
-                <div class="am-muted">Check-in ${v.checkInTime || '—'}${v.checkOutTime ? ' · check-out ' + v.checkOutTime : ' · masih di lokasi'}</div>
+                <div class="am-muted">${esc(source)}${esc(accuracy)} · ${esc(freshness.label)}</div>
+                <div class="am-muted">Check-in ${v.checkInTime || '—'}${v.checkOutTime ? ' · check-out ' + v.checkOutTime : ' · belum check-out'}</div>
+                ${evidence && !evidence.actual ? '<div class="tracking-reference-warning">Lokasi outlet referensi — bukan posisi aktual perangkat.</div>' : ''}
               </div>
               ${statusBadge(v.status)}
             </div>`;
@@ -59,11 +73,11 @@ export function renderLastLocation() {
     <div class="card" style="margin-top:16px">
       <div class="card-title">Riwayat lokasi</div>
       <div class="visits-table-wrapper">
-        <table class="table"><thead><tr><th>Tanggal</th><th>Lokasi</th><th>Masuk</th><th>Keluar</th><th>Status</th></tr></thead>
+        <table class="table"><thead><tr><th>Tanggal</th><th>Lokasi</th><th>Sumber</th><th>Masuk</th><th>Keluar</th><th>Status</th></tr></thead>
         <tbody>${rows.length ? rows.map(v => {
-          const o = outlets[v.outletId];
-          return `<tr><td>${formatDateShort(visitDay(v))}</td><td>${esc(o?.name || '-')}</td><td>${v.checkInTime || '—'}</td><td>${v.checkOutTime || '—'}</td><td>${statusBadge(v.status)}</td></tr>`;
-        }).join('') : '<tr><td colspan="5"><div class="empty-state"><h3>Belum ada riwayat</h3></div></td></tr>'}</tbody></table>
+          const { outlet:o, evidence, freshness } = evidenceFor(v);
+          return `<tr><td>${formatDateShort(visitDay(v))}</td><td>${esc(o?.name || '-')}</td><td>${esc(locationSourceLabel(evidence))}<div class="am-muted">${esc(freshness.label)}</div></td><td>${v.checkInTime || '—'}</td><td>${v.checkOutTime || 'Belum check-out'}</td><td>${statusBadge(v.status)}</td></tr>`;
+        }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Belum ada riwayat</h3></div></td></tr>'}</tbody></table>
       </div>
     </div>`;
 }

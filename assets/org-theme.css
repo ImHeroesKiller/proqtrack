@@ -238,3 +238,46 @@ html[data-org-branding="1"] .role-sales .field-dock-item.active::after {
     align-items: center;
   }
 }
+
+
+.tracking-freshness {
+  display:inline-flex;
+  align-items:center;
+  min-height:30px;
+  padding:0 9px;
+  border-radius:999px;
+  background:rgba(var(--brand-rgb),.07);
+  color:var(--gray-500);
+  font-size:11px;
+  font-weight:650;
+  white-space:nowrap;
+}
+.tracking-evidence-note {
+  margin-top:10px;
+  padding:9px 11px;
+  border-radius:10px;
+  background:var(--brand-soft);
+  color:var(--gray-600);
+  font-size:12px;
+}
+.tracking-meta {
+  margin-top:3px;
+  color:var(--gray-400);
+  font-size:11px;
+}
+.tracking-actions {
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  flex-shrink:0;
+}
+.tracking-reference-warning {
+  margin-top:5px;
+  color:var(--amber-700);
+  font-size:11px;
+  font-weight:650;
+}
+@media (max-width:639px) {
+  .tracking-freshness { display:none; }
+  .tracking-actions { min-width:92px; }
+}
