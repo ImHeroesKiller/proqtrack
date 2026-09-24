@@ -145,13 +145,21 @@ function validateRows(rows, ctx, claims) {
     const existing = ctx.employeeByCode.get(codeKey) || null;
     let existingMeta = {};
     try { existingMeta = JSON.parse(existing?.metadata_json || '{}') || {}; } catch { existingMeta = {}; }
-    const existingRole = existing
-      ? loginRole(existingMeta.role || existingMeta.position || '')
-      : '';
     const existingActiveAssignments = existing
       ? ctx.assignments.filter(assignment => String(assignment.employee_id) === String(existing.id) && assignment.status === 'active')
       : [];
-    if (existing && existingActiveAssignments.length && existingRole && row.role !== existingRole) {
+    const assignmentRoles = new Set(existingActiveAssignments.map(assignment => {
+      let meta = {};
+      try { meta = JSON.parse(assignment.metadata_json || '{}') || {}; } catch { meta = {}; }
+      return loginRole(meta.roleOnProject || assignment.position_name || '');
+    }).filter(Boolean));
+    const existingRole = existing
+      ? (loginRole(existingMeta.role || existingMeta.position || '') || (assignmentRoles.size === 1 ? [...assignmentRoles][0] : ''))
+      : '';
+    if (existing && existingActiveAssignments.length && (
+      (existingRole && row.role !== existingRole)
+      || (!existingRole && assignmentRoles.size && !assignmentRoles.has(row.role))
+    )) {
       errors.push('EMPLOYEE_ROLE_CHANGE_REQUIRES_ASSIGNMENT_FLOW');
     }
     if (!existing && !row.projectRef) errors.push('PROJECT_REQUIRED');
@@ -472,7 +480,7 @@ async function commit(request, env, claims, requestId) {
       statements.push(env.DB.prepare(`
         UPDATE core_employee_project_assignments
         SET status='ended',
-            ends_on=COALESCE(ends_on,date('now')),
+            ends_on=date('now'),
             metadata_json=json_patch(COALESCE(metadata_json,'{}'), json_object(
               'endedAt', CURRENT_TIMESTAMP,
               'endedBy', ?,
