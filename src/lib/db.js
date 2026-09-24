@@ -2012,8 +2012,8 @@ export function deleteProductSale() {
 
 export function monthSalesAmount(employeeId, month = todayISO().slice(0, 7)) {
   return getProductSales()
-    .filter(s => s.employeeId === employeeId && String(s.date || '').startsWith(month))
-    .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    .filter(s => s.employeeId === employeeId && String(s.soldAt || s.date || '').startsWith(month))
+    .reduce((sum, s) => sum + (Number(s.totalAmount ?? s.amount) || 0), 0);
 }
 
 export function getProducts() {
