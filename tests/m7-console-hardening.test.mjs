@@ -77,7 +77,8 @@ test('online M7 login is cloud-authoritative and single-flight', async () => {
   assert.match(cutover, /if \(loginInFlight\) return/);
   assert.match(cutover, /clearApiToken\(\)/);
   assert.match(cutover, /localCandidate\?\.role === 'superadmin'/);
-  assert.match(cutover, /\? ''/);
+  assert.match(cutover, /localCandidate\?\.organizationId \|\| ''/);
+  assert.doesNotMatch(cutover, /db\.currentOrganizationId \|\| getCurrentOrgId\(\)/);
   assert.match(cutover, /if \(!cloudAccount\) \{/);
   assert.match(cutover, /Login gagal\. Periksa email, password, dan koneksi/);
   assert.doesNotMatch(cutover, /sesi lokal sementara dipertahankan/);
@@ -98,7 +99,7 @@ test('stale tenant rejection is surfaced and retried without the cached tenant h
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.14/);
+  assert.match(serviceWorker, /proqtrack-v12\.15/);
 });
 
 test('global superadmin session stays global until explicit workspace selection', async () => {
