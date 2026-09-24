@@ -721,9 +721,16 @@ export async function commitOperationalChanges(changes = []) {
     error.code = 'CLOUD_SYNC_BUSY';
     throw error;
   }
+  if (queuedSnapshot) {
+    clearTimeout(timer);
+    await flush();
+    if (lastError || !ready) {
+      const error = new Error(lastError || 'CLOUD_SYNC_UNAVAILABLE');
+      error.code = lastError || 'CLOUD_SYNC_UNAVAILABLE';
+      throw error;
+    }
+  }
   syncing = true;
-  clearTimeout(timer);
-  queuedSnapshot = null;
   emitStatus('syncing', { source:'direct-commit' });
   try {
     const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}`;
