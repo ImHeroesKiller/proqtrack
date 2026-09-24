@@ -1994,9 +1994,24 @@ export function deleteLeave(id) {
 
 export function getStocks() {
   const db = getDB();
-  const outletIds = new Set(scoped(db.outlets).map(row => row.id));
-  const productIds = new Set(scoped(db.products).map(row => row.id));
-  return scoped(db.stocks).filter(row => outletIds.has(row.outletId) && productIds.has(row.productId));
+  const outlets = scoped(db.outlets);
+  const products = scoped(db.products);
+  const outletIds = new Set(outlets.map(row => row.id));
+  const productIds = new Set(products.map(row => row.id));
+  let rows = scoped(db.stocks).filter(row => outletIds.has(row.outletId) && productIds.has(row.productId));
+  const actor = getActor();
+  if (actor?.role === 'manager' && actor.projectId) {
+    const projectId = String(actor.projectId);
+    const outletMap = new Map(outlets.map(row => [String(row.id), row]));
+    const productMap = new Map(products.map(row => [String(row.id), row]));
+    rows = rows.filter(row => {
+      if (String(row.projectId || '') === projectId) return true;
+      const outlet = outletMap.get(String(row.outletId || ''));
+      const product = productMap.get(String(row.productId || ''));
+      return linkedProjectIds(outlet).includes(projectId) || linkedProjectIds(product).includes(projectId);
+    });
+  }
+  return rows;
 }
 
 export function getStocksByOutlet(outletId) {
