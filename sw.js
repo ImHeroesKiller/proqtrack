@@ -1,6 +1,7 @@
 // Employees P2 operational refresh
 // Employees P3 maintainability refresh
-const CACHE = 'proqtrack-v12.43';
+// Outlets P3 maintainability refresh
+const CACHE = 'proqtrack-v12.44';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -29,6 +30,7 @@ const FALLBACK_SHELL = [
   './src/lib/project-ui.js',
   './src/lib/assignment-ui.js',
   './src/lib/team-employee-ui.js',
+  './src/lib/outlet-ui.js',
   './src/lib/cloud-data.js',
   './src/lib/offline-store.js',
   './src/lib/offline-engine.js',
