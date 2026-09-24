@@ -620,7 +620,7 @@ function injectStyles() {
   if (document.getElementById("projectV7Styles")) return;
   const s = document.createElement("style");
   s.id = "projectV7Styles";
-  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}.pm-client-logo-img{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;border:1px solid #e8ebf1}.pm-subtext{font-size:11px;color:#94a3b8}.pm-sync{font-size:11px;color:#64748b;padding:5px 9px;border-radius:999px;background:#f1f5f9}.pm-sync-ok{color:#047857;background:#ecfdf5}.pm-sync-progress{color:#b45309;background:#fffbeb}.pm-sync-error{color:#b91c1c;background:#fef2f2}.pm-result-summary{font-size:12px;color:#64748b;margin:0 0 10px}.pm-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.pm-empty{text-align:center;padding:28px;color:#94a3b8}.pm-pic-list{display:grid;gap:8px}.pm-pic-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr auto;gap:8px;align-items:center}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}.pm-pic-row{grid-template-columns:1fr}.pm-client-table thead,.pm-project-table thead{display:none}.pm-client-table,.pm-client-table tbody,.pm-client-table tr,.pm-client-table td,.pm-project-table,.pm-project-table tbody,.pm-project-table tr,.pm-project-table td{display:block;width:100%}.pm-client-table tr,.pm-project-table tr{border:1px solid #e8ebf1;border-radius:14px;margin-bottom:10px;padding:10px}.pm-client-table td,.pm-project-table td{border:0!important;padding:8px 4px!important;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.pm-client-table td::before,.pm-project-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#94a3b8;min-width:82px}.pm-client-table td[data-label="Klien"]{display:block}.pm-client-table td[data-label="Klien"]::before{display:none}.pm-pager{justify-content:center}}`;
+  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}.pm-client-logo-img{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;border:1px solid #e8ebf1}.pm-subtext{font-size:11px;color:#94a3b8}.pm-sync{font-size:11px;color:#64748b;padding:5px 9px;border-radius:999px;background:#f1f5f9}.pm-sync-ok{color:#047857;background:#ecfdf5}.pm-sync-progress{color:#b45309;background:#fffbeb}.pm-sync-error{color:#b91c1c;background:#fef2f2}.pm-result-summary{font-size:12px;color:#64748b;margin:0 0 10px}.pm-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.pm-empty{text-align:center;padding:28px;color:#94a3b8}.pm-pic-list{display:grid;gap:8px}.pm-pic-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr auto;gap:8px;align-items:center}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}.pm-pic-row{grid-template-columns:1fr}.pm-client-table thead,.pm-project-table thead,.pm-assignment-table thead{display:none}.pm-client-table,.pm-client-table tbody,.pm-client-table tr,.pm-client-table td,.pm-project-table,.pm-project-table tbody,.pm-project-table tr,.pm-project-table td,.pm-assignment-table,.pm-assignment-table tbody,.pm-assignment-table tr,.pm-assignment-table td{display:block;width:100%}.pm-client-table tr,.pm-project-table tr,.pm-assignment-table tr{border:1px solid #e8ebf1;border-radius:14px;margin-bottom:10px;padding:10px}.pm-client-table td,.pm-project-table td,.pm-assignment-table td{border:0!important;padding:8px 4px!important;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.pm-client-table td::before,.pm-project-table td::before,.pm-assignment-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#94a3b8;min-width:82px}.pm-client-table td[data-label="Klien"]{display:block}.pm-client-table td[data-label="Klien"]::before{display:none}.pm-pager{justify-content:center}}`;
   document.head.appendChild(s);
 }
 function ensureNav() {
@@ -819,6 +819,26 @@ function renderProjects(readOnly = false) {
   queueMicrotask(() => window.PM?.filterProjects?.(projectPage));
   return rendered;
 }
+const ASSIGNMENT_PAGE_SIZE = 15;
+let assignmentPage = 1;
+function assignmentRoleLabel(value = '') {
+  return ({ supervisor:'Supervisor', sales:'Field Sales', viewer:'Viewer' })[String(value || '')] || String(value || '-');
+}
+function assignmentStatusLabel(value = '') {
+  return ({ active:'Aktif', ended:'Selesai', removed:'Selesai', inactive:'Nonaktif' })[String(value || '')] || String(value || '-');
+}
+function assignmentSyncLabel() {
+  const cloud = cloudDataStatus();
+  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
+  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
+  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
+  return '<span class="pm-sync">Mode lokal</span>';
+}
+function employeeCapacityUsage(db, employeeId, startDate, endDate, excludeId = '') {
+  return (db.projectAssignments || [])
+    .filter((assignment) => assignment.employeeId === employeeId && assignment.status === 'active' && assignment.id !== excludeId && assignment.startDate <= endDate && assignment.endDate >= startDate)
+    .reduce((sum, assignment) => sum + Number(assignment.allocationPercent || 100), 0);
+}
 function renderAssignments() {
   const db = viewDB(),
     pm = projectById(db),
@@ -827,7 +847,7 @@ function renderAssignments() {
     ids = accessibleProjectIds(),
     scopedProjects = (db.projects || []).filter((p) => role() === "manager" || ids.has(p.id)),
     rows = (db.projectAssignments || []).filter((a) => role() === "manager" || ids.has(a.projectId));
-  return shell(
+  const rendered = shell(
     "Assignment Project",
     "Penugasan supervisor, sales dan viewer per project",
     `${kpis([
@@ -835,13 +855,35 @@ function renderAssignments() {
       ["Aktif", rows.filter((x) => x.status === "active").length],
       ["Supervisor", rows.filter((x) => x.status === "active" && x.roleOnProject === "supervisor").length],
       ["Sales", rows.filter((x) => x.status === "active" && x.roleOnProject === "sales").length],
-    ])}<div class="card"><div class="pm-toolbar"><select class="select" data-pqt-onchange="PM.filterProject('assignmentRows',this.value)"><option value="">Semua project</option>${scopedProjects.map((p) => `<option value="${p.id}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")}</select><input class="input" placeholder="Cari project atau karyawan" data-pqt-oninput="PM.filterRows('assignmentRows',this.value)"></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Karyawan</th><th>Role</th><th>Supervisor</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assignmentRows">${rows.map((a) => {
-      const p = pm[a.projectId] || {},
-        e = em[a.employeeId] || {},
-        sp = em[a.supervisorId] || {};
-      return `<tr data-project="${esc(a.projectId)}" data-search="${esc(`${p.name} ${e.name}`.toLowerCase())}"><td><strong>${esc(p.name || a.projectId)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code || "")}</div></td><td>${esc(cm[p.clientId]?.name || "-")}</td><td>${esc(e.name || a.employeeId)}</td><td>${statusBadge(a.roleOnProject)}</td><td>${esc(sp.name || "-")}</td><td>${statusBadge(a.status)}</td><td>${a.status === "active" ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">${svg("unlink")} Unassign</button>` : '<span class="pm-subtext">Riwayat</span>'}</td></tr>`;
-    }).join("")}</tbody></table></div></div>`,
+    ])}<div class="card">
+      <div class="pm-toolbar">
+        <select class="select" id="assignmentProjectFilter" aria-label="Filter project" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua project</option>${scopedProjects.map((p) => `<option value="${p.id}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")}</select>
+        <select class="select" id="assignmentStatusFilter" aria-label="Filter status assignment" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua status</option><option value="active">Aktif</option><option value="ended">Selesai</option></select>
+        <select class="select" id="assignmentRoleFilter" aria-label="Filter role assignment" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua role</option><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select>
+        <input class="input" id="assignmentSearch" placeholder="Cari project, karyawan, supervisor" aria-label="Cari assignment" data-pqt-oninput="PM.filterAssignments(1)">
+        <span id="assignmentSyncState">${assignmentSyncLabel()}</span>
+      </div>
+      <div id="assignmentResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
+      <div class="visits-table-wrapper"><table class="table pm-assignment-table"><thead><tr><th>Project</th><th>Klien</th><th>Karyawan</th><th>Role</th><th>Supervisor</th><th>Periode / Kapasitas</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assignmentRows">${rows.map((a) => {
+        const p = pm[a.projectId] || {}, e = em[a.employeeId] || {}, sp = em[a.supervisorId] || {}, normalizedStatus = a.status === 'removed' ? 'ended' : a.status;
+        const search = `${p.name || ''} ${p.code || ''} ${cm[p.clientId]?.name || ''} ${e.name || ''} ${sp.name || ''} ${assignmentRoleLabel(a.roleOnProject)}`.toLowerCase();
+        return `<tr data-project="${esc(a.projectId)}" data-status="${esc(normalizedStatus)}" data-role="${esc(a.roleOnProject || '')}" data-search="${esc(search)}">
+          <td data-label="Project"><strong>${esc(p.name || a.projectId)}</strong><div class="pm-subtext">${esc(p.code || "")}</div></td>
+          <td data-label="Klien">${esc(cm[p.clientId]?.name || "-")}</td>
+          <td data-label="Karyawan"><strong>${esc(e.name || a.employeeId)}</strong><div class="pm-subtext">${esc(e.employeeCode || e.code || '')}</div></td>
+          <td data-label="Role"><span class="pm-badge">${esc(assignmentRoleLabel(a.roleOnProject))}</span></td>
+          <td data-label="Supervisor">${esc(sp.name || (a.roleOnProject === 'supervisor' ? '—' : '-'))}</td>
+          <td data-label="Periode / Kapasitas">${dateLabel(a.startDate)} – ${dateLabel(a.endDate)}<div class="pm-subtext">${Number(a.allocationPercent || 100)}% kapasitas</div></td>
+          <td data-label="Status"><span class="pm-badge ${esc(normalizedStatus)}">${esc(assignmentStatusLabel(normalizedStatus))}</span></td>
+          <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewAssignment('${a.id}')">${svg("eye")} Detail</button>${normalizedStatus === "active" ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">${svg("unlink")} Unassign</button>` : ""}</div></td>
+        </tr>`;
+      }).join("")}</tbody></table></div>
+      <div id="assignmentEmpty" class="pm-empty" hidden>Tidak ada assignment yang sesuai dengan filter.</div>
+      <div id="assignmentPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.assignmentPage(-1)">Sebelumnya</button><span id="assignmentPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.assignmentPage(1)">Berikutnya</button></div>
+    </div>`,
   );
+  queueMicrotask(() => window.PM?.filterAssignments?.(assignmentPage));
+  return rendered;
 }
 function renderMyTeam() {
   const db = viewDB(),
@@ -1439,6 +1481,79 @@ window.PM = {
       if (checkbox) checkbox.checked = !value;
     }
   },
+  assignmentPage(delta) {
+    assignmentPage = Math.max(1, assignmentPage + Number(delta || 0));
+    this.filterAssignments(assignmentPage);
+  },
+  filterAssignments(page = assignmentPage) {
+    const search = String(document.getElementById("assignmentSearch")?.value || "").trim().toLowerCase();
+    const projectId = String(document.getElementById("assignmentProjectFilter")?.value || "");
+    const status = String(document.getElementById("assignmentStatusFilter")?.value || "");
+    const assignmentRole = String(document.getElementById("assignmentRoleFilter")?.value || "");
+    const rows = [...document.querySelectorAll("#assignmentRows tr")];
+    const matched = rows.filter((row) => {
+      const matchesSearch = !search || String(row.dataset.search || "").includes(search);
+      const matchesProject = !projectId || row.dataset.project === projectId;
+      const matchesStatus = !status || row.dataset.status === status;
+      const matchesRole = !assignmentRole || row.dataset.role === assignmentRole;
+      return matchesSearch && matchesProject && matchesStatus && matchesRole;
+    });
+    const pageCount = Math.max(1, Math.ceil(matched.length / ASSIGNMENT_PAGE_SIZE));
+    assignmentPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
+    const start = (assignmentPage - 1) * ASSIGNMENT_PAGE_SIZE;
+    const visible = new Set(matched.slice(start, start + ASSIGNMENT_PAGE_SIZE));
+    rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
+    const summary = document.getElementById("assignmentResultSummary");
+    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + ASSIGNMENT_PAGE_SIZE, matched.length)} dari ${matched.length} assignment` : "Tidak ada assignment yang sesuai dengan filter.";
+    const empty = document.getElementById("assignmentEmpty");
+    if (empty) empty.hidden = matched.length !== 0;
+    const pager = document.getElementById("assignmentPager");
+    if (pager) pager.hidden = matched.length <= ASSIGNMENT_PAGE_SIZE;
+    const label = document.getElementById("assignmentPageLabel");
+    if (label) label.textContent = `Halaman ${assignmentPage} / ${pageCount}`;
+    const sync = document.getElementById("assignmentSyncState");
+    if (sync) sync.innerHTML = assignmentSyncLabel();
+  },
+  viewAssignment(id) {
+    const db = viewDB(), assignment = db.projectAssignments.find((row) => row.id === id);
+    if (!assignment) return;
+    if (role() === "project-manager" && !accessibleProjectIds().has(assignment.projectId)) return;
+    const project = db.projects.find((row) => row.id === assignment.projectId),
+      client = db.clients.find((row) => row.id === project?.clientId),
+      employee = db.employees.find((row) => row.id === assignment.employeeId),
+      supervisor = db.employees.find((row) => row.id === assignment.supervisorId),
+      actor = db.accounts.find((row) => row.id === assignment.assignedBy),
+      endActor = db.accounts.find((row) => row.id === assignment.endedBy),
+      normalizedStatus = assignment.status === 'removed' ? 'ended' : assignment.status;
+    modal(`Assignment — ${employee?.name || assignment.employeeId}`, `<div class="pm-detail-grid">
+      <div class="pm-detail-card"><div class="pm-detail-label">Project</div><div class="pm-detail-value">${esc(project?.name || assignment.projectId)}<br><span class="pm-subtext">${esc(project?.code || '')}</span></div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Klien</div><div class="pm-detail-value">${esc(client?.name || '-')}</div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Karyawan</div><div class="pm-detail-value">${esc(employee?.name || assignment.employeeId)}<br><span class="pm-subtext">${esc(employee?.employeeCode || employee?.code || '')}</span></div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Role</div><div class="pm-detail-value">${esc(assignmentRoleLabel(assignment.roleOnProject))}</div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Supervisor</div><div class="pm-detail-value">${esc(supervisor?.name || (assignment.roleOnProject === 'supervisor' ? '—' : '-'))}</div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Status</div><div class="pm-detail-value"><span class="pm-badge ${esc(normalizedStatus)}">${esc(assignmentStatusLabel(normalizedStatus))}</span></div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Periode</div><div class="pm-detail-value">${dateLabel(assignment.startDate)} – ${dateLabel(assignment.endDate)}</div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Alokasi Kapasitas</div><div class="pm-detail-value">${Number(assignment.allocationPercent || 100)}%</div></div>
+      <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Alasan / Cakupan Kerja</div><div class="pm-detail-value">${esc(assignment.notes || '-')}</div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Ditugaskan</div><div class="pm-detail-value">${dateLabel(assignment.assignedAt)}<br><span class="pm-subtext">${esc(actor?.name || actor?.email || assignment.assignedBy || '-')}</span></div></div>
+      <div class="pm-detail-card"><div class="pm-detail-label">Diakhiri</div><div class="pm-detail-value">${assignment.endedAt ? dateLabel(assignment.endedAt) : '-'}<br><span class="pm-subtext">${esc(endActor?.name || endActor?.email || assignment.endedBy || '')}</span></div></div>
+    </div>`);
+  },
+  refreshAssignmentCapacity() {
+    const form = document.querySelector('#pmModal form');
+    if (!form) return;
+    const db = viewDB();
+    const employeeId = String(form.elements.employeeId?.value || '');
+    const startDate = String(form.elements.startDate?.value || '');
+    const endDate = String(form.elements.endDate?.value || '');
+    const requested = Number(form.elements.allocationPercent?.value || 0);
+    const hint = document.getElementById('assignmentCapacityHint');
+    if (!hint || !employeeId || !startDate || !endDate) return;
+    const used = employeeCapacityUsage(db, employeeId, startDate, endDate);
+    const available = Math.max(0, 100 - used);
+    hint.textContent = `Terpakai ${used}% · Tersedia ${available}% · Permintaan ${Number.isFinite(requested) ? requested : 0}%`;
+    hint.classList.toggle('pm-sync-error', Number.isFinite(requested) && requested > available);
+  },
   openAssign(projectId) {
     if (!canManage()) return;
     const db = viewDB(),
@@ -1461,7 +1576,7 @@ window.PM = {
       .filter(Boolean);
     modal(
       `Assignment — ${p?.name || projectId}`,
-      `<form class="pm-form" data-pqt-onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required>${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject"><option>supervisor</option><option>sales</option><option>viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId"><option value="">Pilih untuk sales/viewer</option>${supervisors.map((employee) => `<option value="${employee.id}">${esc(employee.name)}</option>`).join("")}</select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
+      `<form class="pm-form" data-pqt-onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required data-pqt-onchange="PM.refreshAssignmentCapacity()">${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject"><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId"><option value="">Pilih untuk sales/viewer</option>${supervisors.map((employee) => `<option value="${employee.id}">${esc(employee.name)}</option>`).join("")}</select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required data-pqt-oninput="PM.refreshAssignmentCapacity()"><div id="assignmentCapacityHint" class="pm-subtext" style="margin-top:6px">Terpakai 0% · Tersedia 100% · Permintaan 100%</div></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
         active
           .map((a) => {
             const e = db.employees.find((x) => x.id === a.employeeId);
@@ -1733,6 +1848,10 @@ window.addEventListener("proqtrack:cloud-status", () => {
   if (["#/projects","#/my-projects"].includes(location.hash)) {
     const target = document.getElementById("projectSyncState");
     if (target) target.innerHTML = projectSyncLabel();
+  }
+  if (location.hash === "#/assignments") {
+    const target = document.getElementById("assignmentSyncState");
+    if (target) target.innerHTML = assignmentSyncLabel();
   }
 });
 migrateV7();
