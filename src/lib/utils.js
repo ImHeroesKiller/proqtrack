@@ -201,8 +201,20 @@ export function photoTypeLabel(type) {
   return PHOTO_TYPE_LABELS[normalized] || type || '—';
 }
 
-export function todayISO() {
-  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' });
+export function runtimeTimezone() {
+  const fromWindow = typeof window !== 'undefined' ? String(window.__PROQTRACK_TIMEZONE__ || '') : '';
+  const fromDocument = typeof document !== 'undefined' ? String(document.documentElement?.dataset?.orgTimezone || '') : '';
+  const candidate = fromWindow || fromDocument || 'Asia/Jakarta';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone:candidate }).format(new Date());
+    return candidate;
+  } catch {
+    return 'Asia/Jakarta';
+  }
+}
+
+export function todayISO(timeZone = runtimeTimezone()) {
+  return new Date().toLocaleDateString('en-CA', { timeZone });
 }
 
 export function esc(value = '') {
