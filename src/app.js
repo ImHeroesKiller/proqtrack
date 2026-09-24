@@ -3134,21 +3134,36 @@ window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
     await waitForOperationalSync();
     await refreshOperationalData(getDB(),getActor());
     closeModal();showToast('Manual sale tersimpan dengan audit trail.','success');render();
-  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
-window.FT.correctManualSale = async function(id) {
+window.FT.correctManualSale = function(id) {
   if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
-  const reason=prompt('Alasan koreksi manual sale (minimal 10 karakter):','');
-  if(reason==null)return;
+  const sale=(getDB().productSales||[]).find(row=>row.id===id);
+  if(!sale){showToast('Penjualan tidak ditemukan.','error');return;}
+  openModal('Koreksi Manual Sale', `
+    <form data-pqt-onsubmit="FT.confirmManualSaleCorrection(event,${jsArg(id)})">
+      <div class="am-muted" style="margin-bottom:12px">Transaksi lama akan di-void dan dipertahankan sebagai audit trail. Setelah itu sistem membuka form replacement.</div>
+      <div class="form-group"><label class="label">Alasan koreksi</label><textarea class="textarea" name="reason" minlength="10" required placeholder="Jelaskan kesalahan dan alasan koreksi..."></textarea></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Void & Buat Replacement</button></div>
+    </form>
+  `);
+};
+
+window.FT.confirmManualSaleCorrection = async function(e,id) {
+  e.preventDefault();
+  const form=e.target, submit=form.querySelector('button[type="submit"]');
+  const reason=String(new FormData(form).get('reason')||'').trim();
   try{
+    if(submit){submit.disabled=true;submit.textContent='Memproses…';}
     voidProductSale(id,reason);
     await waitForOperationalSync();
     await refreshOperationalData(getDB(),getActor());
-    render();
+    closeModal();render();
     window.FT.openManualSaleModal(id);
-  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Void & Buat Replacement';}}
 };
 
 // ===== Stocks Page (Manager) =====
@@ -3245,6 +3260,7 @@ window.FT.openStockModal = function() {
   openModal('Catat Stock In', `
     <form data-pqt-onsubmit="FT.createStock(event)">
       <div class="form-group"><label class="label">Project</label><select class="select" name="projectId" required><option value="">Pilih project</option>${projectRows.map(row=>`<option value="${row.id}">${esc(row.name||row.code||row.id)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Pencatat</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${getEmployees().filter(row=>row.status==='active'||row.employmentStatus==='active').map(row=>`<option value="${row.id}" ${myEmployeeId()===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required><option value="">Pilih produk</option>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(p.sku||'-')})</option>`).join('')}</select></div>
       <div class="form-row">
@@ -3272,7 +3288,7 @@ window.FT.createStock = async function(e) {
   const form = e.target;
   const submit = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
-  const employeeId = myEmployeeId();
+  const employeeId = String(data.employeeId || myEmployeeId() || '');
   const projectId = String(data.projectId || '');
   const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && row.projectId === projectId);
   if (!employeeId) { showToast('Akun ini belum terhubung ke employee untuk mencatat stock movement.', 'error'); return; }
@@ -3285,6 +3301,9 @@ window.FT.createStock = async function(e) {
   const minStock = Number(data.minStock);
   if (![stockInQty,closingQty,minStock].every(Number.isFinite) || stockInQty < 0 || closingQty < 0 || minStock < 0) {
     showToast('Nilai stok tidak valid.', 'error'); return;
+  }
+  if (closingQty > openingQty + stockInQty) {
+    showToast(`Closing stock (${closingQty}) tidak boleh melebihi stok tersedia (${openingQty + stockInQty}).`, 'error'); return;
   }
   try {
     if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
@@ -3311,9 +3330,11 @@ window.FT.editStock = function(id) {
   if (!s) return;
   const pMap = Object.fromEntries(getProducts().map(p=>[p.id,p]));
   const oMap = Object.fromEntries(getOutlets().map(o=>[o.id,o]));
+  const recorderRows=getEmployees().filter(row=>row.status==='active'||row.employmentStatus==='active');
   openModal('Stock Adjustment', `
     <form data-pqt-onsubmit="FT.updateStock(event,'${id}')">
       <div class="form-group"><label class="label">Outlet / Produk</label><div style="padding:10px 12px;background:var(--gray-50);border-radius:10px;font-size:14px">${esc(oMap[s.outletId]?.name||'-')} → ${esc(pMap[s.productId]?.name||'-')}</div></div>
+      <div class="form-group"><label class="label">Pencatat</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${recorderRows.map(row=>`<option value="${row.id}" ${(myEmployeeId()||s.updatedBy)===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Opening stock</label><input class="input" value="${s.quantity}" disabled></div>
         <div class="form-group"><label class="label">Closing stock hasil koreksi</label><input class="input" type="number" name="closingQty" value="${s.quantity}" min="0" step="1" required></div>
@@ -3334,10 +3355,11 @@ window.FT.updateStock = async function(e, id) {
   if (!stock) return;
   const form=e.target, submit=form.querySelector('button[type="submit"]');
   const data=Object.fromEntries(new FormData(form));
-  const employeeId=myEmployeeId() || stock.updatedBy;
+  const employeeId=String(data.employeeId || myEmployeeId() || '');
   const closingQty=Number(data.closingQty), openingQty=Number(stock.quantity), minStock=Number(data.minStock);
   const adjustmentQty=closingQty-openingQty;
   if (!employeeId) { showToast('Employee pencatat stok tidak tersedia.', 'error'); return; }
+  if (inventoryCycleOnDate(stock.projectId,stock.outletId,stock.productId,todayISO())) { showToast('Cycle stok hari ini sudah ada. Adjustment kedua pada tanggal yang sama diblokir untuk menjaga ledger.', 'error'); return; }
   if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(minStock) || minStock < 0) { showToast('Nilai stok tidak valid.', 'error'); return; }
   if (adjustmentQty === 0 && minStock === Number(stock.minStock)) { showToast('Tidak ada perubahan stok.'); return; }
   try {
@@ -3354,7 +3376,8 @@ window.FT.updateStock = async function(e, id) {
     closeModal(); showToast('Adjustment stok berhasil difinalisasi.', 'success'); render();
   } catch(error) {
     restoreOperationalBaseline(getDB());
-    showToast(error.message||String(error),'error'); render();
+    showToast(stockSalesFriendlyError(error),'error'); render();
+    await recoverStockSalesAfterError(error);
   } finally {
     if(submit?.isConnected){submit.disabled=false;submit.textContent='Finalisasi Adjustment';}
   }
