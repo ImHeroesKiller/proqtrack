@@ -128,6 +128,7 @@ function validateRows(rows, ctx, claims) {
     if (!row.employeeCode) errors.push('EMPLOYEE_CODE_REQUIRED');
     if (!row.fullName) errors.push('FULL_NAME_REQUIRED');
     if (!row.role) errors.push('ROLE_INVALID');
+    if (String(row.photo || '').startsWith('data:')) errors.push('EMPLOYEE_PHOTO_MUST_USE_STORAGE');
     if (!row.status) errors.push('STATUS_INVALID');
     if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('EMAIL_INVALID');
     if (row.createLogin && !row.email) errors.push('EMAIL_REQUIRED_FOR_LOGIN');
