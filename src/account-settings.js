@@ -30,6 +30,45 @@ function statusLabel(status) {
   return { active: 'Aktif', inactive: 'Nonaktif', suspended: 'Ditangguhkan' }[status] || status || '—';
 }
 
+function managedRoles(actorRole) {
+  if (actorRole === 'superadmin') return ['head','admin','manager','supervisor','employee'];
+  if (actorRole === 'head') return ['admin','manager','supervisor','employee'];
+  if (actorRole === 'admin') return ['manager','supervisor','employee'];
+  return [];
+}
+
+function canManageAccount(actor, target) {
+  if (!actor || !target) return false;
+  if (String(actor.id) === String(target.id)) return ['superadmin','head','admin'].includes(actor.role);
+  return managedRoles(actor.role).includes(target.role);
+}
+
+function canChangeAccountStatus(actor, target) {
+  return canManageAccount(actor,target) && String(actor?.id || '') !== String(target?.id || '');
+}
+
+function accountErrorMessage(error) {
+  const messages = {
+    EMAIL_ALREADY_USED: 'Email sudah terdaftar. Segarkan daftar akun lalu gunakan akun yang sudah ada.',
+    ACCOUNT_ALREADY_IN_ORGANIZATION: 'Email ini sudah menjadi akun di organisasi ini. Gunakan Edit, bukan Tambah Akun.',
+    ACCOUNT_IS_GLOBAL_SUPERADMIN: 'Akun Superadmin global tidak dapat ditautkan melalui form ini.',
+    EXISTING_ACCOUNT_DISABLED: 'Akun existing sedang dinonaktifkan secara global.',
+    EMPLOYEE_ALREADY_LINKED: 'Karyawan tersebut sudah tertaut ke akun lain.',
+    EMPLOYEE_NOT_FOUND: 'Karyawan yang dipilih tidak ditemukan.',
+    PROJECT_REQUIRED: 'Project wajib dipilih untuk role Manager.',
+    PROJECT_NOT_FOUND: 'Project yang dipilih tidak ditemukan atau tidak aktif.',
+    ACCOUNT_FORBIDDEN: 'Anda tidak memiliki izin untuk mengubah akun ini.',
+    ACCOUNT_ROLE_FORBIDDEN: 'Anda tidak memiliki izin untuk menetapkan role tersebut.',
+    SELF_ROLE_CHANGE_FORBIDDEN: 'Role akun Anda sendiri tidak dapat diubah dari halaman ini.',
+    SELF_DISABLE_FORBIDDEN: 'Akun yang sedang digunakan tidak dapat dinonaktifkan.',
+    PASSWORD_TOO_SHORT: 'Password minimal 8 karakter.',
+    EMAIL_INVALID: 'Format email tidak valid.',
+  };
+  const message = messages[error?.code] || error?.message || String(error || 'Aksi akun gagal.');
+  const requestId = error?.payload?.requestId;
+  return requestId ? `${message} Ref: ${requestId}` : message;
+}
+
 function renderProjectStoreSettings() {
   const db = getDB();
   const acc = account();
@@ -346,6 +385,8 @@ export function renderAccounts() {
               const device = a.role === 'employee'
                 ? ((a.deviceBound || a.deviceId) ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
                 : '—';
+              const manageable = canManageAccount(acc,a);
+              const statusManageable = canChangeAccountStatus(acc,a);
               return `<tr>
                 <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
                 <td>${esc(roleLabel(a.role))}</td>
@@ -353,11 +394,11 @@ export function renderAccounts() {
                 <td>${statusBadge(a.status)}</td>
                 <td>${device}</td>
                 <td>
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>
-                  ${a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
-                  ${a.status === 'active'
+                  ${manageable ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>` : ''}
+                  ${manageable && a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
+                  ${statusManageable ? (a.status === 'active'
                     ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
-                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`}
+                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`) : ''}
                 </td>
               </tr>`;
             }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Tidak ada akun</h3></div></td></tr>'}
@@ -369,23 +410,27 @@ export function renderAccounts() {
 }
 
 function accountForm(existing) {
+  const actor = account();
+  const isSelf = !!existing && String(existing.id) === String(actor?.id || '');
   const employees = getEmployees().filter(e => e.status === 'active');
   const used = new Set(getAccounts().filter(a => a.id !== existing?.id && a.employeeId).map(a => a.employeeId));
   const options = employees.filter(e => !used.has(e.id) || e.id === existing?.employeeId);
   const projects = (getDB().projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
+  const roles = isSelf ? [existing.role] : managedRoles(actor?.role);
+  const statuses = isSelf ? ['active'] : ['active','suspended','inactive'];
   return `
     <form data-pqt-onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
       <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" required></div>
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
-          <select class="select" name="role">
-            ${(account()?.role === 'superadmin' ? ['head', 'admin', 'manager', 'supervisor', 'employee'] : account()?.role === 'head' ? ['admin', 'manager', 'supervisor', 'employee'] : ['manager', 'supervisor', 'employee']).map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
+          <select class="select" name="role" ${isSelf ? 'disabled' : ''}>
+            ${roles.map(r => `<option value="${r}" ${existing?.role === r ? 'selected' : ''}>${esc(roleLabel(r))}</option>`).join('')}
           </select>
         </div>
         <div class="form-group"><label class="label">Status</label>
-          <select class="select" name="status">
-            ${['active', 'suspended', 'inactive'].map(s => `<option value="${s}" ${existing?.status === s ? 'selected' : ''}>${esc(statusLabel(s))}</option>`).join('')}
+          <select class="select" name="status" ${isSelf ? 'disabled' : ''}>
+            ${statuses.map(s => `<option value="${s}" ${existing?.status === s ? 'selected' : ''}>${esc(statusLabel(s))}</option>`).join('')}
           </select>
         </div>
       </div>
@@ -403,6 +448,7 @@ function accountForm(existing) {
       </div>
       <div class="form-group"><label class="label">${existing ? 'Password baru (opsional)' : 'Password'}</label>
         <input class="input" type="password" name="password" minlength="8" autocomplete="new-password" ${existing ? '' : 'required'} placeholder="${existing ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter'}">
+        ${existing ? '' : '<div class="am-muted">Jika email sudah memiliki akun ProQTrack di organisasi lain, akun existing akan ditautkan dan password lamanya tetap berlaku.</div>'}
       </div>
       ${existing?.role === 'employee' ? `
       <div class="form-group">
@@ -422,6 +468,9 @@ function formData(event) {
   event.preventDefault();
   return Object.fromEntries(new FormData(event.target).entries());
 }
+
+let accountSaveInFlight = false;
+const accountActionInFlight = new Set();
 
 window.AM = {
   setTab(id) {
@@ -568,6 +617,10 @@ window.AM = {
   },
   openAccount(id = '') {
     const existing = id ? getAccounts().find(a => a.id === id) : null;
+    if (existing && !canManageAccount(account(),existing)) {
+      toast('Anda tidak memiliki izin untuk mengubah akun ini.', 'error');
+      return;
+    }
     window.FT.closeModal?.();
     const root = document.getElementById('modalRoot');
     if (!root) return;
@@ -587,37 +640,73 @@ window.AM = {
     }
   },
   async saveAccount(event, id) {
+    event.preventDefault();
+    if (accountSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    accountSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const data = formData(event);
+      const data = Object.fromEntries(new FormData(form).entries());
+      const current = id ? getAccounts().find(a => String(a.id) === String(id)) : null;
+      if (current && String(current.id) === String(account()?.id || '')) {
+        data.role = current.role;
+        data.status = 'active';
+      }
       if (!data.password) delete data.password;
-      if (id) await updateCloudAccount(id, data);
-      else await createCloudAccount(data);
+      if (!id) {
+        const duplicate = getAccounts().find(a => String(a.email || '').toLowerCase() === String(data.email || '').trim().toLowerCase());
+        if (duplicate) throw Object.assign(new Error('ACCOUNT_ALREADY_IN_ORGANIZATION'), { code:'ACCOUNT_ALREADY_IN_ORGANIZATION' });
+      }
+      const saved = id ? await updateCloudAccount(id, data) : await createCloudAccount(data);
       window.FT.closeModal?.();
       accountSyncedOrg = '';
-      toast(id ? 'Akun cloud diperbarui' : 'Akun cloud dibuat');
+      toast(id
+        ? 'Akun cloud diperbarui'
+        : saved?.attachedExisting
+          ? 'Akun existing ditautkan. Password lama tetap berlaku.'
+          : 'Akun cloud dibuat');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(accountErrorMessage(error), 'error');
+    } finally {
+      accountSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   async resetDevice(id) {
+    if (accountActionInFlight.has(`reset:${id}`)) return;
     if (!confirm('Reset perangkat akun ini? Field Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+    const key = `reset:${id}`;
+    accountActionInFlight.add(key);
     try {
       await resetCloudAccountDevice(id);
       window.FT.closeModal?.();
       toast('Binding perangkat server direset. Login berikutnya akan memasangkan perangkat baru.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(accountErrorMessage(error), 'error');
+    } finally {
+      accountActionInFlight.delete(key);
     }
   },
   async toggleStatus(id, status) {
+    const key = `status:${id}`;
+    if (accountActionInFlight.has(key)) return;
+    const target = getAccounts().find(a => String(a.id) === String(id));
+    if (!canChangeAccountStatus(account(),target)) {
+      toast('Anda tidak memiliki izin untuk mengubah status akun ini.', 'error');
+      return;
+    }
+    accountActionInFlight.add(key);
     try {
       await updateCloudAccount(id, { status });
       toast(status === 'active' ? 'Akun cloud diaktifkan' : 'Akun cloud ditangguhkan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(accountErrorMessage(error), 'error');
+    } finally {
+      accountActionInFlight.delete(key);
     }
   },
 };
