@@ -419,6 +419,73 @@ function configureHomeRefresh(route = state.route) {
 
 window.FT.refreshHome = () => refreshHomeData({ manual:true });
 
+const TRACKING_REFRESH_MS = 30000;
+
+function isTrackingRoute(route = state.route) {
+  return route === '#/tracking' || route === '#/last-location';
+}
+
+function formatTrackingRefreshTime(value) {
+  if (!value) return 'Auto refresh 30 detik';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Auto refresh 30 detik';
+  const timezone = getOrganization()?.timezone || 'Asia/Jakarta';
+  try {
+    return `Diperbarui ${new Intl.DateTimeFormat('id-ID', {
+      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:timezone,
+    }).format(date)}`;
+  } catch {
+    return 'Data terbaru';
+  }
+}
+
+async function refreshTrackingData({ manual = false } = {}) {
+  if (state.trackingRefreshInFlight || !state.loggedIn || !isTrackingRoute()) return false;
+  const actor = getActor();
+  if (!actor?.organizationId) return false;
+  state.trackingRefreshInFlight = true;
+  try {
+    const result = await refreshOperationalData(getDB(), actor);
+    if (result?.refreshed) {
+      state.trackingRefreshedAt = result.refreshedAt || new Date().toISOString();
+      if (manual) showToast('Last Location diperbarui', 'success');
+      if (isTrackingRoute()) render();
+      return true;
+    }
+    if (manual) {
+      const message = ['local-sync-pending','local-changes-pending'].includes(result?.reason)
+        ? 'Perubahan lokal sedang disinkronkan. Coba lagi setelah sinkronisasi selesai.'
+        : 'Belum ada data baru untuk dimuat.';
+      showToast(message);
+    }
+    return false;
+  } catch (error) {
+    if (manual) showToast(error?.message || 'Refresh Last Location gagal', 'error');
+    else if (![401,403].includes(Number(error?.status || 0))) {
+      console.warn('tracking_refresh_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    state.trackingRefreshInFlight = false;
+  }
+}
+
+function configureTrackingRefresh(route = state.route) {
+  const shouldRun = state.loggedIn && isTrackingRoute(route) && !!getActor()?.organizationId;
+  if (!shouldRun) {
+    if (state.trackingRefreshTimer) clearInterval(state.trackingRefreshTimer);
+    state.trackingRefreshTimer = null;
+    return;
+  }
+  if (!state.trackingRefreshTimer) {
+    state.trackingRefreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshTrackingData().catch(() => {});
+    }, TRACKING_REFRESH_MS);
+  }
+}
+
+window.FT.refreshTracking = () => refreshTrackingData({ manual:true });
+
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
@@ -440,6 +507,7 @@ function render() {
 
   if (!state.loggedIn) {
     configureHomeRefresh('#/login');
+    configureTrackingRefresh('#/login');
     app.innerHTML = renderLogin();
     return;
   }
@@ -639,6 +707,7 @@ function render() {
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
   configureHomeRefresh(route);
+  configureTrackingRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
