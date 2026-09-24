@@ -3711,24 +3711,46 @@ window.FT.prefillStockQty = function(outletId) {
   }
 };
 
-window.FT.saveVisitStock = function(e, visitId, outletId) {
+window.FT.saveVisitStock = async function(e, visitId, outletId) {
   e.preventDefault();
   const empId = myEmployeeId();
+  const visit = getVisits().find(row => String(row.id) === String(visitId));
   const rows = [...e.target.querySelectorAll('.fs-product-row')];
+  const submit = e.target.querySelector('button[type="submit"]');
+  if (!empId || !visit?.projectId) { showToast('Konteks employee/project kunjungan tidak valid.', 'error'); return; }
   try {
-    rows.forEach(row => {
+    const seen = new Set();
+    if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
+    for (const row of rows) {
       const productId = row.querySelector('[name="productId"]')?.value;
-      const quantity = parseInt(row.querySelector('[name="quantity"]')?.value, 10);
-      const minStock = parseInt(row.querySelector('[name="minStock"]')?.value, 10);
-      if (!productId) return;
-      const existing = getStocksByOutlet(outletId).find(s => s.productId === productId);
-      if (existing) updateStock(existing.id, { quantity, minStock, updatedBy: empId });
-      else createStock({ outletId, productId, quantity, minStock, updatedBy: empId });
-    });
+      const closingQty = Number(row.querySelector('[name="quantity"]')?.value);
+      if (!productId) continue;
+      if (seen.has(productId)) throw new Error('Produk yang sama tidak boleh dicatat dua kali dalam satu kunjungan.');
+      seen.add(productId);
+      if (!Number.isFinite(closingQty) || closingQty < 0) throw new Error('Closing stock tidak valid.');
+      const existing = getStocksByOutlet(outletId).find(s => s.productId === productId && (!s.projectId || s.projectId === visit.projectId));
+      const openingQty = Number(existing?.quantity || 0);
+      const inferredStockIn = Math.max(0, closingQty - openingQty);
+      createInventoryCycle({
+        projectId:visit.projectId, outletId, productId, employeeId:empId, visitId,
+        cycleDate:todayISO(), status:'finalized', openingQty, stockInQty:inferredStockIn,
+        adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty,
+        minStock:Number(existing?.minStock || 0),
+        idempotencyKey:`visit-stock:${visitId}:${productId}`,
+      });
+    }
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(), getActor());
     closeModal();
-    showToast(`${rows.length} produk stok disimpan`, 'success');
+    showToast(`${seen.size} produk stok difinalisasi`, 'success');
     render();
-  } catch (error) { showToast(error.message || error, 'error'); }
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || error, 'error');
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled=false; submit.textContent='Simpan Stok'; }
+  }
 };
 
 // ===== Price/Discount input during visit =====
