@@ -1580,12 +1580,13 @@ window.PM = {
         active
           .map((a) => {
             const e = db.employees.find((x) => x.id === a.employeeId);
-            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(a.roleOnProject)} · ${a.allocationPercent || 0}% · ${dateLabel(a.startDate)}–${dateLabel(a.endDate)}</small></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">Unassign</button></div>`;
+            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(assignmentRoleLabel(a.roleOnProject))} · ${a.allocationPercent || 0}% · ${dateLabel(a.startDate)}–${dateLabel(a.endDate)}</small></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">Unassign</button></div>`;
           })
           .join("") ||
         '<div style="padding:34px;text-align:center;color:#94a3b8">Belum ada assignment.</div>'
       }</div>`,
     );
+    queueMicrotask(() => this.refreshAssignmentCapacity());
   },
   async saveAssignment(e, projectId) {
     e.preventDefault();
