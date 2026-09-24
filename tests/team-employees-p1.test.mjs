@@ -6,11 +6,13 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Team P1 derives supervisor hierarchy from canonical assignments', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /assignment\.supervisorId/);
-  assert.match(src, /assignment\.supervisorUserId/);
+  const helper = await read('src/lib/team-employee-ui.js');
+  assert.match(src, /subordinateEmployeeIds/);
+  assert.match(helper, /assignment\.supervisorId/);
+  assert.match(helper, /assignment\.supervisorUserId/);
   assert.match(src, /subordinateIds/);
   assert.doesNotMatch(src, /e\.supervisorId === me\?\.id/);
-  assert.match(src, /const team = \[\.\.\.new Set\(/);
+  assert.match(helper, /new Set\(assignments\.filter/);
 });
 
 test('Employee P1 supports Manager multi-project create scope', async () => {
@@ -66,5 +68,5 @@ test('Employee P1 core sync has defensive employee mutation validator', async ()
 
 test('Team Employees P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.40/);
+  assert.match(sw, /proqtrack-v12\.41/);
 });

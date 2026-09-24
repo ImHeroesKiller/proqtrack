@@ -45,6 +45,7 @@ import {
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
+import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeAssignmentsForEmployee, activeProjectIdsForEmployee, employeeSearchDocument, employeeMatchesFilters, paginateEmployees } from './lib/team-employee-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -1776,21 +1777,17 @@ window.FT.deleteVisit = function(id) {
 };
 
 // ===== Employees Page =====
-const EMPLOYEE_PAGE_SIZE = 15;
 let employeePage = 1;
 function employeeSyncLabel() {
-  const cloud = cloudDataStatus();
-  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
-  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
-  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
-  return '<span class="pm-sync">Mode lokal</span>';
+  const state = employeeSyncState(cloudDataStatus());
+  const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
+  return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
 }
 function employeeActiveAssignments(employeeId) {
-  const db = getDB();
-  return (db.projectAssignments || []).filter(a => a.employeeId === employeeId && a.status === 'active');
+  return activeAssignmentsForEmployee(getDB().projectAssignments || [], employeeId);
 }
 function employeeProjectIds(employeeId) {
-  return [...new Set(employeeActiveAssignments(employeeId).map(a => String(a.projectId)).filter(Boolean))];
+  return activeProjectIdsForEmployee(getDB().projectAssignments || [], employeeId);
 }
 
 function renderEmployees() {
@@ -1836,7 +1833,7 @@ function renderEmployees() {
               const cIdx = e.name.charCodeAt(0) % colors.length;
               const projectIds = employeeProjectIds(e.id);
               const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
-              const search = `${e.name || ''} ${e.email || ''} ${e.area || ''} ${e.phone || ''} ${e.role || ''} ${projects.map(p => `${p.code || ''} ${p.name || ''}`).join(' ')}`.toLowerCase();
+              const search = employeeSearchDocument(e, projects);
               return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}">
                 <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
                 <td data-label="Role">${roleBadge(e.role)}</td>
@@ -1866,31 +1863,31 @@ window.FT.employeePage = function(delta) {
 };
 
 window.FT.filterEmployees = function(page = employeePage) {
-  const search = String(document.getElementById('empSearch')?.value || '').trim().toLowerCase();
-  const role = String(document.getElementById('empRoleFilter')?.value || '');
-  const status = String(document.getElementById('empStatusFilter')?.value || '');
-  const projectId = String(document.getElementById('empProjectFilter')?.value || '');
+  const filters = {
+    search:String(document.getElementById('empSearch')?.value || ''),
+    role:String(document.getElementById('empRoleFilter')?.value || ''),
+    status:String(document.getElementById('empStatusFilter')?.value || ''),
+    projectId:String(document.getElementById('empProjectFilter')?.value || ''),
+  };
   const rows = [...document.querySelectorAll('#empTable tbody tr')];
-  const matched = rows.filter(row => {
-    const projects = String(row.dataset.projects || '').split('|').filter(Boolean);
-    return (!search || String(row.dataset.search || '').includes(search))
-      && (!role || row.dataset.role === role)
-      && (!status || row.dataset.status === status)
-      && (!projectId || projects.includes(projectId));
-  });
-  const pageCount = Math.max(1, Math.ceil(matched.length / EMPLOYEE_PAGE_SIZE));
-  employeePage = Math.min(Math.max(1, Number(page) || 1), pageCount);
-  const start = (employeePage - 1) * EMPLOYEE_PAGE_SIZE;
-  const visible = new Set(matched.slice(start, start + EMPLOYEE_PAGE_SIZE));
+  const matched = rows.filter(row => employeeMatchesFilters({
+    search:row.dataset.search || '',
+    role:row.dataset.role || '',
+    status:row.dataset.status || '',
+    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
+  }, filters));
+  const pageState = paginateEmployees(matched, page, EMPLOYEE_PAGE_SIZE);
+  employeePage = pageState.currentPage;
+  const visible = new Set(pageState.items);
   rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
   const summary = document.getElementById('employeeResultSummary');
-  if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + EMPLOYEE_PAGE_SIZE, matched.length)} dari ${matched.length} karyawan` : 'Tidak ada karyawan yang sesuai dengan filter.';
+  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} karyawan` : 'Tidak ada karyawan yang sesuai dengan filter.';
   const empty = document.getElementById('employeeEmpty');
-  if (empty) empty.hidden = matched.length !== 0;
+  if (empty) empty.hidden = pageState.total !== 0;
   const pager = document.getElementById('employeePager');
-  if (pager) pager.hidden = matched.length <= EMPLOYEE_PAGE_SIZE;
+  if (pager) pager.hidden = pageState.total <= EMPLOYEE_PAGE_SIZE;
   const label = document.getElementById('employeePageLabel');
-  if (label) label.textContent = `Halaman ${employeePage} / ${pageCount}`;
+  if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
   const sync = document.getElementById('employeeSyncState');
   if (sync) sync.innerHTML = employeeSyncLabel();
 };
