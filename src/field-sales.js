@@ -5,7 +5,7 @@ import {
   getVisitLocations, getVisitsOnDate, visitDay, FIELD_PHOTO_TYPES,
   getOrganization, getCurrentOrgId, getDB, getActor,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
-  canEmployeeAddStore, storeCatalogForEmployee, formatOutletLabel,
+  canEmployeeAddStore, outletProjectsForEmployee, storeCatalogForEmployee, formatOutletLabel,
   getAttendancePolicy, getEmployee,
 } from './lib/db.js';
 import {
@@ -335,22 +335,25 @@ function proposalStatusLabel(p) {
 
 export function renderOutletProposalForm() {
   const db = getDB();
-  const projects = (db.projects || []).filter(p => ['active', 'planning'].includes(p.status));
+  const projects = (db.projects || []).filter(p => p.status === 'active');
   const manualProjectIds = new Set(projects.filter(p => p.outletApprovalMode === 'manual').map(p => p.id));
   const mine = getOutletProposals();
   const role = window.FT?.state?.account?.role;
   const emp = getEmployees().find(e => e.id === empId());
-  const canAdd = role !== 'employee' || canEmployeeAddStore(empId());
-  const catalog = storeCatalogForEmployee(empId());
+  const outletProjects = role === 'employee' ? outletProjectsForEmployee(empId()) : [];
+  const selectedProject = outletProjects[0] || null;
+  const canAdd = role !== 'employee' || outletProjects.length > 0;
+  const catalog = storeCatalogForEmployee(empId(), selectedProject?.id);
   const autoApproved = catalog.approvalMode !== 'manual';
   const reviewRows = role === 'employee' ? mine : getOutletProposals().filter(p => manualProjectIds.has(p.projectId));
   const opt = (rows) => (rows || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
   return `
     ${role === 'employee' && canAdd ? `
     <div class="card">
-      <div class="card-title">${autoApproved ? 'Tambah Outlet' : 'Ajukan toko baru'}</div>
-      <div class="card-subtitle">${autoApproved ? 'Outlet akan aktif otomatis setelah validasi.' : 'Project ini menggunakan Manual Approval.'} Ambil lokasi dari perangkat; project mengikuti assignment Anda.</div>
+      <div class="card-title" id="outletFormTitle">${autoApproved ? 'Tambah Outlet' : 'Ajukan toko baru'}</div>
+      <div class="card-subtitle" id="outletApprovalHint">${autoApproved ? 'Outlet akan aktif otomatis setelah validasi.' : 'Project ini menggunakan Manual Approval.'} Ambil lokasi dari perangkat.</div>
       <form data-pqt-onsubmit="FS.submitOutlet(event)">
+        ${outletProjects.length > 1 ? `<div class="form-group"><label class="label">Project</label><select class="select" name="projectId" id="outletProjectSelect" data-pqt-onchange="FS.changeOutletProject(this.value)" required>${outletProjects.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.name)} — ${esc(project.name || '')}</option>`).join('')}</select><div class="am-muted">Pilih project tujuan outlet.</div></div>` : `<input type="hidden" name="projectId" value="${esc(selectedProject?.id || '')}">`}
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
         <div class="form-group">
           <label class="label">Lokasi toko</label>
@@ -381,7 +384,7 @@ export function renderOutletProposalForm() {
           <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
         </div>
         ${outletNotesField(catalog)}
-        <button class="btn btn-primary" type="submit">${autoApproved ? 'Tambah Outlet' : 'Submit for Approval'}</button>
+        <button class="btn btn-primary" id="outletSubmitBtn" type="submit">${autoApproved ? 'Tambah Outlet' : 'Submit for Approval'}</button>
       </form>
     </div>` : ''}
     <div class="card" style="margin-top:16px">
@@ -410,6 +413,19 @@ export function renderOutletProposalForm() {
     </div>`;
 }
 
+window.FS.changeOutletProject = function(projectId) {
+  const catalog = storeCatalogForEmployee(empId(), projectId);
+  const manual = catalog.approvalMode === 'manual';
+  const title = document.getElementById('outletFormTitle');
+  const hint = document.getElementById('outletApprovalHint');
+  const submit = document.getElementById('outletSubmitBtn');
+  if (title) title.textContent = manual ? 'Ajukan toko baru' : 'Tambah Outlet';
+  if (hint) hint.textContent = manual
+    ? 'Project ini menggunakan Manual Approval. Ambil lokasi dari perangkat.'
+    : 'Outlet akan aktif otomatis setelah validasi. Ambil lokasi dari perangkat.';
+  if (submit) submit.textContent = manual ? 'Submit for Approval' : 'Tambah Outlet';
+};
+
 window.FS.submitOutlet = async function(e) {
   e.preventDefault();
   const form = e.target;
@@ -420,7 +436,7 @@ window.FS.submitOutlet = async function(e) {
     if (!data.lat || !data.lng) throw new Error('Ambil lokasi toko dulu.');
     if (data.notesKind === 'dropdown') data.notes = data.notesChoice || '';
     delete data.notesChoice;
-    const catalog = storeCatalogForEmployee(empId());
+    const catalog = storeCatalogForEmployee(empId(), data.projectId);
     if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     createOutletProposal(data);
     if (submit) submit.textContent = 'Sinkronisasi…';
@@ -442,7 +458,8 @@ window.FS.submitOutlet = async function(e) {
   } finally {
     if (submit?.isConnected) {
       submit.disabled = false;
-      submit.textContent = storeCatalogForEmployee(empId()).approvalMode === 'manual' ? 'Submit for Approval' : 'Tambah Outlet';
+      const projectId = new FormData(form).get('projectId');
+      submit.textContent = storeCatalogForEmployee(empId(), projectId).approvalMode === 'manual' ? 'Submit for Approval' : 'Tambah Outlet';
     }
   }
 };
