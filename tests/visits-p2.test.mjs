@@ -10,8 +10,8 @@ test('Visits P2 adds project outlet date filters and bounded pagination', async 
   assert.match(app, /id="visitOutletFilter"/);
   assert.match(app, /id="visitDateFrom"/);
   assert.match(app, /id="visitDateTo"/);
-  assert.match(app, /const pageSize = 20/);
-  assert.match(app, /matched\.slice\(\(currentPage - 1\) \* pageSize, currentPage \* pageSize\)/);
+  assert.match(app, /VISITS_PAGE_SIZE/);
+  assert.match(app, /paginateVisits\(matched, page, VISITS_PAGE_SIZE\)/);
 });
 
 test('Visits P2 keeps historical inactive labels while scheduling only active entities', async () => {

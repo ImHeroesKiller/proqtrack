@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v12.24';
+const CACHE = 'proqtrack-v12.25';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -22,6 +22,7 @@ const FALLBACK_SHELL = [
   './src/lib/db.js',
   './src/lib/utils.js',
   './src/lib/location-evidence.js',
+  './src/lib/visit-ui.js',
   './src/lib/cloud-data.js',
   './src/lib/offline-store.js',
   './src/lib/offline-engine.js',
