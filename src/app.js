@@ -124,7 +124,7 @@ function defaultRouteFor(account) {
 }
 
 function visitsTodayCount(employeeId) {
-  return getVisits().filter(v => v.employeeId === employeeId && v.date === todayISO()).length;
+  return getVisits().filter(v => v.employeeId === employeeId && visitDay(v) === todayISO()).length;
 }
 
 function salesTargetOf(employee) {
@@ -654,8 +654,10 @@ function renderSidebar() {
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
       let badge = '';
       if (canViewTeamOps() && item.id === 'tracking') {
-        const activeEmps = getEmployees().filter(e => e.status === 'active').length;
-        badge = `<span class="nav-badge">${activeEmps}</span>`;
+        const fieldNow = getVisits().filter(v =>
+          visitDay(v) === todayISO() && ['checked-in','in_progress'].includes(String(v.status || ''))
+        ).length;
+        if (fieldNow > 0) badge = `<span class="nav-badge" title="Sedang di lapangan">${fieldNow}</span>`;
       }
       if (canViewTeamOps() && item.id === 'leaves' && getAppSettings().notifyLeave !== false) {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
@@ -825,6 +827,8 @@ window.FT.logout = function() {
   state.account = null;
   state.route = '#/login';
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
+  if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
+  state.homeRefreshedAt = null;
   render();
 };
 
