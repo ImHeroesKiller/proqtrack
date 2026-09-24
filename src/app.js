@@ -45,7 +45,7 @@ import {
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
-import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeAssignmentsForEmployee, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
+import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -1782,9 +1782,6 @@ function employeeSyncLabel() {
   const state = employeeSyncState(cloudDataStatus());
   const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
   return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
-}
-function employeeActiveAssignments(employeeId) {
-  return activeAssignmentsForEmployee(getDB().projectAssignments || [], employeeId);
 }
 function employeeProjectIds(employeeId) {
   return activeProjectIdsForEmployee(getDB().projectAssignments || [], employeeId);
