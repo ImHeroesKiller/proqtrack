@@ -74,3 +74,16 @@ test('P2 Sales exposes pending correction recovery without resurrecting voided s
   assert.match(app,/koreksi manual belum memiliki replacement/);
   assert.match(app,/openManualSaleModal/);
 });
+
+
+test('P2 manual sale reuses one idempotency token for retries from the same modal', () => {
+  assert.match(app,/type="hidden" name="idempotencyKey"/);
+  assert.match(app,/idempotencyKey:String\(data\.idempotencyKey \|\| ''\)/);
+});
+
+test('P2 sales KPI cards follow the active filters', () => {
+  assert.match(app,/id="salesKpiTransactions"/);
+  assert.match(app,/id="salesKpiQty"/);
+  assert.match(app,/id="salesKpiAmount"/);
+  assert.match(app,/visibleAmount \+= Number\(row\.dataset\.amount/);
+});
