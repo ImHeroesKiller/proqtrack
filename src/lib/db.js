@@ -194,6 +194,7 @@ function rawDefaultDB() {
     leaveTypes: JSON.parse(JSON.stringify(seedLeaveTypes)),
     leaves:     JSON.parse(JSON.stringify(seedLeaves)),
     stocks:     JSON.parse(JSON.stringify(seedStocks)),
+    inventoryCycles: [],
     priceObservations: JSON.parse(JSON.stringify(seedPriceObservations)),
     competitors: JSON.parse(JSON.stringify(seedCompetitors)),
     competitorProducts: JSON.parse(JSON.stringify(seedCompetitorProducts)),
