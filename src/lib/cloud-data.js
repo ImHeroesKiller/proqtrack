@@ -795,6 +795,17 @@ export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
     await new Promise(resolve => setTimeout(resolve, 50));
   }
 }
+export function restoreOperationalBaseline(localDb) {
+  clearTimeout(timer);
+  timer = null;
+  queuedSnapshot = null;
+  syncing = false;
+  if (localDb && baseline && typeof baseline === 'object') applyRemoteDataToLocal(localDb, baseline);
+  lastError = null;
+  emitStatus('rollback', { source:'mutation-recovery' });
+  return localDb;
+}
+
 
 export function cloudDataStatus() {
   return { ready, syncing, queued:!!queuedSnapshot, revision, cutoverMode, error: lastError };
