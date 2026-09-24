@@ -102,6 +102,7 @@ export async function analyticsOverview(env, claims, url, requestId) {
     env.DB.prepare(`
       SELECT COUNT(*) AS transactions,COALESCE(SUM(quantity),0) AS quantity,COALESCE(SUM(total_amount),0) AS amount
       FROM core_product_sales WHERE organization_id=?${p.sql}
+        AND COALESCE(json_extract(metadata_json,'$.lifecycleStatus'),'active')<>'voided'
         AND date(sold_at) BETWEEN date(?) AND date(?)
     `).bind(...binds([from, to])).first(),
     env.DB.prepare(`
@@ -120,6 +121,7 @@ export async function analyticsOverview(env, claims, url, requestId) {
     allRows(env.DB.prepare(`
       SELECT date(sold_at) AS day,COUNT(*) AS transactions,COALESCE(SUM(total_amount),0) AS amount
       FROM core_product_sales WHERE organization_id=?${p.sql}
+        AND COALESCE(json_extract(metadata_json,'$.lifecycleStatus'),'active')<>'voided'
         AND date(sold_at) BETWEEN date(?) AND date(?)
       GROUP BY date(sold_at) ORDER BY day
     `).bind(...binds([from, to]))),
@@ -134,6 +136,7 @@ export async function analyticsOverview(env, claims, url, requestId) {
       SELECT s.product_id,pd.sku,pd.name,COALESCE(SUM(s.quantity),0) AS quantity,COALESCE(SUM(s.total_amount),0) AS amount
       FROM core_product_sales s JOIN core_products pd ON pd.id=s.product_id AND pd.organization_id=s.organization_id
       WHERE s.organization_id=?${projectClause(projects, 's.project_id').sql}
+        AND COALESCE(json_extract(s.metadata_json,'$.lifecycleStatus'),'active')<>'voided'
         AND date(s.sold_at) BETWEEN date(?) AND date(?)
       GROUP BY s.product_id,pd.sku,pd.name ORDER BY amount DESC,quantity DESC LIMIT 10
     `).bind(organizationId, ...(projects == null ? [] : projects), from, to)),
@@ -191,6 +194,7 @@ const QUERY_DEFINITIONS = Object.freeze({
     select: `s.id,s.project_id,s.outlet_id,o.name AS outlet_name,s.employee_id,e.full_name AS employee_name,s.product_id,p.sku,p.name AS product_name,s.quantity,s.unit_price,s.total_amount,s.sold_at,s.updated_at`,
     from: `core_product_sales s JOIN core_employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id JOIN core_outlets o ON o.id=s.outlet_id AND o.organization_id=s.organization_id JOIN core_products p ON p.id=s.product_id AND p.organization_id=s.organization_id`,
     org: 's.organization_id', project: 's.project_id', sort: 's.sold_at', id: 's.id', date: 's.sold_at',
+    fixedClause: "COALESCE(json_extract(s.metadata_json,'$.lifecycleStatus'),'active')<>'voided'",
   },
   surveys: {
     select: `r.id,r.project_id,r.template_id,t.name AS template_name,r.outlet_id,r.employee_id,e.full_name AS employee_name,r.status,r.submitted_at,r.updated_at`,
@@ -213,6 +217,7 @@ export async function cursorQuery(env, claims, entity, url, requestId) {
   const cursor = b64urlDecode(normalize(url.searchParams.get('cursor')));
   const clauses = [`${definition.org}=?`];
   const binds = [organizationId];
+  if (definition.fixedClause) clauses.push(definition.fixedClause);
   const pc = projectClause(projects, definition.project);
   if (pc.sql) { clauses.push(pc.sql.replace(/^ AND /, '')); binds.push(...pc.binds); }
   clauses.push(`date(${definition.date}) BETWEEN date(?) AND date(?)`); binds.push(from, to);

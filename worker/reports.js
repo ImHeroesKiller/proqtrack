@@ -107,6 +107,7 @@ function reportDefinition(type) {
     from: `core_product_sales s JOIN core_employees e ON e.id=s.employee_id AND e.organization_id=s.organization_id JOIN core_outlets o ON o.id=s.outlet_id AND o.organization_id=s.organization_id JOIN core_products p ON p.id=s.product_id AND p.organization_id=s.organization_id`,
     select: `s.id,s.sold_at,s.project_id,s.employee_id,e.full_name AS employee_name,s.outlet_id,o.name AS outlet_name,s.product_id,p.sku,p.name AS product_name,s.quantity,s.unit_price,s.total_amount`,
     dateExpr: 's.sold_at', projectExpr: 's.project_id', employeeExpr: 's.employee_id', outletExpr: 's.outlet_id', statusExpr: null,
+    fixedClause: "COALESCE(json_extract(s.metadata_json,'$.lifecycleStatus'),'active')<>'voided'",
     order: 's.sold_at,s.id',
   };
   if (type === 'surveys') return {
@@ -128,6 +129,7 @@ function buildReportQuery(type, organizationId, projectId, filters, limit, offse
   if (!definition) throw new Error('REPORT_TYPE_NOT_SUPPORTED');
   const clauses = [`${definition.projectExpr.split('.')[0]}.organization_id=?`];
   const binds = [organizationId];
+  if (definition.fixedClause) clauses.push(definition.fixedClause);
   if (projectId) { clauses.push(`${definition.projectExpr}=?`); binds.push(projectId); }
   if (filters.from) { clauses.push(`date(${definition.dateExpr})>=date(?)`); binds.push(filters.from); }
   if (filters.to) { clauses.push(`date(${definition.dateExpr})<=date(?)`); binds.push(filters.to); }
@@ -149,7 +151,7 @@ async function operationalSummary(env, organizationId, projectId, filters) {
   const [visits, attendance, sales, surveys] = await Promise.all([
     env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed FROM core_visits WHERE organization_id=?${projectClause} AND date(COALESCE(completed_at,started_at,scheduled_at,created_at)) BETWEEN date(?) AND date(?)`).bind(...bindBase).first(),
     env.DB.prepare(`SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('present','late') THEN 1 ELSE 0 END) AS present FROM core_attendance WHERE organization_id=?${projectClause} AND date(work_date) BETWEEN date(?) AND date(?)`).bind(...bindBase).first(),
-    env.DB.prepare(`SELECT COUNT(*) AS transactions,COALESCE(SUM(quantity),0) AS quantity,COALESCE(SUM(total_amount),0) AS amount FROM core_product_sales WHERE organization_id=?${projectClause} AND date(sold_at) BETWEEN date(?) AND date(?)`).bind(...bindBase).first(),
+    env.DB.prepare(`SELECT COUNT(*) AS transactions,COALESCE(SUM(quantity),0) AS quantity,COALESCE(SUM(total_amount),0) AS amount FROM core_product_sales WHERE organization_id=?${projectClause} AND COALESCE(json_extract(metadata_json,'$.lifecycleStatus'),'active')<>'voided' AND date(sold_at) BETWEEN date(?) AND date(?)`).bind(...bindBase).first(),
     env.DB.prepare(`SELECT COUNT(*) AS responses FROM core_survey_responses WHERE organization_id=?${projectClause} AND date(COALESCE(submitted_at,created_at)) BETWEEN date(?) AND date(?)`).bind(...bindBase).first(),
   ]);
   return [{
