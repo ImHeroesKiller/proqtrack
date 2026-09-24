@@ -27,11 +27,15 @@ export function employeeMatchesFilters(employee = {}, filters = {}) {
   const role = String(filters.role || '');
   const status = String(filters.status || '');
   const projectId = String(filters.projectId || '');
+  const assignment = String(filters.assignment || '');
+  const login = String(filters.login || '');
   const projects = Array.isArray(employee.projectIds) ? employee.projectIds.map(String) : [];
   return (!search || String(employee.search || employee.searchDocument || '').toLowerCase().includes(search))
     && (!role || String(employee.role || '') === role)
     && (!status || String(employee.status || '') === status)
-    && (!projectId || projects.includes(projectId));
+    && (!projectId || projects.includes(projectId))
+    && (!assignment || (assignment === 'assigned' ? !!employee.assigned : !employee.assigned))
+    && (!login || (login === 'linked' ? !!employee.loginLinked : !employee.loginLinked));
 }
 
 export function employeeOperationalFlags(employee = {}, assignments = [], accounts = []) {
