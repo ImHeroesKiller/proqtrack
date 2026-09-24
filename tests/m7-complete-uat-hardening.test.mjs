@@ -94,7 +94,7 @@ test('account management UI uses authoritative admin API for create update statu
 test('bulk UAT rejects cross-project supervisors and role downgrade ambiguity', async () => {
   const worker = await read('worker/bulk-employees.js');
   assert.match(worker, /SUPERVISOR_CANNOT_BE_SELF/);
-  assert.match(worker, /SUPERVISOR_NOT_ASSIGNED_TO_PROJECT/);
+  assert.match(worker, /SUPERVISOR_ASSIGNMENT_NOT_COVERING_PROJECT/);
   assert.match(worker, /LOGIN_ROLE_DOWNGRADE_REQUIRES_ACCOUNT_MANAGEMENT/);
   assert.match(worker, /LOGIN_ROLE_WILL_UPGRADE_SUPERVISOR/);
   assert.match(worker, /UPDATE core_auth_sessions[\s\S]*status='revoked'/);
