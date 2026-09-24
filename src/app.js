@@ -22,7 +22,7 @@ import {
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
-  getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
+  getProductSales, createProductSale, deleteProductSale, voidProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
 } from './lib/db.js';
@@ -2960,6 +2960,103 @@ window.FT.deleteProductConfirm=async function(id){
   if(!confirm(lifecycle.confirm))return;
   try{const result=deleteProduct(id);await waitForOperationalSync();showToast(result.deactivated?'Produk dinonaktifkan dan histori tetap dipertahankan':'Produk berhasil dihapus','success');render();}
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+};
+
+// ===== Product Sales =====
+function renderProductSales({ mine = false } = {}) {
+  const employeeId = myEmployeeId();
+  const products = Object.fromEntries(getProducts().map(row => [row.id,row]));
+  const outlets = Object.fromEntries(getOutlets().map(row => [row.id,row]));
+  const employees = Object.fromEntries(getEmployees().map(row => [row.id,row]));
+  const rows = getProductSales()
+    .filter(row => !mine || String(row.employeeId || '') === String(employeeId || ''))
+    .sort((a,b) => String(b.soldAt || b.date || '').localeCompare(String(a.soldAt || a.date || '')));
+  const manualAllowed = !mine && isProjectAdmin();
+  return `
+    <div class="card">
+      <div class="filter-row">
+        <div>
+          <div class="card-title">Product Sales</div>
+          <div class="card-subtitle">Derived sales dihitung otomatis dari Inventory Cycle. Manual sale hanya untuk exception/correction.</div>
+        </div>
+        <div class="spacer"></div>
+        ${manualAllowed ? '<button class="btn btn-primary" data-pqt-onclick="FT.openManualSaleModal()">+ Manual Exception</button>' : ''}
+      </div>
+      <div class="visits-table-wrapper">
+        <table class="table"><thead><tr><th>Tanggal</th><th>Employee</th><th>Outlet</th><th>Produk</th><th>Qty</th><th>Nilai</th><th>Sumber</th><th></th></tr></thead>
+          <tbody>${rows.length ? rows.map(row => {
+            const provenance=String(row.provenance || 'manual_legacy');
+            const manual=!['derived_stock','inventory_cycle'].includes(provenance);
+            return `<tr>
+              <td>${formatDateShort(String(row.soldAt || row.date || '').slice(0,10))}</td>
+              <td>${esc(employees[row.employeeId]?.name || row.employeeId || '-')}</td>
+              <td>${esc(outlets[row.outletId]?.name || row.outletId || '-')}</td>
+              <td>${esc(products[row.productId]?.name || row.productId || '-')}</td>
+              <td>${Number(row.quantity ?? row.qty ?? 0)}</td>
+              <td>${formatCurrency(Number(row.totalAmount ?? row.amount ?? 0))}</td>
+              <td>${provenance === 'derived_stock' ? '<span class="badge badge-success">Derived Stock</span>' : '<span class="badge badge-warning">Manual Exception</span>'}</td>
+              <td>${manualAllowed && manual ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.correctManualSale(${jsArg(row.id)})">Koreksi</button>` : ''}</td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="8"><div class="empty-state"><h3>Belum ada penjualan</h3><p>Penjualan akan muncul setelah Inventory Cycle difinalisasi.</p></div></td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
+  if (!isProjectAdmin()) { showToast('Manual sale hanya untuk Manager/Admin.', 'error'); return; }
+  const source = correctionOfSaleId ? (getDB().productSales || []).find(row => row.id === correctionOfSaleId) : null;
+  const employeeRows = getEmployees();
+  const productRows = getProducts().filter(row => row.status === 'active');
+  const outletRows = getOutlets().filter(row => row.status !== 'archived');
+  openModal(correctionOfSaleId ? 'Replacement Manual Sale' : 'Manual Sale Exception', `
+    <form data-pqt-onsubmit="FT.saveManualSale(event,${jsArg(correctionOfSaleId)})">
+      <div class="form-group"><label class="label">Employee</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${employeeRows.map(row=>`<option value="${row.id}" ${source?.employeeId===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${outletRows.map(row=>`<option value="${row.id}" ${source?.outletId===row.id?'selected':''}>${esc(formatOutletLabel(row))}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required><option value="">Pilih produk</option>${productRows.map(row=>`<option value="${row.id}" ${source?.productId===row.id?'selected':''}>${esc(row.name)} (${esc(row.sku||'-')})</option>`).join('')}</select></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Qty</label><input class="input" type="number" name="qty" min="0.0001" step="any" value="${source?.quantity ?? source?.qty ?? ''}" required></div>
+        <div class="form-group"><label class="label">Unit Price</label><input class="input" type="number" name="unitPrice" min="0" step="any" value="${source?.unitPrice ?? ''}" required></div>
+      </div>
+      <div class="form-group"><label class="label">Tanggal</label><input class="input" type="date" name="date" value="${todayISO()}" required></div>
+      <div class="form-group"><label class="label">Alasan manual</label><textarea class="textarea" name="manualReason" minlength="10" required placeholder="Jelaskan alasan exception/correction..."></textarea></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary" type="submit">Simpan</button></div>
+    </form>
+  `);
+};
+
+window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
+  e.preventDefault();
+  const form=e.target, submit=form.querySelector('button[type="submit"]');
+  const data=Object.fromEntries(new FormData(form));
+  const projectId=stockProjectFor(data.outletId,data.productId);
+  if(!projectId){showToast('Outlet dan produk harus memiliki tepat satu project yang sama.','error');return;}
+  try{
+    if(submit){submit.disabled=true;submit.textContent='Sinkronisasi…';}
+    createProductSale({
+      ...data, projectId, qty:Number(data.qty), unitPrice:Number(data.unitPrice),
+      soldAt:`${data.date}T12:00:00+07:00`,
+      correctionOfSaleId:correctionOfSaleId || null,
+      idempotencyKey:`manual-sale:${crypto.randomUUID?.() || Date.now()}`,
+    });
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(),getActor());
+    closeModal();showToast('Manual sale tersimpan dengan audit trail.','success');render();
+  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
+};
+
+window.FT.correctManualSale = async function(id) {
+  if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
+  const reason=prompt('Alasan koreksi manual sale (minimal 10 karakter):','');
+  if(reason==null)return;
+  try{
+    voidProductSale(id,reason);
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(),getActor());
+    render();
+    window.FT.openManualSaleModal(id);
+  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
 };
 
 // ===== Stocks Page (Manager) =====
