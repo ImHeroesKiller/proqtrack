@@ -3961,7 +3961,8 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
   if (!empId || !visit?.projectId) { showToast('Konteks employee/project kunjungan tidak valid.', 'error'); return; }
   try {
     const seen = new Set();
-    if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
+    const entries = [];
+    if (submit) { submit.disabled=true; submit.textContent='Validasi…'; }
     for (const row of rows) {
       const productId = row.querySelector('[name="productId"]')?.value;
       const closingQty = Number(row.querySelector('[name="quantity"]')?.value);
@@ -3974,12 +3975,18 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
       if (inventoryCycleOnDate(visit.projectId,outletId,productId,todayISO())) throw new Error('Cycle stok hari ini untuk salah satu produk sudah ada. Tidak dibuat duplikat.');
       const existing = getStocksByOutlet(outletId).find(s => s.productId === productId && (!s.projectId || s.projectId === visit.projectId));
       const openingQty = Number(existing?.quantity || 0);
+      if (closingQty > openingQty + stockInQty) throw new Error(`Closing stock produk melebihi stok tersedia (${openingQty + stockInQty}).`);
+      entries.push({ productId, closingQty, stockInQty, minStock, openingQty });
+    }
+    if (!entries.length) throw new Error('Pilih minimal satu produk untuk dicatat.');
+    if (submit) submit.textContent='Finalisasi…';
+    for (const entry of entries) {
       createInventoryCycle({
-        projectId:visit.projectId, outletId, productId, employeeId:empId, visitId,
-        cycleDate:todayISO(), status:'finalized', openingQty, stockInQty,
-        adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty,
-        minStock,
-        idempotencyKey:`visit-stock:${visitId}:${productId}`,
+        projectId:visit.projectId, outletId, productId:entry.productId, employeeId:empId, visitId,
+        cycleDate:todayISO(), status:'finalized', openingQty:entry.openingQty, stockInQty:entry.stockInQty,
+        adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty:entry.closingQty,
+        minStock:entry.minStock,
+        idempotencyKey:`visit-stock:${visitId}:${entry.productId}`,
       });
     }
     await waitForOperationalSync();
