@@ -2962,6 +2962,25 @@ window.FT.deleteProductConfirm=async function(id){
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
 };
 
+function stockProjectRows() {
+  const organizationId = String(getCurrentOrgId() || '');
+  const actor = getActor() || {};
+  const allowed = new Set((actor.projectIds || []).map(String));
+  const broad = isOrgAdminRole(actor.role);
+  return (getDB().projects || []).filter(row =>
+    (!organizationId || String(row.organizationId || organizationId) === organizationId)
+    && row.status !== 'archived'
+    && (broad || allowed.has(String(row.id)))
+  );
+}
+
+function stockCommonProjectIds(outletId, productId) {
+  const outlet = getOutlets().find(row => String(row.id) === String(outletId));
+  const product = getProducts().find(row => String(row.id) === String(productId));
+  const outletProjects = new Set((outlet?.projectIds || []).map(String));
+  return (product?.projectIds || []).map(String).filter(id => outletProjects.has(id));
+}
+
 // ===== Product Sales =====
 function renderProductSales({ mine = false } = {}) {
   const employeeId = myEmployeeId();
@@ -3009,8 +3028,10 @@ window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
   const employeeRows = getEmployees();
   const productRows = getProducts().filter(row => row.status === 'active');
   const outletRows = getOutlets().filter(row => row.status !== 'archived');
+  const projectRows = stockProjectRows();
   openModal(correctionOfSaleId ? 'Replacement Manual Sale' : 'Manual Sale Exception', `
     <form data-pqt-onsubmit="FT.saveManualSale(event,${jsArg(correctionOfSaleId)})">
+      <div class="form-group"><label class="label">Project</label><select class="select" name="projectId" required><option value="">Pilih project</option>${projectRows.map(row=>`<option value="${row.id}" ${source?.projectId===row.id?'selected':''}>${esc(row.name||row.code||row.id)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Employee</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${employeeRows.map(row=>`<option value="${row.id}" ${source?.employeeId===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${outletRows.map(row=>`<option value="${row.id}" ${source?.outletId===row.id?'selected':''}>${esc(formatOutletLabel(row))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required><option value="">Pilih produk</option>${productRows.map(row=>`<option value="${row.id}" ${source?.productId===row.id?'selected':''}>${esc(row.name)} (${esc(row.sku||'-')})</option>`).join('')}</select></div>
@@ -3029,8 +3050,8 @@ window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
   e.preventDefault();
   const form=e.target, submit=form.querySelector('button[type="submit"]');
   const data=Object.fromEntries(new FormData(form));
-  const projectId=stockProjectFor(data.outletId,data.productId);
-  if(!projectId){showToast('Outlet dan produk harus memiliki tepat satu project yang sama.','error');return;}
+  const projectId=String(data.projectId || '');
+  if(!projectId || !stockCommonProjectIds(data.outletId,data.productId).includes(projectId)){showToast('Project tidak sesuai dengan relasi outlet dan produk.','error');return;}
   try{
     if(submit){submit.disabled=true;submit.textContent='Sinkronisasi…';}
     createProductSale({
@@ -3136,8 +3157,10 @@ window.FT.filterStocks = function() {
 };
 
 window.FT.openStockModal = function() {
+  const projectRows = stockProjectRows();
   openModal('Catat Stock In', `
     <form data-pqt-onsubmit="FT.createStock(event)">
+      <div class="form-group"><label class="label">Project</label><select class="select" name="projectId" required><option value="">Pilih project</option>${projectRows.map(row=>`<option value="${row.id}">${esc(row.name||row.code||row.id)}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
       <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required><option value="">Pilih produk</option>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(p.sku||'-')})</option>`).join('')}</select></div>
       <div class="form-row">
@@ -3156,10 +3179,7 @@ window.FT.openStockModal = function() {
 
 function stockProjectFor(outletId, productId, fallback = '') {
   if (fallback) return String(fallback);
-  const outlet = getOutlets().find(row => String(row.id) === String(outletId));
-  const product = getProducts().find(row => String(row.id) === String(productId));
-  const outletProjects = new Set((outlet?.projectIds || []).map(String));
-  const common = (product?.projectIds || []).map(String).filter(id => outletProjects.has(id));
+  const common = stockCommonProjectIds(outletId,productId);
   return common.length === 1 ? common[0] : '';
 }
 
@@ -3169,10 +3189,10 @@ window.FT.createStock = async function(e) {
   const submit = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
   const employeeId = myEmployeeId();
-  const projectId = stockProjectFor(data.outletId, data.productId);
-  const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && (!projectId || row.projectId === projectId));
+  const projectId = String(data.projectId || '');
+  const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && row.projectId === projectId);
   if (!employeeId) { showToast('Akun ini belum terhubung ke employee untuk mencatat stock movement.', 'error'); return; }
-  if (!projectId) { showToast('Outlet dan produk harus memiliki tepat satu project yang sama.', 'error'); return; }
+  if (!projectId || !stockCommonProjectIds(data.outletId,data.productId).includes(projectId)) { showToast('Project tidak sesuai dengan relasi outlet dan produk.', 'error'); return; }
   const openingQty = Number(current?.quantity || 0);
   const stockInQty = Number(data.stockInQty);
   const closingQty = Number(data.closingQty);
