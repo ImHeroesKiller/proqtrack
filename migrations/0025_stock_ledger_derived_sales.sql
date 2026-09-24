@@ -43,6 +43,3 @@ CREATE INDEX IF NOT EXISTS idx_inventory_cycles_scope
 
 CREATE INDEX IF NOT EXISTS idx_inventory_cycles_employee
   ON core_inventory_cycles(organization_id, employee_id, cycle_date);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_stocks_one_current_balance
-  ON core_stocks(organization_id, project_id, outlet_id, product_id);
