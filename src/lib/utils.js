@@ -31,6 +31,50 @@ export function getInitials(name) {
   return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
 }
 
+export function validCoordinatePair(lat, lng) {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+  return Number.isFinite(latitude) && Number.isFinite(longitude)
+    && latitude >= -90 && latitude <= 90
+    && longitude >= -180 && longitude <= 180;
+}
+
+export function captureDevicePosition(options = {}) {
+  const geolocation = typeof navigator !== 'undefined' ? navigator.geolocation : null;
+  if (!geolocation?.getCurrentPosition) {
+    return Promise.reject(Object.assign(new Error('GPS tidak tersedia di perangkat ini.'), { code:'GPS_UNAVAILABLE' }));
+  }
+  const timeout = Number(options.timeout) || 15000;
+  const maximumAge = Number.isFinite(Number(options.maximumAge)) ? Number(options.maximumAge) : 5000;
+  return new Promise((resolve,reject) => {
+    geolocation.getCurrentPosition(position => {
+      const lat = Number(position?.coords?.latitude);
+      const lng = Number(position?.coords?.longitude);
+      const accuracy = Number(position?.coords?.accuracy);
+      if (!validCoordinatePair(lat,lng)) {
+        reject(Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' }));
+        return;
+      }
+      resolve({
+        lat,
+        lng,
+        accuracyM:Number.isFinite(accuracy) && accuracy >= 0 ? Math.round(accuracy) : null,
+        capturedAt:new Date(position.timestamp || Date.now()).toISOString(),
+      });
+    }, error => {
+      const code = Number(error?.code);
+      const message = code === 1
+        ? 'Izin lokasi diperlukan untuk check-in.'
+        : code === 2
+          ? 'Lokasi GPS tidak tersedia. Pastikan GPS aktif.'
+          : code === 3
+            ? 'Pengambilan lokasi GPS timeout. Coba lagi.'
+            : (error?.message || 'Gagal mengambil lokasi GPS.');
+      reject(Object.assign(new Error(message), { code:code === 1 ? 'GPS_PERMISSION_DENIED' : code === 3 ? 'GPS_TIMEOUT' : 'GPS_UNAVAILABLE' }));
+    }, { enableHighAccuracy:true, timeout, maximumAge });
+  });
+}
+
 export function calculateDistance(lat1, lng1, lat2, lng2) {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
