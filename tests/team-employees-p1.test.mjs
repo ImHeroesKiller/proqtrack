@@ -66,5 +66,5 @@ test('Employee P1 core sync has defensive employee mutation validator', async ()
 
 test('Team Employees P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.40/);
+  assert.match(sw, /proqtrack-v12\.41/);
 });
