@@ -263,8 +263,9 @@ function productRow(kind, products, existing, idx) {
         }).join('')}
       </select>
     </div>
-    ${kind === 'stock' ? `<div class="form-row"><div class="form-group"><label class="label">Qty</label><input class="input" type="number" name="quantity" min="0" required></div>
-      <div class="form-group"><label class="label">Min</label><input class="input" type="number" name="minStock" value="5" min="0" required></div></div>` : ''}
+    ${kind === 'stock' ? `<div class="form-row"><div class="form-group"><label class="label">Closing stock</label><input class="input" type="number" name="quantity" min="0" step="1" required></div>
+      <div class="form-group"><label class="label">Stock masuk</label><input class="input" type="number" name="stockInQty" value="0" min="0" step="1" required></div></div>
+      <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="5" min="0" step="1" required></div>` : ''}
     ${kind === 'price' ? `<div class="form-group"><label class="label">Harga teramati</label><input class="input" type="number" name="observedPrice" min="0" required></div>
       <div class="form-row"><div class="form-group"><label class="label">Diskon %</label><input class="input" type="number" name="discountPercent" value="0" min="0"></div>
       <div class="form-group"><label class="label">Diskon Rp</label><input class="input" type="number" name="discountAmount" value="0" min="0"></div></div>` : ''}
