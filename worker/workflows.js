@@ -242,14 +242,35 @@ export async function handleWorkflowRoute(request, env, claims, url = new URL(re
     const workflowType = normalize(body.workflowType).toLowerCase();
     const allowedRoles = CREATE_ROLES[workflowType];
     if (!allowedRoles || !allowedRoles.includes(role)) return json({ error: 'FORBIDDEN', requestId }, 403);
-    const projectId = normalize(body.projectId) || null;
-    if (!projectAllowed(claims, projectId)) return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
+    let projectId = normalize(body.projectId) || null;
+    const subjectType = normalize(body.subjectType);
+    const subjectId = normalize(body.subjectId);
+
+    if (workflowType === 'visit_exception') {
+      if (subjectType !== 'visit' || !subjectId) return json({ error: 'INVALID_VISIT_EXCEPTION', requestId }, 400);
+      const visit = await env.DB.prepare(
+        'SELECT id,project_id,status FROM core_visits WHERE organization_id=? AND id=? LIMIT 1'
+      ).bind(organizationId, subjectId).first();
+      if (!visit) return json({ error: 'VISIT_NOT_FOUND', requestId }, 404);
+      if (!['completed','cancelled','rejected'].includes(normalize(visit.status).toLowerCase())) {
+        return json({ error: 'VISIT_NOT_FINAL', requestId }, 409);
+      }
+      projectId = normalize(visit.project_id) || null;
+      if (!projectAllowed(claims, projectId)) return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
+      const duplicate = await env.DB.prepare(
+        "SELECT id FROM core_workflow_requests WHERE organization_id=? AND workflow_type='visit_exception' AND subject_type='visit' AND subject_id=? AND status='pending' LIMIT 1"
+      ).bind(organizationId, subjectId).first();
+      if (duplicate) return json({ error: 'WORKFLOW_ALREADY_PENDING', workflowId: duplicate.id, requestId }, 409);
+    } else if (!projectAllowed(claims, projectId)) {
+      return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
+    }
+
     try {
       const id = await createWorkflowRequestInternal(env, {
         organizationId,
         workflowType,
-        subjectType: normalize(body.subjectType),
-        subjectId: normalize(body.subjectId),
+        subjectType,
+        subjectId,
         projectId,
         requestedBy: claims.sub,
         payload: body.payload || {},
