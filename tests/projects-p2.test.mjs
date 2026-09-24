@@ -6,7 +6,8 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Projects P2 adds pagination, result summary and empty state', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /PROJECT_PAGE_SIZE = 15/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(helper, /PROJECT_PAGE_SIZE = 15/);
   assert.match(src, /projectResultSummary/);
   assert.match(src, /projectEmpty/);
   assert.match(src, /projectPager/);
@@ -23,9 +24,10 @@ test('Projects P2 renders responsive project cards on mobile', async () => {
 
 test('Projects P2 localizes statuses and exposes live sync state', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function projectStatusLabel/);
-  assert.match(src, /on_hold:'Ditahan'/);
-  assert.match(src, /completed:'Selesai'/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(src, /projectStatusLabel/);
+  assert.match(helper, /on_hold:'Ditahan'/);
+  assert.match(helper, /completed:'Selesai'/);
   assert.match(src, /projectSyncState/);
   assert.match(src, /projectSyncLabel/);
   assert.match(src, /#\/my-projects/);
@@ -33,16 +35,18 @@ test('Projects P2 localizes statuses and exposes live sync state', async () => {
 
 test('Projects P2 uses project-scoped manager and supervisor attribution', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function projectManagerNames/);
-  assert.match(src, /a\.projectId === projectId/);
-  assert.match(src, /function projectSupervisorNames/);
-  assert.match(src, /a\.roleOnProject === 'supervisor'/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(src, /projectManagerNames/);
+  assert.match(helper, /account\.projectId === projectId/);
+  assert.match(src, /projectSupervisorNames/);
+  assert.match(helper, /assignment\.roleOnProject === 'supervisor'/);
   assert.doesNotMatch(src, /find\(\(a\) => a\.role === "manager" && a\.status === "active"\)\?\.name/);
 });
 
 test('Projects P2 warns before final status when operational dependencies remain', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function projectDependencies/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(helper, /function projectDependencies/);
   assert.match(src, /\['completed','cancelled'\]\.includes\(nextStatus\)/);
   assert.match(src, /assignment aktif/);
   assert.match(src, /visit belum final/);
@@ -59,5 +63,5 @@ test('Projects P2 enriches detail with operational context', async () => {
 
 test('Projects P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.31/);
+  assert.match(sw, /proqtrack-v12\.32/);
 });
