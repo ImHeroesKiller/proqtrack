@@ -100,13 +100,21 @@ export async function issueUploadSession(account, credentials = {}) {
       error.organizations = data.organizations || [];
       throw error;
     }
-    if (res.status === 403 && data.error === 'ORGANIZATION_ACCESS_DENIED') {
-      const error = new Error('Organisasi tersimpan sudah tidak aktif. Muat ulang aplikasi lalu login kembali.');
-      error.code = data.error;
+    if (res.status === 403) {
+      const messages = {
+        ORGANIZATION_ACCESS_DENIED: 'Organisasi tersimpan sudah tidak aktif atau akses akun sudah berubah.',
+        ORGANIZATION_ACCESS_NOT_CONFIGURED: 'Akun belum memiliki organisasi aktif. Hubungi administrator.',
+        USER_ACCESS_DISABLED: 'Akun dinonaktifkan. Hubungi administrator.',
+        DEVICE_REQUIRED: 'Perangkat ini perlu didaftarkan sebelum login.',
+        DEVICE_ACCESS_DENIED: 'Perangkat ini belum diizinkan untuk akun tersebut.',
+      };
+      const error = new Error(data.message || messages[data.error] || data.error || 'Akses login ditolak.');
+      error.code = data.error || 'ACCESS_DENIED';
       error.status = res.status;
+      error.payload = data;
       throw error;
     }
-    if ([400, 401, 403, 404, 405, 410, 501, 503].includes(res.status)) return null;
+    if ([400, 401, 404, 405, 410, 501, 503].includes(res.status)) return null;
     throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   if (!data.token) {
