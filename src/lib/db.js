@@ -1626,12 +1626,29 @@ export function getVisitsByDate(date) {
 
 export function createVisit(data) {
   assertCanAccessEmployee(data.employeeId);
-  assertOperationalContext(getDB(), data);
-  const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...withOrg(data) };
-  if ((visit.checkInTime || visit.status !== 'planned') && !visit.locationSource) {
-    visit.locationSource = 'administrative_entry';
+  const executionFields = [
+    'checkInTime','checkOutTime','startedAt','completedAt','checkInAt','checkOutAt',
+    'lat','lng','checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt',
+    'checkOutLat','checkOutLng','checkOutAccuracyM','checkOutCapturedAt','locationSource',
+  ];
+  const requestedStatus = String(data.status || 'planned');
+  if (requestedStatus !== 'planned' || executionFields.some(key => data[key] !== undefined && data[key] !== null && data[key] !== '')) {
+    throw new Error('Kunjungan baru harus dijadwalkan sebagai Direncanakan. Check-in dan check-out dilakukan dari workflow kunjungan.');
   }
-  getDB().visits.push(visit);
+  const db = getDB();
+  const clean = { ...data, status:'planned' };
+  for (const key of executionFields) delete clean[key];
+  assertOperationalContext(db, clean);
+  const visit = {
+    id: uid('VIS'),
+    rating: 0,
+    notes: sanitizePlainText(clean.notes || ''),
+    checkInTime: null,
+    checkOutTime: null,
+    status: 'planned',
+    ...withOrg(clean),
+  };
+  db.visits.push(visit);
   saveDB();
   return visit;
 }
@@ -1640,26 +1657,58 @@ export function updateVisit(id, data) {
   const db = getDB();
   const idx = db.visits.findIndex(v => v.id === id);
   if (idx === -1) return null;
-  const actor = assertLoggedIn();
+  assertLoggedIn();
   const current = db.visits[idx];
   assertCanAccessEmployee(current.employeeId);
   if (data.employeeId && data.employeeId !== current.employeeId) assertCanAccessEmployee(data.employeeId);
-  if (!isOrgAdminRole(actor.role)) {
-    if (['completed','cancelled','rejected'].includes(String(current.status || ''))) throw new Error('Kunjungan final tidak dapat diubah. Gunakan workflow koreksi.');
-    for (const key of [
-      'employeeId','projectId','outletId','checkInTime','startedAt','lat','lng',
-      'checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt','locationSource'
-    ]) {
-      if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
-        throw new Error('Evidence kunjungan tidak dapat diubah setelah tercatat.');
-      }
-    }
-    const nextStatus = String(data.status || current.status || 'planned');
-    const allowed = current.status === 'planned'
-      ? ['planned','in_progress','checked-in','cancelled']
-      : ['in_progress','checked-in','completed'];
-    if (!allowed.includes(nextStatus)) throw new Error('Perubahan status kunjungan tidak diizinkan.');
+
+  const canonicalStatus = value => String(value || 'planned') === 'checked-in' ? 'in_progress' : String(value || 'planned');
+  const validCoordinate = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+  const currentStatus = canonicalStatus(current.status);
+  const nextStatus = canonicalStatus(data.status || current.status);
+  if (['completed','cancelled','rejected'].includes(currentStatus)) {
+    throw new Error('Kunjungan final tidak dapat diubah. Gunakan workflow koreksi.');
   }
+
+  for (const key of [
+    'employeeId','projectId','outletId','checkInTime','startedAt','lat','lng',
+    'checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt','locationSource'
+  ]) {
+    if (data[key] !== undefined && current[key] !== undefined && current[key] !== null && current[key] !== '' && String(data[key]) !== String(current[key])) {
+      throw new Error('Evidence check-in tidak dapat diubah setelah tercatat.');
+    }
+  }
+  for (const key of [
+    'checkOutTime','completedAt','checkOutAt','checkOutLat','checkOutLng',
+    'checkOutAccuracyM','checkOutCapturedAt'
+  ]) {
+    if (data[key] !== undefined && current[key] !== undefined && current[key] !== null && current[key] !== '' && String(data[key]) !== String(current[key])) {
+      throw new Error('Evidence check-out tidak dapat diubah setelah tercatat.');
+    }
+  }
+
+  const allowed = currentStatus === 'planned'
+    ? new Set(['planned','in_progress','cancelled'])
+    : new Set(['in_progress','completed']);
+  if (!allowed.has(nextStatus)) throw new Error('Perubahan status kunjungan tidak diizinkan.');
+
+  if (currentStatus === 'planned' && nextStatus === 'in_progress') {
+    if (String(data.locationSource || '') !== 'device_gps'
+        || !validCoordinate(data.checkInLat)
+        || !validCoordinate(data.checkInLng)
+        || !String(data.checkInCapturedAt || data.startedAt || '')) {
+      throw new Error('Check-in wajib menggunakan GPS perangkat yang valid.');
+    }
+  }
+  if (currentStatus === 'in_progress' && nextStatus === 'completed') {
+    if (!String(data.checkOutTime || data.completedAt || data.checkOutCapturedAt || '')
+        || !validCoordinate(data.checkOutLat)
+        || !validCoordinate(data.checkOutLng)
+        || !String(data.checkOutCapturedAt || data.completedAt || '')) {
+      throw new Error('Check-out wajib merekam lokasi GPS dan waktu perangkat.');
+    }
+  }
+
   db.visits[idx] = { ...current, ...data };
   saveDB();
   return db.visits[idx];

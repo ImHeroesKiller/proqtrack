@@ -54,17 +54,19 @@ test('location freshness never calls outlet reference a current employee positio
   assert.match(fresh.label, /5 menit/);
 });
 
-test('self check-in captures immutable GPS evidence while administrative check-in stays non-device', async () => {
+test('self check-in captures immutable GPS evidence and requires the assigned employee', async () => {
   const [app, db] = await Promise.all([read('src/app.js'),read('src/lib/db.js')]);
   assert.match(app, /const ownsVisit = !!actor\?\.employeeId/);
+  assert.match(app, /if \(!ownsVisit\) throw new Error\('Check-in hanya dapat dilakukan oleh karyawan yang ditugaskan\.'/);
   assert.match(app, /await captureDevicePosition\(\)/);
-  assert.match(app, /patch\.checkInLat = gps\.lat/);
-  assert.match(app, /patch\.checkInLng = gps\.lng/);
-  assert.match(app, /patch\.checkInAccuracyM = gps\.accuracyM/);
-  assert.match(app, /patch\.checkInCapturedAt = gps\.capturedAt/);
-  assert.match(app, /locationSource:ownsVisit \? 'device_gps' : 'administrative_checkin'/);
-  assert.match(db, /'checkInLat','checkInLng','checkInAccuracyM','checkInCapturedAt','locationSource'/);
-  assert.match(db, /administrative_entry/);
+  assert.match(app, /assertVisitGeofence\(outlet, gps, 50\)/);
+  assert.match(app, /checkInLat:gps\.lat/);
+  assert.match(app, /checkInLng:gps\.lng/);
+  assert.match(app, /checkInAccuracyM:gps\.accuracyM/);
+  assert.match(app, /checkInCapturedAt:gps\.capturedAt/);
+  assert.match(app, /locationSource:'device_gps'/);
+  assert.match(db, /Evidence check-in tidak dapat diubah setelah tercatat/);
+  assert.match(db, /Check-in wajib menggunakan GPS perangkat yang valid/);
 });
 
 test('Last Location UI distinguishes evidence source and never says still at location', async () => {

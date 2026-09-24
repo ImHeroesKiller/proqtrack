@@ -165,9 +165,9 @@ export function renderVisitDetailHtml(visitId) {
   if (!v) return '<p>Kunjungan tidak ditemukan.</p>';
   const o = getOutlets().find(x => x.id === v.outletId);
   const stocks = getStocks().filter(s => s.outletId === v.outletId);
-  const prices = getPriceObservations().filter(p => p.visitId === visitId || (p.outletId === v.outletId && p.recordedAt?.slice(0, 10) === visitDay(v)));
-  const intel = getCompetitorIntel().filter(i => i.visitId === visitId || (i.outletId === v.outletId && (i.recordedAt || '').slice(0, 10) === visitDay(v)));
-  const photos = getFieldPhotos().filter(p => p.visitId === visitId || (p.outletId === v.outletId && (p.recordedAt || '').slice(0, 10) === visitDay(v)));
+  const prices = getPriceObservations().filter(p => String(p.visitId || '') === String(visitId));
+  const intel = getCompetitorIntel().filter(i => String(i.visitId || '') === String(visitId));
+  const photos = getFieldPhotos().filter(p => String(p.visitId || '') === String(visitId));
   const products = Object.fromEntries(getProducts().map(p => [p.id, p]));
   return `
     <div class="detail-grid" style="margin-bottom:14px">
@@ -179,13 +179,14 @@ export function renderVisitDetailHtml(visitId) {
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(v.status)}</div>
       <div class="detail-label">Catatan</div><div class="detail-value full">${esc(v.notes || '—')}</div>
     </div>
-    <h4>Stok</h4>
-    ${stocks.length ? `<ul>${stocks.map(s => `<li>${esc(products[s.productId]?.name || s.productId)}: <b>${s.quantity}</b></li>`).join('')}</ul>` : '<p class="am-muted">Belum ada stok.</p>'}
-    <h4>Harga & diskon</h4>
+    <h4>Stok outlet saat ini</h4>
+    <p class="am-muted">Referensi kondisi outlet saat ini — bukan snapshot stok pada kunjungan ini.</p>
+    ${stocks.length ? `<ul>${stocks.map(s => `<li>${esc(products[s.productId]?.name || s.productId)}: <b>${s.quantity}</b></li>`).join('')}</ul>` : '<p class="am-muted">Belum ada stok outlet.</p>'}
+    <h4>Harga & diskon kunjungan</h4>
     ${prices.length ? `<ul>${prices.map(p => `<li>${esc(products[p.productId]?.name || p.productId)}: ${formatCurrency(p.observedPrice || p.price || 0)}${p.discountPercent ? ' · diskon ' + p.discountPercent + '%' : ''}</li>`).join('')}</ul>` : '<p class="am-muted">Belum ada observasi harga.</p>'}
-    <h4>Intel kompetitor</h4>
+    <h4>Intel kompetitor kunjungan</h4>
     ${intel.length ? `<ul>${intel.map(i => `<li>${esc(products[i.productId]?.name || 'Produk')} vs kompetitor · shelf ${i.shelfShare || 0}%</li>`).join('')}</ul>` : '<p class="am-muted">Belum ada intel.</p>'}
-    <h4>Foto</h4>
+    <h4>Foto kunjungan</h4>
     ${photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${photos.map(p => {
       const src = safePhotoUrl(p.dataUrl || p.photoUrl);
       return src ? `<img src="${src}" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:8px">` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
