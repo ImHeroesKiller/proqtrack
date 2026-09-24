@@ -614,7 +614,7 @@ function render() {
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
             ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
-            ${route === '#/tracking' ? '<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">Last check-in</div>' : ''}
+            ${route === '#/tracking' ? `<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">${state.trackingRefreshedAt ? 'Updated ' + esc(new Date(state.trackingRefreshedAt).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit',second:'2-digit'})) : 'Auto refresh 30s'}</div>` : ''}
           </div>
         </div>
         <div class="content">
@@ -634,6 +634,7 @@ function render() {
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
   configureHomeRefresh(route);
+  configureTrackingRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -831,6 +832,7 @@ window.FT.logout = function() {
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
   if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
   state.homeRefreshedAt = null;
+  state.trackingRefreshedAt = null;
   render();
 };
 
@@ -1196,8 +1198,6 @@ function initMap() {
     attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(_map);
 
-  if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
-
   const avatarColors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
   employees.forEach(e => {
     const loc = lastKnownLocation(e.id);
@@ -1211,13 +1211,21 @@ function initMap() {
       iconSize: [36,36], iconAnchor: [18,18]
     });
     const m = L.marker([loc.lat, loc.lng], { icon }).addTo(_map);
+    const freshness = locationFreshness(loc);
+    const sourceLabel = loc.source === 'device_gps'
+      ? `GPS check-in${loc.accuracyM != null ? ' · ±' + Math.round(loc.accuracyM) + ' m' : ''}`
+      : loc.source === 'outlet_reference'
+        ? 'Referensi outlet — bukan posisi perangkat'
+        : 'Lokasi visit lama';
     m.bindPopup(`
-      <div style="font-size:13px; min-width:160px;">
+      <div style="font-size:13px; min-width:180px;">
         <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(e.name)}</div>
         <div style="color:#666;">${esc(e.role)} · ${esc(e.area)}</div>
-        <div style="margin-top:6px;">Last location: ${esc(loc.outlet?.name || 'Lokasi kerja')}</div>
-        <div>${esc(formatDateShort(visitDay(loc.visit)))} ${esc(loc.visit.checkInTime || '')}${loc.visit.checkOutTime ? ' · keluar ' + esc(loc.visit.checkOutTime) : ' · masih di lokasi'}</div>
-        <div style="margin-top:6px;">📞 ${esc(e.phone)}</div>
+        <div style="margin-top:6px;">Lokasi: ${esc(loc.outlet?.name || 'Lokasi kerja')}</div>
+        <div>${esc(sourceLabel)}</div>
+        <div>${esc(formatDateShort(visitDay(loc.visit)))} ${esc(loc.visit.checkInTime || '')} · ${esc(freshness.label)}</div>
+        <div>${loc.visit.checkOutTime ? 'Check-out ' + esc(loc.visit.checkOutTime) : 'Belum check-out'}</div>
+        <div style="margin-top:6px;">📞 ${esc(e.phone || '-')}</div>
       </div>
     `);
     _markers[e.id] = m;
@@ -1480,11 +1488,13 @@ window.FT.closeSidebar = function() {
   if (bd) { bd.classList.remove('show'); setTimeout(() => { bd.style.display = 'none'; }, 250); }
 };
 
-window.FT.checkInVisit = function(id) {
+window.FT.checkInVisit = async function(id) {
   try {
-    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
+    await checkInVisitWithGps(id);
     closeModal(); showToast('Berhasil check in', 'success'); render();
-  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
+  } catch (error) {
+    showToast(error.message || 'Check-in gagal', 'error');
+  }
 };
 window.FT.checkOutVisit = function(id) {
   try {
@@ -4573,9 +4583,14 @@ function renderMobileSim() {
 window.FT.setMobileTab = function(tab) { state.mobileTab = tab; render(); };
 window.FT.selectMobileEmp = function(id) { state.selectedMobileEmp = id; render(); };
 
-window.FT.mobileCheckIn = function(visitId) {
-  updateVisit(visitId, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-  showToast('Berhasil check in!', 'success'); render();
+window.FT.mobileCheckIn = async function(visitId) {
+  try {
+    await checkInVisitWithGps(visitId);
+    showToast('Berhasil check in!', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Check-in gagal', 'error');
+  }
 };
 window.FT.mobileCheckOut = function(visitId) {
   updateVisit(visitId, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
@@ -4616,10 +4631,13 @@ function init() {
   getDB();
   state.route = getRoute();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && isHomeRoute()) refreshHomeData().catch(() => {});
+    if (document.visibilityState !== 'visible') return;
+    if (isHomeRoute()) refreshHomeData().catch(() => {});
+    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
   });
   window.addEventListener('focus', () => {
     if (isHomeRoute()) refreshHomeData().catch(() => {});
+    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
   });
   render();
 }
