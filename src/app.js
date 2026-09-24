@@ -3986,25 +3986,24 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
     }
     if (!entries.length) throw new Error('Pilih minimal satu produk untuk dicatat.');
     if (submit) submit.textContent='Finalisasi…';
-    for (const entry of entries) {
-      createInventoryCycle({
-        projectId:visit.projectId, outletId, productId:entry.productId, employeeId:empId, visitId,
-        cycleDate:todayISO(), status:'finalized', openingQty:entry.openingQty, stockInQty:entry.stockInQty,
-        adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty:entry.closingQty,
-        minStock:entry.minStock,
-        idempotencyKey:`visit-stock:${visitId}:${entry.productId}`,
-      });
-    }
-    await waitForOperationalSync();
-    await refreshOperationalData(getDB(), getActor());
-    closeModal();
-    showToast(`${seen.size} produk stok difinalisasi`, 'success');
-    render();
+    await runStockSalesMutation(() => {
+      const created=[];
+      for (const entry of entries) {
+        created.push(createInventoryCycle({
+          projectId:visit.projectId, outletId, productId:entry.productId, employeeId:empId, visitId,
+          cycleDate:todayISO(), status:'finalized', openingQty:entry.openingQty, stockInQty:entry.stockInQty,
+          adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty:entry.closingQty,
+          minStock:entry.minStock,
+          idempotencyKey:`visit-stock:${visitId}:${entry.productId}`,
+        }));
+      }
+      return created;
+    }, {
+      successMessage:`${seen.size} produk stok difinalisasi`,
+      onSuccess:()=>{ closeModal(); render(); },
+    });
   } catch (error) {
-    restoreOperationalBaseline(getDB());
     showToast(stockSalesFriendlyErrorMessage(error), 'error');
-    render();
-    await recoverStockSalesAfterError(error);
   } finally {
     if (submit?.isConnected) { submit.disabled=false; submit.textContent='Simpan Stok'; }
   }
