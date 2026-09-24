@@ -11,7 +11,7 @@ Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P3. Perbarui
 | D1 live | binding `DB` → `proqtrack-mvp` |
 | R2 live | binding `FILES` → `proqtrack-mvp-files` |
 | Milestone config | `M7` |
-| Service Worker | `proqtrack-v12.18` |
+| Service Worker | `proqtrack-v12.19` |
 | Migrasi terakhir | `0024_p2_operational_cloud_authority.sql` |
 | Test baseline | 214 tests pada baseline pasca hotfix superadmin |
 | Deploy | PR → merge `main` → GitHub Actions |
@@ -32,7 +32,7 @@ Collection berikut berasal dari D1 melalui bootstrap/sync:
 
 Daftar client di `CLOUD_COLLECTIONS` (`src/lib/cloud-data.js`) dan daftar server di `ENTITY_COLLECTIONS`/`ENTITY_TABLES` (`worker/operations.js`) harus selalu konsisten.
 
-Browser hanya cache/compatibility layer saat organisasi sudah `cutover_mode='cloud'`. `proqtrack_db_v6` adalah key utama; `proqtrack_db_v7` mirror. Metadata `fieldPhotos` dihydrate dari evidence API/R2 authority dan tidak dikirim ulang melalui core sync. Approval laporan dan report schedule cloud-authoritative. Branding organisasi (nama, logo, profil, timezone) bersumber dari profile organisasi cloud. Template dokumen, signature, dan riwayat file export client tetap lokal sebagai presentation/device preference.
+Browser hanya cache/compatibility layer saat organisasi sudah `cutover_mode='cloud'`. `proqtrack_db_v6` adalah key utama; `proqtrack_db_v7` mirror. Metadata `fieldPhotos` dihydrate dari evidence API/R2 authority dan tidak dikirim ulang melalui core sync. Approval laporan dan report schedule cloud-authoritative. Branding organisasi (nama, logo, warna tema, profil, timezone) bersumber dari profile organisasi cloud. Template dokumen, signature, dan riwayat file export client tetap lokal sebagai presentation/device preference.
 
 ## Dataset DEMO
 
@@ -63,7 +63,7 @@ Hotfix 23 Sep menegaskan invariant superadmin: identitas/role superadmin tetap g
 
 1. Full authenticated multi-role UAT masih perlu diulang untuk seluruh role dan viewport setelah P3, khususnya offline/reconnect serta report export.
 2. Conflict dua perangkat sekarang blocked sampai keputusan eksplisit. UI saat ini menyediakan server-wins atau tinjau nanti; field-level merge/client-wins belum tersedia dan tidak boleh diotomatisasi.
-3. Template dokumen, signature, dan riwayat file export client bersifat lokal by design; branding organisasi tidak lagi lokal.
+3. Template dokumen, signature, dan riwayat file export client bersifat lokal by design; branding organisasi termasuk warna tema tidak lagi lokal.
 4. `src/app.js` masih monolitik dan menjadi target maintainability berikutnya; pecah modul hanya setelah regression browser coverage memadai.
 5. Inline executable JS sudah ditutup, tetapi inline style masih diizinkan oleh CSP untuk kompatibilitas UI saat ini.
 6. PR #36 masih draft/divergen dan tidak boleh di-merge.
@@ -89,7 +89,7 @@ Baseline P0:
 - `src/m4-bootstrap.js` tetap memasang offline engine, evidence queue, offline login, dan registrasi service worker.
 - Report core, Phase 4 report extensions, serta M6 client dimuat dari bootstrap yang sama.
 - `window.__PROQTRACK_BOOT__` menyediakan status diagnostik `loading|ready|degraded` tanpa menampilkan istilah teknis ke UI.
-- PWA cache baseline saat ini `proqtrack-v12.18`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
+- PWA cache baseline saat ini `proqtrack-v12.19`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
 - `assets/logo.js` tidak boleh lagi menjadi tempat import side-effect aplikasi.
 
 Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
@@ -127,7 +127,7 @@ Empat kelompok maintainability debt ditutup pada baseline ini:
 1. Seluruh active UI template berpindah dari executable `on*=...` attributes ke `data-pqt-on*` + delegated dispatcher `src/lib/ui-events.js`. Dispatcher memakai grammar terbatas dan tidak memakai `eval` atau `new Function`.
 2. XLSX/DOCX/ZIP/PDF report export tidak lagi memuat JSZip/jsPDF dari CDN. Packaging dilakukan lokal melalui `src/lib/document-export.js`, sehingga executable CSP dapat menjadi self-only.
 3. Snapshot offline yang mengalami revision conflict diberi `requiresReview` dan tidak dapat auto-replay pada reconnect/login berikutnya. User dapat mempertahankan salinan untuk review atau memilih versi server secara eksplisit.
-4. Runtime bootstrap naik ke `p3-runtime-2026-09-23` dan service-worker cache ke `proqtrack-v12.18`.
+4. Runtime bootstrap naik ke `p3-runtime-2026-09-23` dan service-worker cache ke `proqtrack-v12.19`.
 
 CSP executable baseline: `script-src 'self'` dan `script-src-elem 'self'`; `script-src-attr 'unsafe-inline'` tidak lagi diperlukan.
 
