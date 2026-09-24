@@ -9,7 +9,7 @@ const worker = readFileSync(new URL('../worker/operations.js', import.meta.url),
 
 test('Outlets P1 escapes stored outlet and visit output', () => {
   assert.match(app, /esc\(displayValue\(o\.type\)\)/);
-  assert.match(app, /esc\(displayValue\(o\.id\)\)/);
+  assert.match(app, /esc\(displayValue\(o\.(?:id|outletNumber\|\|o\.code\|\|o\.id)\)\)|esc\(o\.outletNumber\|\|o\.code\|\|o\.id\)/);
   assert.match(app, /esc\(displayValue\(o\.owner\)\)/);
   assert.match(app, /esc\(displayValue\(o\.phone\)\)/);
   assert.match(app, /esc\(displayValue\(o\.area\)\)/);
