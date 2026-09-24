@@ -16,15 +16,18 @@ test('Manager session payload preserves complete project/client scope', async ()
 
 test('Manager frontend scope uses projectIds array with legacy projectId fallback', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /const projectIds = Array\.isArray\(account\(\)\?\.projectIds\)/);
-  assert.match(src, /projectIds\.length \? projectIds : \(account\(\)\?\.projectId \? \[account\(\)\.projectId\] : \[\]\)/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(src, /managerProjectIds\(account\(\)\)/);
+  assert.match(helper, /Array\.isArray\(account\?\.projectIds\)/);
+  assert.match(helper, /account\?\.projectId \? \[account\.projectId\] : \[\]/);
   assert.match(src, /const projectIds = accessibleProjectIds\(\)/);
 });
 
 test('Project finalization closes active assignments in same authoritative batch', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /const closingAssignments = old && \['completed','cancelled'\]\.includes\(data\.status\)/);
-  assert.match(src, /status:'ended'/);
+  const helper = await read('src/lib/project-ui.js');
+  assert.match(src, /closingProjectAssignments/);
+  assert.match(helper, /status:'ended'/);
   assert.match(src, /const authoritativeChanges = \[/);
   assert.match(src, /\.\.\.closingAssignments\.map\(\(row\) => \(\{ entity:'projectAssignments', op:'upsert', row \}\)\)/);
   assert.match(src, /await commitOperationalChanges\(authoritativeChanges\)/);
@@ -41,5 +44,5 @@ test('Worker rejects finalization if active assignments are not closed in batch'
 
 test('Projects residual fix advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.31/);
+  assert.match(sw, /proqtrack-v12\.32/);
 });

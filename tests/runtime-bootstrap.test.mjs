@@ -83,7 +83,7 @@ test('P0 runtime modules keep cloud, offline, evidence and reporting responsibil
 
 test('service worker advances cache and precaches the explicit bootstrap', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.31/);
+  assert.match(sw, /proqtrack-v12\.32/);
   assert.match(sw, /'\.\/src\/entry\.js'/);
   assert.match(sw, /'\.\/src\/bootstrap\.js'/);
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);
