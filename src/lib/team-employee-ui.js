@@ -34,6 +34,30 @@ export function employeeMatchesFilters(employee = {}, filters = {}) {
     && (!projectId || projects.includes(projectId));
 }
 
+export function employeeOperationalFlags(employee = {}, assignments = [], accounts = []) {
+  const activeAssignments = activeAssignmentsForEmployee(assignments, employee.id);
+  const account = accounts.find(row =>
+    String(row.employeeId || '') === String(employee.id || '') ||
+    (!!employee.authUserId && String(row.id || '') === String(employee.authUserId))
+  ) || null;
+  return {
+    assigned: activeAssignments.length > 0,
+    assignmentCount: activeAssignments.length,
+    loginLinked: !!account,
+    loginActive: !!account && String(account.status || 'active') === 'active',
+  };
+}
+
+export function employeeOperationalCounts(employees = [], assignments = [], accounts = []) {
+  const rows = employees.map(employee => ({ employee, flags:employeeOperationalFlags(employee, assignments, accounts) }));
+  return {
+    total:rows.length,
+    active:rows.filter(row => String(row.employee.status || '') === 'active').length,
+    unassigned:rows.filter(row => String(row.employee.status || '') === 'active' && !row.flags.assigned).length,
+    loginMissing:rows.filter(row => String(row.employee.status || '') === 'active' && !row.flags.loginLinked).length,
+  };
+}
+
 export function paginateEmployees(items = [], page = 1, pageSize = EMPLOYEE_PAGE_SIZE) {
   const total = items.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
