@@ -35,7 +35,7 @@ import {
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
   normalizeAttendanceStatus,
 } from './lib/utils.js';
-import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData, cloudDataStatus } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
@@ -1951,8 +1951,8 @@ window.FT.openEmployeeModal = function() {
       <div class="form-group">
         <label class="label">Password Login Awal</label>
         <input class="input" type="password" name="password" minlength="16" autocomplete="new-password"
-          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{16,}" required>
-        <div class="am-muted">Minimal 16 karakter, huruf besar, huruf kecil, angka, dan simbol.</div>
+          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{16,}">
+        <div class="am-muted">Diwajibkan hanya jika email belum memiliki akun. Minimal 16 karakter, huruf besar, huruf kecil, angka, dan simbol.</div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -2050,9 +2050,9 @@ function renderEmployeeDetail(id) {
           <div style="margin-top:8px;">${statusBadge(emp.status)}</div>
         </div>
         <div class="detail-grid">
-          <div class="detail-label">ID</div><div class="detail-value">${emp.id}</div>
+          <div class="detail-label">ID</div><div class="detail-value">${esc(emp.id)}</div>
           <div class="detail-label">Email</div><div class="detail-value">${esc(emp.email)}</div>
-          <div class="detail-label">Telepon</div><div class="detail-value">${emp.phone}</div>
+          <div class="detail-label">Telepon</div><div class="detail-value">${esc(emp.phone || '—')}</div>
           <div class="detail-label">Area</div><div class="detail-value">${esc(emp.area)}</div>
           <div class="detail-label">Bergabung</div><div class="detail-value">${formatDate(emp.joinDate)}</div>
           <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(emp.lat)) ? `${Number(emp.lat).toFixed(4)}, ${Number(emp.lng).toFixed(4)}` : '—'}</div>
@@ -2090,8 +2090,8 @@ function renderEmployeeDetail(id) {
               ${visits.map(v => { const o = outletMap[v.outletId]; return `
                 <tr>
                   <td>${formatDateShort(v.date)}</td>
-                  <td>${o ? outletIcon(o.type)+' '+o.name : '-'}</td>
-                  <td>${v.checkInTime || '-'}</td>
+                  <td>${o ? outletIcon(o.type)+' '+esc(o.name) : '-'}</td>
+                  <td>${esc(v.checkInTime || '-')}</td>
                   <td>${statusBadge(v.status)}</td>
                 </tr>
               `; }).join('')}
@@ -2121,7 +2121,7 @@ window.FT.editEmployee = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Monthly sales target (Rp)</label><input class="input" type="number" name="salesTargetAmount" min="0" value="${emp.salesTargetAmount || 0}"></div>
-        <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${emp.status==='active'?'selected':''}>Aktif</option><option value="inactive" ${emp.status==='inactive'?'selected':''}>Nonaktif</option></select></div>
+        <div class="form-group"><label class="label">Status</label><input class="input" value="${esc(emp.status === 'active' ? 'Aktif' : emp.status === 'terminated' ? 'Berakhir' : 'Nonaktif')}" readonly><div class="am-muted">Status tidak diubah dari form Edit. Gunakan aksi Nonaktifkan atau flow staffing khusus.</div></div>
       </div>
       <div class="form-group"><label class="label">Attendance point</label>
         <select class="select" name="attendancePointId">
