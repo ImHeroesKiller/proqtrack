@@ -1,6 +1,8 @@
 import '../assets/logo.js';
 
 function applyBrand() {
+  const tenantBranded = document.documentElement.dataset.orgBranding === '1';
+  if (tenantBranded) return;
   document.querySelectorAll('.login-logo,.sidebar-logo').forEach(el => {
     el.querySelectorAll('img,iframe').forEach(node => node.remove());
     if (el.textContent.trim()) el.textContent = '';
