@@ -2484,7 +2484,10 @@ function normalizeOutletFormCoordinates(data) {
   return { lat, lng };
 }
 
-async function confirmOutletCloudSync() { await waitForOperationalSync(); }
+async function confirmAuthoritativeSync() {
+  await waitForOperationalSync();
+  await refreshOperationalData(getDB(), getActor());
+}
 
 window.FT.createOutlet = async function(e) {
   e.preventDefault();
@@ -2496,8 +2499,8 @@ window.FT.createOutlet = async function(e) {
     if (submit) { submit.disabled=true; submit.textContent='Menyimpan…'; }
     createOutlet(data);
     if (submit) submit.textContent='Sinkronisasi…';
-    await confirmOutletCloudSync();
-    closeModal(); showToast('Outlet berhasil disimpan dan tersinkron ke cloud','success'); render();
+    await confirmAuthoritativeSync();
+    closeModal(); showToast('Outlet berhasil disimpan.','success'); render();
   } catch (error) {
     restoreOperationalBaseline(getDB()); showToast(error.message || String(error),'error'); render();
   } finally { if (submit?.isConnected) { submit.disabled=false; submit.textContent='Simpan'; } }
@@ -2510,7 +2513,7 @@ window.FT.deleteOutlet = async function(id) {
   const lifecycle=outletLifecycleAction(outlet,references.total);
   if (!confirm(lifecycle.confirm)) return;
   try {
-    const result=deleteOutlet(id); await confirmOutletCloudSync();
+    const result=deleteOutlet(id); await confirmAuthoritativeSync();
     showToast(result.deactivated ? 'Outlet dinonaktifkan dan histori tetap dipertahankan' : 'Outlet berhasil dihapus','success'); render();
   } catch (error) { restoreOperationalBaseline(getDB()); showToast(error.message || String(error),'error'); render(); }
 };
@@ -2580,8 +2583,8 @@ window.FT.updateOutlet = async function(e,id) {
     if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}
     updateOutlet(id,data);
     if(submit)submit.textContent='Sinkronisasi…';
-    await confirmOutletCloudSync();
-    closeModal();showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud','success');render();
+    await confirmAuthoritativeSync();
+    closeModal();showToast('Data outlet berhasil diperbarui.','success');render();
   }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
@@ -2935,7 +2938,7 @@ window.FT.openProductModal=function(){
 window.FT.createProduct=async function(e){
   e.preventDefault(); if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
   const form=e.target,submit=form.querySelector('button[type="submit"]'),data=productFormData(form);
-  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}createProduct(data);if(submit)submit.textContent='Sinkronisasi…';await waitForOperationalSync();closeModal();showToast('Produk berhasil ditambahkan dan tersinkron ke cloud','success');render();}
+  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}createProduct(data);if(submit)submit.textContent='Sinkronisasi…';await confirmAuthoritativeSync();closeModal();showToast('Produk berhasil ditambahkan.','success');render();}
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
@@ -2948,7 +2951,7 @@ window.FT.editProduct=function(id){
 window.FT.updateProduct=async function(e,id){
   e.preventDefault();if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
   const form=e.target,submit=form.querySelector('button[type="submit"]'),data=productFormData(form);
-  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}updateProduct(id,data);if(submit)submit.textContent='Sinkronisasi…';await waitForOperationalSync();closeModal();showToast('Produk dan relasi project berhasil diperbarui','success');render();}
+  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}updateProduct(id,data);if(submit)submit.textContent='Sinkronisasi…';await confirmAuthoritativeSync();closeModal();showToast('Produk dan relasi project berhasil diperbarui','success');render();}
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
@@ -2959,7 +2962,7 @@ window.FT.deleteProductConfirm=async function(id){
   const product=getProducts().find(row=>row.id===id)||{};
   const lifecycle=productLifecycleAction(product,references.total);
   if(!confirm(lifecycle.confirm))return;
-  try{const result=deleteProduct(id);await waitForOperationalSync();showToast(result.deactivated?'Produk dinonaktifkan dan histori tetap dipertahankan':'Produk berhasil dihapus','success');render();}
+  try{const result=deleteProduct(id);await confirmAuthoritativeSync();showToast(result.deactivated?'Produk dinonaktifkan dan histori tetap dipertahankan':'Produk berhasil dihapus','success');render();}
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
 };
 
@@ -3051,7 +3054,7 @@ function renderProductSales({ mine = false } = {}) {
         <span id="salesResultSummary" class="am-muted"></span>
         ${manualAllowed ? '<button class="btn btn-primary" data-pqt-onclick="FT.openManualSaleModal()">+ Manual Exception</button>' : ''}
       </div>
-      <div class="card-subtitle" style="margin-bottom:12px">Derived sales berasal dari Inventory Cycle. Manual sale hanya dipakai untuk exception/correction dan memiliki audit trail.</div>
+      <div class="card-subtitle" style="margin-bottom:12px">Penjualan otomatis berasal dari pergerakan stok yang sudah difinalisasi. Transaksi manual hanya dipakai untuk pengecualian atau koreksi dan tetap memiliki jejak audit.</div>
       <div class="visits-table-wrapper">
         <table class="table" id="productSalesTable"><thead><tr><th>Tanggal</th><th>Employee</th><th>Outlet</th><th>Produk</th><th>Qty</th><th>Nilai</th><th>Sumber</th><th></th></tr></thead>
           <tbody>${rows.length ? rows.map(row => {
@@ -3302,7 +3305,7 @@ window.FT.openStockModal = function() {
         <div class="form-group"><label class="label">Closing stock</label><input class="input" type="number" name="closingQty" min="0" step="1" required></div>
       </div>
       <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="5" min="0" step="1" required></div>
-      <div class="am-muted" style="margin-top:-4px">Opening stock diambil otomatis dari saldo cloud. Penjualan dihitung dari selisih pergerakan stok.</div>
+      <div class="am-muted" style="margin-top:-4px">Stok awal diambil otomatis dari saldo terbaru. Penjualan dihitung dari selisih pergerakan stok.</div>
       <div class="modal-footer" style="padding:0; margin-top:14px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Finalisasi</button>
@@ -3366,7 +3369,7 @@ window.FT.editStock = function(id) {
       </div>
       <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="${s.minStock}" min="0" step="1" required></div>
       <div class="form-group"><label class="label">Alasan adjustment</label><textarea class="textarea" name="adjustmentReason" minlength="10" required placeholder="Jelaskan penyebab koreksi stok..."></textarea></div>
-      ${sourceCycle ? `<div class="am-muted">Koreksi akan mereferensikan cycle ${esc(sourceCycle.id)} dan memperbarui derived sales secara kompensasi.</div>` : '<div class="am-muted">Belum ada finalized cycle sebelumnya; perubahan akan dibuat sebagai cycle baru.</div>'}
+      ${sourceCycle ? `<div class="am-muted">Koreksi akan mengikuti transaksi stok sebelumnya dan memperbarui penjualan otomatis tanpa menghapus riwayat.</div>` : '<div class="am-muted">Belum ada transaksi stok final sebelumnya; perubahan akan dicatat sebagai transaksi baru.</div>'}
       <div class="modal-footer" style="padding:0;margin-top:8px">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Finalisasi Adjustment</button>
