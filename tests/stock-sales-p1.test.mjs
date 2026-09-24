@@ -214,3 +214,12 @@ test('P1 frontend stock write paths use inventory cycle and rehydrate cloud auth
   assert.doesNotMatch(app,/\bupdateStock\(existing\.id/);
   assert.doesNotMatch(app,/\bdeleteStock\(id\)/);
 });
+
+
+test('P1 Product Sales routes have an active renderer and governed correction UI', () => {
+  assert.match(app,/function renderProductSales\(/);
+  assert.match(app,/Manual sale hanya untuk Manager\/Admin/);
+  assert.match(app,/voidProductSale\(id,reason\)/);
+  assert.match(db,/export function voidProductSale\(/);
+  assert.match(app,/Replacement Manual Sale/);
+});
