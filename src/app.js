@@ -46,7 +46,7 @@ import {
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
-import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets } from './lib/outlet-ui.js';
+import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -2278,20 +2278,10 @@ function outletOptionList(rows, valueKey, labelOf, selected = '') {
   }).join('');
 }
 
-function outletStatusSummary(outlets = []) {
-  return {
-    total:outlets.length,
-    active:outlets.filter(outlet => outlet.status === 'active').length,
-    inactive:outlets.filter(outlet => outlet.status === 'inactive').length,
-    archived:outlets.filter(outlet => outlet.status === 'archived').length,
-  };
-}
 
 function outletSyncLabel() {
-  const sync = cloudDataStatus();
-  if (sync.error) return '<span class="status-badge status-inactive">Sync bermasalah</span>';
-  if (sync.syncing || sync.queued) return '<span class="status-badge status-pending">Sinkronisasi…</span>';
-  return '<span class="status-badge status-active">Cloud synced</span>';
+  const presentation = outletSyncPresentation(cloudDataStatus());
+  return `<span class="status-badge ${presentation.className}">${esc(presentation.label)}</span>`;
 }
 
 function renderOutlets() {
@@ -2367,7 +2357,7 @@ function renderOutlets() {
                 <td>${statusBadge(o.status)}</td>
                 <td style="white-space:nowrap">
                   <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${o.status === 'active' ? 'Nonaktifkan/Hapus' : 'Hapus'}</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${outletLifecycleAction(o, model.visitCount).label}</button>
                 </td>
               </tr>`;
             }).join('')}
@@ -2441,7 +2431,7 @@ function storeOptionList(rows, selected = '') {
 }
 
 window.FT.syncManagerOutletCatalog = function(projectId) {
-  const cat = projectId ? getProjectStoreSettings(projectId) : defaultStoreCatalog();
+  const cat = normalizeOutletCatalog(projectId ? getProjectStoreSettings(projectId) : defaultStoreCatalog());
   const fill = (name, values) => {
     const sel = document.querySelector(`form[data-outlet-form="1"] select[name="${name}"]`);
     if (!sel) return;
@@ -2455,7 +2445,8 @@ window.FT.syncManagerOutletCatalog = function(projectId) {
 };
 
 window.FT.openOutletModal = function() {
-  const cat = defaultStoreCatalog();
+  const model = outletFormModel({}, defaultStoreCatalog());
+  const cat = model.catalog;
   openModal('New Outlet', `
     <form data-outlet-form="1" data-pqt-onsubmit="FT.createOutlet(event)">
       <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
@@ -2508,8 +2499,9 @@ window.FT.createOutlet = async function(e) {
 window.FT.deleteOutlet = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak','error'); return; }
   const references=outletReferenceSummary(id);
-  const message=references.total>0 ? `Outlet memiliki ${references.total} data operasional terkait. Outlet akan dinonaktifkan agar histori tetap utuh. Lanjutkan?` : 'Hapus outlet ini? Tindakan ini hanya berlaku bila outlet belum memiliki data operasional terkait.';
-  if (!confirm(message)) return;
+  const outlet=getOutlets().find(row=>row.id===id)||{};
+  const lifecycle=outletLifecycleAction(outlet,references.total);
+  if (!confirm(lifecycle.confirm)) return;
   try {
     const result=deleteOutlet(id); await confirmOutletCloudSync();
     showToast(result.deactivated ? 'Outlet dinonaktifkan dan histori tetap dipertahankan' : 'Outlet berhasil dihapus','success'); render();
@@ -2554,18 +2546,19 @@ window.FT.editOutlet = function(id) {
   const o=getOutlets().find(x=>x.id===id);
   if(!o) return;
   const projectId=o.projectIds?.[0]||'';
-  const cat=projectId?getProjectStoreSettings(projectId):defaultStoreCatalog();
+  const model=outletFormModel(o,projectId?getProjectStoreSettings(projectId):defaultStoreCatalog());
+  const cat=model.catalog;
   openModal('Edit Outlet', `
     <form data-outlet-form="1" data-pqt-onsubmit="FT.updateOutlet(event, ${jsArg(id)})">
-      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(o.name)}" required></div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(model.name)}" required></div>
       ${entityScopeFields(o).replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required data-pqt-onchange="FT.syncManagerOutletCatalog(this.value)">')}
-      <div class="form-group"><label class="label">Lokasi di peta</label><div class="filter-row" style="margin-bottom:8px"><input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat..."><button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button></div><div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div><div class="am-muted" id="outletMapHint" style="margin-top:6px">Titik saat ini akan ditampilkan. Klik peta untuk memindahkan lokasi.</div><input type="hidden" name="lat" id="outletLat" value="${esc(o.lat??'')}" required><input type="hidden" name="lng" id="outletLng" value="${esc(o.lng??'')}" required><input type="hidden" name="mapLabel" id="outletMapLabel"></div>
-      <div class="form-group"><label class="label">Alamat</label><textarea class="textarea" name="address" id="outletAddress" required>${esc(o.address||'')}</textarea></div>
-      <div class="form-row"><div class="form-group"><label class="label">Segment</label><select class="select" name="channel">${storeOptionList(cat.segments,o.channel)}</select></div><div class="form-group"><label class="label">Akun (ownership store)</label><select class="select" name="ownership">${storeOptionList(cat.ownerships,o.ownership)}</select></div></div>
-      <div class="form-row"><div class="form-group"><label class="label">Type</label><select class="select" name="type">${storeOptionList(cat.types,o.type)}</select></div><div class="form-group"><label class="label">Area</label><input class="input" name="area" id="outletArea" value="${esc(o.area??'')}" required></div></div>
-      <div class="form-row"><div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${esc(o.owner??'')}"></div><div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(o.phone??'')}"></div></div>
-      <div id="outletNotesWrap">${outletNotesField(cat,o.notes||'')}</div>
-      <div class="form-row"><div class="form-group"><label class="label">Frekuensi</label><select class="select" name="visitFrequency"><option ${o.visitFrequency==='Mingguan'?'selected':''}>Mingguan</option><option ${o.visitFrequency==='Bulanan'?'selected':''}>Bulanan</option></select></div><div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${o.status==='active'?'selected':''}>Active</option><option value="inactive" ${o.status==='inactive'?'selected':''}>Inactive</option><option value="archived" ${o.status==='archived'?'selected':''}>Archived</option></select></div></div>
+      <div class="form-group"><label class="label">Lokasi di peta</label><div class="filter-row" style="margin-bottom:8px"><input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat..."><button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button></div><div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div><div class="am-muted" id="outletMapHint" style="margin-top:6px">Titik saat ini akan ditampilkan. Klik peta untuk memindahkan lokasi.</div><input type="hidden" name="lat" id="outletLat" value="${esc(model.lat)}" required><input type="hidden" name="lng" id="outletLng" value="${esc(model.lng)}" required><input type="hidden" name="mapLabel" id="outletMapLabel"></div>
+      <div class="form-group"><label class="label">Alamat</label><textarea class="textarea" name="address" id="outletAddress" required>${esc(model.address)}</textarea></div>
+      <div class="form-row"><div class="form-group"><label class="label">Segment</label><select class="select" name="channel">${storeOptionList(cat.segments,model.channel)}</select></div><div class="form-group"><label class="label">Akun (ownership store)</label><select class="select" name="ownership">${storeOptionList(cat.ownerships,model.ownership)}</select></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Type</label><select class="select" name="type">${storeOptionList(cat.types,model.type)}</select></div><div class="form-group"><label class="label">Area</label><input class="input" name="area" id="outletArea" value="${esc(model.area)}" required></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${esc(model.owner)}"></div><div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(model.phone)}"></div></div>
+      <div id="outletNotesWrap">${outletNotesField(cat,model.notes)}</div>
+      <div class="form-row"><div class="form-group"><label class="label">Frekuensi</label><select class="select" name="visitFrequency"><option ${model.visitFrequency==='Mingguan'?'selected':''}>Mingguan</option><option ${model.visitFrequency==='Bulanan'?'selected':''}>Bulanan</option></select></div><div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${model.status==='active'?'selected':''}>Active</option><option value="inactive" ${model.status==='inactive'?'selected':''}>Inactive</option><option value="archived" ${model.status==='archived'?'selected':''}>Archived</option></select></div></div>
       <div class="modal-footer" style="padding:0;margin-top:8px"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div>
     </form>`);
   setTimeout(()=>window.FS?.initOutletMap?.(),80);
