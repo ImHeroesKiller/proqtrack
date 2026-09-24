@@ -459,7 +459,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
   switch (entity) {
     case 'clients': {
       const uiStatus = safeStatus(row.status, ['active','inactive','archived','prospect'], 'active');
-      return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Client'), uiStatus, status: uiStatus === 'prospect' ? 'active' : uiStatus };
+      return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name), uiStatus, status: uiStatus === 'prospect' ? 'active' : uiStatus };
     }
     case 'projects': {
       const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
@@ -811,6 +811,42 @@ async function existingRow(env, entity, organizationId, row) {
   return env.DB.prepare(`SELECT * FROM ${table} WHERE organization_id=? AND id=? LIMIT 1`).bind(organizationId,str(row.id)).first();
 }
 
+async function validateClientMutation(env, organizationId, row, existing = null) {
+  const id = str(row.id);
+  const name = str(row.name);
+  const code = str(row.code || existing?.code || id);
+  const status = str(row.status || parseMetadata(existing?.metadata_json)?.uiStatus || existing?.status || 'active');
+  if (!id) return { error:'CLIENT_ID_REQUIRED', status:400 };
+  if (!name) return { error:'CLIENT_NAME_REQUIRED', status:422 };
+  if (!code) return { error:'CLIENT_CODE_REQUIRED', status:422 };
+  if (!['active','inactive','archived','prospect'].includes(status)) return { error:'CLIENT_INVALID_STATUS', status:422 };
+
+  const start = str(row.cooperationStart);
+  const end = str(row.cooperationEnd);
+  if (start && end && end < start) return { error:'CLIENT_INVALID_PERIOD', status:422 };
+
+  const email = str(row.picEmail).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error:'CLIENT_INVALID_EMAIL', status:422 };
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id,code,name,metadata_json FROM core_clients WHERE organization_id=? AND id<>? AND (lower(code)=lower(?) OR lower(name)=lower(?)) LIMIT 1'
+  ).bind(organizationId,id,code,name).first();
+  if (duplicate) {
+    if (str(duplicate.code).toLowerCase() === code.toLowerCase()) return { error:'CLIENT_CODE_CONFLICT', status:409 };
+    return { error:'CLIENT_NAME_CONFLICT', status:409 };
+  }
+
+  const legalName = str(row.legalName);
+  if (legalName) {
+    const rows = await allRows(env.DB.prepare(
+      'SELECT id,metadata_json FROM core_clients WHERE organization_id=? AND id<>?'
+    ).bind(organizationId,id));
+    const legalConflict = rows.some(item => str(parseMetadata(item.metadata_json)?.legalName).toLowerCase() === legalName.toLowerCase());
+    if (legalConflict) return { error:'CLIENT_LEGAL_NAME_CONFLICT', status:409 };
+  }
+  return null;
+}
+
 async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
@@ -849,6 +885,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       actorEmployeeId = str(actorEmployee?.id);
     }
     if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (entity === 'clients' && op === 'upsert') {
+      const clientError = await validateClientMutation(env, organizationId, row, existing);
+      if (clientError) return json({ error:clientError.error, entity, id:row.id || null }, clientError.status || 422);
+    }
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
       if (geofenceError) return json({

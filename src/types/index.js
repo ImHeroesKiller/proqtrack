@@ -5,6 +5,7 @@
  */
 
 import { getDB, saveDB, getCurrentOrgId, getActor, DEFAULT_ORG_ID } from "../lib/db.js";
+import { commitOperationalChanges, cloudDataStatus } from "../lib/cloud-data.js";
 
 const ALL_MODULES = [
   "visits",
@@ -161,7 +162,10 @@ function migrateV7() {
   ensureArray("projects");
   ensureArray("projectAssignments");
   ensureArray("projectSettings");
-  if (!db.clients.length) {
+  const allowLegacyDemoSeed = typeof location === "undefined"
+    || ["localhost", "127.0.0.1"].includes(location.hostname)
+    || new URLSearchParams(location.search).has("demoSeed");
+  if (allowLegacyDemoSeed && !db.clients.length) {
     changed = true;
     db.clients = [
       {
@@ -696,7 +700,7 @@ function renderClients() {
       ["Aktif", rows.filter((x) => x.status === "active").length],
       ["Prospect", rows.filter((x) => x.status === "prospect").length],
       ["Project Terhubung", (db.projects || []).length],
-    ])}<div class="card"><div class="pm-toolbar">${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}<input class="input" placeholder="Cari klien, PIC, kota" data-pqt-oninput="PM.filterRows('clientRows',this.value)"><select class="select" data-pqt-onchange="PM.filterStatus('clientRows',this.value)"><option value="">Semua status</option><option>active</option><option>prospect</option><option>inactive</option></select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}<input class="input" id="clientSearch" placeholder="Cari klien, PIC, kota" aria-label="Cari klien" data-pqt-oninput="PM.filterClients()"><select class="select" id="clientStatusFilter" aria-label="Filter status klien" data-pqt-onchange="PM.filterClients()"><option value="">Semua status</option><option value="active">Aktif</option><option value="prospect">Prospect</option><option value="inactive">Nonaktif</option></select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows
       .map(
         (c) =>
           `<tr data-status="${esc(c.status)}" data-search="${esc(`${c.name} ${c.picName} ${c.city}`.toLowerCase())}"><td><div class="pm-client-cell"><span class="pm-client-logo">${esc(
@@ -923,6 +927,15 @@ window.PM = {
             : "none"),
       );
   },
+  filterClients() {
+    const q = String(document.getElementById("clientSearch")?.value || "").trim().toLowerCase();
+    const status = String(document.getElementById("clientStatusFilter")?.value || "");
+    document.querySelectorAll("#clientRows tr").forEach((row) => {
+      const matchesSearch = !q || String(row.dataset.search || "").includes(q);
+      const matchesStatus = !status || row.dataset.status === status;
+      row.style.display = matchesSearch && matchesStatus ? "" : "none";
+    });
+  },
   filterStatus(id, v) {
     document
       .querySelectorAll(`#${id} tr`)
@@ -954,7 +967,7 @@ window.PM = {
       `<form class="pm-form" data-pqt-onsubmit="PM.saveClient(event,'${id}')"><div class="full"><label class="label">Nama Perusahaan</label><input class="input" name="name" value="${esc(c.name || "")}" required></div><div><label class="label">Nama Legal</label><input class="input" name="legalName" value="${esc(c.legalName || "")}"></div><div><label class="label">Industri</label><select class="select" name="industry">${["FMCG", "Farmasi", "Bangunan", "Retail", "F&B", "Telco", "Lainnya"].map((x) => `<option ${c.industry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">NPWP / SIUP</label><input class="input" name="npwp" value="${esc(c.npwp || "")}"></div><div><label class="label">Status</label><select class="select" name="status">${["active", "inactive", "prospect"].map((x) => `<option ${c.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div class="full"><label class="label">Alamat</label><textarea class="textarea" name="address">${esc(c.address || "")}</textarea></div><div><label class="label">Kota</label><input class="input" name="city" value="${esc(c.city || "")}"></div><div><label class="label">Provinsi</label><input class="input" name="province" value="${esc(c.province || "")}"></div><div class="full"><label class="label">Website</label><input class="input" name="website" value="${esc(c.website || "")}"></div><div class="full"><label class="label">Logo klien</label><input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp"><input type="hidden" name="logoUrl" value="${esc(c.logoUrl || c.logo || "")}">${c.logoUrl || c.logo ? `<img alt="Logo" src="${esc(c.logoUrl || c.logo)}" style="max-height:48px;margin-top:8px">` : ""}</div><div><label class="label">PIC Utama</label><input class="input" name="picName" value="${esc(c.picName || "")}" required></div><div><label class="label">Jabatan PIC</label><input class="input" name="picRole" value="${esc(c.picRole || "")}"></div><div><label class="label">Telepon PIC</label><input class="input" name="picPhone" value="${esc(c.picPhone || "")}"></div><div><label class="label">Email PIC</label><input class="input" type="email" name="picEmail" value="${esc(c.picEmail || "")}"></div><div><label class="label">Mulai Kerja Sama</label><input class="input" type="date" name="cooperationStart" value="${esc(c.cooperationStart || "")}"></div><div><label class="label">Akhir Kerja Sama</label><input class="input" type="date" name="cooperationEnd" value="${esc(c.cooperationEnd || "")}"></div><div class="full"><label class="label">PIC Tambahan (Nama | Jabatan | Telepon | Email)</label><textarea class="textarea" name="additionalPics">${esc(pics.map((p) => [p.name, p.role, p.phone, p.email].join(" | ")).join("\n"))}</textarea></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Klien</button></div></form>`,
     );
   },
-  saveClient(e, id) {
+  async saveClient(e, id) {
     e.preventDefault();
     if (!canManageClients()) return;
     const db = viewDB(),
@@ -1000,8 +1013,10 @@ window.PM = {
       alert("Tanggal akhir kerja sama tidak boleh sebelum tanggal mulai.");
       return;
     }
+    const clientId = id || uid("CL");
     const data = {
-      id: id || uid("CL"),
+      id: clientId,
+      code: old?.code || clientId,
       name,
       legalName,
       industry: formValue(fd, "industry"),
@@ -1026,31 +1041,51 @@ window.PM = {
       logoUrl: formValue(fd, "logoUrl") || old?.logoUrl || old?.logo || "",
       r2Key: old?.r2Key || "",
     };
-    const finish = () => {
+    const submit = e.target.querySelector('button[type="submit"], button:not([type])');
+    if (submit) submit.disabled = true;
+    try {
+      const file = e.target.querySelector('[name="logoFile"]')?.files?.[0];
+      if (file) {
+        if (!window.R2?.uploadAsset) throw Object.assign(new Error('UPLOAD_UNAVAILABLE'), { code:'UPLOAD_UNAVAILABLE' });
+        const uploaded = await window.R2.uploadAsset(file, { category:'client-logo', projectId:'general', name:file.name });
+        data.logoUrl = uploaded.url;
+        data.logo = uploaded.url;
+        data.r2Key = uploaded.key;
+        data.logoStorage = 'r2';
+      }
+
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'clients', op:'upsert', row:data }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+
       const i = rows.findIndex((x) => x.id === id);
       i >= 0 ? (rows[i] = data) : rows.push(data);
       db.clients = rows;
       persistView(db);
       this.close();
       renderClients();
-    };
-    const file = e.target.querySelector('[name="logoFile"]')?.files?.[0];
-    if (file && window.R2?.uploadAsset) {
-      window.R2.uploadAsset(file, { category: 'client-logo', projectId: 'general', name: file.name })
-        .then(uploaded => {
-          data.logoUrl = uploaded.url;
-          data.logo = uploaded.url;
-          data.r2Key = uploaded.key;
-          data.logoStorage = 'r2';
-          finish();
-        })
-        .catch(error => {
-          window.showToast?.('Logo belum dapat diunggah. Coba lagi.', 'error');
-          finish();
-        });
-      return;
+      window.showToast?.('Data klien tersimpan dan tersinkron.', 'success');
+    } catch (error) {
+      const message = {
+        REVISION_CONFLICT:'Data berubah di server. Muat ulang data lalu coba simpan kembali.',
+        CLIENT_NAME_REQUIRED:'Nama klien wajib diisi.',
+        CLIENT_CODE_REQUIRED:'Kode klien wajib tersedia.',
+        CLIENT_NAME_CONFLICT:'Nama klien sudah terdaftar.',
+        CLIENT_LEGAL_NAME_CONFLICT:'Nama legal klien sudah terdaftar.',
+        CLIENT_CODE_CONFLICT:'Kode klien sudah digunakan.',
+        CLIENT_INVALID_PERIOD:'Tanggal akhir kerja sama tidak boleh sebelum tanggal mulai.',
+        CLIENT_INVALID_EMAIL:'Email PIC tidak valid.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Data belum disimpan.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba simpan kembali.',
+        UPLOAD_UNAVAILABLE:'Layanan upload logo belum tersedia.',
+      }[error?.code || error?.message] || error?.message || 'Data klien gagal disimpan.';
+      window.showToast?.(message, 'error');
+    } finally {
+      if (submit?.isConnected) submit.disabled = false;
     }
-    finish();
   },
   viewClient(id) {
     if (!canManage()) return;
