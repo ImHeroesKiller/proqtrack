@@ -15,7 +15,7 @@ function canManageOrgs() {
 
 function counts(orgId) {
   const match = row => row.organizationId === orgId;
-  const db = JSON.parse(localStorage.getItem('proqtrack_db_v6') || '{}');
+  const db = getDB();
   return {
     clients: (db.clients || []).filter(match).length,
     projects: (db.projects || []).filter(match).length,
@@ -46,6 +46,22 @@ const HUB_LINKS = [
 
 let organizationSyncInFlight = false;
 let organizationsSynced = false;
+let organizationSaveInFlight = false;
+let organizationSwitchInFlight = false;
+
+function organizationErrorMessage(error) {
+  const messages = {
+    ORGANIZATION_CODE_EXISTS: 'Kode organisasi sudah digunakan.',
+    ORGANIZATION_NAME_REQUIRED: 'Nama organisasi wajib diisi.',
+    ORGANIZATION_CODE_REQUIRED: 'Kode organisasi wajib diisi.',
+    ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
+    ACTIVE_ORGANIZATION_CANNOT_BE_DISABLED: 'Workspace yang sedang aktif tidak dapat dinonaktifkan.',
+    ORGANIZATION_ADMIN_FORBIDDEN: 'Hanya Superadmin yang dapat mengelola lifecycle organisasi.',
+  };
+  const message = messages[error?.code] || error?.message || String(error || 'Aksi organisasi gagal.');
+  const requestId = error?.payload?.requestId;
+  return requestId ? `${message} Ref: ${requestId}` : message;
+}
 
 function scheduleOrganizationRefresh() {
   if (organizationsSynced || organizationSyncInFlight || !canManageOrgs()) return;
@@ -139,6 +155,7 @@ export function renderOrganizationHub(id) {
 }
 
 function form(existing) {
+  const isCurrent = !!existing && String(existing.id) === String(getCurrentOrgId());
   return `<form data-pqt-onsubmit="ORG.save(event,'${existing?.id || ''}')">
     <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
     <div class="form-group"><label class="label">Nama legal</label><input class="input" name="legalName" value="${esc(existing?.legalName || '')}"></div>
@@ -149,10 +166,11 @@ function form(existing) {
     <div class="form-row">
       <div class="form-group"><label class="label">Kota</label><input class="input" name="city" value="${esc(existing?.city || '')}"></div>
       <div class="form-group"><label class="label">Status</label>
-        <select class="select" name="status">
+        <select class="select" name="status" ${isCurrent ? 'disabled' : ''}>
           <option value="active" ${existing?.status !== 'inactive' ? 'selected' : ''}>Aktif</option>
           <option value="inactive" ${existing?.status === 'inactive' ? 'selected' : ''}>Nonaktif</option>
         </select>
+        ${isCurrent ? '<div class="am-muted">Workspace aktif tidak dapat dinonaktifkan.</div>' : ''}
       </div>
     </div>
     <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(existing?.notes || '')}</textarea></div>
@@ -164,11 +182,12 @@ window.ORG = {
   async switchTo(id, targetRoute = '') {
     const target = String(id || '');
     const current = getCurrentOrgId();
-    if (!target) return false;
+    if (!target || organizationSwitchInFlight) return false;
     if (target === current) {
       if (targetRoute) location.hash = targetRoute;
       return true;
     }
+    organizationSwitchInFlight = true;
     try {
       if (window.FT?.state?.account?.role !== 'superadmin') throw new Error('Akses ditolak');
       if (navigator.onLine === false || window.FT?.state?.account?.offlineSession) {
@@ -185,8 +204,10 @@ window.ORG = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
       return true;
     } catch (error) {
-      window.showToast?.(error.message || error, 'error');
+      window.showToast?.(organizationErrorMessage(error), 'error');
       return false;
+    } finally {
+      organizationSwitchInFlight = false;
     }
   },
   ensureActive(event, id, href) {
@@ -205,7 +226,13 @@ window.ORG = {
   },
   async save(event, id) {
     event.preventDefault();
-    const data = Object.fromEntries(new FormData(event.target).entries());
+    if (organizationSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"],button.btn-primary');
+    const data = Object.fromEntries(new FormData(form).entries());
+    if (id && String(id) === String(getCurrentOrgId())) data.status = 'active';
+    organizationSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
       const org = id
         ? await updateCloudOrganization(id, data)
@@ -226,7 +253,10 @@ window.ORG = {
       location.hash = `#/organizations/${org.id}`;
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      window.showToast?.(error.message || error, 'error');
+      window.showToast?.(organizationErrorMessage(error), 'error');
+    } finally {
+      organizationSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
 };

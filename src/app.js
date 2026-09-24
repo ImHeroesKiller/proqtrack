@@ -560,6 +560,9 @@ function render() {
 // ===== Sidebar =====
 function renderSidebar() {
   const currentRoute = state.route;
+  const activeBrand = getOrganization(getCurrentOrgId()) || {};
+  const brandLogo = activeBrand.logo || './assets/logo-light.svg';
+  const brandName = activeBrand.name || 'ProQTrack';
   const navSource = isOrgAdmin() ? NAV_ITEMS : isManager() ? NAV_ITEMS_PM : isSupervisor() ? NAV_ITEMS_SUPERVISOR : NAV_ITEMS_EMPLOYEE;
   let navHTML = '';
   for (const section of navSource) {
@@ -594,8 +597,8 @@ function renderSidebar() {
   return `
     <aside class="sidebar ${state.sidebarOpen ? 'open' : ''} ${state.sidebarCollapsed ? 'collapsed' : ''}">
       <div class="sidebar-header">
-        <div class="sidebar-logo">${getAppSettings().companyLogo ? `<img src="${esc(getAppSettings().companyLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
-        <div class="sidebar-logo-text">${esc(getAppSettings().companyName || 'ProQTrack')}<small>Monitoring System</small></div>
+        <div class="sidebar-logo">${brandLogo ? `<img src="${esc(brandLogo)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:inherit">` : 'PQ'}</div>
+        <div class="sidebar-logo-text">${esc(brandName)}<small>Monitoring System</small></div>
         <button class="sidebar-toggle" type="button" data-pqt-onclick="FT.toggleCollapse()" aria-expanded="${state.sidebarCollapsed ? 'false' : 'true'}" title="${state.sidebarCollapsed ? 'Perlebar menu' : 'Ciutkan menu'}">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${state.sidebarCollapsed ? 'm9 6 6 6-6 6' : 'm15 6-6 6 6 6'}"/></svg>
         </button>

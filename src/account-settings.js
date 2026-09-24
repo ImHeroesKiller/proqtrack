@@ -1,7 +1,8 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   updateOwnProfile,
-  getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
+  getDB, getOrganization, getCurrentOrgId,
+  getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
   getAttendancePolicy, getAttendancePoints, createAttendancePoint,
   isTestDevice,
 } from './lib/db.js';
@@ -11,6 +12,9 @@ import {
   syncCloudAccounts, createCloudAccount, updateCloudAccount,
   resetCloudAccountDevice, changeCloudPassword, updateCloudProfile,
 } from './lib/cloud-accounts.js';
+import {
+  syncCurrentOrganizationProfile, updateCurrentOrganizationProfile,
+} from './lib/cloud-organizations.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -166,6 +170,47 @@ const TIMEZONES = [
   ['UTC', 'UTC'],
 ];
 
+let organizationProfileSyncInFlight = false;
+let organizationProfileSyncedOrg = '';
+let organizationSaveInFlight = false;
+
+function organizationErrorMessage(error) {
+  const messages = {
+    ORGANIZATION_PROFILE_FORBIDDEN: 'Anda tidak memiliki izin untuk mengubah profil organisasi.',
+    ORGANIZATION_NOT_FOUND: 'Organisasi aktif tidak ditemukan.',
+    ORGANIZATION_NAME_REQUIRED: 'Nama organisasi wajib diisi.',
+    ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
+    ORGANIZATION_LOGO_INVALID: 'Format logo tidak didukung. Gunakan JPG, PNG, atau WebP.',
+    ORGANIZATION_LOGO_TOO_LARGE: 'Logo terlalu besar setelah kompresi.',
+  };
+  const message = messages[error?.code] || error?.message || String(error || 'Profil organisasi gagal diperbarui.');
+  const requestId = error?.payload?.requestId;
+  return requestId ? `${message} Ref: ${requestId}` : message;
+}
+
+function dataUrlBytes(value) {
+  const match = String(value || '').match(/^data:image\/(?:jpeg|png|webp);base64,(.+)$/i);
+  if (!match) return 0;
+  return Math.floor(match[1].replace(/=+$/,'').length * 3 / 4);
+}
+
+function scheduleOrganizationProfileRefresh(acc) {
+  const orgId = String(acc?.organizationId || getCurrentOrgId() || '');
+  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId) return;
+  organizationProfileSyncInFlight = true;
+  queueMicrotask(async () => {
+    try {
+      await syncCurrentOrganizationProfile();
+      organizationProfileSyncedOrg = orgId;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(organizationErrorMessage(error), 'error');
+    } finally {
+      organizationProfileSyncInFlight = false;
+    }
+  });
+}
+
 function storageKb() {
   try {
     const raw = localStorage.getItem('proqtrack_db_v6') || '';
@@ -181,6 +226,8 @@ export function renderSettings() {
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
   const isOrgAdmin = ['head','admin','superadmin'].includes(acc.role);
+  if (isOrgAdmin) scheduleOrganizationProfileRefresh(acc);
+  const activeOrg = getOrganization(acc.organizationId || getCurrentOrgId()) || {};
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
@@ -247,12 +294,6 @@ export function renderSettings() {
             <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
             <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
             <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
-            <div class="form-group">
-              <label class="label">Zona waktu</label>
-              <select class="select" name="timezone">
-                ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${settings.timezone === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
-              </select>
-            </div>
             <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
           </form>
         </section>
@@ -260,20 +301,36 @@ export function renderSettings() {
         ${isOrgAdmin ? `
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
-          <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
+          <div class="card-subtitle">Profil tenant aktif. Perubahan berlaku untuk seluruh pengguna organisasi ini.</div>
           <form class="am-form" data-pqt-onsubmit="AM.saveOrg(event)">
-            <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(activeOrg.name || '')}" required></div>
+              <div class="form-group"><label class="label">Nama legal</label><input class="input" name="legalName" value="${esc(activeOrg.legalName || '')}"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Industri</label><input class="input" name="industry" value="${esc(activeOrg.industry || '')}"></div>
+              <div class="form-group"><label class="label">Kota</label><input class="input" name="city" value="${esc(activeOrg.city || '')}"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Zona waktu</label>
+                <select class="select" name="timezone">
+                  ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${(activeOrg.timezone || 'Asia/Jakarta') === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group"><label class="label">Kode organisasi</label><input class="input" value="${esc(activeOrg.code || '')}" disabled></div>
+            </div>
             <div class="form-group emp-photo-field">
               <label class="label">Logo organisasi</label>
               <div class="employee-photo-editor">
-                <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
+                <img class="employee-photo-preview" alt="Logo" src="${esc(activeOrg.logo || './assets/logo-light.svg')}">
                 <div>
-                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" data-pqt-onchange="AM.previewLogo(this)">
-                  <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
-                  <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
+                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp" data-pqt-onchange="AM.previewLogo(this)">
+                  <input type="hidden" name="logo" value="${esc(activeOrg.logo || '')}">
+                  <div class="am-muted">JPG/PNG/WebP. Maksimum 1 MB sebelum kompresi; hasil akhir disimpan pada profil organisasi.</div>
                 </div>
               </div>
             </div>
+            <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(activeOrg.notes || '')}</textarea></div>
             <button class="btn btn-primary" type="submit">Simpan organisasi</button>
           </form>
         </section>
@@ -513,7 +570,6 @@ window.AM = {
         compactTables: form.compactTables.checked,
         notifyLeave: form.notifyLeave.checked,
         notifyLowStock: form.notifyLowStock.checked,
-        timezone: form.timezone.value || 'Asia/Jakarta',
       });
       document.body.classList.toggle('am-compact', form.compactTables.checked);
       toast('Preferensi disimpan');
@@ -582,25 +638,51 @@ window.AM = {
   previewLogo(input) {
     const file = input.files?.[0];
     const preview = input.closest('.emp-photo-field')?.querySelector('.employee-photo-preview');
-    if (file && preview) preview.src = URL.createObjectURL(file);
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+      input.value = '';
+      toast('Logo harus JPG, PNG, atau WebP dan maksimum 1 MB.', 'error');
+      return;
+    }
+    if (preview) preview.src = URL.createObjectURL(file);
   },
   async saveOrg(event) {
     event.preventDefault();
+    if (organizationSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    organizationSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const form = event.target;
       const data = Object.fromEntries(new FormData(form).entries());
       const file = form.logoFile?.files?.[0];
-      let companyLogo = data.companyLogo || '';
+      let logo = data.logo || '';
       if (file) {
-        companyLogo = file.type === 'image/svg+xml'
-          ? await file.text().then(t => `data:image/svg+xml;utf8,${encodeURIComponent(t)}`)
-          : await compressImage(file, { maxPx: 512, quality: 0.88 });
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+          throw Object.assign(new Error('ORGANIZATION_LOGO_INVALID'), { code:'ORGANIZATION_LOGO_INVALID' });
+        }
+        logo = await compressImage(file, { maxPx: 512, quality: 0.82 });
+        if (!logo || dataUrlBytes(logo) > 192 * 1024) {
+          throw Object.assign(new Error('ORGANIZATION_LOGO_TOO_LARGE'), { code:'ORGANIZATION_LOGO_TOO_LARGE' });
+        }
       }
-      updateAppSettings({ companyName: data.companyName, companyLogo });
-      toast('Identitas organisasi disimpan');
+      await updateCurrentOrganizationProfile({
+        name:data.name,
+        legalName:data.legalName,
+        industry:data.industry,
+        city:data.city,
+        timezone:data.timezone,
+        notes:data.notes,
+        logo,
+      });
+      organizationProfileSyncedOrg = String(account()?.organizationId || getCurrentOrgId() || '');
+      toast('Profil organisasi tersimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(organizationErrorMessage(error), 'error');
+    } finally {
+      organizationSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   filterAccounts(value) {
