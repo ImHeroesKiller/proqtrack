@@ -32,7 +32,7 @@ test('UAT correction migration permits audited same-day correction cycles', () =
 
 test('UAT correction UI references finalized source cycle', () => {
   assert.match(app,/correctionOfCycleId:correctionOfCycleId \|\| null/);
-  assert.match(app,/memperbarui derived sales secara kompensasi/);
+  assert.match(app,/memperbarui penjualan otomatis tanpa menghapus riwayat/);
   assert.doesNotMatch(app,/Adjustment kedua pada tanggal yang sama diblokir/);
 });
 
