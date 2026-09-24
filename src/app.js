@@ -7,7 +7,7 @@ import {
   createOutlet, updateOutlet, deleteEmployee, deleteOutlet, outletReferenceSummary, deleteVisit, getDB, getAccounts,
   getProducts, createProduct, updateProduct, deleteProduct, productReferenceSummary,
   getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
-  getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock,
+  getStocks, getStocksByOutlet, getStocksByProduct, getInventoryCycles, createInventoryCycle,
   getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit,
   getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation,
   getVisitedOutletIds, getProductsForVisitedOutlets,
@@ -2994,7 +2994,7 @@ function renderStocks() {
           <option value="ok">Stok Aman</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openStockModal()">+ Tambah Stok</button>
+        <button class="btn btn-primary" data-pqt-onclick="FT.openStockModal()">+ Stock Movement</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="stockTable">
@@ -3014,8 +3014,7 @@ function renderStocks() {
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Edit</button>
-                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteStock('${s.id}')">Hapus</button>
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Adjustment</button>
                   </td>
                 </tr>
               `;
