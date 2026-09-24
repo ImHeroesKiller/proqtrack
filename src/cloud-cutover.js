@@ -28,7 +28,9 @@ const displayRole = account => {
   if (account?.role === 'supervisor') return 'Supervisor';
   return 'Field Sales';
 };
-const defaultRouteFor = account => account?.role === 'superadmin' && !account?.organizationId\n  ? '#/organizations'\n  : (['superadmin','head','admin','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday');
+const defaultRouteFor = account => account?.role === 'superadmin' && !account?.organizationId
+  ? '#/organizations'
+  : (['superadmin','head','admin','manager','supervisor'].includes(account?.role) ? '#/' : '#/myday');
 let loginInFlight = false;
 
 function forceRoute(route) {
