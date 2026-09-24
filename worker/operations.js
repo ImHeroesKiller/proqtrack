@@ -1420,6 +1420,28 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
   row.minStock = Math.max(0, Number(currentStock?.min_stock || 0));
+
+  if (status === 'finalized') {
+    const saleCollision = await env.DB.prepare(
+      'SELECT id,project_id,outlet_id,product_id,metadata_json FROM core_product_sales WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,row.saleId).first();
+    if (saleCollision) {
+      const saleMeta = parseMetadata(saleCollision.metadata_json);
+      if (str(saleMeta.provenance) !== 'derived_stock' || str(saleMeta.inventoryCycleId) !== id) {
+        return { error:'INVENTORY_CYCLE_SALE_ID_CONFLICT', status:409 };
+      }
+    }
+    if (!currentStock) {
+      const stockCollision = await env.DB.prepare(
+        'SELECT id,project_id,outlet_id,product_id FROM core_stocks WHERE organization_id=? AND id=? LIMIT 1'
+      ).bind(organizationId,row.stockBalanceId).first();
+      if (stockCollision && (
+        str(stockCollision.project_id) !== projectId ||
+        str(stockCollision.outlet_id) !== outletId ||
+        str(stockCollision.product_id) !== productId
+      )) return { error:'INVENTORY_CYCLE_STOCK_ID_CONFLICT', status:409 };
+    }
+  }
   return null;
 }
 
