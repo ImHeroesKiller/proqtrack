@@ -91,6 +91,47 @@ export function currentTenantTimeHHMM(timeZone = runtimeTimezone(), date = new D
   return `${hour}:${minute}`;
 }
 
+export function distanceMeters(lat1, lng1, lat2, lng2) {
+  const values = [lat1, lng1, lat2, lng2].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  const [aLat, aLng, bLat, bLng] = values;
+  const toRad = value => value * Math.PI / 180;
+  const dLat = toRad(bLat - aLat);
+  const dLng = toRad(bLng - aLng);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+export function visitGeofenceEvidence(outlet, gps, defaultRadiusM = 50) {
+  const outletLat = Number(outlet?.lat ?? outlet?.latitude);
+  const outletLng = Number(outlet?.lng ?? outlet?.longitude);
+  const gpsLat = Number(gps?.lat);
+  const gpsLng = Number(gps?.lng);
+  if (![outletLat, outletLng, gpsLat, gpsLng].every(Number.isFinite)) {
+    throw Object.assign(new Error('Outlet belum memiliki koordinat valid untuk check-in.'), { code:'VISIT_GEOFENCE_UNAVAILABLE' });
+  }
+  const configuredRadius = Number(outlet?.geofenceRadiusM ?? outlet?.radiusM);
+  const radiusM = Number.isFinite(configuredRadius) && configuredRadius > 0 ? configuredRadius : defaultRadiusM;
+  const distanceM = distanceMeters(gpsLat, gpsLng, outletLat, outletLng);
+  return {
+    distanceM,
+    radiusM,
+    status:distanceM <= radiusM ? 'valid' : 'outside',
+  };
+}
+
+export function assertVisitGeofence(outlet, gps, defaultRadiusM = 50) {
+  const evidence = visitGeofenceEvidence(outlet, gps, defaultRadiusM);
+  if (evidence.status !== 'valid') {
+    throw Object.assign(
+      new Error(`Check-in di luar radius outlet (${evidence.distanceM} m dari outlet; batas ${evidence.radiusM} m).`),
+      { code:'VISIT_OUTSIDE_GEOFENCE', ...evidence },
+    );
+  }
+  return evidence;
+}
+
 export function captureDevicePosition(geolocation = (typeof navigator !== 'undefined' ? navigator.geolocation : null)) {
   return new Promise((resolve, reject) => {
     if (!geolocation?.getCurrentPosition) {
