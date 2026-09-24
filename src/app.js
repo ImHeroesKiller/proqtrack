@@ -1465,11 +1465,49 @@ window.FT.closeSidebar = function() {
   if (bd) { bd.classList.remove('show'); setTimeout(() => { bd.style.display = 'none'; }, 250); }
 };
 
-window.FT.checkInVisit = function(id) {
+const visitCheckInInFlight = new Set();
+
+async function checkInVisitWithEvidence(id) {
+  const key = String(id || '');
+  if (!key || visitCheckInInFlight.has(key)) return null;
+  const visit = getVisits().find(row => String(row.id) === key);
+  if (!visit) throw new Error('Kunjungan tidak ditemukan atau di luar cakupan Anda.');
+
+  const actor = getActor();
+  const ownsVisit = !!actor?.employeeId && String(actor.employeeId) === String(visit.employeeId);
+  visitCheckInInFlight.add(key);
   try {
-    updateVisit(id, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-    closeModal(); showToast('Berhasil check in', 'success'); render();
-  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
+    const patch = {
+      status:'checked-in',
+      checkInTime:currentTenantTimeHHMM(),
+      locationSource:ownsVisit ? 'device_gps' : 'administrative_checkin',
+    };
+    if (ownsVisit) {
+      showToast('Mengambil lokasi GPS...');
+      const gps = await captureDevicePosition();
+      patch.checkInLat = gps.lat;
+      patch.checkInLng = gps.lng;
+      patch.checkInAccuracyM = gps.accuracyM;
+      patch.checkInCapturedAt = gps.capturedAt;
+    }
+    return updateVisit(key,patch);
+  } finally {
+    visitCheckInInFlight.delete(key);
+  }
+}
+
+window.FT.checkInVisit = async function(id) {
+  try {
+    const visit = await checkInVisitWithEvidence(id);
+    if (!visit) return;
+    closeModal();
+    showToast(visit.locationSource === 'device_gps'
+      ? 'Check-in berhasil dengan GPS perangkat'
+      : 'Check-in administratif tercatat tanpa posisi perangkat', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Check-in gagal', 'error');
+  }
 };
 window.FT.checkOutVisit = function(id) {
   try {
@@ -4558,9 +4596,17 @@ function renderMobileSim() {
 window.FT.setMobileTab = function(tab) { state.mobileTab = tab; render(); };
 window.FT.selectMobileEmp = function(id) { state.selectedMobileEmp = id; render(); };
 
-window.FT.mobileCheckIn = function(visitId) {
-  updateVisit(visitId, { status: 'checked-in', checkInTime: new Date().toTimeString().slice(0,5) });
-  showToast('Berhasil check in!', 'success'); render();
+window.FT.mobileCheckIn = async function(visitId) {
+  try {
+    const visit = await checkInVisitWithEvidence(visitId);
+    if (!visit) return;
+    showToast(visit.locationSource === 'device_gps'
+      ? 'Check-in berhasil dengan GPS perangkat'
+      : 'Check-in administratif tercatat', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Check-in gagal', 'error');
+  }
 };
 window.FT.mobileCheckOut = function(visitId) {
   updateVisit(visitId, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
