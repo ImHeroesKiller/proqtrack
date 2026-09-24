@@ -394,7 +394,7 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
   return true;
 }
 
-async function applyOutletProposalAuthority(env, claims, organizationId, row, existing = null, actorEmployeeId = '') {
+export async function applyOutletProposalAuthority(env, claims, organizationId, row, existing = null, actorEmployeeId = '') {
   const role = roleOf(claims);
   if (!existing) {
     if (role !== 'employee') return { error:'OUTLET_PROPOSAL_CREATE_FORBIDDEN', status:403 };
