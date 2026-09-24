@@ -60,6 +60,14 @@ export function applyOrganizationBranding(org = null) {
     ? `${name} — ProQTrack`
     : 'ProQTrack — Field Team Monitoring';
 
+  const tenantIcon = /^data:image\/(?:jpeg|png|webp);base64,/i.test(String(org?.logo || ''))
+    ? String(org.logo)
+    : './assets/icon-proqtrack.svg';
+  const icon = document.querySelector('link[rel="icon"]');
+  if (icon) icon.href = tenantIcon;
+  const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+  if (appleIcon) appleIcon.href = tenantIcon;
+
   window.dispatchEvent(new CustomEvent('proqtrack:branding-applied', {
     detail: {
       organizationId:org?.id || null,
