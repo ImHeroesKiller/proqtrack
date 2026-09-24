@@ -22,7 +22,7 @@ import {
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
-  getProductSales, createProductSale, deleteProductSale, voidProductSale, monthSalesAmount,
+  getProductSales, getProductSalesAudit, createProductSale, deleteProductSale, voidProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
 } from './lib/db.js';
@@ -3024,12 +3024,26 @@ function renderProductSales({ mine = false } = {}) {
     .filter(row => !mine || String(row.employeeId || '') === String(employeeId || ''))
     .sort((a,b) => String(b.soldAt || b.date || '').localeCompare(String(a.soldAt || a.date || '')));
   const manualAllowed = !mine && isProjectAdmin();
+  const auditRows = getProductSalesAudit();
+  const replacementSources = new Set(auditRows.filter(row => String(row.lifecycleStatus||'active')!=='voided' && row.correctionOfSaleId).map(row=>String(row.correctionOfSaleId)));
+  const pendingCorrections = manualAllowed ? auditRows.filter(row =>
+    String(row.lifecycleStatus||'active')==='voided'
+    && !['derived_stock','inventory_cycle'].includes(String(row.provenance||'manual_legacy'))
+    && !replacementSources.has(String(row.id))
+  ) : [];
   const totalQty = rows.reduce((sum,row)=>sum+Number(row.quantity ?? row.qty ?? 0),0);
   const totalAmount = rows.reduce((sum,row)=>sum+Number(row.totalAmount ?? row.amount ?? 0),0);
   const manualCount = rows.filter(row => !['derived_stock','inventory_cycle'].includes(String(row.provenance||'manual_legacy'))).length;
   const thisMonth = todayISO().slice(0,7);
   queueMicrotask(()=>window.FT?.filterProductSales?.());
   return `
+    ${pendingCorrections.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--amber-300);background:var(--amber-50)">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div><strong>${pendingCorrections.length} koreksi manual belum memiliki replacement</strong><div class="am-muted">Sumber sudah di-void dan tetap tersimpan di audit trail.</div></div>
+        <div class="spacer"></div>
+        ${pendingCorrections.slice(0,3).map(row=>`<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openManualSaleModal(${jsArg(row.id)})">Lanjut ${esc(row.id)}</button>`).join('')}
+      </div>
+    </div>` : ''}
     <div class="grid-3" style="margin-bottom:16px">
       <div class="stat-card"><div class="stat-label">Transaksi aktif</div><div class="stat-value">${rows.length}</div></div>
       <div class="stat-card"><div class="stat-label">Qty terjual</div><div class="stat-value">${totalQty}</div></div>
@@ -3095,7 +3109,7 @@ window.FT.filterProductSales = function() {
 
 window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
   if (!isProjectAdmin()) { showToast('Manual sale hanya untuk Manager/Admin.', 'error'); return; }
-  const source = correctionOfSaleId ? (getDB().productSales || []).find(row => row.id === correctionOfSaleId) : null;
+  const source = correctionOfSaleId ? getProductSalesAudit().find(row => row.id === correctionOfSaleId) : null;
   const employeeRows = getEmployees();
   const productRows = getProducts().filter(row => row.status === 'active');
   const outletRows = getOutlets().filter(row => row.status !== 'archived');
