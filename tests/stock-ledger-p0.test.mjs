@@ -119,13 +119,16 @@ test('P0 stock ledger schema preserves cycle uniqueness and derived-sale link', 
 });
 
 test('P0 finalization writes current stock, derived sale, then links cycle in one batch', () => {
-  const stockPos = worker.indexOf("INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity");
-  const salePos = worker.indexOf("INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity");
-  const linkPos = worker.indexOf("UPDATE core_inventory_cycles SET sale_id=?");
+  const start = worker.indexOf('function inventoryCycleFinalizationStatements');
+  const end = worker.indexOf('async function validateProjectAssignmentMutation', start);
+  const block = worker.slice(start, end);
+  const stockPos = block.indexOf("INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity");
+  const salePos = block.indexOf("INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity");
+  const linkPos = block.indexOf("UPDATE core_inventory_cycles SET sale_id=?");
   assert.ok(stockPos > 0 && salePos > stockPos && linkPos > salePos);
   assert.match(worker, /inventoryCycleFinalizationStatements\(env, organizationId, row\)/);
-  assert.match(worker, /provenance:'derived_stock'/);
-  assert.match(worker, /provenance:'inventory_cycle'/);
+  assert.match(block, /provenance:'derived_stock'/);
+  assert.match(block, /provenance:'inventory_cycle'/);
 });
 
 test('P0 protects ledger-managed stock and derived sales from direct mutation', () => {
