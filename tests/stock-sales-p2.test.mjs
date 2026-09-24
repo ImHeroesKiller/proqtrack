@@ -87,3 +87,11 @@ test('P2 sales KPI cards follow the active filters', () => {
   assert.match(app,/id="salesKpiAmount"/);
   assert.match(app,/visibleAmount \+= Number\(row\.dataset\.amount/);
 });
+
+
+test('P2 Stock exposes ledger history drilldown for operators', () => {
+  assert.match(app,/window\.FT\.viewStockHistory/);
+  assert.match(app,/Riwayat Stok/);
+  assert.match(app,/Opening/);
+  assert.match(app,/Sell-out/);
+});
