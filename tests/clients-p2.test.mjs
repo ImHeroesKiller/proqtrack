@@ -11,7 +11,8 @@ test('Client P2 exposes Manager read-only navigation', async () => {
 
 test('Client P2 adds pagination, empty state and mobile cards', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /CLIENT_PAGE_SIZE = 15/);
+  const helper = await read('src/lib/client-ui.js');
+  assert.match(helper, /CLIENT_PAGE_SIZE = 15/);
   assert.match(src, /clientResultSummary/);
   assert.match(src, /clientEmpty/);
   assert.match(src, /clientPager/);
@@ -21,9 +22,10 @@ test('Client P2 adds pagination, empty state and mobile cards', async () => {
 
 test('Client P2 renders live sync state', async () => {
   const src = await read('src/types/index.js');
+  const helper = await read('src/lib/client-ui.js');
   assert.match(src, /clientSyncLabel/);
   assert.match(src, /proqtrack:cloud-status/);
-  assert.match(src, /Tersinkron cloud/);
+  assert.match(helper, /Tersinkron cloud/);
 });
 
 test('Client P2 uses structured additional PIC fields', async () => {
