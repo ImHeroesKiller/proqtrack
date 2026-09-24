@@ -37,7 +37,7 @@ test('Client P2 uses structured additional PIC fields', async () => {
 
 test('Client P2 normalizes website and enriches detail view', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function normalizeWebsite/);
+  assert.match(src, /normalizeClientWebsite/);
   assert.match(src, /inputmode="url"/);
   assert.match(src, /NPWP \/ SIUP/);
   assert.match(src, /Project Terhubung/);
@@ -58,5 +58,5 @@ test('Client P2 cleans orphan uploaded logo after failed commit', async () => {
 
 test('Client P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.27/);
+  assert.match(sw, /proqtrack-v12\.28/);
 });
