@@ -88,7 +88,7 @@ test('Products P2 edit form preserves multi-project relationships explicitly', (
   assert.match(app,/name="projectIds" multiple/);
   assert.match(app,/fd\.getAll\('projectIds'\)/);
   assert.match(app,/Bisa memilih beberapa project, tetapi seluruh project harus berasal dari client yang sama/);
-  assert.match(app,/selected\.has\(String\(project\.id\)\)/);
+  assert.match(app,/option\.selected\?'selected':''/);
 });
 
 test('Products P2 helper is available to PWA runtime', () => {

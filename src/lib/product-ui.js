@@ -83,3 +83,84 @@ export function productSyncPresentation(sync = {}) {
   if (sync.syncing || sync.queued) return { label:'Sinkronisasi…', className:'status-pending' };
   return { label:'Cloud synced', className:'status-active' };
 }
+
+
+export function productAvailableProjects(projects = [], actor = {}, isOrgAdmin = false) {
+  const allowed = new Set([
+    ...(Array.isArray(actor?.projectIds) ? actor.projectIds : []),
+    ...(actor?.projectId ? [actor.projectId] : []),
+  ].map(String));
+  return (projects || []).filter(project =>
+    ['active','planning'].includes(String(project.status || '')) &&
+    (isOrgAdmin || allowed.has(String(project.id)))
+  );
+}
+
+export function productFormModel(product = {}, { projects = [], clients = [], actor = {}, isOrgAdmin = false } = {}) {
+  const availableProjects = productAvailableProjects(projects, actor, isOrgAdmin);
+  const selectedProjectIds = [...new Set((product.projectIds || []).map(String).filter(Boolean))];
+  const clientMap = new Map((clients || []).map(client => [String(client.id), client]));
+  const projectMap = new Map((projects || []).map(project => [String(project.id), project]));
+  const allowedIds = new Set([
+    ...(Array.isArray(actor?.projectIds) ? actor.projectIds : []),
+    ...(actor?.projectId ? [actor.projectId] : []),
+  ].map(String));
+  const preservedSelected = selectedProjectIds
+    .map(id => projectMap.get(id))
+    .filter(project => project && (isOrgAdmin || allowedIds.has(String(project.id))));
+  const optionMap = new Map(
+    [...availableProjects, ...preservedSelected].map(project => [String(project.id), project])
+  );
+  const projectOptions = [...optionMap.values()].map(project => ({
+    id:String(project.id),
+    label:`${clientMap.get(String(project.clientId))?.name || 'Tanpa klien'} — ${project.code || project.id} / ${project.name || ''}${!['active','planning'].includes(String(project.status || '')) ? ' (existing)' : ''}`,
+    selected:selectedProjectIds.includes(String(project.id)),
+  }));
+  return {
+    id:text(product.id),
+    name:text(product.name),
+    brand:text(product.brand),
+    sku:text(product.sku),
+    category:text(product.category),
+    unit:text(product.unit),
+    price:product.price ?? '',
+    cost:product.cost ?? '',
+    margin:product.margin ?? '',
+    status:['active','inactive','archived'].includes(String(product.status || '')) ? String(product.status) : 'active',
+    selectedProjectIds,
+    projectOptions,
+    hasAvailableProjects:projectOptions.length > 0,
+  };
+}
+
+export function normalizeProductFormPayload(data = {}, projectIds = []) {
+  const next = { ...data };
+  next.projectIds = [...new Set((projectIds || []).map(String).filter(Boolean))];
+  delete next.projectId;
+  return next;
+}
+
+export function productStatusSummary(products = []) {
+  return {
+    total:products.length,
+    active:products.filter(product => product.status === 'active').length,
+    inactive:products.filter(product => product.status === 'inactive').length,
+    archived:products.filter(product => product.status === 'archived').length,
+    brands:new Set(products.map(product => text(product.brand)).filter(Boolean)).size,
+  };
+}
+
+export function productLifecycleAction(product = {}, referenceCount = 0) {
+  const referenced = Number(referenceCount) > 0;
+  return referenced
+    ? {
+        action:'deactivate',
+        label:product.status === 'inactive' ? 'Nonaktif' : 'Nonaktifkan',
+        confirm:`Produk memiliki ${referenceCount} data operasional terkait. Produk akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`,
+      }
+    : {
+        action:'delete',
+        label:'Hapus',
+        confirm:'Hapus produk ini? Tindakan ini hanya berlaku jika produk belum memiliki histori operasional.',
+      };
+}
