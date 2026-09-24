@@ -343,6 +343,75 @@ window.showToast = function(msg, type = '') {
   setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 300); }, 3000);
 };
 
+const HOME_REFRESH_MS = 45000;
+
+function isHomeRoute(route = state.route) {
+  return route === '#/' || route === '#';
+}
+
+function formatHomeRefreshTime(value) {
+  if (!value) return 'Auto refresh aktif';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Auto refresh aktif';
+  const timezone = getOrganization()?.timezone || 'Asia/Jakarta';
+  try {
+    return `Diperbarui ${new Intl.DateTimeFormat('id-ID', {
+      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:timezone,
+    }).format(date)}`;
+  } catch {
+    return 'Data terbaru';
+  }
+}
+
+async function refreshHomeData({ manual = false } = {}) {
+  if (state.homeRefreshInFlight || !state.loggedIn || !isHomeRoute()) return false;
+  const actor = getActor();
+  if (!actor?.organizationId) return false;
+  state.homeRefreshInFlight = true;
+  try {
+    const result = await refreshOperationalData(getDB(), actor);
+    if (result?.refreshed) {
+      state.homeRefreshedAt = result.refreshedAt || new Date().toISOString();
+      if (manual) showToast('Data Home diperbarui', 'success');
+      if (isHomeRoute()) render();
+      return true;
+    }
+    if (manual) {
+      const message = ['local-sync-pending','local-changes-pending'].includes(result?.reason)
+        ? 'Perubahan lokal sedang disinkronkan. Coba lagi setelah sinkronisasi selesai.'
+        : 'Belum ada data baru untuk dimuat.';
+      showToast(message);
+    }
+    return false;
+  } catch (error) {
+    if (manual) showToast(error?.message || 'Refresh Home gagal', 'error');
+    else if (![401,403].includes(Number(error?.status || 0))) {
+      console.warn('home_refresh_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    state.homeRefreshInFlight = false;
+  }
+}
+
+function configureHomeRefresh(route = state.route) {
+  const shouldRun = state.loggedIn && isHomeRoute(route)
+    && (isProjectAdmin() || isSupervisor())
+    && !!getActor()?.organizationId;
+  if (!shouldRun) {
+    if (state.homeRefreshTimer) clearInterval(state.homeRefreshTimer);
+    state.homeRefreshTimer = null;
+    return;
+  }
+  if (!state.homeRefreshTimer) {
+    state.homeRefreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshHomeData().catch(() => {});
+    }, HOME_REFRESH_MS);
+  }
+}
+
+window.FT.refreshHome = () => refreshHomeData({ manual:true });
+
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
