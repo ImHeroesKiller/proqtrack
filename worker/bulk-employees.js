@@ -160,6 +160,7 @@ function validateRows(rows, ctx, claims) {
     if (emailOwner && (!existing || String(emailOwner.id) !== String(existing.id))) errors.push('EMAIL_USED_BY_ANOTHER_EMPLOYEE');
 
     let supervisor = null;
+    if (!existing && row.role === 'employee' && !row.supervisorEmail) errors.push('SUPERVISOR_REQUIRED');
     if (row.supervisorEmail) {
       if (row.email && row.supervisorEmail === row.email) errors.push('SUPERVISOR_CANNOT_BE_SELF');
       supervisor = ctx.userByEmail.get(row.supervisorEmail) || null;
@@ -459,30 +460,33 @@ async function commit(request, env, claims, requestId) {
         SET status='inactive',updated_at=CURRENT_TIMESTAMP
         WHERE organization_id=? AND user_id=?
       `).bind(claims.organizationId,authUserId || ''));
-    } else if (!existing && row.projectId) {
-      const project = ctx.projectByRef.get(lower(row.projectRef));
-      const startDate = String(project?.starts_on || new Date().toISOString().slice(0,10));
-      const endDate = String(project?.ends_on || startDate);
-      const roleOnProject = row.role === 'supervisor' ? 'supervisor' : 'sales';
-      const assignmentMetadata = JSON.stringify({
-        roleOnProject,
-        supervisorId: roleOnProject === 'supervisor' ? null : (row.supervisorEmployeeId || null),
-        allocationPercent:100,
-        startDate,
-        endDate,
-        assignedBy:claims.sub,
-        assignedAt:new Date().toISOString(),
-      });
-      statements.push(env.DB.prepare(`
-        INSERT INTO core_employee_project_assignments(
-          id,organization_id,project_id,employee_id,supervisor_user_id,position_name,
-          status,starts_on,ends_on,metadata_json,created_at,updated_at
-        ) VALUES(?,?,?,?,?,?,'active',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-      `).bind(
-        assignmentId(),claims.organizationId,row.projectId,empId,
-        roleOnProject === 'supervisor' ? null : (row.supervisorUserId || null),roleOnProject,
-        startDate,endDate,assignmentMetadata,
-      ));
+    } else if (row.projectId) {
+      const existingAssignment = ctx.assignmentByKey.get(`${row.projectId}:${empId}`);
+      if (!existingAssignment || existingAssignment.status !== 'active') {
+        const project = ctx.projectByRef.get(lower(row.projectRef));
+        const startDate = String(project?.starts_on || new Date().toISOString().slice(0,10));
+        const endDate = String(project?.ends_on || startDate);
+        const roleOnProject = row.role === 'supervisor' ? 'supervisor' : 'sales';
+        const assignmentMetadata = JSON.stringify({
+          roleOnProject,
+          supervisorId: roleOnProject === 'supervisor' ? null : (row.supervisorEmployeeId || null),
+          allocationPercent:100,
+          startDate,
+          endDate,
+          assignedBy:claims.sub,
+          assignedAt:new Date().toISOString(),
+        });
+        statements.push(env.DB.prepare(`
+          INSERT INTO core_employee_project_assignments(
+            id,organization_id,project_id,employee_id,supervisor_user_id,position_name,
+            status,starts_on,ends_on,metadata_json,created_at,updated_at
+          ) VALUES(?,?,?,?,?,?,'active',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        `).bind(
+          assignmentId(),claims.organizationId,row.projectId,empId,
+          roleOnProject === 'supervisor' ? null : (row.supervisorUserId || null),roleOnProject,
+          startDate,endDate,assignmentMetadata,
+        ));
+      }
     }
   }
 
