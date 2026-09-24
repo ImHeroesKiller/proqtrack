@@ -7,7 +7,7 @@ const worker = readFileSync(new URL('../worker/operations.js', import.meta.url),
 const autoEnv = { DB:{ prepare(){ return { bind(){ return { async first(){ return { id:'PRJ-1', metadata_json:'{}' }; } }; } }; } } };
 const db = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8');
 
-test('new outlet proposal is bound to authenticated employee and forced pending', async () => {
+test('new outlet proposal is bound to authenticated employee and follows project approval mode', async () => {
   const row = {
     id:'OPR-1',
     submittedBy:'EMP-OTHER',
