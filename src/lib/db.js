@@ -34,7 +34,7 @@ export const SCHEMA = {
   mirrorKey: 'proqtrack_db_v7',
   tenantCollections: [
     'employees', 'outlets', 'visits', 'attendance', 'accounts', 'products',
-    'leaves', 'stocks', 'priceObservations', 'competitors', 'competitorProducts',
+    'leaves', 'stocks', 'inventoryCycles', 'priceObservations', 'competitors', 'competitorProducts',
     'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
     'projectAssignments', 'outletProposals', 'attendancePoints',
   ],
@@ -47,7 +47,7 @@ export const SCHEMA = {
 };
 
 const SEEDED_EMPTY_ARRAYS = [
-  'productSales', 'clients', 'projects', 'projectAssignments', 'projectSettings',
+  'productSales', 'inventoryCycles', 'clients', 'projects', 'projectAssignments', 'projectSettings',
   'outletProposals', 'attendancePoints', 'projectProducts',
   'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
   'reportApprovals', 'reportSchedules', 'auditLogs',
