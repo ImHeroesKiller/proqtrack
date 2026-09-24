@@ -10,6 +10,7 @@ const worker = readFileSync(new URL('../worker/operations.js', import.meta.url),
 const reports = readFileSync(new URL('../worker/reports.js', import.meta.url), 'utf8');
 const analytics = readFileSync(new URL('../worker/analytics.js', import.meta.url), 'utf8');
 const db = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../migrations/0026_stock_sales_p1_hardening.sql', import.meta.url), 'utf8');
 
 function saleEnv({ duplicateKey=null, correctionSource=null }={}) {
@@ -148,7 +149,7 @@ function cycle(overrides={}) {
 
 test('P1 stock adjustment requires an auditable reason', async () => {
   const row = cycle({ adjustmentQty:5, closingQty:105 });
-  const result = await validateInventoryCycleMutation(cycleEnv(),'ORG-1',row,null,{op:'upsert'});
+  const result = await validateInventoryCycleMutation(cycleEnv(),'ORG-1',row,null,{op:'upsert',claims:{role:'manager',sub:'USR-MGR'}});
   assert.equal(result.error,'INVENTORY_CYCLE_ADJUSTMENT_REASON_REQUIRED');
 });
 
@@ -193,4 +194,23 @@ test('P1 zero sell-out finalization does not create a fake sales transaction', a
 test('P1 monthly sales KPI accepts cloud-hydrated soldAt/totalAmount fields', () => {
   assert.match(db,/s\.soldAt \|\| s\.date/);
   assert.match(db,/s\.totalAmount \?\? s\.amount/);
+});
+
+
+test('P1 employee cannot forge stock adjustment/correction', async () => {
+  const row = cycle({ adjustmentQty:5, closingQty:105, adjustmentReason:'Koreksi saldo manual outlet' });
+  const result = await validateInventoryCycleMutation(
+    cycleEnv(),'ORG-1',row,null,{op:'upsert',claims:{role:'employee',sub:'USR-EMP'}}
+  );
+  assert.equal(result.error,'INVENTORY_CYCLE_ADJUSTMENT_FORBIDDEN');
+  assert.equal(result.status,403);
+});
+
+test('P1 frontend stock write paths use inventory cycle and rehydrate cloud authority', () => {
+  assert.match(app,/createInventoryCycle\(/);
+  assert.match(app,/await waitForOperationalSync\(\)/);
+  assert.match(app,/await refreshOperationalData\(getDB\(\), getActor\(\)\)/);
+  assert.doesNotMatch(app,/\bcreateStock\(data\)/);
+  assert.doesNotMatch(app,/\bupdateStock\(existing\.id/);
+  assert.doesNotMatch(app,/\bdeleteStock\(id\)/);
 });
