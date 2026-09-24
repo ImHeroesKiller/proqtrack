@@ -687,7 +687,7 @@ function render() {
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
             ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
-            ${route === '#/tracking' ? '<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">Last check-in</div>' : ''}
+            ${isTrackingRoute(route) ? `<span class="tracking-freshness">${esc(formatTrackingRefreshTime(state.trackingRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
           </div>
         </div>
         <div class="content">
@@ -1511,7 +1511,7 @@ window.FT.checkInVisit = async function(id) {
 };
 window.FT.checkOutVisit = function(id) {
   try {
-    updateVisit(id, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
+    updateVisit(id, { status: 'completed', checkOutTime: currentTenantTimeHHMM() });
     closeModal(); showToast('Berhasil check out', 'success'); render();
   } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
 };
@@ -4609,7 +4609,7 @@ window.FT.mobileCheckIn = async function(visitId) {
   }
 };
 window.FT.mobileCheckOut = function(visitId) {
-  updateVisit(visitId, { status: 'completed', checkOutTime: new Date().toTimeString().slice(0,5) });
+  updateVisit(visitId, { status: 'completed', checkOutTime: currentTenantTimeHHMM() });
   showToast('Berhasil check out!', 'success'); render();
 };
 
