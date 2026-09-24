@@ -1162,6 +1162,84 @@ async function validateOutletMutation(env, organizationId, row, existing = null,
   return null;
 }
 
+export async function validateProductMutation(env, organizationId, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  const id = str(row.id || existing?.id);
+  if (!id) return { error:'PRODUCT_ID_REQUIRED', status:400 };
+
+  if (op === 'delete') {
+    const references = [
+      ['core_product_sales','product_id'],
+      ['core_stocks','product_id'],
+      ['core_price_observations','product_id'],
+      ['core_competitor_intel','product_id'],
+    ];
+    let referenceCount = 0;
+    for (const [table,column] of references) {
+      const hit = await env.DB.prepare(
+        `SELECT COUNT(*) AS count FROM ${table} WHERE organization_id=? AND ${column}=?`
+      ).bind(organizationId,id).first();
+      referenceCount += Number(hit?.count || 0);
+    }
+    if (referenceCount > 0) return { error:'PRODUCT_REFERENCED_USE_INACTIVE', status:409, referenceCount };
+    return null;
+  }
+
+  const meta = parseMetadata(existing?.metadata_json);
+  const name = str(row.name || existing?.name);
+  const sku = str(row.sku || existing?.sku);
+  const unit = str(row.unit || existing?.unit);
+  const clientId = str(row.clientId || row.client_id || existing?.client_id);
+  const projectIds = unique(row.projectIds?.length ? row.projectIds : context.existingProjectIds || []);
+  const status = str(row.status || existing?.status || 'active');
+  const price = num(row.price ?? meta.price);
+  const cost = num(row.cost ?? meta.cost);
+  const margin = num(row.margin ?? meta.margin);
+
+  if (!name) return { error:'PRODUCT_NAME_REQUIRED', status:422 };
+  if (!sku) return { error:'PRODUCT_SKU_REQUIRED', status:422 };
+  if (!unit) return { error:'PRODUCT_UNIT_REQUIRED', status:422 };
+  if (!clientId) return { error:'PRODUCT_CLIENT_REQUIRED', status:422 };
+  if (!projectIds.length) return { error:'PRODUCT_PROJECT_REQUIRED', status:422 };
+  if (!['active','inactive','archived'].includes(status)) return { error:'PRODUCT_INVALID_STATUS', status:422 };
+  if (price != null && price < 0) return { error:'PRODUCT_INVALID_PRICE', status:422 };
+  if (cost != null && cost < 0) return { error:'PRODUCT_INVALID_COST', status:422 };
+  if (margin != null && (margin < 0 || margin > 100)) return { error:'PRODUCT_INVALID_MARGIN', status:422 };
+
+  for (const projectId of projectIds) {
+    const project = await env.DB.prepare(
+      'SELECT id,client_id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,projectId).first();
+    if (!project) return { error:'PRODUCT_PROJECT_NOT_FOUND', status:422 };
+    if (str(project.client_id) !== clientId) return { error:'PRODUCT_PROJECT_CLIENT_MISMATCH', status:409 };
+  }
+
+  const existingClientId = str(existing?.client_id || existing?.clientId);
+  if (!existing || clientId !== existingClientId) {
+    const client = await env.DB.prepare(
+      'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,clientId).first();
+    if (!client) return { error:'PRODUCT_CLIENT_NOT_FOUND', status:422 };
+  }
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id FROM core_products WHERE organization_id=? AND client_id=? AND lower(sku)=lower(?) AND id<>? LIMIT 1'
+  ).bind(organizationId,clientId,sku,id).first();
+  if (duplicate) return { error:'PRODUCT_SKU_CONFLICT', status:409 };
+
+  row.id = id;
+  row.name = name;
+  row.sku = sku;
+  row.unit = unit;
+  row.clientId = clientId;
+  row.projectIds = projectIds;
+  row.status = status;
+  row.price = price;
+  row.cost = cost;
+  row.margin = margin;
+  return null;
+}
+
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
@@ -1349,6 +1427,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'outlets') {
       const outletError = await validateOutletMutation(env, organizationId, row, existing, { op, existingProjectIds });
       if (outletError) return json({ error:outletError.error, entity, id:row.id || null, referenceCount:outletError.referenceCount }, outletError.status || 422);
+    }
+    if (entity === 'products') {
+      const productError = await validateProductMutation(env, organizationId, row, existing, { op, existingProjectIds });
+      if (productError) return json({ error:productError.error, entity, id:row.id || null, referenceCount:productError.referenceCount }, productError.status || 422);
     }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });

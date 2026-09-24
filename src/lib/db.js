@@ -2014,25 +2014,85 @@ export function getProduct(id) {
   return getProducts().find(p => p.id === id);
 }
 
+function normalizeProductNumber(value, label, { nullable = false, min = 0, max = null } = {}) {
+  if ((value === '' || value == null) && nullable) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) throw new Error(`${label} tidak valid.`);
+  if (number < min) throw new Error(`${label} tidak boleh kurang dari ${min}.`);
+  if (max != null && number > max) throw new Error(`${label} tidak boleh lebih dari ${max}.`);
+  return number;
+}
+
+function validateProductLocal(db, data = {}, existing = null) {
+  const merged = { ...(existing || {}), ...data };
+  const scope = normalizeEntityScope(db, merged);
+  if (!scope.projectIds.length) throw new Error('Produk wajib terhubung ke project.');
+  const projects = scope.projectIds.map(id => db.projects?.find(project => project.id === id)).filter(Boolean);
+  if (projects.length !== scope.projectIds.length) throw new Error('Project produk tidak valid.');
+  const clientIds = [...new Set(projects.map(project => project.clientId).filter(Boolean))];
+  if (clientIds.length !== 1 || scope.clientId !== clientIds[0]) throw new Error('Project dan klien produk tidak konsisten.');
+
+  const clean = {};
+  for (const key of ['name','brand','sku','category','unit']) {
+    clean[key] = sanitizePlainText(merged[key] || '');
+  }
+  if (!clean.name) throw new Error('Nama produk wajib diisi.');
+  if (!clean.sku) throw new Error('SKU wajib diisi.');
+  if (!clean.unit) throw new Error('Satuan produk wajib diisi.');
+
+  const status = String(merged.status || 'active');
+  if (!['active','inactive','archived'].includes(status)) throw new Error('Status produk tidak valid.');
+
+  const duplicate = (db.products || []).find(product =>
+    product.id !== existing?.id &&
+    String(product.organizationId || '') === String(getCurrentOrgId() || '') &&
+    String(product.clientId || '') === String(scope.clientId || '') &&
+    String(product.sku || '').trim().toLowerCase() === clean.sku.toLowerCase()
+  );
+  if (duplicate) throw new Error('SKU sudah digunakan pada klien ini.');
+
+  return {
+    scope,
+    clean,
+    status,
+    price:normalizeProductNumber(merged.price, 'Harga jual', { min:0 }),
+    cost:normalizeProductNumber(merged.cost, 'Cost / HPP', { nullable:true, min:0 }),
+    margin:normalizeProductNumber(merged.margin, 'Margin', { nullable:true, min:0, max:100 }),
+  };
+}
+
+export function productReferenceSummary(id, db = getDB()) {
+  const sources = [
+    ['sales', db.productSales],
+    ['stocks', db.stocks],
+    ['prices', db.priceObservations],
+    ['competitorIntel', db.competitorIntel],
+  ];
+  const counts = Object.fromEntries(sources.map(([key, rows]) => [
+    key,
+    (rows || []).filter(row => row?.productId === id).length,
+  ]));
+  return {
+    counts,
+    total:Object.values(counts).reduce((sum, value) => sum + value, 0),
+  };
+}
+
 export function createProduct(data) {
   assertProjectAdmin();
   const db = getDB();
-  const scope = normalizeEntityScope(db, data);
+  const validated = validateProductLocal(db, data);
   const product = {
-    id: uid('PRD'),
-    status: 'active',
-    brand: '',
-    cost: null,
-    margin: null,
+    id:uid('PRD'),
     ...withOrg(data),
-    ...scope,
+    ...validated.scope,
+    ...validated.clean,
+    status:validated.status,
+    price:validated.price,
+    cost:validated.cost,
+    margin:validated.margin,
   };
   delete product.projectId;
-  if (product.price != null) product.price = Number(product.price);
-  if (product.cost === '' || product.cost == null) product.cost = null;
-  else product.cost = Number(product.cost);
-  if (product.margin === '' || product.margin == null) product.margin = null;
-  else product.margin = Number(product.margin);
   db.products.push(product);
   saveDB();
   return product;
@@ -2042,28 +2102,39 @@ export function updateProduct(id, data) {
   assertProjectAdmin();
   const db = getDB();
   const idx = db.products.findIndex(p => p.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) throw new Error('Produk tidak ditemukan.');
+  const current = db.products[idx];
+  const validated = validateProductLocal(db, data, current);
   const next = {
-    ...db.products[idx],
+    ...current,
     ...data,
-    ...normalizeEntityScope(db, { ...db.products[idx], ...data }),
+    ...validated.scope,
+    ...validated.clean,
+    status:validated.status,
+    price:validated.price,
+    cost:validated.cost,
+    margin:validated.margin,
   };
   delete next.projectId;
-  if (next.price != null) next.price = Number(next.price);
-  if (next.cost === '' || next.cost == null) next.cost = null;
-  else next.cost = Number(next.cost);
-  if (next.margin === '' || next.margin == null) next.margin = null;
-  else next.margin = Number(next.margin);
   db.products[idx] = next;
   saveDB();
-  return db.products[idx];
+  return next;
 }
 
 export function deleteProduct(id) {
   assertProjectAdmin();
   const db = getDB();
-  db.products = db.products.filter(p => p.id !== id);
+  const idx = db.products.findIndex(p => p.id === id);
+  if (idx === -1) throw new Error('Produk tidak ditemukan.');
+  const references = productReferenceSummary(id, db);
+  if (references.total > 0) {
+    db.products[idx] = { ...db.products[idx], status:'inactive' };
+    saveDB();
+    return { deleted:false, deactivated:true, references };
+  }
+  db.products.splice(idx,1);
   saveDB();
+  return { deleted:true, deactivated:false, references };
 }
 
 export function getLeaves() {

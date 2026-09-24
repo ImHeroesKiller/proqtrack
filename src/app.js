@@ -5,7 +5,7 @@ import {
   getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee,
   resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee,
   createOutlet, updateOutlet, deleteEmployee, deleteOutlet, outletReferenceSummary, deleteVisit, getDB, getAccounts,
-  getProducts, createProduct, updateProduct, deleteProduct,
+  getProducts, createProduct, updateProduct, deleteProduct, productReferenceSummary,
   getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
   getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock,
   getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit,
@@ -2775,15 +2775,15 @@ function renderMyVisits() {
 // ===== Products Page (Manager full CRUD) =====
 function productFormFields(p = null) {
   return `
-    <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${p?.name || ''}" required></div>
+    <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${esc(p?.name || '')}" required></div>
     ${entityScopeFields(p || {})}
     <div class="form-row">
-      <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${p?.brand || ''}" placeholder="Nestlé, Unilever..." required></div>
-      <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${p?.sku || ''}" placeholder="NST-XXX-001" required></div>
+      <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${esc(p?.brand || '')}" placeholder="Nestlé, Unilever..." required></div>
+      <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(p?.sku || '')}" placeholder="NST-XXX-001" required></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${p?.category || ''}" placeholder="Minuman, Snack..." required list="catList"></div>
-      <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${p?.unit || ''}" placeholder="pcs, dus, sak" required></div>
+      <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(p?.category || '')}" placeholder="Minuman, Snack..." required list="catList"></div>
+      <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${esc(p?.unit || '')}" placeholder="pcs, dus, sak" required></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label class="label">Harga Jual (Rp)</label><input class="input" type="number" name="price" value="${p?.price ?? ''}" required min="0"></div>
@@ -2931,11 +2931,11 @@ function renderProducts() {
         <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand..." data-pqt-oninput="FT.filterProducts()">
         <select class="select" id="productCatFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Kategori</option>
-          ${cats.map(c => `<option value="${c}">${c}</option>`).join('')}
+          ${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
         </select>
         <select class="select" id="productBrandFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Brand</option>
-          ${brands.map(b => `<option value="${b}">${b}</option>`).join('')}
+          ${brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}
         </select>
         <select class="select" id="productStatusFilter" style="width:120px;" data-pqt-onchange="FT.filterProducts()">
           <option value="">Semua Status</option>
@@ -2946,7 +2946,7 @@ function renderProducts() {
         <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('products')">Bulk Upload</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
-      <datalist id="catList">${cats.map(c => `<option value="${c}">`).join('')}</datalist>
+      <datalist id="catList">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <div class="visits-table-wrapper">
         <table class="table" id="productTable">
           <thead>
@@ -2958,20 +2958,20 @@ function renderProducts() {
           <tbody>
             ${products.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📦</div><h3>Belum ada produk</h3></div></td></tr>` :
             products.map(p => `
-              <tr data-cat="${p.category||''}" data-brand="${p.brand||''}" data-status="${p.status||''}">
-                <td><span style="font-family:ui-monospace,monospace; font-size:11px; color:var(--gray-500);">${p.sku}</span></td>
-                <td><span style="font-weight:600; color:var(--gray-800);">${p.name}</span>
+              <tr data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
+                <td><span style="font-family:ui-monospace,monospace; font-size:11px; color:var(--gray-500);">${esc(p.sku)}</span></td>
+                <td><span style="font-weight:600; color:var(--gray-800);">${esc(p.name)}</span>
                   ${p.cost != null ? `<br><span style="font-size:11px;color:var(--gray-400);">HPP ${formatCurrency(p.cost)}</span>` : ''}
                 </td>
-                <td><span style="font-size:12px; font-weight:600; color:var(--brand-dark);">${p.brand || '—'}</span></td>
-                <td><span style="font-size:11px; background:var(--gray-100); padding:3px 8px; border-radius:99px;">${p.category}</span></td>
+                <td><span style="font-size:12px; font-weight:600; color:var(--brand-dark);">${esc(p.brand || '—')}</span></td>
+                <td><span style="font-size:11px; background:var(--gray-100); padding:3px 8px; border-radius:99px;">${esc(p.category)}</span></td>
                 <td>${esc(p.unit)}</td>
                 <td style="font-weight:700;">${formatCurrency(p.price)}</td>
                 <td style="font-size:12px;color:var(--gray-500);">${p.margin != null ? p.margin + '%' : '—'}</td>
                 <td>${statusBadge(p.status)}</td>
                 <td style="white-space:nowrap;">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct('${p.id}')">Edit</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteProductConfirm('${p.id}')">Hapus</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">Hapus</button>
                 </td>
               </tr>
             `).join('')}
@@ -3010,14 +3010,27 @@ window.FT.openProductModal = function() {
   `);
 };
 
-window.FT.createProduct = function(e) {
+window.FT.createProduct = async function(e) {
   e.preventDefault();
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const data = Object.fromEntries(new FormData(e.target));
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
   try {
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     createProduct(data);
-    closeModal(); showToast('Produk berhasil ditambahkan ke project', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await waitForOperationalSync();
+    closeModal();
+    showToast('Produk berhasil ditambahkan dan tersinkron ke cloud', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
+  }
 };
 
 window.FT.editProduct = function(id) {
@@ -3025,7 +3038,7 @@ window.FT.editProduct = function(id) {
   const p = getProducts().find(x => x.id === id);
   if (!p) return;
   openModal('Edit Produk', `
-    <form data-pqt-onsubmit="FT.updateProduct(event,'${id}')">
+    <form data-pqt-onsubmit="FT.updateProduct(event,${jsArg(id)})">
       ${productFormFields(p)}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
@@ -3035,21 +3048,46 @@ window.FT.editProduct = function(id) {
   `);
 };
 
-window.FT.updateProduct = function(e, id) {
+window.FT.updateProduct = async function(e, id) {
   e.preventDefault();
-  if (!isProjectAdmin()) return;
-  const data = Object.fromEntries(new FormData(e.target));
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
   try {
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     updateProduct(id, data);
-    closeModal(); showToast('Produk dan relasi project diperbarui', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await waitForOperationalSync();
+    closeModal();
+    showToast('Produk dan relasi project berhasil diperbarui', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
+  }
 };
 
-window.FT.deleteProductConfirm = function(id) {
-  if (!isProjectAdmin()) return;
-  if (!confirm('Hapus produk ini?')) return;
-  deleteProduct(id);
-  showToast('Produk dihapus', 'success'); render();
+window.FT.deleteProductConfirm = async function(id) {
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  const references = productReferenceSummary(id);
+  const message = references.total > 0
+    ? `Produk memiliki ${references.total} data operasional terkait. Produk akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`
+    : 'Hapus produk ini? Tindakan ini hanya berlaku jika produk belum memiliki histori operasional.';
+  if (!confirm(message)) return;
+  try {
+    const result = deleteProduct(id);
+    await waitForOperationalSync();
+    showToast(result.deactivated ? 'Produk dinonaktifkan dan histori tetap dipertahankan' : 'Produk berhasil dihapus', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  }
 };
 
 // ===== Stocks Page (Manager) =====
