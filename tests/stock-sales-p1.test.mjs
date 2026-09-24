@@ -160,10 +160,15 @@ test('P1 correction cycle must reference finalized cycle in same scope', async (
     correctionOfCycleId:'IC-OLD',
   });
   const ok = await validateInventoryCycleMutation(cycleEnv({
-    sourceCycle:{id:'IC-OLD',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1'}
+    sourceCycle:{
+      id:'IC-OLD',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1',
+      opening_qty:100,stock_in_qty:0,adjustment_qty:0,return_qty:0,damaged_qty:0,transfer_out_qty:0,
+      closing_qty:100,sell_out_qty:0,unit_price:10000,sales_amount:0,sale_id:null,
+    }
   }),'ORG-1',row,null,{op:'upsert',claims:{role:'manager',sub:'USR-MGR'}});
   assert.equal(ok,null);
   assert.equal(row.correctionOfCycleId,'IC-OLD');
+  assert.equal(row.sellOutQty,5);
 });
 
 test('P1 migration removes duplicate legacy stock before unique authority index', () => {
