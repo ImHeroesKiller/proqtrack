@@ -1249,6 +1249,7 @@ window.PM = {
       targetOutlets: Number(fd.get("targetOutlets") || 0) || null,
       region: formValue(fd, "region"),
       notes: formValue(fd, "notes"),
+      modules: { ...defaultModules(), ...(old?.modules || db.projectSettings.find((s) => s.projectId === (id || ""))?.modules || {}) },
       createdAt: old?.createdAt || now(),
       updatedAt: now(),
     };
@@ -1307,8 +1308,8 @@ window.PM = {
       p = db.projects.find((x) => x.id === id),
       c = db.clients.find((x) => x.id === p?.clientId),
       ass = (db.projectAssignments || []).filter((a) => a.projectId === id),
-      set = db.projectSettings.find((s) => s.projectId === id) || {
-        modules: defaultModules(),
+      set = {
+        modules: { ...defaultModules(), ...(p?.modules || db.projectSettings.find((s) => s.projectId === id)?.modules || {}) },
       },
       em = Object.fromEntries(db.employees.map((e) => [e.id, e]));
     if (!p || (!canManage() && !accessibleProjectIds().has(id))) return;
@@ -1325,20 +1326,44 @@ window.PM = {
       }</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Modul Field Aktif</div><div class="pm-modules" style="margin-top:10px">${ALL_MODULES.map((m) => `<label class="pm-module"><span>${esc(MODULE_LABELS[m])}</span><input type="checkbox" ${set.modules?.[m] !== false ? "checked" : ""} ${canManage() ? "" : "disabled"} data-pqt-onchange="PM.setModule('${id}','${m}',this.checked)"></label>`).join("")}</div></div></div>`,
     );
   },
-  setModule(projectId, module, value) {
-    if (!canManage()) return;
+  async setModule(projectId, module, value) {
+    if (!canManage() || !ALL_MODULES.includes(module)) return;
     const db = viewDB();
-    let s = db.projectSettings.find((x) => x.projectId === projectId);
-    if (!s) {
-      s = { projectId, organizationId: currentOrgId(), modules: defaultModules() };
-      db.projectSettings.push(s);
+    const project = db.projects.find((x) => x.id === projectId);
+    if (!project || (!canManage() && !accessibleProjectIds().has(projectId))) return;
+    const nextModules = { ...defaultModules(), ...(project.modules || db.projectSettings.find((s) => s.projectId === projectId)?.modules || {}), [module]: !!value };
+    const nextProject = { ...project, modules: nextModules, updatedAt: now() };
+    try {
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+      Object.assign(project, nextProject);
+      let s = db.projectSettings.find((x) => x.projectId === projectId);
+      if (!s) {
+        s = { projectId, organizationId:currentOrgId(), modules:defaultModules() };
+        db.projectSettings.push(s);
+      }
+      s.organizationId ||= currentOrgId();
+      s.modules = nextModules;
+      s.updatedAt = nextProject.updatedAt;
+      s.updatedBy = account()?.id;
+      persistView(db);
+      applyModuleVisibility();
+      window.showToast?.('Pengaturan modul project tersimpan.', 'success');
+    } catch (error) {
+      window.showToast?.({
+        REVISION_CONFLICT:'Data project berubah di server. Muat ulang lalu coba kembali.',
+        PROJECT_INVALID_TRANSITION:'Status project tidak mengizinkan perubahan ini.',
+        CHANGE_FORBIDDEN:'Anda tidak memiliki izin untuk mengubah project ini.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba kembali.',
+      }[error?.code || error?.message] || 'Pengaturan modul project gagal disimpan.', 'error');
+      const checkbox = document.querySelector(`input[data-pqt-onchange*="PM.setModule('${projectId}','${module}'"]`);
+      if (checkbox) checkbox.checked = !value;
     }
-    if (!s.organizationId) s.organizationId = currentOrgId();
-    s.modules = { ...defaultModules(), ...s.modules, [module]: value };
-    s.updatedAt = now();
-    s.updatedBy = account()?.id;
-    persistView(db);
-    applyModuleVisibility();
   },
   openAssign(projectId) {
     if (!canManage()) return;
