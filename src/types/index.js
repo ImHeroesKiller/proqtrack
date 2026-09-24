@@ -8,6 +8,7 @@ import { getDB, saveDB, getCurrentOrgId, getActor, DEFAULT_ORG_ID } from "../lib
 import { commitOperationalChanges, cloudDataStatus } from "../lib/cloud-data.js";
 import { CLIENT_PAGE_SIZE, clientStatusLabel, normalizeClientWebsite, clientSyncState, clientMatchesFilters, paginateClients, normalizeAdditionalPics, clientSearchDocument } from "../lib/client-ui.js";
 import { PROJECT_PAGE_SIZE, projectStatusLabel, projectSyncState, managerProjectIds, projectManagerNames, projectSupervisorNames, projectDependencies, projectSearchDocument, projectMatchesFilters, paginateProjects, closingProjectAssignments } from "../lib/project-ui.js";
+import { ASSIGNMENT_PAGE_SIZE, assignmentRoleLabel, assignmentStatusLabel, normalizeAssignmentStatus, assignmentSyncState, employeeCapacityUsage, assignmentSearchDocument, assignmentMatchesFilters, paginateAssignments, eligibleSupervisors, eligibleAssignmentEmployees } from "../lib/assignment-ui.js";
 
 const ALL_MODULES = [
   "visits",
@@ -819,25 +820,11 @@ function renderProjects(readOnly = false) {
   queueMicrotask(() => window.PM?.filterProjects?.(projectPage));
   return rendered;
 }
-const ASSIGNMENT_PAGE_SIZE = 15;
 let assignmentPage = 1;
-function assignmentRoleLabel(value = '') {
-  return ({ supervisor:'Supervisor', sales:'Field Sales', viewer:'Viewer' })[String(value || '')] || String(value || '-');
-}
-function assignmentStatusLabel(value = '') {
-  return ({ active:'Aktif', ended:'Selesai', removed:'Selesai', inactive:'Nonaktif' })[String(value || '')] || String(value || '-');
-}
 function assignmentSyncLabel() {
-  const cloud = cloudDataStatus();
-  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
-  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
-  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
-  return '<span class="pm-sync">Mode lokal</span>';
-}
-function employeeCapacityUsage(db, employeeId, startDate, endDate, excludeId = '') {
-  return (db.projectAssignments || [])
-    .filter((assignment) => assignment.employeeId === employeeId && assignment.status === 'active' && assignment.id !== excludeId && assignment.startDate <= endDate && assignment.endDate >= startDate)
-    .reduce((sum, assignment) => sum + Number(assignment.allocationPercent || 100), 0);
+  const state = assignmentSyncState(cloudDataStatus());
+  const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
+  return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
 }
 function renderAssignments() {
   const db = viewDB(),
@@ -866,8 +853,8 @@ function renderAssignments() {
       </div>
       <div id="assignmentResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper"><table class="table pm-assignment-table"><thead><tr><th>Project</th><th>Klien</th><th>Karyawan</th><th>Role</th><th>Supervisor</th><th>Periode / Kapasitas</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assignmentRows">${rows.map((a) => {
-        const p = pm[a.projectId] || {}, e = em[a.employeeId] || {}, sp = em[a.supervisorId] || {}, normalizedStatus = a.status === 'removed' ? 'ended' : a.status;
-        const search = `${p.name || ''} ${p.code || ''} ${cm[p.clientId]?.name || ''} ${e.name || ''} ${sp.name || ''} ${assignmentRoleLabel(a.roleOnProject)}`.toLowerCase();
+        const p = pm[a.projectId] || {}, e = em[a.employeeId] || {}, sp = em[a.supervisorId] || {}, normalizedStatus = normalizeAssignmentStatus(a.status);
+        const search = assignmentSearchDocument(a, { projectName:p.name, projectCode:p.code, clientName:cm[p.clientId]?.name, employeeName:e.name, supervisorName:sp.name });
         return `<tr data-project="${esc(a.projectId)}" data-status="${esc(normalizedStatus)}" data-role="${esc(a.roleOnProject || '')}" data-search="${esc(search)}">
           <td data-label="Project"><strong>${esc(p.name || a.projectId)}</strong><div class="pm-subtext">${esc(p.code || "")}</div></td>
           <td data-label="Klien">${esc(cm[p.clientId]?.name || "-")}</td>
@@ -1507,31 +1494,31 @@ window.PM = {
     this.filterAssignments(assignmentPage);
   },
   filterAssignments(page = assignmentPage) {
-    const search = String(document.getElementById("assignmentSearch")?.value || "").trim().toLowerCase();
-    const projectId = String(document.getElementById("assignmentProjectFilter")?.value || "");
-    const status = String(document.getElementById("assignmentStatusFilter")?.value || "");
-    const assignmentRole = String(document.getElementById("assignmentRoleFilter")?.value || "");
+    const filters = {
+      search:String(document.getElementById("assignmentSearch")?.value || ""),
+      projectId:String(document.getElementById("assignmentProjectFilter")?.value || ""),
+      status:String(document.getElementById("assignmentStatusFilter")?.value || ""),
+      role:String(document.getElementById("assignmentRoleFilter")?.value || ""),
+    };
     const rows = [...document.querySelectorAll("#assignmentRows tr")];
-    const matched = rows.filter((row) => {
-      const matchesSearch = !search || String(row.dataset.search || "").includes(search);
-      const matchesProject = !projectId || row.dataset.project === projectId;
-      const matchesStatus = !status || row.dataset.status === status;
-      const matchesRole = !assignmentRole || row.dataset.role === assignmentRole;
-      return matchesSearch && matchesProject && matchesStatus && matchesRole;
-    });
-    const pageCount = Math.max(1, Math.ceil(matched.length / ASSIGNMENT_PAGE_SIZE));
-    assignmentPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
-    const start = (assignmentPage - 1) * ASSIGNMENT_PAGE_SIZE;
-    const visible = new Set(matched.slice(start, start + ASSIGNMENT_PAGE_SIZE));
+    const matched = rows.filter((row) => assignmentMatchesFilters({
+      search:row.dataset.search || '',
+      projectId:row.dataset.project || '',
+      status:row.dataset.status || '',
+      roleOnProject:row.dataset.role || '',
+    }, filters));
+    const pageState = paginateAssignments(matched, page, ASSIGNMENT_PAGE_SIZE);
+    assignmentPage = pageState.currentPage;
+    const visible = new Set(pageState.items);
     rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
     const summary = document.getElementById("assignmentResultSummary");
-    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + ASSIGNMENT_PAGE_SIZE, matched.length)} dari ${matched.length} assignment` : "Tidak ada assignment yang sesuai dengan filter.";
+    if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} assignment` : "Tidak ada assignment yang sesuai dengan filter.";
     const empty = document.getElementById("assignmentEmpty");
-    if (empty) empty.hidden = matched.length !== 0;
+    if (empty) empty.hidden = pageState.total !== 0;
     const pager = document.getElementById("assignmentPager");
-    if (pager) pager.hidden = matched.length <= ASSIGNMENT_PAGE_SIZE;
+    if (pager) pager.hidden = pageState.total <= ASSIGNMENT_PAGE_SIZE;
     const label = document.getElementById("assignmentPageLabel");
-    if (label) label.textContent = `Halaman ${assignmentPage} / ${pageCount}`;
+    if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
     const sync = document.getElementById("assignmentSyncState");
     if (sync) sync.innerHTML = assignmentSyncLabel();
   },
@@ -1545,7 +1532,7 @@ window.PM = {
       supervisor = db.employees.find((row) => row.id === assignment.supervisorId),
       actor = db.accounts.find((row) => row.id === assignment.assignedBy),
       endActor = db.accounts.find((row) => row.id === assignment.endedBy),
-      normalizedStatus = assignment.status === 'removed' ? 'ended' : assignment.status;
+      normalizedStatus = normalizeAssignmentStatus(assignment.status);
     modal(`Assignment — ${employee?.name || assignment.employeeId}`, `<div class="pm-detail-grid">
       <div class="pm-detail-card"><div class="pm-detail-label">Project</div><div class="pm-detail-value">${esc(project?.name || assignment.projectId)}<br><span class="pm-subtext">${esc(project?.code || '')}</span></div></div>
       <div class="pm-detail-card"><div class="pm-detail-label">Klien</div><div class="pm-detail-value">${esc(client?.name || '-')}</div></div>
@@ -1573,23 +1560,14 @@ window.PM = {
     const projectId = String(form.dataset.projectId || '');
     const hint = document.getElementById('assignmentCapacityHint');
     if (hint && employeeId && startDate && endDate) {
-      const used = employeeCapacityUsage(db, employeeId, startDate, endDate);
+      const used = employeeCapacityUsage(db.projectAssignments || [], employeeId, startDate, endDate);
       const available = Math.max(0, 100 - used);
       hint.textContent = `Terpakai ${used}% · Tersedia ${available}% · Permintaan ${Number.isFinite(requested) ? requested : 0}%`;
       hint.classList.toggle('pm-sync-error', Number.isFinite(requested) && requested > available);
     }
     if (supervisorSelect) {
       const previous = String(supervisorSelect.value || '');
-      const supervisors = (db.projectAssignments || [])
-        .filter((assignment) =>
-          assignment.projectId === projectId &&
-          assignment.status === 'active' &&
-          assignment.roleOnProject === 'supervisor' &&
-          (!startDate || assignment.startDate <= startDate) &&
-          (!endDate || assignment.endDate >= endDate)
-        )
-        .map((assignment) => db.employees.find((employee) => employee.id === assignment.employeeId))
-        .filter((employee) => employee && employee.status === 'active');
+      const supervisors = eligibleSupervisors(db.projectAssignments || [], db.employees || [], projectId, startDate, endDate);
       supervisorSelect.innerHTML = '<option value="">Pilih untuk sales/viewer</option>' + supervisors
         .map((employee) => `<option value="${esc(employee.id)}">${esc(employee.name)}</option>`)
         .join('');
@@ -1609,15 +1587,7 @@ window.PM = {
     const staffingScope = role() === "project-manager"
       ? new Set(scopedEmployees().map((employee) => employee.id))
       : null;
-    const eligible = db.employees.filter(
-      (employee) =>
-        employee.status === "active" &&
-        (!staffingScope || staffingScope.has(employee.id)) &&
-        db.accounts.some(
-          (user) =>
-            user.employeeId === employee.id && user.status !== "inactive",
-        ),
-    );
+    const eligible = eligibleAssignmentEmployees(db.employees || [], db.accounts || [], staffingScope);
     modal(
       `Assignment — ${p?.name || projectId}`,
       `<form class="pm-form" data-project-id="${projectId}" data-pqt-onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required data-pqt-onchange="PM.refreshAssignmentCapacity()">${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject" data-pqt-onchange="PM.refreshAssignmentCapacity()"><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId" disabled><option value="">Pilih untuk sales/viewer</option></select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required data-pqt-oninput="PM.refreshAssignmentCapacity()"><div id="assignmentCapacityHint" class="pm-subtext" style="margin-top:6px">Terpakai 0% · Tersedia 100% · Permintaan 100%</div></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
