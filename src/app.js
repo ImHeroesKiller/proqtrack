@@ -1118,8 +1118,6 @@ function renderTracking() {
         </select>
         <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.fitTracking()">Tampilkan semua</button>
         <div class="spacer"></div>
-        <span class="tracking-freshness">${esc(formatTrackingRefreshTime(state.trackingRefreshedAt))}</span>
-        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>
       </div>
       <div class="tracking-evidence-note">Lokasi GPS perangkat dan referensi outlet dibedakan. Referensi outlet bukan posisi aktual karyawan.</div>
     </div>
