@@ -630,6 +630,40 @@ export async function bootstrapOperationalData(localDb, account = {}) {
   return { mode: 'cloud', data: clone(remote.data || {}), revision, cutoverMode };
 }
 
+export async function refreshOperationalData(localDb, account = {}) {
+  const refreshToken = getApiToken();
+  if (!refreshToken || !ready || cutoverMode !== 'cloud') {
+    return { refreshed:false, reason:'not-ready' };
+  }
+  if (!account?.organizationId || (String(account.role || '').toLowerCase() === 'superadmin' && !account.organizationId)) {
+    return { refreshed:false, reason:'no-organization' };
+  }
+  if (syncing || queuedSnapshot) return { refreshed:false, reason:'local-sync-pending' };
+
+  const currentSnapshot = snapshotCollections(localDb);
+  if (diffSnapshots(baseline,currentSnapshot).length) {
+    return { refreshed:false, reason:'local-changes-pending' };
+  }
+  if (getApiToken() !== refreshToken) return { refreshed:false, reason:'session-changed' };
+
+  const remote = await apiJson('/api/core/bootstrap', {
+    headers:{ authorization:`Bearer ${refreshToken}` },
+  });
+  if (getApiToken() !== refreshToken) return { refreshed:false, reason:'session-changed' };
+  if ((remote.cutoverMode || 'pending') !== 'cloud') {
+    return { refreshed:false, reason:'not-cloud' };
+  }
+
+  cutoverMode = 'cloud';
+  revision = Number(remote.revision || revision);
+  const data = remote.data || {};
+  baseline = snapshotCollections(data);
+  applyRemoteDataToLocal(localDb,data);
+  lastError = null;
+  emitStatus('refreshed',{ source:'home' });
+  return { refreshed:true, revision, refreshedAt:new Date().toISOString() };
+}
+
 async function flush() {
   if (syncing || !ready || !getApiToken() || !queuedSnapshot) return;
   syncing = true;
