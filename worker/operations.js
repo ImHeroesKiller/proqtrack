@@ -394,6 +394,77 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
   return true;
 }
 
+export async function applyOutletProposalAuthority(env, claims, organizationId, row, existing = null, actorEmployeeId = '') {
+  const role = roleOf(claims);
+  if (!existing) {
+    if (role !== 'employee') return { error:'OUTLET_PROPOSAL_CREATE_FORBIDDEN', status:403 };
+    if (!actorEmployeeId) return { error:'OUTLET_PROPOSAL_ACTOR_EMPLOYEE_REQUIRED', status:403 };
+    row.submittedBy = actorEmployeeId;
+    row.employeeId = actorEmployeeId;
+    row.status = 'pending';
+    row.supervisorStatus = 'pending';
+    row.managerStatus = 'pending';
+    return null;
+  }
+
+  if (str(existing.status) !== 'pending') return { error:'OUTLET_PROPOSAL_FINAL', status:409 };
+  const currentSupervisor = str(existing.supervisor_status || existing.supervisorStatus || 'pending');
+  const currentManager = str(existing.manager_status || existing.managerStatus || 'pending');
+  const requestedSupervisor = str(row.supervisorStatus || row.supervisor_status || currentSupervisor);
+  const requestedManager = str(row.managerStatus || row.manager_status || currentManager);
+
+  if (role === 'supervisor') {
+    if (!['approved','rejected'].includes(requestedSupervisor)) return { error:'OUTLET_PROPOSAL_DECISION_REQUIRED', status:422 };
+    row.supervisorStatus = requestedSupervisor;
+    row.managerStatus = currentManager;
+  } else if (role === 'manager' || BROAD_ROLES.has(role)) {
+    if (!['approved','rejected'].includes(requestedManager)) return { error:'OUTLET_PROPOSAL_DECISION_REQUIRED', status:422 };
+    row.supervisorStatus = currentSupervisor;
+    row.managerStatus = requestedManager;
+  } else {
+    return { error:'OUTLET_PROPOSAL_REVIEW_FORBIDDEN', status:403 };
+  }
+
+  row.submittedBy = str(existing.submitted_by || existing.submittedBy);
+  row.employeeId = row.submittedBy;
+  row.projectId = str(existing.project_id || existing.projectId);
+  row.outletId = str(existing.outlet_id || existing.outletId);
+  row.submittedAt = str(existing.submitted_at || existing.submittedAt);
+  row.status = row.supervisorStatus === 'rejected' || row.managerStatus === 'rejected'
+    ? 'rejected'
+    : row.supervisorStatus === 'approved' && row.managerStatus === 'approved'
+      ? 'approved'
+      : 'pending';
+  return null;
+}
+
+async function approvedProposalOutlet(env, organizationId, row, existing) {
+  if (str(row.status) !== 'approved') return { statements:[] };
+  const meta = parseMetadata(existing?.metadata_json);
+  const projectId = str(existing?.project_id || row.projectId);
+  const project = await env.DB.prepare(
+    'SELECT id,client_id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project) return { error:'OUTLET_PROPOSAL_PROJECT_NOT_FOUND', status:422 };
+
+  const outletRow = {
+    ...meta,
+    id:str(existing?.outlet_id || row.outletId || meta.outletId),
+    outletNumber:str(meta.outletNumber || meta.code || existing?.outlet_id || row.outletId),
+    code:str(meta.outletNumber || meta.code || existing?.outlet_id || row.outletId),
+    name:str(existing?.name || row.name || meta.name),
+    address:str(existing?.address || row.address || meta.address),
+    clientId:str(project.client_id),
+    projectIds:[projectId],
+    status:'active',
+    lat:num(meta.lat ?? meta.latitude),
+    lng:num(meta.lng ?? meta.longitude),
+  };
+  const validation = await validateOutletMutation(env, organizationId, outletRow, null, { op:'upsert', existingProjectIds:[] });
+  if (validation) return validation;
+  return { statements:upsertStatements(env, 'outlets', outletRow, organizationId) };
+}
+
 async function crossTenantIdConflict(env, organizationId, entries = []) {
   const grouped = new Map();
   for (const entry of entries) {
@@ -1233,12 +1304,16 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       ).bind(organizationId,str(existing.id || row.id)));
       existingProjectIds = unique(links.map(link => link.project_id));
     }
-    if (entity === 'visits' && existing && !actorEmployeeResolved) {
+    if ((entity === 'visits' || entity === 'outletProposals') && !actorEmployeeResolved) {
       actorEmployeeResolved = true;
       const actorEmployee = await env.DB.prepare(
         "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
       ).bind(organizationId,claims.sub).first();
       actorEmployeeId = str(actorEmployee?.id);
+    }
+    if (entity === 'outletProposals' && op === 'upsert') {
+      const proposalError = await applyOutletProposalAuthority(env, claims, organizationId, row, existing, actorEmployeeId);
+      if (proposalError) return json({ error:proposalError.error, entity, id:row.id || null }, proposalError.status || 422);
     }
     if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, existingProjectIds, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
     if (entity === 'clients' && op === 'upsert') {
@@ -1283,6 +1358,11 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         extras = { authUserId: user?.id || null };
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
+      if (entity === 'outletProposals' && existing && str(row.status) === 'approved') {
+        const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
+        if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
+        statements.push(...finalization.statements);
+      }
     }
     if (entity === 'projectAssignments') statements.push(membershipRefreshStatement(env, organizationId, str(row.employeeId || existing?.employee_id), str(row.projectId || existing?.project_id)));
   }
