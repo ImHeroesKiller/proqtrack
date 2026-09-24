@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import { applyOutletProposalAuthority } from '../worker/operations.js';
 
 const worker = readFileSync(new URL('../worker/operations.js', import.meta.url), 'utf8');
+const autoEnv = { DB:{ prepare(){ return { bind(){ return { async first(){ return { id:'PRJ-1', metadata_json:'{}' }; } }; } }; } } };
 const db = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8');
 
-test('new outlet proposal is bound to authenticated employee and forced pending', async () => {
+test('new outlet proposal is bound to authenticated employee and follows project approval mode', async () => {
   const row = {
     id:'OPR-1',
     submittedBy:'EMP-OTHER',
@@ -15,18 +16,20 @@ test('new outlet proposal is bound to authenticated employee and forced pending'
     managerStatus:'approved',
     status:'approved',
   };
-  const result = await applyOutletProposalAuthority(null, { role:'employee' }, 'ORG-1', row, null, 'EMP-SELF');
+  row.projectId = 'PRJ-1';
+  const result = await applyOutletProposalAuthority(autoEnv, { role:'employee', projectIds:['PRJ-1'] }, 'ORG-1', row, null, 'EMP-SELF');
   assert.equal(result, null);
   assert.equal(row.submittedBy, 'EMP-SELF');
   assert.equal(row.employeeId, 'EMP-SELF');
-  assert.equal(row.supervisorStatus, 'pending');
-  assert.equal(row.managerStatus, 'pending');
-  assert.equal(row.status, 'pending');
+  assert.equal(row.approvalMode, 'auto');
+  assert.equal(row.supervisorStatus, 'approved');
+  assert.equal(row.managerStatus, 'approved');
+  assert.equal(row.status, 'approved');
 });
 
 test('only employee can create an outlet proposal through field workflow', async () => {
   const row = { id:'OPR-NEW' };
-  const result = await applyOutletProposalAuthority(null, { role:'supervisor' }, 'ORG-1', row, null, 'EMP-SPV');
+  const result = await applyOutletProposalAuthority(autoEnv, { role:'supervisor', projectIds:['PRJ-1'] }, 'ORG-1', row, null, 'EMP-SPV');
   assert.equal(result?.error, 'OUTLET_PROPOSAL_CREATE_FORBIDDEN');
   assert.equal(result?.status, 403);
 });
@@ -85,7 +88,7 @@ test('manager approval cannot forge supervisor decision and second approval fina
 });
 
 test('final proposal creates master outlet inside the same cloud batch', () => {
-  assert.match(worker, /if \(entity === 'outletProposals' && existing && str\(row\.status\) === 'approved'\)/);
+  assert.match(worker, /if \(entity === 'outletProposals' && str\(row\.status\) === 'approved'\)/);
   assert.match(worker, /approvedProposalOutlet\(env, organizationId, row, existing\)/);
   assert.match(worker, /statements\.push\(\.\.\.finalization\.statements\)/);
   assert.match(worker, /upsertStatements\(env, 'outlets', outletRow, organizationId\)/);

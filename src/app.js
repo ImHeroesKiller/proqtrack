@@ -21,7 +21,7 @@ import {
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
-  canEmployeeAddStore, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
+  canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, createProductSale, deleteProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
@@ -657,7 +657,7 @@ function render() {
       pageTitle = 'Leave'; pageSubtitle = 'Submit and track leave requests';
       pageContent = renderMyLeaves();
     } else if (route === '#/new-outlet') {
-      pageTitle = 'New Outlet'; pageSubtitle = 'New outlet submissions wait for supervisor and manager approval';
+      pageTitle = 'New Outlet'; pageSubtitle = 'Tambah outlet baru ke project';
       pageContent = renderOutletProposalForm();
     } else if (route === '#/mysales') {
       pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
@@ -678,7 +678,11 @@ function render() {
     pageTitle = 'Employees'; pageSubtitle = 'Field employee records';
     pageContent = renderEmployees();
   } else if ((isProjectAdmin() || isSupervisor()) && route === '#/outlet-approvals') {
-    pageTitle = 'Outlet Approvals'; pageSubtitle = 'New outlet queue. Supervisor and manager must both approve.';
+    if (!hasManualOutletApprovalProjects()) {
+      location.hash = isProjectAdmin() ? '#/outlets' : '#/';
+      return;
+    }
+    pageTitle = 'Outlet Approvals'; pageSubtitle = 'Antrian outlet untuk project yang menggunakan Manual Approval.';
     pageContent = renderOutletProposalForm();
   } else if (isProjectAdmin() && route === '#/outlets') {
     pageTitle = 'Outlet'; pageSubtitle = 'Kelola data outlet/toko';
@@ -803,6 +807,7 @@ function renderSidebar() {
     for (const item of section.items) {
       if (item.id === 'organizations' && !isSuperadmin()) continue;
       if (item.id === 'new-outlet' && !canEmployeeAddStore(state.account?.employeeId)) continue;
+      if (item.id === 'outlet-approvals' && !hasManualOutletApprovalProjects()) continue;
       const active = currentRoute === item.route
         || (item.id === 'dashboard' && (currentRoute === '#/' || currentRoute === '#'))
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
@@ -1109,7 +1114,7 @@ function renderSupervisorDashboard() {
         ${pendingStores.slice(0,5).map(p => `<div class="home-action-row"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || p.city || '')}</div></div>`).join('')}
         ${pending.length + pendingStores.length > 10 ? `<div class="am-muted" style="margin-top:8px">+${pending.length + pendingStores.length - 10} pengajuan lainnya</div>` : ''}
         ${!pending.length && !pendingStores.length ? '<p class="am-muted">Tidak ada pengajuan pending.</p>' : ''}
-        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/leaves','Cuti')} ${dashLink('#/myday','Hari saya')}</div>
+        <div class="am-actions" style="margin-top:12px">${hasManualOutletApprovalProjects() ? dashLink('#/outlet-approvals','Persetujuan toko') : ''} ${dashLink('#/leaves','Cuti')} ${dashLink('#/myday','Hari saya')}</div>
       </div>
     </div>
   `;
