@@ -294,14 +294,14 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
     if (!unchangedIfProvided(row, existing, ['outletId','outlet_id'], ['outlet_id','outletId'])) return false;
     if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['startedAt','checkInAt','checkInTime','started_at'], ['started_at','startedAt','checkInAt','checkInTime'])) return false;
-    if (!unchangedIfProvided(row, existing, ['startLatitude','checkInLat','lat','start_latitude'], ['start_latitude','startLatitude','checkInLat','lat'])) return false;
-    if (!unchangedIfProvided(row, existing, ['startLongitude','checkInLng','lng','start_longitude'], ['start_longitude','startLongitude','checkInLng','lng'])) return false;
-    if (firstValue(existing, ['completed_at','completedAt','checkOutAt','checkOutTime']) !== null
-        && !unchangedIfProvided(row, existing, ['completedAt','checkOutCapturedAt','checkOutAt','checkOutTime','completed_at'], ['completed_at','completedAt','checkOutCapturedAt','checkOutAt','checkOutTime'])) return false;
 
     const currentStatus = canonicalVisitStatus(existing.status || 'planned');
     const nextStatus = canonicalVisitStatus(row.status || currentStatus);
+    if (currentStatus === 'in_progress') {
+      if (!unchangedIfProvided(row, existing, ['startedAt','checkInAt','checkInTime','started_at'], ['started_at','startedAt','checkInAt','checkInTime'])) return false;
+      if (!unchangedIfProvided(row, existing, ['startLatitude','checkInLat','lat','start_latitude'], ['start_latitude','startLatitude','checkInLat','lat'])) return false;
+      if (!unchangedIfProvided(row, existing, ['startLongitude','checkInLng','lng','start_longitude'], ['start_longitude','startLongitude','checkInLng','lng'])) return false;
+    }
     const allowed = currentStatus === 'planned'
       ? new Set(['planned','in_progress','cancelled'])
       : currentStatus === 'in_progress'
