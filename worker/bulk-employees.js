@@ -78,7 +78,7 @@ function userId() {
 async function context(env, claims) {
   const org = claims.organizationId;
   const [projects, employees, users, memberships, projectMemberships, assignments] = await Promise.all([
-    allRows(env.DB.prepare("SELECT id,code,name,status FROM core_projects WHERE organization_id=? AND status='active'").bind(org)),
+    allRows(env.DB.prepare("SELECT id,code,name,status,starts_on,ends_on,metadata_json FROM core_projects WHERE organization_id=? AND status IN ('active','draft')").bind(org)),
     allRows(env.DB.prepare('SELECT id,auth_user_id,employee_code,full_name,email,phone,employment_status,metadata_json FROM core_employees WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare(`
       SELECT u.id,u.email,u.role AS global_role,u.status AS user_status,
@@ -89,7 +89,7 @@ async function context(env, claims) {
     `).bind(org)),
     allRows(env.DB.prepare('SELECT user_id,role,status FROM core_organization_users WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT project_id,user_id,role,status FROM core_project_memberships WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT id,project_id,employee_id,status FROM core_employee_project_assignments WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT id,project_id,employee_id,supervisor_user_id,position_name,status,starts_on,ends_on,metadata_json FROM core_employee_project_assignments WHERE organization_id=?').bind(org)),
   ]);
 
   const projectByRef = new Map();
@@ -101,10 +101,12 @@ async function context(env, claims) {
     projectByRef,
     employeeByCode: new Map(employees.map(row => [lower(row.employee_code), row])),
     employeeByEmail: new Map(employees.filter(row => row.email).map(row => [lower(row.email), row])),
+    employeeByAuthUser: new Map(employees.filter(row => row.auth_user_id).map(row => [String(row.auth_user_id), row])),
     userByEmail: new Map(users.map(row => [lower(row.email), row])),
     membershipByUser: new Map(memberships.map(row => [String(row.user_id), row])),
     projectMembershipByKey: new Map(projectMemberships.map(row => [`${row.project_id}:${row.user_id}`, row])),
     assignmentByKey: new Map(assignments.map(row => [`${row.project_id}:${row.employee_id}`, row])),
+    assignments,
   };
 }
 
@@ -125,7 +127,6 @@ function validateRows(rows, ctx, claims) {
 
     if (!row.employeeCode) errors.push('EMPLOYEE_CODE_REQUIRED');
     if (!row.fullName) errors.push('FULL_NAME_REQUIRED');
-    if (!row.projectRef) errors.push('PROJECT_REQUIRED');
     if (!row.role) errors.push('ROLE_INVALID');
     if (!row.status) errors.push('STATUS_INVALID');
     if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('EMAIL_INVALID');
@@ -141,15 +142,27 @@ function validateRows(rows, ctx, claims) {
       else seenEmails.set(row.email, row.rowNumber);
     }
 
-    const project = ctx.projectByRef.get(lower(row.projectRef));
-    if (!project) errors.push('PROJECT_NOT_FOUND');
-    else if (claims.role === 'manager' && !claims.projectIds?.includes(String(project.id))) errors.push('PROJECT_OUT_OF_SCOPE');
-
     const existing = ctx.employeeByCode.get(codeKey) || null;
+    if (!existing && !row.projectRef) errors.push('PROJECT_REQUIRED');
+    const project = row.projectRef ? ctx.projectByRef.get(lower(row.projectRef)) : null;
+    if (row.projectRef && !project) errors.push('PROJECT_NOT_FOUND');
+    else if (project && claims.role === 'manager' && !claims.projectIds?.includes(String(project.id))) errors.push('PROJECT_OUT_OF_SCOPE');
+    if (existing && claims.role === 'manager') {
+      const managerProjects = new Set((claims.projectIds || []).map(String));
+      const employeeAssignments = ctx.assignments.filter(assignment =>
+        String(assignment.employee_id) === String(existing.id) && assignment.status === 'active'
+      );
+      const accessible = employeeAssignments.some(assignment => managerProjects.has(String(assignment.project_id)));
+      if (!accessible) errors.push('EMPLOYEE_OUT_OF_SCOPE');
+      if (row.status !== 'active' && employeeAssignments.some(assignment => !managerProjects.has(String(assignment.project_id)))) {
+        errors.push('EMPLOYEE_HAS_OUT_OF_SCOPE_ASSIGNMENTS');
+      }
+    }
     const emailOwner = row.email ? ctx.employeeByEmail.get(row.email) : null;
     if (emailOwner && (!existing || String(emailOwner.id) !== String(existing.id))) errors.push('EMAIL_USED_BY_ANOTHER_EMPLOYEE');
 
     let supervisor = null;
+    if (!existing && row.role === 'employee' && !row.supervisorEmail) errors.push('SUPERVISOR_REQUIRED');
     if (row.supervisorEmail) {
       if (row.email && row.supervisorEmail === row.email) errors.push('SUPERVISOR_CANNOT_BE_SELF');
       supervisor = ctx.userByEmail.get(row.supervisorEmail) || null;
@@ -190,6 +203,24 @@ function validateRows(rows, ctx, claims) {
     }
 
     if (existing) warnings.push('EMPLOYEE_WILL_BE_UPDATED');
+    if (existing && row.status !== 'active' && existing.auth_user_id) {
+      const supervisorEmployeeId = String(existing.id);
+      const activeSupervisorAssignments = ctx.assignments.filter(assignment =>
+        String(assignment.employee_id) === supervisorEmployeeId &&
+        assignment.status === 'active' &&
+        String(assignment.position_name || '').toLowerCase().includes('supervisor')
+      );
+      const hasDependents = activeSupervisorAssignments.some(supervisorAssignment =>
+        ctx.assignments.some(assignment => {
+          if (assignment.status !== 'active' || String(assignment.project_id) !== String(supervisorAssignment.project_id)) return false;
+          let meta = {};
+          try { meta = JSON.parse(assignment.metadata_json || '{}') || {}; } catch { meta = {}; }
+          return String(assignment.supervisor_user_id || '') === String(existing.auth_user_id)
+            || String(meta.supervisorId || '') === supervisorEmployeeId;
+        })
+      );
+      if (hasDependents) errors.push('EMPLOYEE_ACTIVE_SUBORDINATES');
+    }
 
     output.push({
       ...row,
@@ -198,6 +229,7 @@ function validateRows(rows, ctx, claims) {
       existingEmployeeId: existing?.id || null,
       existingAuthUserId: existing?.auth_user_id || null,
       supervisorUserId: supervisor?.id || null,
+      supervisorEmployeeId: supervisor?.id ? (ctx.employeeByAuthUser.get(String(supervisor.id))?.id || null) : null,
       loginUserId: user?.id || null,
       action: existing ? 'update' : 'create',
       loginAction,
@@ -412,23 +444,52 @@ async function commit(request, env, claims, requestId) {
       `).bind(authUserId));
     }
 
-    const assignmentKey = `${row.projectId}:${empId}`;
-    const existingAssignment = ctx.assignmentByKey.get(assignmentKey);
-    statements.push(env.DB.prepare(`
-      INSERT INTO core_employee_project_assignments(
-        id,organization_id,project_id,employee_id,supervisor_user_id,position_name,
-        status,starts_on,metadata_json,created_at,updated_at
-      ) VALUES(?,?,?,?,?,?,'active',date('now'),'{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
-      ON CONFLICT(id) DO UPDATE SET
-        supervisor_user_id=excluded.supervisor_user_id,
-        position_name=excluded.position_name,
-        status='active',
-        updated_at=CURRENT_TIMESTAMP
-      WHERE core_employee_project_assignments.organization_id=excluded.organization_id
-    `).bind(
-      existingAssignment?.id || assignmentId(),claims.organizationId,row.projectId,empId,
-      row.supervisorUserId || null,row.position,
-    ));
+    if (row.status !== 'active') {
+      statements.push(env.DB.prepare(`
+        UPDATE core_employee_project_assignments
+        SET status='ended',
+            ends_on=COALESCE(ends_on,date('now')),
+            metadata_json=json_patch(COALESCE(metadata_json,'{}'), json_object(
+              'endedAt', CURRENT_TIMESTAMP,
+              'endedBy', ?,
+              'status', 'ended'
+            )),
+            updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND employee_id=? AND status='active'
+      `).bind(claims.sub,claims.organizationId,empId));
+      statements.push(env.DB.prepare(`
+        UPDATE core_project_memberships
+        SET status='inactive',updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND user_id=?
+      `).bind(claims.organizationId,authUserId || ''));
+    } else if (row.projectId) {
+      const existingAssignment = ctx.assignmentByKey.get(`${row.projectId}:${empId}`);
+      if (!existingAssignment || existingAssignment.status !== 'active') {
+        const project = ctx.projectByRef.get(lower(row.projectRef));
+        const startDate = String(project?.starts_on || new Date().toISOString().slice(0,10));
+        const endDate = String(project?.ends_on || startDate);
+        const roleOnProject = row.role === 'supervisor' ? 'supervisor' : 'sales';
+        const assignmentMetadata = JSON.stringify({
+          roleOnProject,
+          supervisorId: roleOnProject === 'supervisor' ? null : (row.supervisorEmployeeId || null),
+          allocationPercent:100,
+          startDate,
+          endDate,
+          assignedBy:claims.sub,
+          assignedAt:new Date().toISOString(),
+        });
+        statements.push(env.DB.prepare(`
+          INSERT INTO core_employee_project_assignments(
+            id,organization_id,project_id,employee_id,supervisor_user_id,position_name,
+            status,starts_on,ends_on,metadata_json,created_at,updated_at
+          ) VALUES(?,?,?,?,?,?,'active',?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        `).bind(
+          assignmentId(),claims.organizationId,row.projectId,empId,
+          roleOnProject === 'supervisor' ? null : (row.supervisorUserId || null),roleOnProject,
+          startDate,endDate,assignmentMetadata,
+        ));
+      }
+    }
   }
 
   const runStatus = finalChunk ? 'completed' : 'running';

@@ -37,5 +37,5 @@ test('Assignment residual adds direct create flow from Assignment page', async (
 
 test('Assignment residual advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.37/);
+  assert.match(sw, /proqtrack-v12\.38/);
 });

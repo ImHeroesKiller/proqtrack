@@ -485,7 +485,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
       const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
       return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status };
     }
-    case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName || 'Employee'), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
+    case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
     case 'projectAssignments': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), status: ({ removed: 'ended', assigned: 'active' }[str(row.status)] || safeStatus(row.status, ['active','inactive','ended'], 'active')) };
     case 'outlets': return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.outletNumber || row.code || row.id), name: str(row.name || 'Outlet'), projectIds: unique(row.projectIds?.length ? row.projectIds : (row.projectId ? [row.projectId] : [])), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'visits': {
@@ -939,6 +939,60 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   return null;
 }
 
+
+async function validateEmployeeMutation(env, organizationId, row, existing = null, context = {}) {
+  const id = str(row.id || existing?.id);
+  const code = str(row.employeeCode || row.code || existing?.employee_code || id);
+  const name = str(row.name || row.fullName || existing?.full_name);
+  const email = str(row.email || existing?.email).toLowerCase();
+  const status = str(row.status || existing?.employment_status || 'active');
+  if (!id) return { error:'EMPLOYEE_ID_REQUIRED', status:400 };
+  if (!code) return { error:'EMPLOYEE_CODE_REQUIRED', status:422 };
+  if (!name) return { error:'EMPLOYEE_NAME_REQUIRED', status:422 };
+  if (!['active','inactive','terminated'].includes(status)) return { error:'EMPLOYEE_INVALID_STATUS', status:422 };
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error:'EMPLOYEE_INVALID_EMAIL', status:422 };
+
+  const duplicateCode = await env.DB.prepare(
+    'SELECT id FROM core_employees WHERE organization_id=? AND lower(employee_code)=lower(?) AND id<>? LIMIT 1'
+  ).bind(organizationId,code,id).first();
+  if (duplicateCode) return { error:'EMPLOYEE_CODE_CONFLICT', status:409 };
+  if (email) {
+    const duplicateEmail = await env.DB.prepare(
+      'SELECT id FROM core_employees WHERE organization_id=? AND lower(email)=lower(?) AND id<>? LIMIT 1'
+    ).bind(organizationId,email,id).first();
+    if (duplicateEmail) return { error:'EMPLOYEE_EMAIL_CONFLICT', status:409 };
+  }
+
+  if (existing) {
+    const existingAuthUserId = str(existing.auth_user_id);
+    if (row.authUserId && existingAuthUserId && str(row.authUserId) !== existingAuthUserId) {
+      return { error:'EMPLOYEE_AUTH_LINK_IMMUTABLE', status:409 };
+    }
+    const currentStatus = str(existing.employment_status);
+    if (currentStatus === 'terminated' && status !== 'terminated') return { error:'EMPLOYEE_TERMINATED_FINAL', status:409 };
+    if (status !== 'active' && currentStatus === 'active') {
+      const activeAssignments = await allRows(env.DB.prepare(
+        "SELECT id,project_id FROM core_employee_project_assignments WHERE organization_id=? AND employee_id=? AND status='active'"
+      ).bind(organizationId,id));
+      if (activeAssignments.length) {
+        const closingIds = new Set((context.batchAssignments || [])
+          .filter(item => str(item.employeeId || item.employee_id) === id && str(item.status) === 'ended')
+          .map(item => str(item.id))
+          .filter(Boolean));
+        const remaining = activeAssignments.filter(item => !closingIds.has(str(item.id)));
+        if (remaining.length) return { error:'EMPLOYEE_ACTIVE_ASSIGNMENTS_REMAIN', status:409, remainingAssignments:remaining.length };
+      }
+    }
+  }
+
+  row.id = id;
+  row.employeeCode = code;
+  row.name = name;
+  row.email = email;
+  row.status = status;
+  return null;
+}
+
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
@@ -1102,6 +1156,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'projects' && op === 'upsert') {
       const projectError = await validateProjectMutation(env, organizationId, row, existing, { batchAssignments });
       if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
+    }
+    if (entity === 'employees' && op === 'upsert') {
+      const employeeError = await validateEmployeeMutation(env, organizationId, row, existing, { batchAssignments });
+      if (employeeError) return json({ error:employeeError.error, entity, id:row.id || null, remainingAssignments:employeeError.remainingAssignments }, employeeError.status || 422);
     }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
