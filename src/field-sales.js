@@ -10,7 +10,7 @@ import {
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
-  outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
+  outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl, validCoordinatePair,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
 
@@ -22,6 +22,17 @@ function openModal(title, body) {
   const root = document.getElementById('modalRoot');
   if (!root) return;
   root.innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-header"><h3>${esc(title)}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${body}</div></div></div>`;
+}
+
+function personalLocationEvidence(visit,outlet) {
+  if (validCoordinatePair(visit?.checkInLat,visit?.checkInLng)) {
+    return { source:'GPS check-in', accuracyM:Number.isFinite(Number(visit.checkInAccuracyM)) ? Number(visit.checkInAccuracyM) : null };
+  }
+  if (validCoordinatePair(visit?.lat,visit?.lng)) {
+    return { source:visit.locationSource === 'device_gps' ? 'GPS check-in' : 'Lokasi visit lama', accuracyM:Number.isFinite(Number(visit.checkInAccuracyM)) ? Number(visit.checkInAccuracyM) : null };
+  }
+  if (validCoordinatePair(outlet?.lat,outlet?.lng)) return { source:'Referensi outlet — bukan posisi perangkat', accuracyM:null };
+  return { source:'Tanpa koordinat', accuracyM:null };
 }
 
 export function renderLastLocation() {
@@ -39,17 +50,20 @@ export function renderLastLocation() {
     </div>
     <div class="card">
       <div class="card-title">Last Location</div>
-      <div class="card-subtitle">Posisi terakhir dari check-in di toko atau lokasi kerja. Boleh lebih dari satu toko per hari; riwayat tidak dihapus.</div>
+      <div class="card-subtitle">Riwayat titik check-in. GPS perangkat dan koordinat referensi outlet ditampilkan sebagai sumber yang berbeda.</div>
       ${!uniqueToday.length ? `<div class="empty-state">${appIcon('pin')}<h3>Belum ada check-in hari ini</h3><p>Check-in di kunjungan terjadwal agar last location tercatat.</p></div>` : `
         <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
           ${uniqueToday.map(v => {
             const o = outlets[v.outletId];
+            const evidence = personalLocationEvidence(v,o);
+            const accuracy = evidence.accuracyM != null ? ` · akurasi ±${Math.round(evidence.accuracyM)} m` : '';
             return `<div style="display:flex;gap:12px;padding:14px;border-radius:12px;background:var(--gray-50)">
               <div class="stat-icon">${appIcon('pin')}</div>
               <div style="flex:1">
                 <strong>${esc(o?.name || v.outletId)}</strong>
                 <div class="am-muted">${esc(o?.address || '')}</div>
-                <div class="am-muted">Check-in ${v.checkInTime || '—'}${v.checkOutTime ? ' · check-out ' + v.checkOutTime : ' · masih di lokasi'}</div>
+                <div class="am-muted">${esc(evidence.source + accuracy)}</div>
+                <div class="am-muted">Check-in ${v.checkInTime || '—'}${v.checkOutTime ? ' · check-out ' + v.checkOutTime : ' · belum check-out'}</div>
               </div>
               ${statusBadge(v.status)}
             </div>`;
