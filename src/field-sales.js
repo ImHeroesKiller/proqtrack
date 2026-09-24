@@ -398,9 +398,8 @@ export function renderOutletProposalForm() {
                 <td>${esc(p.submittedByName || '')}<div class="am-muted">${formatDateShort((p.submittedAt || '').slice(0,10))}</div></td>
                 <td>${esc(proposalStatusLabel(p))}</td>
                 ${role !== 'employee' && p.status === 'pending' ? `<td>
-                  <select class="select" id="proj-${p.id}" style="min-width:140px;margin-bottom:6px">
-                    ${projects.filter(pr => manualProjectIds.has(pr.id)).map(pr => `<option value="${pr.id}" ${p.projectId === pr.id ? 'selected' : ''}>${esc(pr.code || pr.name)}</option>`).join('')}
-                  </select>
+                  <input type="hidden" id="proj-${p.id}" value="${esc(p.projectId || '')}">
+                  <div class="am-muted" style="margin-bottom:6px">${esc(projects.find(pr => pr.id === p.projectId)?.code || p.projectId || '')}</div>
                   <button class="btn btn-primary btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
                   <button class="btn btn-danger btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
                 </td>` : (role !== 'employee' ? '<td></td>' : '')}
