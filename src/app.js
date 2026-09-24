@@ -45,7 +45,7 @@ import {
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
-import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeAssignmentsForEmployee, activeProjectIdsForEmployee, employeeSearchDocument, employeeMatchesFilters, paginateEmployees, employeeOperationalFlags, employeeOperationalCounts } from './lib/team-employee-ui.js';
+import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -1783,9 +1783,6 @@ function employeeSyncLabel() {
   const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
   return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
 }
-function employeeActiveAssignments(employeeId) {
-  return activeAssignmentsForEmployee(getDB().projectAssignments || [], employeeId);
-}
 function employeeProjectIds(employeeId) {
   return activeProjectIdsForEmployee(getDB().projectAssignments || [], employeeId);
 }
@@ -1797,11 +1794,7 @@ function renderEmployees() {
   const assignments = db.projectAssignments || [];
   const operationalCounts = employeeOperationalCounts(employees, assignments, accounts);
   const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
-  const projectOptions = [...new Map(
-    employees.flatMap(employee => employeeProjectIds(employee.id))
-      .map(projectId => [projectId, projectMap[projectId]])
-      .filter(([,project]) => project)
-  ).values()];
+  const projectOptions = employeeProjectOptions(employees, assignments, db.projects || []);
   const rendered = `
     <div class="card">
       <div class="pm-kpi-grid" style="margin-bottom:14px;">
@@ -1847,12 +1840,8 @@ function renderEmployees() {
             ${employees.map(e => {
               const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
               const cIdx = e.name.charCodeAt(0) % colors.length;
-              const projectIds = employeeProjectIds(e.id);
-              const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
-              const search = employeeSearchDocument(e, projects);
-              const flags = employeeOperationalFlags(e, assignments, accounts);
-              const assignmentLabel = flags.assigned ? `${flags.assignmentCount} assignment` : 'Belum ditugaskan';
-              const loginLabel = flags.loginLinked ? (flags.loginActive ? 'Login aktif' : 'Login nonaktif') : 'Login belum terhubung';
+              const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
+              const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
               return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
                 <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
                 <td data-label="Role">${roleBadge(e.role)}</td>
@@ -1883,14 +1872,13 @@ window.FT.employeePage = function(delta) {
 };
 
 window.FT.filterEmployees = function(page = employeePage) {
-  const filters = {
-    search:String(document.getElementById('empSearch')?.value || ''),
-    role:String(document.getElementById('empRoleFilter')?.value || ''),
-    status:String(document.getElementById('empStatusFilter')?.value || ''),
-    projectId:String(document.getElementById('empProjectFilter')?.value || ''),
-    assignment:String(document.getElementById('empAssignmentFilter')?.value || ''),
-    login:String(document.getElementById('empLoginFilter')?.value || ''),
-  };
+  const filters = employeeFilterSnapshot(key => {
+    const ids = {
+      search:'empSearch', role:'empRoleFilter', status:'empStatusFilter',
+      projectId:'empProjectFilter', assignment:'empAssignmentFilter', login:'empLoginFilter',
+    };
+    return document.getElementById(ids[key])?.value || '';
+  });
   const rows = [...document.querySelectorAll('#empTable tbody tr')];
   const matched = rows.filter(row => employeeMatchesFilters({
     search:row.dataset.search || '',
@@ -2105,8 +2093,7 @@ window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const current = getEmployees().find(row => row.id === id);
   if (!current) return;
-  const activeAssignmentCount = employeeActiveAssignments(id).length;
-  const impact = activeAssignmentCount ? ` Karyawan memiliki ${activeAssignmentCount} assignment aktif yang akan ditutup.` : '';
+  const { message:impact } = employeeDeactivationImpact(id, getDB().projectAssignments || []);
   if (!confirm(`Nonaktifkan karyawan ini?${impact} Akses login aktif akan dicabut.`)) return;
   try {
     await window.BulkEmployees.updateSingleEmployee({
