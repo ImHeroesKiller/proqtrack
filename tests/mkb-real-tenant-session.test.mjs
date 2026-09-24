@@ -40,7 +40,8 @@ test('browser refresh restores the authoritative bearer session before returning
   assert.match(cloudData, /bootstrapOperationalData\(localDb, session\)/);
   assert.match(cloudData, /applyRemoteDataToLocal\(localDb, bootstrap\.data\)/);
   assert.match(cutover, /restoreCloudSessionOnReload/);
-  assert.match(cutover, /if \(restoreInFlight \|\| !getApiToken\(\) \|\| window\.FT\?\.state\?\.loggedIn\) return false/);
+  assert.match(cutover, /const restoreToken = getApiToken\(\)/);
+  assert.match(cutover, /if \(restoreInFlight \|\| !restoreToken \|\| window\.FT\?\.state\?\.loggedIn\) return false/);
   assert.match(cutover, /state\.loggedIn = true/);
   assert.match(cutover, /queueMicrotask\(\(\) => restoreCloudSessionOnReload\(\)\)/);
   assert.match(uploads, /sessionStorage\.getItem\(TOKEN_KEY\)/);
