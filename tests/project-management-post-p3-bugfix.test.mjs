@@ -29,3 +29,10 @@ test('Post-P3 bugfix advances PWA cache', async () => {
   const sw = await read('sw.js');
   assert.match(sw, /proqtrack-v12\.42/);
 });
+
+
+test('Post-P3 legacy migration does not create active fallback assignments for inactive employees', async () => {
+  const worker = await read('worker/operations.js');
+  assert.match(worker, /employeeStatus !== 'active'\) continue/);
+  assert.match(worker, /employee\.employment_status/);
+});
