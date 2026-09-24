@@ -5,10 +5,25 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
 
 const clean = (value, max = 180) => String(value ?? '').trim().slice(0, max);
 const normalizeCode = value => clean(value, 32).toUpperCase().replace(/[^A-Z0-9_-]+/g, '').slice(0, 24);
+const TIMEZONES = new Set(['Asia/Jakarta','Asia/Makassar','Asia/Jayapura','UTC']);
+const PROFILE_ROLES = new Set(['superadmin','head','admin']);
+const MAX_LOGO_BYTES = 192 * 1024;
+
 const validTimezone = value => {
-  const v = clean(value, 64);
-  return v || 'Asia/Jakarta';
+  const v = clean(value, 64) || 'Asia/Jakarta';
+  return TIMEZONES.has(v) ? v : '';
 };
+
+function normalizedLogo(value, fallback = '') {
+  const raw = String(value ?? fallback ?? '').trim();
+  if (!raw) return '';
+  if (/^\/api\/files\//.test(raw)) return raw.slice(0, 500);
+  const match = raw.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match) throw new Error('ORGANIZATION_LOGO_INVALID');
+  const approxBytes = Math.floor(match[2].replace(/=+$/,'').length * 3 / 4);
+  if (!approxBytes || approxBytes > MAX_LOGO_BYTES) throw new Error('ORGANIZATION_LOGO_TOO_LARGE');
+  return raw;
+}
 
 function metadata(input = {}, existing = '{}') {
   let base = {};
@@ -18,7 +33,10 @@ function metadata(input = {}, existing = '{}') {
     legalName: clean(input.legalName ?? base.legalName, 240),
     industry: clean(input.industry ?? base.industry, 160),
     city: clean(input.city ?? base.city, 160),
+    province: clean(input.province ?? base.province, 160),
+    website: clean(input.website ?? base.website, 300),
     notes: clean(input.notes ?? base.notes, 1200),
+    logo: input.logo === undefined ? normalizedLogo(base.logo || '') : normalizedLogo(input.logo, ''),
   };
   return JSON.stringify(next);
 }
@@ -35,6 +53,9 @@ function publicOrg(row) {
     legalName: meta.legalName || row.name,
     industry: meta.industry || '',
     city: meta.city || '',
+    province: meta.province || '',
+    website: meta.website || '',
+    logo: meta.logo || '',
     notes: meta.notes || '',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
@@ -74,6 +95,7 @@ async function createOrganization(request, env, claims, requestId) {
   const timezone = validTimezone(body.timezone);
   if (!name) return json({ error:'ORGANIZATION_NAME_REQUIRED', requestId },400);
   if (!code) return json({ error:'ORGANIZATION_CODE_REQUIRED', requestId },400);
+  if (!timezone) return json({ error:'ORGANIZATION_TIMEZONE_INVALID', requestId },400);
 
   const duplicate = await env.DB.prepare(
     'SELECT id FROM core_organizations WHERE upper(code)=? LIMIT 1',
@@ -117,6 +139,7 @@ async function updateOrganization(request, env, claims, id, requestId) {
   const timezone = body.timezone == null ? current.timezone : validTimezone(body.timezone);
   if (!name) return json({ error:'ORGANIZATION_NAME_REQUIRED', requestId },400);
   if (!code) return json({ error:'ORGANIZATION_CODE_REQUIRED', requestId },400);
+  if (!timezone) return json({ error:'ORGANIZATION_TIMEZONE_INVALID', requestId },400);
   if (!['active','inactive','suspended'].includes(status)) {
     return json({ error:'ORGANIZATION_STATUS_INVALID', requestId },400);
   }
@@ -143,9 +166,70 @@ async function updateOrganization(request, env, claims, id, requestId) {
   return json({ ok:true, organization:publicOrg(row), requestId });
 }
 
+
+async function currentOrganization(env, claims) {
+  const organizationId = clean(claims?.organizationId,120);
+  if (!organizationId) return null;
+  return env.DB.prepare(`
+    SELECT id,code,name,status,timezone,metadata_json,created_at,updated_at
+    FROM core_organizations
+    WHERE id=? AND status='active'
+    LIMIT 1
+  `).bind(organizationId).first();
+}
+
+async function getCurrentProfile(env, claims, requestId) {
+  const row = await currentOrganization(env,claims);
+  if (!row) return json({ error:'ORGANIZATION_NOT_FOUND', requestId },404);
+  return json({ ok:true, organization:publicOrg(row), requestId });
+}
+
+async function updateCurrentProfile(request, env, claims, requestId) {
+  if (!PROFILE_ROLES.has(String(claims?.role || '').toLowerCase())) {
+    return json({ error:'ORGANIZATION_PROFILE_FORBIDDEN', requestId },403);
+  }
+  const current = await currentOrganization(env,claims);
+  if (!current) return json({ error:'ORGANIZATION_NOT_FOUND', requestId },404);
+
+  const body = await request.json().catch(() => ({}));
+  const name = body.name == null ? current.name : clean(body.name,240);
+  const timezone = body.timezone == null ? current.timezone : validTimezone(body.timezone);
+  if (!name) return json({ error:'ORGANIZATION_NAME_REQUIRED', requestId },400);
+  if (!timezone) return json({ error:'ORGANIZATION_TIMEZONE_INVALID', requestId },400);
+
+  let meta;
+  try {
+    meta = metadata(body,current.metadata_json);
+  } catch (error) {
+    const code = String(error?.message || error || 'ORGANIZATION_PROFILE_INVALID');
+    const status = code === 'ORGANIZATION_LOGO_TOO_LARGE' ? 413 : 400;
+    return json({ error:code, requestId },status);
+  }
+
+  await env.DB.prepare(`
+    UPDATE core_organizations
+    SET name=?,timezone=?,metadata_json=?,updated_at=CURRENT_TIMESTAMP
+    WHERE id=?
+  `).bind(name,timezone,meta,current.id).run();
+
+  await audit(env,requestId,claims,'update_organization_profile',current.id,{ name,timezone });
+  const row = await env.DB.prepare(`
+    SELECT id,code,name,status,timezone,metadata_json,created_at,updated_at
+    FROM core_organizations WHERE id=? LIMIT 1
+  `).bind(current.id).first();
+  return json({ ok:true, organization:publicOrg(row), requestId });
+}
+
 export async function handleOrganizationAdminRoute(
   request, env, claims, url = new URL(request.url), requestId = crypto.randomUUID()
 ) {
+  if (url.pathname === '/api/organization/profile') {
+    if (!claims?.organizationId) return json({ error:'ORGANIZATION_REQUIRED', requestId },409);
+    if (request.method === 'GET') return getCurrentProfile(env,claims,requestId);
+    if (request.method === 'PATCH') return updateCurrentProfile(request,env,claims,requestId);
+    return json({ error:'METHOD_NOT_ALLOWED', requestId },405);
+  }
+
   if (!url.pathname.startsWith('/api/admin/organizations')) return null;
   if (String(claims?.role || '').toLowerCase() !== 'superadmin') {
     return json({ error:'ORGANIZATION_ADMIN_FORBIDDEN', requestId },403);
@@ -170,4 +254,4 @@ export async function handleOrganizationAdminRoute(
   return null;
 }
 
-export const __test = { normalizeCode, validTimezone, metadata, publicOrg };
+export const __test = { normalizeCode, validTimezone, metadata, publicOrg, normalizedLogo };
