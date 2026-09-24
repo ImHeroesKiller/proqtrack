@@ -56,9 +56,14 @@ export async function syncCloudOrganizations() {
   return mergeOrganizations(data.organizations || []);
 }
 
-export async function syncCurrentOrganizationProfile() {
-  if (!getApiToken()) throw new Error('AUTH_REQUIRED');
-  const data = await apiJson('/api/organization/profile');
+export async function syncCurrentOrganizationProfile(sessionToken = '') {
+  const token = sessionToken || getApiToken();
+  if (!token) return null;
+  if (sessionToken && getApiToken() !== sessionToken) return null;
+  const data = await apiJson('/api/organization/profile', {
+    headers:{ authorization:`Bearer ${token}` },
+  });
+  if (sessionToken && getApiToken() !== sessionToken) return null;
   return upsertOrganization(data.organization);
 }
 
