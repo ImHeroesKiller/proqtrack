@@ -9,7 +9,11 @@ test('Employees standalone P1 locks status lifecycle in edit UI and backend', as
   const bulk = await read('worker/bulk-employees.js');
   const core = await read('worker/operations.js');
   assert.match(app, /Status tidak diubah dari form Edit/);
-  assert.doesNotMatch(app, /name="status"><option value="active"/);
+  const editStart = app.indexOf("window.FT.editEmployee = function(id)");
+  const editEnd = app.indexOf("window.FT.updateEmployee = async function", editStart);
+  const editBlock = app.slice(editStart, editEnd);
+  assert.doesNotMatch(editBlock, /name="status"/);
+  assert.match(editBlock, /Status tidak diubah dari form Edit/);
   assert.match(app, /data\.status = current\.status/);
   assert.match(bulk, /EMPLOYEE_REACTIVATION_REQUIRES_STAFFING_FLOW/);
   assert.match(core, /EMPLOYEE_REACTIVATION_REQUIRES_STAFFING_FLOW/);
