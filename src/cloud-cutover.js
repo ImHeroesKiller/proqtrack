@@ -190,12 +190,12 @@ async function cloudLogout() {
   forceRoute('#/login');
 }
 
-function install() {
+export function installCloudCutover() {
   if (!window.FT?.state || !window.FT?.handleLogin) {
-    setTimeout(install, 0);
-    return;
+    setTimeout(installCloudCutover, 0);
+    return false;
   }
-  if (window.FT.__m3CloudCutoverInstalled) return;
+  if (window.FT.__m3CloudCutoverInstalled) return true;
   window.FT.__m3CloudCutoverInstalled = true;
   window.FT.handleLogin = cloudFirstLogin;
   window.FT.logout = cloudLogout;
@@ -214,6 +214,7 @@ function install() {
       lastNotice = '';
     }
   });
+  return true;
 }
 
-setTimeout(install, 0);
+setTimeout(installCloudCutover, 0);
