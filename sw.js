@@ -31,6 +31,7 @@ const FALLBACK_SHELL = [
   './src/lib/assignment-ui.js',
   './src/lib/team-employee-ui.js',
   './src/lib/outlet-ui.js',
+  './src/lib/product-ui.js',
   './src/lib/cloud-data.js',
   './src/lib/offline-store.js',
   './src/lib/offline-engine.js',
