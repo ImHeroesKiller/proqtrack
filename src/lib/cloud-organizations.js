@@ -21,6 +21,23 @@ async function apiJson(path, options = {}) {
   return data;
 }
 
+function upsertOrganization(row) {
+  if (!row?.id) return null;
+  const db = getDB();
+  db.organizations = Array.isArray(db.organizations) ? db.organizations : [];
+  const index = db.organizations.findIndex(candidate => String(candidate.id) === String(row.id));
+  const next = {
+    ...(index >= 0 ? db.organizations[index] : {}),
+    ...row,
+    cloudIdentity:true,
+    cloudSyncedAt:new Date().toISOString(),
+  };
+  if (index >= 0) db.organizations[index] = next;
+  else db.organizations.push(next);
+  persistDB('cloud-organization-profile');
+  return next;
+}
+
 function mergeOrganizations(rows = []) {
   const db = getDB();
   db.organizations = Array.isArray(db.organizations) ? db.organizations : [];
@@ -28,17 +45,7 @@ function mergeOrganizations(rows = []) {
   db.organizations = db.organizations.filter(row =>
     serverIds.has(String(row.id)) || String(row.id) === String(db.currentOrganizationId || '')
   );
-  for (const row of rows) {
-    const index = db.organizations.findIndex(candidate => String(candidate.id) === String(row.id));
-    const next = {
-      ...(index >= 0 ? db.organizations[index] : {}),
-      ...row,
-      cloudIdentity:true,
-      cloudSyncedAt:new Date().toISOString(),
-    };
-    if (index >= 0) db.organizations[index] = next;
-    else db.organizations.push(next);
-  }
+  for (const row of rows) upsertOrganization(row);
   persistDB('cloud-organizations');
   return rows;
 }
@@ -47,6 +54,21 @@ export async function syncCloudOrganizations() {
   if (!getApiToken()) throw new Error('AUTH_REQUIRED');
   const data = await apiJson('/api/admin/organizations');
   return mergeOrganizations(data.organizations || []);
+}
+
+export async function syncCurrentOrganizationProfile() {
+  if (!getApiToken()) throw new Error('AUTH_REQUIRED');
+  const data = await apiJson('/api/organization/profile');
+  return upsertOrganization(data.organization);
+}
+
+export async function updateCurrentOrganizationProfile(payload) {
+  if (!getApiToken()) throw new Error('AUTH_REQUIRED');
+  const data = await apiJson('/api/organization/profile', {
+    method:'PATCH',
+    body:JSON.stringify(payload),
+  });
+  return upsertOrganization(data.organization);
 }
 
 export async function createCloudOrganization(payload) {
@@ -73,6 +95,8 @@ export async function updateCloudOrganization(id, payload) {
 if (typeof window !== 'undefined') {
   window.ProQOrganizations = {
     syncCloudOrganizations,
+    syncCurrentOrganizationProfile,
+    updateCurrentOrganizationProfile,
     createCloudOrganization,
     updateCloudOrganization,
   };
