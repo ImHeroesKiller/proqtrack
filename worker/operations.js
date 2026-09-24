@@ -1542,8 +1542,7 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   if (!product) return { error:'INVENTORY_CYCLE_PRODUCT_NOT_FOUND', status:422 };
   const productMeta = parseMetadata(product.metadata_json);
   const sourceAvailableQty = sourceCycle
-    ? Number(sourceCycle.opening_qty || 0) + Number(sourceCycle.stock_in_qty || 0) + Number(sourceCycle.adjustment_qty || 0)
-      - Number(sourceCycle.return_qty || 0) - Number(sourceCycle.damaged_qty || 0) - Number(sourceCycle.transfer_out_qty || 0)
+    ? Number(sourceCycle.sell_out_qty || 0) + Number(sourceCycle.closing_qty || 0)
     : null;
   const correctedSellOutQty = sourceCycle ? sourceAvailableQty - values.closingQty : null;
   if (sourceCycle && (!Number.isFinite(correctedSellOutQty) || correctedSellOutQty < 0)) {
