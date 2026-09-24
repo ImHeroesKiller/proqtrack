@@ -456,7 +456,12 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
     }
     if (entity === 'outlets' || entity === 'products') {
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
-      return projectIds.length > 0 && projectIds.every(id => projectAllowed(claims, id));
+      if (!projectIds.length || !projectIds.every(id => projectAllowed(claims, id))) return false;
+      if (entity === 'outlets' && context.existing) {
+        const existingProjectIds = unique(context.existingProjectIds || []);
+        if (!existingProjectIds.length || !existingProjectIds.every(id => projectAllowed(claims, id))) return false;
+      }
+      return true;
     }
     if (['competitors','competitorProducts'].includes(entity)) return false;
     if (entity === 'attendancePoints') return true;
@@ -1144,6 +1149,13 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (!ENTITY_TABLES[entity] || !['upsert','delete'].includes(op)) return json({ error: 'INVALID_CHANGE', entity, op }, 400);
     const row = { ...(change.row || {}) };
     const existing = await existingRow(env, entity, organizationId, row);
+    let existingProjectIds = [];
+    if (entity === 'outlets' && existing) {
+      const links = await allRows(env.DB.prepare(
+        "SELECT project_id FROM core_project_outlets WHERE organization_id=? AND outlet_id=? AND status='active'"
+      ).bind(organizationId,str(existing.id || row.id)));
+      existingProjectIds = unique(links.map(link => link.project_id));
+    }
     if (entity === 'visits' && existing && !actorEmployeeResolved) {
       actorEmployeeResolved = true;
       const actorEmployee = await env.DB.prepare(
@@ -1151,7 +1163,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       ).bind(organizationId,claims.sub).first();
       actorEmployeeId = str(actorEmployee?.id);
     }
-    if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, existingProjectIds, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
     if (entity === 'clients' && op === 'upsert') {
       const clientError = await validateClientMutation(env, organizationId, row, existing);
       if (clientError) return json({ error:clientError.error, entity, id:row.id || null }, clientError.status || 422);

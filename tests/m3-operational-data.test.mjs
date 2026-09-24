@@ -66,6 +66,32 @@ test('manager and field roles cannot escape normalized project and employee scop
   assert.equal(authorizeOperationalChange(employee, 'products', { row: { id: 'P-1', projectIds: ['PRJ-1'] } }, context), false);
 });
 
+test('manager cannot take over an existing outlet outside current project scope', () => {
+  const manager = { role: 'manager', projectIds: ['PRJ-1'], clientIds: ['CL-1'] };
+  const baseContext = { accessibleEmployeeIds: new Set(), batchAssignments: [] };
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'outlets',
+    { op:'upsert', row:{ id:'OUT-FOREIGN', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'OUT-FOREIGN' }, existingProjectIds:['PRJ-2'] },
+  ), false);
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'outlets',
+    { op:'upsert', row:{ id:'OUT-OWN', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'OUT-OWN' }, existingProjectIds:['PRJ-1'] },
+  ), true);
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'outlets',
+    { op:'upsert', row:{ id:'OUT-UNSCOPED', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'OUT-UNSCOPED' }, existingProjectIds:[] },
+  ), false);
+});
+
 test('import gateway defers manager project membership and unsafe survey creator references', () => {
   const input = {
     snapshot: {
