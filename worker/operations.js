@@ -129,6 +129,8 @@ export function canonicalizeLegacySnapshot(snapshot = {}, organizationId = '') {
     assignmentsByEmployee.get(str(row.employeeId)).push(str(row.projectId));
   }
   for (const employee of data.employees) {
+    const employeeStatus = str(employee.status || employee.employmentStatus || employee.employment_status || 'active').toLowerCase();
+    if (employeeStatus !== 'active') continue;
     if (!assignmentsByEmployee.has(str(employee.id))) {
       const id = `ASN-MIG-${str(employee.id)}`;
       const row = { id, organizationId, employeeId: employee.id, projectId: fallbackProjectId, roleOnProject: 'sales', status: 'active', migrated: true };
