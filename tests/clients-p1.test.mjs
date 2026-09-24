@@ -51,5 +51,5 @@ test('Client P1 enforces canonical validation and uniqueness in Worker', async (
 
 test('Client P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.29/);
+  assert.match(sw, /proqtrack-v12\.30/);
 });
