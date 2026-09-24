@@ -16,7 +16,9 @@ export function activeProjectIdsForEmployee(assignments = [], employeeId = '') {
 }
 
 export function employeeSearchDocument(employee = {}, projects = []) {
+  const identity = [employee.employeeCode, employee.code, employee.id].map(value => String(value || '')).filter(Boolean);
   return [
+    ...identity,
     employee.name, employee.email, employee.area, employee.phone, employee.role,
     ...projects.flatMap(project => [project?.code, project?.name]),
   ].map(value => String(value || '')).join(' ').toLowerCase();
@@ -27,11 +29,39 @@ export function employeeMatchesFilters(employee = {}, filters = {}) {
   const role = String(filters.role || '');
   const status = String(filters.status || '');
   const projectId = String(filters.projectId || '');
+  const assignment = String(filters.assignment || '');
+  const login = String(filters.login || '');
   const projects = Array.isArray(employee.projectIds) ? employee.projectIds.map(String) : [];
   return (!search || String(employee.search || employee.searchDocument || '').toLowerCase().includes(search))
     && (!role || String(employee.role || '') === role)
     && (!status || String(employee.status || '') === status)
-    && (!projectId || projects.includes(projectId));
+    && (!projectId || projects.includes(projectId))
+    && (!assignment || (assignment === 'assigned' ? !!employee.assigned : !employee.assigned))
+    && (!login || (login === 'linked' ? !!employee.loginLinked : !employee.loginLinked));
+}
+
+export function employeeOperationalFlags(employee = {}, assignments = [], accounts = []) {
+  const activeAssignments = activeAssignmentsForEmployee(assignments, employee.id);
+  const account = accounts.find(row =>
+    String(row.employeeId || '') === String(employee.id || '') ||
+    (!!employee.authUserId && String(row.id || '') === String(employee.authUserId))
+  ) || null;
+  return {
+    assigned: activeAssignments.length > 0,
+    assignmentCount: activeAssignments.length,
+    loginLinked: !!account,
+    loginActive: !!account && String(account.status || 'active') === 'active',
+  };
+}
+
+export function employeeOperationalCounts(employees = [], assignments = [], accounts = []) {
+  const rows = employees.map(employee => ({ employee, flags:employeeOperationalFlags(employee, assignments, accounts) }));
+  return {
+    total:rows.length,
+    active:rows.filter(row => String(row.employee.status || '') === 'active').length,
+    unassigned:rows.filter(row => String(row.employee.status || '') === 'active' && !row.flags.assigned).length,
+    loginMissing:rows.filter(row => String(row.employee.status || '') === 'active' && !row.flags.loginLinked).length,
+  };
 }
 
 export function paginateEmployees(items = [], page = 1, pageSize = EMPLOYEE_PAGE_SIZE) {
