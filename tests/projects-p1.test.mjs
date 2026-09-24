@@ -52,5 +52,5 @@ test('Projects P1 persists module settings through authoritative project metadat
 
 test('Projects P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.31/);
+  assert.match(sw, /proqtrack-v12\.32/);
 });
