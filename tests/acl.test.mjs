@@ -182,13 +182,9 @@ test('deletes require a logged-in actor and do not save when the row is missing'
 test('sales cannot update another employee stock or cross-org intel', () => {
   prepare();
   login('manager@proqtrack.id');
-  const stock = createStock({
-    outletId: 'OUT001',
-    productId: 'PRD001',
-    quantity: 9,
-    minStock: 1,
-    updatedBy: 'EMP002',
-  });
+  const stock = getDB().stocks.find(row => row.organizationId === 'ORG-DEFAULT') || getDB().stocks[0];
+  assert.ok(stock);
+  stock.updatedBy = 'EMP002';
   const intel = getDB().competitorIntel[0];
   assert.ok(intel);
   intel.organizationId = 'ORG-OTHER';
