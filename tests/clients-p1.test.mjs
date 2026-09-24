@@ -8,7 +8,7 @@ test('Client P1 combines search and status filters instead of overwriting visibi
   const src = await read('src/types/index.js');
   assert.match(src, /id="clientSearch"/);
   assert.match(src, /id="clientStatusFilter"/);
-  assert.match(src, /filterClients\(\)/);
+  assert.match(src, /filterClients\((?:1)?\)/);
   assert.match(src, /matchesSearch && matchesStatus/);
 });
 
