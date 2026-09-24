@@ -110,7 +110,7 @@ test('P1 derived sale remains immutable and manual correction is void-not-delete
   assert.equal(deleted.error,'MANUAL_SALE_DELETE_FORBIDDEN');
 });
 
-function cycleEnv({ sourceCycle=null }={}) {
+function cycleEnv({ sourceCycle=null, currentStockQuantity=100 }={}) {
   return {
     DB:{
       prepare(sql){
@@ -128,7 +128,7 @@ function cycleEnv({ sourceCycle=null }={}) {
                 return null;
               },
               async all(){
-                if (/FROM core_stocks/.test(sql)) return { results:[{id:'STK-1',quantity:100,min_stock:5}] };
+                if (/FROM core_stocks/.test(sql)) return { results:[{id:'STK-1',quantity:currentStockQuantity,min_stock:5}] };
                 return { results:[] };
               },
             };
@@ -247,6 +247,7 @@ test('stability chained correction preserves original available-sales basis', as
     correctionOfCycleId:'IC-CORR-1',
   });
   const result = await validateInventoryCycleMutation(cycleEnv({
+    currentStockQuantity:7,
     sourceCycle:{
       id:'IC-CORR-1',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1',
       opening_qty:6,stock_in_qty:0,adjustment_qty:1,return_qty:0,damaged_qty:0,transfer_out_qty:0,
