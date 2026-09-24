@@ -1398,6 +1398,7 @@ window.PM = {
         PROJECT_CODE_CONFLICT:'Kode project harus unik.',
         PROJECT_INVALID_STATUS:'Status project tidak valid.',
         PROJECT_INVALID_TRANSITION:'Perubahan status project tidak diizinkan.',
+        PROJECT_ACTIVE_ASSIGNMENTS_REMAIN:'Project belum dapat difinalkan karena masih ada assignment aktif.',
         PROJECT_INVALID_CONTRACT_VALUE:'Nilai kontrak tidak valid.',
         PROJECT_INVALID_TARGET_VISITS:'Target visit tidak valid.',
         PROJECT_INVALID_TARGET_OUTLETS:'Target outlet tidak valid.',
