@@ -889,29 +889,46 @@ function renderMyTeam() {
       team.some((e) => e.id === v.employeeId) &&
       (!v.projectId || ids.has(v.projectId)),
   );
+  const members = team.filter((e) => e.id !== me?.id);
   return shell(
     "Tim Saya",
     "Sales di bawah supervisi dan project yang sama",
     `${kpis([
-      ["Anggota Tim", Math.max(0, team.length - 1)],
+      ["Anggota Tim", members.length],
       ["Project Aktif", ids.size],
       ["Kunjungan", visits.length],
       ["Selesai", visits.filter((v) => v.status === "completed").length],
-    ])}<div class="card"><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Karyawan</th><th>Area</th><th>Project</th><th>Kunjungan</th><th>Status</th></tr></thead><tbody>${team
-      .filter((e) => e.id !== me?.id)
+    ])}<div class="card">
+      <div class="pm-toolbar">
+        <select class="select" id="teamProjectFilter" aria-label="Filter project tim" data-pqt-onchange="PM.filterMyTeam()"><option value="">Semua project</option>${[...ids].map(id => `<option value="${esc(id)}">${esc(pm[id]?.code || id)} — ${esc(pm[id]?.name || '')}</option>`).join("")}</select>
+        <input class="input" id="teamSearch" placeholder="Cari nama atau area" aria-label="Cari anggota tim" data-pqt-oninput="PM.filterMyTeam()">
+      </div>
+      <div id="teamResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
+      <div class="visits-table-wrapper"><table class="table pm-team-table"><thead><tr><th>Karyawan</th><th>Area</th><th>Project</th><th>Supervisor</th><th>Kapasitas</th><th>Kunjungan</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="teamRows">${members
       .map((e) => {
-        const as = (db.projectAssignments || []).filter(
-          (a) =>
-            a.employeeId === e.id &&
-            a.status === "active" &&
-            ids.has(a.projectId),
+        const assignments = (db.projectAssignments || []).filter(
+          (a) => a.employeeId === e.id && a.status === "active" && ids.has(a.projectId),
         );
         const ev = visits.filter((v) => v.employeeId === e.id);
-        return `<tr><td><strong>${esc(e.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(e.role)}</div></td><td>${esc(e.area || "-")}</td><td>${as.map((a) => `<span class="pm-project-chip">${esc(pm[a.projectId]?.code || a.projectId)}</span>`).join("") || "-"}</td><td>${ev.filter((v) => v.status === "completed").length}/${ev.length}</td><td>${statusBadge(e.status || "active")}</td></tr>`;
+        const capacity = assignments.reduce((sum,a) => sum + Number(a.allocationPercent || 100),0);
+        const search = `${e.name || ''} ${e.area || ''} ${assignments.map(a => pm[a.projectId]?.code || '').join(' ')}`.toLowerCase();
+        return `<tr data-search="${esc(search)}" data-projects="${esc(assignments.map(a => a.projectId).join('|'))}">
+          <td data-label="Karyawan"><strong>${esc(e.name)}</strong><div class="pm-subtext">${esc(e.role)}</div></td>
+          <td data-label="Area">${esc(e.area || "-")}</td>
+          <td data-label="Project">${assignments.map((a) => `<span class="pm-project-chip">${esc(pm[a.projectId]?.code || a.projectId)}</span>`).join("") || "-"}</td>
+          <td data-label="Supervisor">${esc(me?.name || '-')}</td>
+          <td data-label="Kapasitas">${capacity}%</td>
+          <td data-label="Kunjungan">${ev.filter((v) => v.status === "completed").length}/${ev.length}</td>
+          <td data-label="Status">${statusBadge(e.status || "active")}</td>
+          <td data-label="Aksi"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button></td>
+        </tr>`;
       })
-      .join("")}</tbody></table></div></div>`,
+      .join("")}</tbody></table></div>
+      <div id="teamEmpty" class="pm-empty" hidden>Tidak ada anggota tim yang sesuai dengan filter.</div>
+    </div>`,
   );
 }
+
 function renderSupervisorCompare() {
   const db = viewDB(),
     ids = accessibleProjectIds();
@@ -1027,6 +1044,22 @@ window.PM = {
   clientPage(delta) {
     clientPage = Math.max(1, clientPage + Number(delta || 0));
     this.filterClients(clientPage);
+  },
+  filterMyTeam() {
+    const search = String(document.getElementById("teamSearch")?.value || "").trim().toLowerCase();
+    const projectId = String(document.getElementById("teamProjectFilter")?.value || "");
+    const rows = [...document.querySelectorAll("#teamRows tr")];
+    const matched = rows.filter(row => {
+      const projects = String(row.dataset.projects || "").split("|").filter(Boolean);
+      const visible = (!search || String(row.dataset.search || "").includes(search))
+        && (!projectId || projects.includes(projectId));
+      row.style.display = visible ? "" : "none";
+      return visible;
+    });
+    const summary = document.getElementById("teamResultSummary");
+    if (summary) summary.textContent = matched.length ? `${matched.length} anggota tim ditampilkan` : "Tidak ada anggota tim yang sesuai dengan filter.";
+    const empty = document.getElementById("teamEmpty");
+    if (empty) empty.hidden = matched.length !== 0;
   },
   filterRows(id, q) {
     q = q.toLowerCase();
