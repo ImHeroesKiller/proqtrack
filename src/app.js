@@ -1909,7 +1909,7 @@ window.FT.openEmployeeModal = function() {
           ${projects.map(p => `<option value="${esc(p.id)}">${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="label">Supervisor email (opsional)</label><input class="input" type="email" name="supervisorEmail" placeholder="supervisor@proqtrack.id"></div>
+      <div class="form-group"><label class="label">Supervisor email <span class="am-muted">(wajib untuk Field Sales)</span></label><input class="input" type="email" name="supervisorEmail" placeholder="supervisor@proqtrack.id"></div>
       <div class="form-group">
         <label class="label">Password Login Awal</label>
         <input class="input" type="password" name="password" minlength="16" autocomplete="new-password"
@@ -1946,6 +1946,10 @@ window.FT.createEmployee = async function(e) {
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
   data.joinDate = new Date().toISOString().slice(0, 10);
+  if (data.role === 'Field Sales' && !String(data.supervisorEmail || '').trim()) {
+    showToast('Supervisor wajib dipilih untuk Field Sales.', 'error');
+    return;
+  }
   try {
     data.photo = await photoFromEmployeeForm(form, '');
     delete data.photoFile;
