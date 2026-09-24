@@ -252,7 +252,7 @@ export function productPickerRows(kind, outletId, projectId = '') {
   return `<div id="${kind}Rows" data-project-id="${esc(projectId)}">
     ${productRow(kind, products, existing, 0)}
   </div>
-  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" data-pqt-onclick="FS.addProductRow('${kind}','${outletId}',${JSON.stringify(projectId)})">${appIcon('plus')} Tambah produk lain</button>`;
+  <button type="button" class="btn btn-secondary btn-sm" style="margin:8px 0" data-pqt-onclick="FS.addProductRow('${kind}','${outletId}')">${appIcon('plus')} Tambah produk lain</button>`;
 }
 
 function productRow(kind, products, existing, idx) {
