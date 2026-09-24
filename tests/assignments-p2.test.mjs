@@ -12,7 +12,11 @@ test('Assignment P2 adds combined filters pagination summary and empty state', a
   assert.match(src, /assignmentStatusFilter/);
   assert.match(src, /assignmentRoleFilter/);
   assert.match(src, /assignmentSearch/);
-  assert.match(src, /matchesSearch && matchesProject && matchesStatus && matchesRole/);
+  assert.match(src, /assignmentMatchesFilters/);
+  assert.match(helper, /\(!search \|\| searchDocument\.includes\(search\)\)/);
+  assert.match(helper, /\(!projectId \|\| String\(assignment\.projectId \|\| ''\) === projectId\)/);
+  assert.match(helper, /\(!status \|\| normalizeAssignmentStatus\(assignment\.status\) === status\)/);
+  assert.match(helper, /\(!assignmentRole \|\| String\(assignment\.roleOnProject \|\| assignment\.role \|\| ''\) === assignmentRole\)/);
   assert.match(src, /assignmentResultSummary/);
   assert.match(src, /assignmentEmpty/);
   assert.match(src, /assignmentPager/);
