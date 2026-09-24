@@ -1001,6 +1001,82 @@ async function validateEmployeeMutation(env, organizationId, row, existing = nul
   return null;
 }
 
+async function validateOutletMutation(env, organizationId, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  const id = str(row.id || existing?.id);
+  if (!id) return { error:'OUTLET_ID_REQUIRED', status:400 };
+
+  if (op === 'delete') {
+    const references = [
+      ['core_visits','outlet_id'],
+      ['core_product_sales','outlet_id'],
+      ['core_survey_responses','outlet_id'],
+      ['core_attendance_points','outlet_id'],
+      ['core_stocks','outlet_id'],
+      ['core_price_observations','outlet_id'],
+      ['core_competitor_intel','outlet_id'],
+    ];
+    let referenceCount = 0;
+    for (const [table,column] of references) {
+      const hit = await env.DB.prepare(
+        `SELECT COUNT(*) AS count FROM ${table} WHERE organization_id=? AND ${column}=?`
+      ).bind(organizationId,id).first();
+      referenceCount += Number(hit?.count || 0);
+    }
+    if (referenceCount > 0) {
+      return { error:'OUTLET_REFERENCED_USE_INACTIVE', status:409, referenceCount };
+    }
+    return null;
+  }
+
+  const name = str(row.name || existing?.name);
+  const clientId = str(row.clientId || row.client_id || existing?.client_id);
+  const projectIds = unique(row.projectIds?.length ? row.projectIds : context.existingProjectIds || []);
+  const status = str(row.status || existing?.status || 'active');
+  const lat = num(row.latitude ?? row.lat ?? existing?.latitude);
+  const lng = num(row.longitude ?? row.lng ?? existing?.longitude);
+  const radius = num(row.geofenceRadiusM ?? row.geofence_radius_m ?? existing?.geofence_radius_m);
+  const code = str(row.outletNumber || row.code || existing?.code || id);
+
+  if (!name) return { error:'OUTLET_NAME_REQUIRED', status:422 };
+  if (!clientId) return { error:'OUTLET_CLIENT_REQUIRED', status:422 };
+  if (!projectIds.length) return { error:'OUTLET_PROJECT_REQUIRED', status:422 };
+  if (!['active','inactive','archived'].includes(status)) return { error:'OUTLET_INVALID_STATUS', status:422 };
+  if (lat == null || lat < -90 || lat > 90) return { error:'OUTLET_INVALID_LATITUDE', status:422 };
+  if (lng == null || lng < -180 || lng > 180) return { error:'OUTLET_INVALID_LONGITUDE', status:422 };
+  if (radius != null && radius <= 0) return { error:'OUTLET_INVALID_GEOFENCE_RADIUS', status:422 };
+
+  for (const projectId of projectIds) {
+    const project = await env.DB.prepare(
+      'SELECT id,client_id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,projectId).first();
+    if (!project) return { error:'OUTLET_PROJECT_NOT_FOUND', status:422 };
+    if (str(project.client_id) !== clientId) return { error:'OUTLET_PROJECT_CLIENT_MISMATCH', status:409 };
+  }
+
+  const client = await env.DB.prepare(
+    'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,clientId).first();
+  if (!client) return { error:'OUTLET_CLIENT_NOT_FOUND', status:422 };
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id FROM core_outlets WHERE organization_id=? AND client_id=? AND lower(code)=lower(?) AND id<>? LIMIT 1'
+  ).bind(organizationId,clientId,code,id).first();
+  if (duplicate) return { error:'OUTLET_CODE_CONFLICT', status:409 };
+
+  row.id = id;
+  row.name = name;
+  row.clientId = clientId;
+  row.projectIds = projectIds;
+  row.status = status;
+  row.outletNumber = code;
+  row.code = code;
+  row.lat = lat;
+  row.lng = lng;
+  if (radius != null) row.geofenceRadiusM = radius;
+  return null;
+}
+
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
@@ -1175,6 +1251,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'employees' && op === 'upsert') {
       const employeeError = await validateEmployeeMutation(env, organizationId, row, existing, { batchAssignments });
       if (employeeError) return json({ error:employeeError.error, entity, id:row.id || null, remainingAssignments:employeeError.remainingAssignments }, employeeError.status || 422);
+    }
+    if (entity === 'outlets') {
+      const outletError = await validateOutletMutation(env, organizationId, row, existing, { op, existingProjectIds });
+      if (outletError) return json({ error:outletError.error, entity, id:row.id || null, referenceCount:outletError.referenceCount }, outletError.status || 422);
     }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
