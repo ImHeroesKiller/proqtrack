@@ -12,22 +12,28 @@ export function validCoordinatePair(latValue, lngValue) {
 export function visitLocationEvidence(visit = {}, outlet = null) {
   const checkIn = validCoordinatePair(visit.checkInLat, visit.checkInLng);
   if (checkIn) {
+    const source = visit.locationSource === 'device_gps' ? 'device_gps' : (visit.locationSource || 'checkin_coordinate');
+    const administrative = ['outlet_reference','administrative_entry','administrative_checkin'].includes(source);
+    const rawAccuracy = visit.checkInAccuracyM;
     return {
       ...checkIn,
-      source: visit.locationSource === 'device_gps' ? 'device_gps' : 'checkin_coordinate',
-      actual: true,
-      accuracyM: Number.isFinite(Number(visit.checkInAccuracyM)) ? Math.max(0, Number(visit.checkInAccuracyM)) : null,
+      source,
+      actual: !administrative,
+      accuracyM: rawAccuracy == null || rawAccuracy === '' ? null : (Number.isFinite(Number(rawAccuracy)) ? Math.max(0, Number(rawAccuracy)) : null),
       capturedAt: visit.checkInCapturedAt || null,
     };
   }
 
   const legacy = validCoordinatePair(visit.lat, visit.lng);
   if (legacy) {
+    const source = visit.locationSource || 'visit_coordinate';
+    const administrative = ['outlet_reference','administrative_entry','administrative_checkin'].includes(source);
+    const rawAccuracy = visit.accuracyM;
     return {
       ...legacy,
-      source: visit.locationSource || 'visit_coordinate',
-      actual: true,
-      accuracyM: Number.isFinite(Number(visit.accuracyM)) ? Math.max(0, Number(visit.accuracyM)) : null,
+      source,
+      actual: !administrative,
+      accuracyM: rawAccuracy == null || rawAccuracy === '' ? null : (Number.isFinite(Number(rawAccuracy)) ? Math.max(0, Number(rawAccuracy)) : null),
       capturedAt: visit.locationCapturedAt || visit.startedAt || null,
     };
   }
