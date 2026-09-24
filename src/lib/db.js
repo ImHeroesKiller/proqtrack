@@ -1395,17 +1395,67 @@ function assertOperationalContext(db, data, { product = false } = {}) {
   }
 }
 
+function normalizeOutletCoordinates(data = {}) {
+  const lat = data.lat != null && data.lat !== '' ? Number(data.lat) : null;
+  const lng = data.lng != null && data.lng !== '' ? Number(data.lng) : null;
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error('Latitude outlet tidak valid.');
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Longitude outlet tidak valid.');
+  return { lat, lng };
+}
+
+function validateOutletLocal(db, data = {}, existing = null) {
+  const scope = normalizeEntityScope(db, { ...(existing || {}), ...data });
+  if (!scope.projectIds.length) throw new Error('Outlet wajib terhubung ke project.');
+  const projects = scope.projectIds.map(id => db.projects?.find(project => project.id === id)).filter(Boolean);
+  if (projects.length !== scope.projectIds.length) throw new Error('Project outlet tidak valid.');
+  const clientIds = [...new Set(projects.map(project => project.clientId).filter(Boolean))];
+  if (clientIds.length !== 1 || scope.clientId !== clientIds[0]) throw new Error('Project dan klien outlet tidak konsisten.');
+  const name = sanitizePlainText(data.name ?? existing?.name);
+  if (!name) throw new Error('Nama outlet wajib diisi.');
+  const status = String(data.status ?? existing?.status ?? 'active');
+  if (!['active','inactive','archived'].includes(status)) throw new Error('Status outlet tidak valid.');
+  const coordinates = normalizeOutletCoordinates({
+    lat:data.lat ?? existing?.lat,
+    lng:data.lng ?? existing?.lng,
+  });
+  return { scope, name, status, ...coordinates };
+}
+
+export function outletReferenceSummary(id, db = getDB()) {
+  const sources = [
+    ['visits', db.visits],
+    ['sales', db.productSales],
+    ['stocks', db.stocks],
+    ['prices', db.priceObservations],
+    ['competitorIntel', db.competitorIntel],
+    ['fieldPhotos', db.fieldPhotos],
+    ['surveyResponses', db.surveyResponses],
+    ['attendancePoints', db.attendancePoints],
+  ];
+  const counts = Object.fromEntries(sources.map(([key, rows]) => [
+    key,
+    (rows || []).filter(row => row?.outletId === id).length,
+  ]));
+  return {
+    counts,
+    total:Object.values(counts).reduce((sum, value) => sum + value, 0),
+  };
+}
+
 export function createOutlet(data) {
   assertProjectAdmin();
   const db = getDB();
-  const scope = normalizeEntityScope(db, data);
-  const outletNumber = data.outletNumber || nextOutletNumber(db);
+  const validated = validateOutletLocal(db, data);
+  const outletNumber = sanitizePlainText(data.outletNumber || nextOutletNumber(db));
   const notes = data.notesKind === 'dropdown' ? (data.notesChoice || data.notes || '') : (data.notes || '');
   const outlet = {
-    id: uid('OUT'), status: data.status || 'active', ...withOrg(data), ...scope,
+    id: uid('OUT'),
+    status: validated.status,
+    ...withOrg(data),
+    ...validated.scope,
     outletNumber,
     code: outletNumber,
-    name: sanitizePlainText(data.name),
+    name: validated.name,
     address: sanitizePlainText(data.address),
     owner: sanitizePlainText(data.owner),
     phone: sanitizePlainText(data.phone),
@@ -1414,8 +1464,8 @@ export function createOutlet(data) {
     channel: sanitizePlainText(data.channel || ''),
     ownership: sanitizePlainText(data.ownership || ''),
     notes: sanitizePlainText(notes),
-    lat: data.lat != null && data.lat !== '' ? Number(data.lat) : null,
-    lng: data.lng != null && data.lng !== '' ? Number(data.lng) : null,
+    lat: validated.lat,
+    lng: validated.lng,
   };
   delete outlet.projectId;
   delete outlet.notesKind;
@@ -1430,15 +1480,26 @@ export function updateOutlet(id, data) {
   assertProjectAdmin();
   const db = getDB();
   const idx = db.outlets.findIndex(o => o.id === id);
-  if (idx === -1) return null;
-  const scope = normalizeEntityScope(db, { ...db.outlets[idx], ...data });
+  if (idx === -1) throw new Error('Outlet tidak ditemukan.');
+  const current = db.outlets[idx];
+  const validated = validateOutletLocal(db, data, current);
   db.outlets[idx] = {
-    ...db.outlets[idx], ...data, ...scope,
-    name: sanitizePlainText(data.name ?? db.outlets[idx].name),
-    address: sanitizePlainText(data.address ?? db.outlets[idx].address),
-    owner: sanitizePlainText(data.owner ?? db.outlets[idx].owner),
-    phone: sanitizePlainText(data.phone ?? db.outlets[idx].phone),
-    area: sanitizePlainText(data.area ?? db.outlets[idx].area),
+    ...current,
+    ...data,
+    ...validated.scope,
+    status:validated.status,
+    name:validated.name,
+    address:sanitizePlainText(data.address ?? current.address),
+    owner:sanitizePlainText(data.owner ?? current.owner),
+    phone:sanitizePlainText(data.phone ?? current.phone),
+    area:sanitizePlainText(data.area ?? current.area),
+    type:sanitizePlainText(data.type ?? current.type),
+    channel:sanitizePlainText(data.channel ?? current.channel),
+    ownership:sanitizePlainText(data.ownership ?? current.ownership),
+    notes:sanitizePlainText(data.notes ?? current.notes),
+    visitFrequency:sanitizePlainText(data.visitFrequency ?? current.visitFrequency),
+    lat:validated.lat,
+    lng:validated.lng,
   };
   delete db.outlets[idx].projectId;
   saveDB();
@@ -1448,8 +1509,17 @@ export function updateOutlet(id, data) {
 export function deleteOutlet(id) {
   assertProjectAdmin();
   const db = getDB();
-  db.outlets = db.outlets.filter(o => o.id !== id);
+  const idx = db.outlets.findIndex(o => o.id === id);
+  if (idx === -1) throw new Error('Outlet tidak ditemukan.');
+  const references = outletReferenceSummary(id, db);
+  if (references.total > 0) {
+    db.outlets[idx] = { ...db.outlets[idx], status:'inactive' };
+    saveDB();
+    return { deleted:false, deactivated:true, references };
+  }
+  db.outlets.splice(idx, 1);
   saveDB();
+  return { deleted:true, deactivated:false, references };
 }
 
 export function getOutletProposals() {
