@@ -614,7 +614,7 @@ function injectStyles() {
   if (document.getElementById("projectV7Styles")) return;
   const s = document.createElement("style");
   s.id = "projectV7Styles";
-  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}}`;
+  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}.pm-client-logo-img{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;border:1px solid #e8ebf1}.pm-subtext{font-size:11px;color:#94a3b8}.pm-sync{font-size:11px;color:#64748b;padding:5px 9px;border-radius:999px;background:#f1f5f9}.pm-sync-ok{color:#047857;background:#ecfdf5}.pm-sync-progress{color:#b45309;background:#fffbeb}.pm-sync-error{color:#b91c1c;background:#fef2f2}.pm-result-summary{font-size:12px;color:#64748b;margin:0 0 10px}.pm-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.pm-empty{text-align:center;padding:28px;color:#94a3b8}.pm-pic-list{display:grid;gap:8px}.pm-pic-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr auto;gap:8px;align-items:center}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}.pm-pic-row{grid-template-columns:1fr}.pm-client-table thead{display:none}.pm-client-table,.pm-client-table tbody,.pm-client-table tr,.pm-client-table td{display:block;width:100%}.pm-client-table tr{border:1px solid #e8ebf1;border-radius:14px;margin-bottom:10px;padding:10px}.pm-client-table td{border:0!important;padding:8px 4px!important;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.pm-client-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#94a3b8;min-width:82px}.pm-client-table td[data-label="Klien"]{display:block}.pm-client-table td[data-label="Klien"]::before{display:none}.pm-pager{justify-content:center}}`;
   document.head.appendChild(s);
 }
 function ensureNav() {
@@ -689,10 +689,43 @@ function statusBadge(v) {
 function kpis(items) {
   return `<div class="pm-grid">${items.map((x) => `<div class="pm-kpi"><div class="pm-kpi-label">${esc(x[0])}</div><div class="pm-kpi-value">${esc(x[1])}</div>${x[2] ? `<div class="pm-kpi-note">${esc(x[2])}</div>` : ""}</div>`).join("")}</div>`;
 }
+
+const CLIENT_PAGE_SIZE = 15;
+let clientPage = 1;
+function clientStatusLabel(value) {
+  return ({ active:'Aktif', prospect:'Prospect', inactive:'Nonaktif', archived:'Arsip' })[String(value || '')] || String(value || '-');
+}
+function normalizeWebsite(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const parsed = new URL(candidate);
+    return ['http:','https:'].includes(parsed.protocol) ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+}
+function clientSyncLabel() {
+  const cloud = cloudDataStatus();
+  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
+  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
+  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
+  return '<span class="pm-sync">Mode lokal</span>';
+}
+function additionalPicRows(pics = []) {
+  const rows = pics.length ? pics : [{ name:'', role:'', phone:'', email:'' }];
+  return rows.map((p) => `<div class="pm-pic-row">
+    <input class="input" name="additionalPicName" placeholder="Nama" value="${esc(p.name || '')}">
+    <input class="input" name="additionalPicRole" placeholder="Jabatan" value="${esc(p.role || '')}">
+    <input class="input" name="additionalPicPhone" placeholder="Telepon" value="${esc(p.phone || '')}">
+    <input class="input" type="email" name="additionalPicEmail" placeholder="Email" value="${esc(p.email || '')}">
+    <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="PM.removeAdditionalPic(this)">Hapus</button>
+  </div>`).join('');
+}
 function renderClients() {
-  const db = viewDB(),
-    rows = db.clients || [];
-  return shell(
+  const db = viewDB(), rows = db.clients || [];
+  const rendered = shell(
     "Klien",
     "Master perusahaan, PIC dan periode kerja sama",
     `${kpis([
@@ -700,19 +733,34 @@ function renderClients() {
       ["Aktif", rows.filter((x) => x.status === "active").length],
       ["Prospect", rows.filter((x) => x.status === "prospect").length],
       ["Project Terhubung", (db.projects || []).length],
-    ])}<div class="card"><div class="pm-toolbar">${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}<input class="input" id="clientSearch" placeholder="Cari klien, PIC, kota" aria-label="Cari klien" data-pqt-oninput="PM.filterClients()"><select class="select" id="clientStatusFilter" aria-label="Filter status klien" data-pqt-onchange="PM.filterClients()"><option value="">Semua status</option><option value="active">Aktif</option><option value="prospect">Prospect</option><option value="inactive">Nonaktif</option></select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows
-      .map(
-        (c) =>
-          `<tr data-status="${esc(c.status)}" data-search="${esc(`${c.name} ${c.picName} ${c.city}`.toLowerCase())}"><td><div class="pm-client-cell"><span class="pm-client-logo">${esc(
-            c.name
-              .split(" ")
-              .map((x) => x[0])
-              .slice(0, 2)
-              .join(""),
-          )}</span><div><strong>${esc(c.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.legalName || "")}</div></div></div></td><td>${esc(c.industry)}</td><td><strong>${esc(c.picName || "-")}</strong><div style="font-size:11px;color:#94a3b8">${esc(c.picRole || "")}</div></td><td>${esc([c.city, c.province].filter(Boolean).join(", "))}</td><td>${(db.projects || []).filter((p) => p.clientId === c.id).length}</td><td>${statusBadge(c.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewClient('${c.id}')">${svg("eye")} Detail</button>${canManageClients() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.openClient('${c.id}')">${svg("edit")} Edit</button>` : ""}</div></td></tr>`,
-      )
-      .join("")}</tbody></table></div></div>`,
+    ])}<div class="card">
+      <div class="pm-toolbar">
+        ${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}
+        <input class="input" id="clientSearch" placeholder="Cari klien, PIC, kota" aria-label="Cari klien" data-pqt-oninput="PM.filterClients(1)">
+        <select class="select" id="clientStatusFilter" aria-label="Filter status klien" data-pqt-onchange="PM.filterClients(1)"><option value="">Semua status</option><option value="active">Aktif</option><option value="prospect">Prospect</option><option value="inactive">Nonaktif</option></select>
+        <span id="clientSyncState">${clientSyncLabel()}</span>
+      </div>
+      <div id="clientResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
+      <div class="visits-table-wrapper"><table class="table pm-client-table"><thead><tr><th>Klien</th><th>Industri</th><th>PIC Utama</th><th>Lokasi</th><th>Project</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="clientRows">${rows.map((c) => {
+        const projectCount=(db.projects || []).filter((p) => p.clientId === c.id).length;
+        const initials=String(c.name || '?').split(" ").map((x) => x[0]).slice(0,2).join("");
+        const logo=c.logoUrl || c.logo || '';
+        return `<tr data-client-id="${esc(c.id)}" data-status="${esc(c.status)}" data-search="${esc(`${c.name} ${c.legalName || ''} ${c.picName || ''} ${c.city || ''} ${c.province || ''}`.toLowerCase())}">
+          <td data-label="Klien"><div class="pm-client-cell">${logo ? `<img class="pm-client-logo-img" alt="" src="${esc(logo)}">` : `<span class="pm-client-logo">${esc(initials)}</span>`}<div><strong>${esc(c.name)}</strong><div class="pm-subtext">${esc(c.legalName || "")}</div></div></div></td>
+          <td data-label="Industri">${esc(c.industry || '-')}</td>
+          <td data-label="PIC Utama"><strong>${esc(c.picName || "-")}</strong><div class="pm-subtext">${esc(c.picRole || "")}</div></td>
+          <td data-label="Lokasi">${esc([c.city,c.province].filter(Boolean).join(", ") || '-')}</td>
+          <td data-label="Project">${projectCount}</td>
+          <td data-label="Status"><span class="pm-badge ${esc(c.status)}">${esc(clientStatusLabel(c.status))}</span></td>
+          <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewClient('${c.id}')">${svg("eye")} Detail</button>${canManageClients() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.openClient('${c.id}')">${svg("edit")} Edit</button>` : ""}</div></td>
+        </tr>`;
+      }).join("")}</tbody></table></div>
+      <div id="clientEmpty" class="pm-empty" hidden>Tidak ada klien yang sesuai dengan filter.</div>
+      <div id="clientPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.clientPage(-1)">Sebelumnya</button><span id="clientPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.clientPage(1)">Berikutnya</button></div>
+    </div>`,
   );
+  queueMicrotask(() => window.PM?.filterClients?.(clientPage));
+  return rendered;
 }
 function renderProjects(readOnly = false) {
   const db = viewDB(),
@@ -916,6 +964,22 @@ window.PM = {
   close() {
     document.getElementById("pmModal")?.remove();
   },
+  addAdditionalPic() {
+    const root = document.getElementById("additionalPicRows");
+    if (!root) return;
+    root.insertAdjacentHTML("beforeend", additionalPicRows([{ name:"", role:"", phone:"", email:"" }]));
+  },
+  removeAdditionalPic(button) {
+    const row = button?.closest?.(".pm-pic-row");
+    const root = document.getElementById("additionalPicRows");
+    if (!row || !root) return;
+    if (root.querySelectorAll(".pm-pic-row").length === 1) row.querySelectorAll("input").forEach((input) => { input.value = ""; });
+    else row.remove();
+  },
+  clientPage(delta) {
+    clientPage = Math.max(1, clientPage + Number(delta || 0));
+    this.filterClients(clientPage);
+  },
   filterRows(id, q) {
     q = q.toLowerCase();
     document
@@ -927,14 +991,30 @@ window.PM = {
             : "none"),
       );
   },
-  filterClients() {
+  filterClients(page = clientPage) {
     const q = String(document.getElementById("clientSearch")?.value || "").trim().toLowerCase();
     const status = String(document.getElementById("clientStatusFilter")?.value || "");
-    document.querySelectorAll("#clientRows tr").forEach((row) => {
+    const rows = [...document.querySelectorAll("#clientRows tr")];
+    const matched = rows.filter((row) => {
       const matchesSearch = !q || String(row.dataset.search || "").includes(q);
       const matchesStatus = !status || row.dataset.status === status;
-      row.style.display = matchesSearch && matchesStatus ? "" : "none";
+      return matchesSearch && matchesStatus;
     });
+    const pageCount = Math.max(1, Math.ceil(matched.length / CLIENT_PAGE_SIZE));
+    clientPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
+    const start = (clientPage - 1) * CLIENT_PAGE_SIZE;
+    const visible = new Set(matched.slice(start, start + CLIENT_PAGE_SIZE));
+    rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
+    const summary = document.getElementById("clientResultSummary");
+    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + CLIENT_PAGE_SIZE, matched.length)} dari ${matched.length} klien` : "Tidak ada klien yang sesuai dengan filter.";
+    const empty = document.getElementById("clientEmpty");
+    if (empty) empty.hidden = matched.length !== 0;
+    const pager = document.getElementById("clientPager");
+    if (pager) pager.hidden = matched.length <= CLIENT_PAGE_SIZE;
+    const label = document.getElementById("clientPageLabel");
+    if (label) label.textContent = `Halaman ${clientPage} / ${pageCount}`;
+    const sync = document.getElementById("clientSyncState");
+    if (sync) sync.innerHTML = clientSyncLabel();
   },
   filterStatus(id, v) {
     document
@@ -964,7 +1044,7 @@ window.PM = {
       pics = c.additionalPics || [];
     modal(
       id ? "Edit Klien" : "Tambah Klien",
-      `<form class="pm-form" data-pqt-onsubmit="PM.saveClient(event,'${id}')"><div class="full"><label class="label">Nama Perusahaan</label><input class="input" name="name" value="${esc(c.name || "")}" required></div><div><label class="label">Nama Legal</label><input class="input" name="legalName" value="${esc(c.legalName || "")}"></div><div><label class="label">Industri</label><select class="select" name="industry">${["FMCG", "Farmasi", "Bangunan", "Retail", "F&B", "Telco", "Lainnya"].map((x) => `<option ${c.industry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">NPWP / SIUP</label><input class="input" name="npwp" value="${esc(c.npwp || "")}"></div><div><label class="label">Status</label><select class="select" name="status">${["active", "inactive", "prospect"].map((x) => `<option ${c.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div class="full"><label class="label">Alamat</label><textarea class="textarea" name="address">${esc(c.address || "")}</textarea></div><div><label class="label">Kota</label><input class="input" name="city" value="${esc(c.city || "")}"></div><div><label class="label">Provinsi</label><input class="input" name="province" value="${esc(c.province || "")}"></div><div class="full"><label class="label">Website</label><input class="input" name="website" value="${esc(c.website || "")}"></div><div class="full"><label class="label">Logo klien</label><input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp"><input type="hidden" name="logoUrl" value="${esc(c.logoUrl || c.logo || "")}">${c.logoUrl || c.logo ? `<img alt="Logo" src="${esc(c.logoUrl || c.logo)}" style="max-height:48px;margin-top:8px">` : ""}</div><div><label class="label">PIC Utama</label><input class="input" name="picName" value="${esc(c.picName || "")}" required></div><div><label class="label">Jabatan PIC</label><input class="input" name="picRole" value="${esc(c.picRole || "")}"></div><div><label class="label">Telepon PIC</label><input class="input" name="picPhone" value="${esc(c.picPhone || "")}"></div><div><label class="label">Email PIC</label><input class="input" type="email" name="picEmail" value="${esc(c.picEmail || "")}"></div><div><label class="label">Mulai Kerja Sama</label><input class="input" type="date" name="cooperationStart" value="${esc(c.cooperationStart || "")}"></div><div><label class="label">Akhir Kerja Sama</label><input class="input" type="date" name="cooperationEnd" value="${esc(c.cooperationEnd || "")}"></div><div class="full"><label class="label">PIC Tambahan (Nama | Jabatan | Telepon | Email)</label><textarea class="textarea" name="additionalPics">${esc(pics.map((p) => [p.name, p.role, p.phone, p.email].join(" | ")).join("\n"))}</textarea></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Klien</button></div></form>`,
+      `<form class="pm-form" data-pqt-onsubmit="PM.saveClient(event,'${id}')"><div class="full"><label class="label">Nama Perusahaan</label><input class="input" name="name" value="${esc(c.name || "")}" required></div><div><label class="label">Nama Legal</label><input class="input" name="legalName" value="${esc(c.legalName || "")}"></div><div><label class="label">Industri</label><select class="select" name="industry">${["FMCG", "Farmasi", "Bangunan", "Retail", "F&B", "Telco", "Lainnya"].map((x) => `<option ${c.industry === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">NPWP / SIUP</label><input class="input" name="npwp" value="${esc(c.npwp || "")}"></div><div><label class="label">Status</label><select class="select" name="status">${["active", "inactive", "prospect"].map((x) => `<option ${c.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div class="full"><label class="label">Alamat</label><textarea class="textarea" name="address">${esc(c.address || "")}</textarea></div><div><label class="label">Kota</label><input class="input" name="city" value="${esc(c.city || "")}"></div><div><label class="label">Provinsi</label><input class="input" name="province" value="${esc(c.province || "")}"></div><div class="full"><label class="label">Website</label><input class="input" type="url" name="website" placeholder="https://example.com" value="${esc(c.website || "")}"><div class="pm-subtext">Boleh ditulis tanpa https://, sistem akan menormalkan URL.</div></div><div class="full"><label class="label">Logo klien</label><input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp"><input type="hidden" name="logoUrl" value="${esc(c.logoUrl || c.logo || "")}">${c.logoUrl || c.logo ? `<img alt="Logo" src="${esc(c.logoUrl || c.logo)}" style="max-height:48px;margin-top:8px">` : ""}</div><div><label class="label">PIC Utama</label><input class="input" name="picName" value="${esc(c.picName || "")}" required></div><div><label class="label">Jabatan PIC</label><input class="input" name="picRole" value="${esc(c.picRole || "")}"></div><div><label class="label">Telepon PIC</label><input class="input" name="picPhone" value="${esc(c.picPhone || "")}"></div><div><label class="label">Email PIC</label><input class="input" type="email" name="picEmail" value="${esc(c.picEmail || "")}"></div><div><label class="label">Mulai Kerja Sama</label><input class="input" type="date" name="cooperationStart" value="${esc(c.cooperationStart || "")}"></div><div><label class="label">Akhir Kerja Sama</label><input class="input" type="date" name="cooperationEnd" value="${esc(c.cooperationEnd || "")}"></div><div class="full"><label class="label">PIC Tambahan</label><div id="additionalPicRows" class="pm-pic-list">${additionalPicRows(pics)}</div><button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" data-pqt-onclick="PM.addAdditionalPic()">+ Tambah PIC</button></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(c.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Klien</button></div></form>`,
     );
   },
   async saveClient(e, id) {
@@ -974,16 +1054,12 @@ window.PM = {
       fd = new FormData(e.target),
       rows = db.clients || [],
       old = rows.find((x) => x.id === id),
-      pics = formValue(fd, "additionalPics")
-        .split("\n")
-        .map((x) => x.trim())
-        .filter(Boolean)
-        .map((x) => {
-          const [name = "", role = "", phone = "", email = ""] = x
-            .split("|")
-            .map((y) => y.trim());
-          return { name, role, phone, email };
-        });
+      pics = fd.getAll("additionalPicName").map((name, index) => ({
+        name:String(name || '').trim(),
+        role:String(fd.getAll("additionalPicRole")[index] || '').trim(),
+        phone:String(fd.getAll("additionalPicPhone")[index] || '').trim(),
+        email:String(fd.getAll("additionalPicEmail")[index] || '').trim(),
+      })).filter((pic) => pic.name || pic.role || pic.phone || pic.email);
     const name = formValue(fd, "name");
     const legalName = formValue(fd, "legalName");
     const cooperationStart = formValue(fd, "cooperationStart");
@@ -1013,6 +1089,11 @@ window.PM = {
       alert("Tanggal akhir kerja sama tidak boleh sebelum tanggal mulai.");
       return;
     }
+    const websiteInput = formValue(fd, "website");
+    if (websiteInput && !normalizeWebsite(websiteInput)) {
+      window.showToast?.("Alamat website tidak valid.", "error");
+      return;
+    }
     const clientId = id || uid("CL");
     const data = {
       id: clientId,
@@ -1024,7 +1105,7 @@ window.PM = {
       address: formValue(fd, "address"),
       city: formValue(fd, "city"),
       province: formValue(fd, "province"),
-      website: formValue(fd, "website"),
+      website: normalizeWebsite(formValue(fd, "website")),
       notes: formValue(fd, "notes"),
       status: formValue(fd, "status"),
       picName: formValue(fd, "picName"),
@@ -1043,6 +1124,7 @@ window.PM = {
     };
     const submit = e.target.querySelector('button[type="submit"], button:not([type])');
     if (submit) submit.disabled = true;
+    let newlyUploadedKey = "";
     try {
       const file = e.target.querySelector('[name="logoFile"]')?.files?.[0];
       if (file) {
@@ -1052,6 +1134,7 @@ window.PM = {
         data.logo = uploaded.url;
         data.r2Key = uploaded.key;
         data.logoStorage = 'r2';
+        newlyUploadedKey = uploaded.key;
       }
 
       const cloud = cloudDataStatus();
@@ -1069,6 +1152,9 @@ window.PM = {
       renderClients();
       window.showToast?.('Data klien tersimpan dan tersinkron.', 'success');
     } catch (error) {
+      if (newlyUploadedKey) {
+        window.R2?.deleteUploadedAsset?.(newlyUploadedKey).catch((cleanupError) => console.warn('client_logo_cleanup_failed', cleanupError?.message || cleanupError));
+      }
       const message = {
         REVISION_CONFLICT:'Data berubah di server. Muat ulang data lalu coba simpan kembali.',
         CLIENT_NAME_REQUIRED:'Nama klien wajib diisi.',
@@ -1093,9 +1179,24 @@ window.PM = {
       c = db.clients.find((x) => x.id === id),
       projects = db.projects.filter((p) => p.clientId === id);
     if (!c) return;
+    const website = normalizeWebsite(c.website);
     modal(
       c.name,
-      `<div class="pm-detail-grid"><div class="pm-detail-card"><div class="pm-detail-label">Nama Legal</div><div class="pm-detail-value">${esc(c.legalName || "-")}</div></div><div class="pm-detail-card"><div class="pm-detail-label">Industri / Status</div><div class="pm-detail-value">${esc(c.industry)} · ${statusBadge(c.status)}</div></div><div class="pm-detail-card"><div class="pm-detail-label">Lokasi</div><div class="pm-detail-value">${esc(c.address || "-")}\n${esc([c.city, c.province].filter(Boolean).join(", "))}</div></div><div class="pm-detail-card"><div class="pm-detail-label">Periode Kerja Sama</div><div class="pm-detail-value">${dateLabel(c.cooperationStart)} – ${dateLabel(c.cooperationEnd)}</div></div><div class="pm-detail-card"><div class="pm-detail-label">PIC Utama</div><div class="pm-detail-value">${esc(c.picName || "-")}\n${esc(c.picRole || "")}\n${esc(c.picPhone || "")} · ${esc(c.picEmail || "")}</div></div><div class="pm-detail-card"><div class="pm-detail-label">PIC Tambahan</div><div class="pm-detail-value">${(c.additionalPics || []).map((p) => `${esc(p.name)} — ${esc(p.role)}`).join("<br>") || "-"}</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Project</div><div class="pm-detail-value">${projects.map((p) => `<span class="pm-project-chip">${esc(p.code)} — ${esc(p.name)}</span>`).join("") || "-"}</div></div></div>`,
+      `<div class="pm-detail-grid">
+        ${c.logoUrl || c.logo ? `<div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Logo</div><img src="${esc(c.logoUrl || c.logo)}" alt="Logo ${esc(c.name)}" style="max-width:160px;max-height:72px;object-fit:contain;margin-top:8px"></div>` : ""}
+        <div class="pm-detail-card"><div class="pm-detail-label">Nama Legal</div><div class="pm-detail-value">${esc(c.legalName || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Industri / Status</div><div class="pm-detail-value">${esc(c.industry || "-")} · <span class="pm-badge ${esc(c.status)}">${esc(clientStatusLabel(c.status))}</span></div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">NPWP / SIUP</div><div class="pm-detail-value">${esc(c.npwp || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Website</div><div class="pm-detail-value">${website ? `<a href="${esc(website)}" target="_blank" rel="noopener noreferrer">${esc(c.website)}</a>` : "-"}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Lokasi</div><div class="pm-detail-value">${esc(c.address || "-")}\n${esc([c.city,c.province].filter(Boolean).join(", ") || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Periode Kerja Sama</div><div class="pm-detail-value">${dateLabel(c.cooperationStart)} – ${dateLabel(c.cooperationEnd)}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">PIC Utama</div><div class="pm-detail-value">${esc(c.picName || "-")}\n${esc(c.picRole || "")}\n${esc(c.picPhone || "")}${c.picEmail ? ` · ${esc(c.picEmail)}` : ""}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">PIC Tambahan</div><div class="pm-detail-value">${(c.additionalPics || []).map((p) => `${esc(p.name || "-")} — ${esc(p.role || "")}<br><span class="pm-subtext">${esc(p.phone || "")}${p.email ? ` · ${esc(p.email)}` : ""}</span>`).join("<br>") || "-"}</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Project Terhubung</div><div class="pm-detail-value">${projects.map((p) => `<span class="pm-project-chip">${esc(p.code)} — ${esc(p.name)}</span>`).join("") || "-"}</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Catatan</div><div class="pm-detail-value">${esc(c.notes || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Dibuat</div><div class="pm-detail-value">${dateLabel(c.createdAt)}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Terakhir diperbarui</div><div class="pm-detail-value">${dateLabel(c.updatedAt)}</div></div>
+      </div>`,
     );
   },
   openProject(id = "") {
