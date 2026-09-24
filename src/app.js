@@ -35,7 +35,7 @@ import {
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
   normalizeAttendanceStatus,
 } from './lib/utils.js';
-import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData, cloudDataStatus } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
@@ -1835,7 +1835,7 @@ function renderEmployees() {
               const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
               const search = employeeSearchDocument(e, projects);
               return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}">
-                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
+                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
                 <td data-label="Role">${roleBadge(e.role)}</td>
                 <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
                 <td data-label="Area">${esc(e.area || '—')}</td>
@@ -1892,16 +1892,16 @@ window.FT.filterEmployees = function(page = employeePage) {
   if (sync) sync.innerHTML = employeeSyncLabel();
 };
 function employeePhotoField(current = '') {
-  const src = current || '';
+  const src = safePhotoUrl(current || '');
   return `
     <div class="form-group emp-photo-field">
       <label class="label">Foto karyawan</label>
       <div class="employee-photo-editor">
-        <img class="employee-photo-preview" alt="Preview" src="${src || ''}" onerror="this.style.opacity=.3">
+        <img class="employee-photo-preview" alt="Preview" src="${esc(src)}" onerror="this.style.opacity=.3">
         <div>
           <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" data-pqt-onchange="FT.previewEmployeePhoto(this)">
           <input type="hidden" name="photo" value="${esc(src)}">
-          <div class="employee-photo-help">Gunakan satu foto profil yang jelas.</div>
+          <div class="employee-photo-help">JPG/PNG/WebP. Foto dikompresi lalu disimpan di cloud storage.</div>
         </div>
       </div>
     </div>`;
@@ -1913,10 +1913,32 @@ window.FT.previewEmployeePhoto = function(input) {
   if (file && preview) preview.src = URL.createObjectURL(file);
 };
 
-async function photoFromEmployeeForm(form, fallback = '') {
+function employeePhotoObjectKey(value = '') {
+  const text = String(value || '').trim();
+  const marker = '/api/files/';
+  const index = text.indexOf(marker);
+  if (index < 0) return '';
+  try { return decodeURIComponent(text.slice(index + marker.length).split(/[?#]/)[0]); }
+  catch { return ''; }
+}
+
+async function employeePhotoFromForm(form, { fallback = '', projectId = '', employeeCode = '' } = {}) {
   const file = form.querySelector('input[name="photoFile"]')?.files?.[0];
-  if (file) return compressImage(file, { maxPx: 320, quality: 0.82 });
-  return form.querySelector('input[name="photo"]')?.value || fallback;
+  const stored = form.querySelector('input[name="photo"]')?.value || fallback || '';
+  if (!file && !String(stored).startsWith('data:image/')) return { url:stored, key:'', uploaded:false };
+  const source = file || await fetch(stored).then(response => response.blob());
+  const compressed = await compressImage(source, { maxPx:480, quality:0.82 });
+  const blob = await fetch(compressed).then(response => response.blob());
+  const safeName = String(employeeCode || 'employee').replace(/[^a-zA-Z0-9_-]+/g,'-');
+  const uploadFile = new File([blob], `${safeName}.jpg`, { type:'image/jpeg' });
+  const uploaded = await uploadAsset(uploadFile, { category:'employee-profile', projectId:projectId || 'general', name:uploadFile.name });
+  return { url:uploaded.url, key:uploaded.key, uploaded:true };
+}
+
+async function cleanupEmployeePhoto(key) {
+  if (!key) return;
+  try { await deleteUploadedAsset(key); }
+  catch (error) { console.warn('employee_photo_cleanup_failed', error?.message || error); }
 }
 
 window.FT.openEmployeeModal = function() {
@@ -1931,7 +1953,7 @@ window.FT.openEmployeeModal = function() {
   }
   openModal('Tambah Karyawan', `
     <form data-pqt-onsubmit="FT.createEmployee(event)">
-      ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
+      ${employeePhotoField('')}
       <div class="form-row">
         <div class="form-group"><label class="label">Kode Karyawan</label><input class="input" name="employeeCode" required placeholder="EMP-001"></div>
         <div class="form-group"><label class="label">Nama Lengkap</label><input class="input" name="name" required></div>
@@ -1951,8 +1973,8 @@ window.FT.openEmployeeModal = function() {
       <div class="form-group">
         <label class="label">Password Login Awal</label>
         <input class="input" type="password" name="password" minlength="16" autocomplete="new-password"
-          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{16,}" required>
-        <div class="am-muted">Minimal 16 karakter, huruf besar, huruf kecil, angka, dan simbol.</div>
+          pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{16,}">
+        <div class="am-muted">Diwajibkan hanya jika email belum memiliki akun. Minimal 16 karakter, huruf besar, huruf kecil, angka, dan simbol.</div>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1980,22 +2002,50 @@ window.FT.createEmployee = async function(e) {
   e.preventDefault();
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
   data.joinDate = new Date().toISOString().slice(0, 10);
+  data.status = 'active';
   if (data.role === 'Field Sales' && !String(data.supervisorEmail || '').trim()) {
     showToast('Supervisor wajib dipilih untuk Field Sales.', 'error');
     return;
   }
+  let uploadedPhoto = null;
   try {
-    data.photo = await photoFromEmployeeForm(form, '');
+    if (submit) submit.disabled = true;
+    const { checked } = await window.BulkEmployees.previewSingleEmployee({ ...data, photo:'' });
+    if (!checked?.valid) {
+      const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
+      error.code = checked?.errors?.[0] || 'VALIDATION_FAILED';
+      throw error;
+    }
+    if (checked.loginAction === 'create' && !String(data.password || '')) {
+      const password = form.elements.password;
+      if (password) {
+        password.setCustomValidity('Password wajib untuk akun baru.');
+        password.reportValidity();
+        password.setCustomValidity('');
+      }
+      return;
+    }
+    uploadedPhoto = await employeePhotoFromForm(form, { projectId:data.projectId, employeeCode:data.employeeCode });
+    data.photo = uploadedPhoto.url;
     delete data.photoFile;
     await window.BulkEmployees.createSingleEmployee(data);
-    closeModal(); showToast('Karyawan, penugasan, dan akun login berhasil dibuat', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    closeModal();
+    showToast(checked.loginAction === 'create'
+      ? 'Karyawan, penugasan, dan akun login berhasil dibuat'
+      : 'Karyawan berhasil dibuat dan akun login existing berhasil dihubungkan', 'success');
+    render();
+  } catch (error) {
+    if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
+    showToast(error.message || String(error), 'error');
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
 };
-
 window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const current = getEmployees().find(row => row.id === id);
@@ -2050,9 +2100,9 @@ function renderEmployeeDetail(id) {
           <div style="margin-top:8px;">${statusBadge(emp.status)}</div>
         </div>
         <div class="detail-grid">
-          <div class="detail-label">ID</div><div class="detail-value">${emp.id}</div>
+          <div class="detail-label">ID</div><div class="detail-value">${esc(emp.id)}</div>
           <div class="detail-label">Email</div><div class="detail-value">${esc(emp.email)}</div>
-          <div class="detail-label">Telepon</div><div class="detail-value">${emp.phone}</div>
+          <div class="detail-label">Telepon</div><div class="detail-value">${esc(emp.phone || '—')}</div>
           <div class="detail-label">Area</div><div class="detail-value">${esc(emp.area)}</div>
           <div class="detail-label">Bergabung</div><div class="detail-value">${formatDate(emp.joinDate)}</div>
           <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(emp.lat)) ? `${Number(emp.lat).toFixed(4)}, ${Number(emp.lng).toFixed(4)}` : '—'}</div>
@@ -2090,8 +2140,8 @@ function renderEmployeeDetail(id) {
               ${visits.map(v => { const o = outletMap[v.outletId]; return `
                 <tr>
                   <td>${formatDateShort(v.date)}</td>
-                  <td>${o ? outletIcon(o.type)+' '+o.name : '-'}</td>
-                  <td>${v.checkInTime || '-'}</td>
+                  <td>${o ? outletIcon(o.type)+' '+esc(o.name) : '-'}</td>
+                  <td>${esc(v.checkInTime || '-')}</td>
                   <td>${statusBadge(v.status)}</td>
                 </tr>
               `; }).join('')}
@@ -2121,7 +2171,7 @@ window.FT.editEmployee = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Monthly sales target (Rp)</label><input class="input" type="number" name="salesTargetAmount" min="0" value="${emp.salesTargetAmount || 0}"></div>
-        <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${emp.status==='active'?'selected':''}>Aktif</option><option value="inactive" ${emp.status==='inactive'?'selected':''}>Nonaktif</option></select></div>
+        <div class="form-group"><label class="label">Status</label><input class="input" value="${esc(emp.status === 'active' ? 'Aktif' : emp.status === 'terminated' ? 'Berakhir' : 'Nonaktif')}" readonly><div class="am-muted">Status tidak diubah dari form Edit. Gunakan aksi Nonaktifkan atau flow staffing khusus.</div></div>
       </div>
       <div class="form-group"><label class="label">Attendance point</label>
         <select class="select" name="attendancePointId">
@@ -2139,25 +2189,39 @@ window.FT.editEmployee = function(id) {
 
 window.FT.updateEmployee = async function(e, id) {
   e.preventDefault();
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
   const current = getEmployees().find(x => x.id === id);
+  if (!current) return;
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
+  data.status = current.status;
   delete data.password;
   delete data.lat;
   delete data.lng;
+  let uploadedPhoto = null;
   try {
-    data.photo = await photoFromEmployeeForm(form, current?.photo || '');
-    delete data.photoFile;
-    data.employeeCode = current?.employeeCode || current?.code || id;
+    if (submit) submit.disabled = true;
+    data.employeeCode = current.employeeCode || current.code || id;
     data.projectId = '';
-    data.joinDate = current?.joinDate || '';
+    data.joinDate = current.joinDate || '';
+    const photoProjectId = employeeProjectIds(id)[0] || 'general';
+    uploadedPhoto = await employeePhotoFromForm(form, { fallback:current.photo || '', projectId:photoProjectId, employeeCode:data.employeeCode });
+    data.photo = uploadedPhoto.url;
+    delete data.photoFile;
     await window.BulkEmployees.updateSingleEmployee(data);
+    const oldKey = uploadedPhoto?.uploaded ? employeePhotoObjectKey(current.photo) : '';
+    if (oldKey && oldKey !== uploadedPhoto.key) await cleanupEmployeePhoto(oldKey);
     closeModal(); showToast('Data operasional karyawan berhasil diperbarui', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+  } catch (error) {
+    if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
+    showToast(error.message || String(error), 'error');
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
 };
-
 // ===== Outlets Page =====
 function renderOutlets() {
   const outlets = getOutlets();

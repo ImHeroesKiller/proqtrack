@@ -972,6 +972,7 @@ async function validateEmployeeMutation(env, organizationId, row, existing = nul
     }
     const currentStatus = str(existing.employment_status);
     if (currentStatus === 'terminated' && status !== 'terminated') return { error:'EMPLOYEE_TERMINATED_FINAL', status:409 };
+    if (currentStatus !== 'active' && status === 'active') return { error:'EMPLOYEE_REACTIVATION_REQUIRES_STAFFING_FLOW', status:409 };
     if (status !== 'active' && currentStatus === 'active') {
       const activeAssignments = await allRows(env.DB.prepare(
         "SELECT id,project_id FROM core_employee_project_assignments WHERE organization_id=? AND employee_id=? AND status='active'"

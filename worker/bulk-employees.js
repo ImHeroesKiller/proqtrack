@@ -128,6 +128,7 @@ function validateRows(rows, ctx, claims) {
     if (!row.employeeCode) errors.push('EMPLOYEE_CODE_REQUIRED');
     if (!row.fullName) errors.push('FULL_NAME_REQUIRED');
     if (!row.role) errors.push('ROLE_INVALID');
+    if (String(row.photo || '').startsWith('data:')) errors.push('EMPLOYEE_PHOTO_MUST_USE_STORAGE');
     if (!row.status) errors.push('STATUS_INVALID');
     if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('EMAIL_INVALID');
     if (row.createLogin && !row.email) errors.push('EMAIL_REQUIRED_FOR_LOGIN');
@@ -161,6 +162,9 @@ function validateRows(rows, ctx, claims) {
       || (!existingRole && assignmentRoles.size && !assignmentRoles.has(row.role))
     )) {
       errors.push('EMPLOYEE_ROLE_CHANGE_REQUIRES_ASSIGNMENT_FLOW');
+    }
+    if (existing && String(existing.employment_status || '') !== 'active' && row.status === 'active') {
+      errors.push('EMPLOYEE_REACTIVATION_REQUIRES_STAFFING_FLOW');
     }
     if (!existing && !row.projectRef) errors.push('PROJECT_REQUIRED');
     const project = row.projectRef ? ctx.projectByRef.get(lower(row.projectRef)) : null;
