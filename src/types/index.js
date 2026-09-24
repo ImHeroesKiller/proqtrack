@@ -7,6 +7,7 @@
 import { getDB, saveDB, getCurrentOrgId, getActor, DEFAULT_ORG_ID } from "../lib/db.js";
 import { commitOperationalChanges, cloudDataStatus } from "../lib/cloud-data.js";
 import { CLIENT_PAGE_SIZE, clientStatusLabel, normalizeClientWebsite, clientSyncState, clientMatchesFilters, paginateClients, normalizeAdditionalPics, clientSearchDocument } from "../lib/client-ui.js";
+import { PROJECT_PAGE_SIZE, projectStatusLabel, projectSyncState, managerProjectIds, projectManagerNames, projectSupervisorNames, projectDependencies, projectSearchDocument, projectMatchesFilters, paginateProjects, closingProjectAssignments } from "../lib/project-ui.js";
 
 const ALL_MODULES = [
   "visits",
@@ -559,11 +560,7 @@ function activeAssignments(employeeId) {
 function accessibleProjectIds() {
   if (role() === "manager")
     return new Set((viewDB().projects || []).map((p) => p.id));
-  if (role() === "project-manager") {
-    const projectIds = Array.isArray(account()?.projectIds) ? account().projectIds : [];
-    const ids = projectIds.length ? projectIds : (account()?.projectId ? [account().projectId] : []);
-    return new Set(ids.map(String).filter(Boolean));
-  }
+  if (role() === "project-manager") return new Set(managerProjectIds(account()));
   return new Set(
     activeAssignments(account()?.employeeId).map((a) => a.projectId),
   );
@@ -754,37 +751,11 @@ function renderClients() {
   queueMicrotask(() => window.PM?.filterClients?.(clientPage));
   return rendered;
 }
-const PROJECT_PAGE_SIZE = 15;
 let projectPage = 1;
-function projectStatusLabel(value) {
-  return ({ draft:'Draft', active:'Aktif', on_hold:'Ditahan', completed:'Selesai', cancelled:'Dibatalkan' })[String(value || '')] || String(value || '-');
-}
 function projectSyncLabel() {
-  const cloud = cloudDataStatus();
-  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
-  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
-  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
-  return '<span class="pm-sync">Mode lokal</span>';
-}
-function projectManagerNames(db, projectId) {
-  return (db.accounts || [])
-    .filter((a) => a.role === 'manager' && a.status !== 'inactive')
-    .filter((a) => a.projectId === projectId || (Array.isArray(a.projectIds) && a.projectIds.includes(projectId)))
-    .map((a) => a.name || a.email || a.id)
-    .filter(Boolean);
-}
-function projectSupervisorNames(db, projectId) {
-  const employeeMap = Object.fromEntries((db.employees || []).map((e) => [e.id,e]));
-  return (db.projectAssignments || [])
-    .filter((a) => a.projectId === projectId && a.status === 'active' && a.roleOnProject === 'supervisor')
-    .map((a) => employeeMap[a.employeeId]?.name || a.employeeId)
-    .filter(Boolean);
-}
-function projectDependencies(db, projectId) {
-  const assignments = (db.projectAssignments || []).filter((a) => a.projectId === projectId && a.status === 'active').length;
-  const openVisits = (db.visits || []).filter((v) => v.projectId === projectId && ['planned','in_progress','checked-in'].includes(v.status)).length;
-  const draftSurveys = (db.surveyResponses || []).filter((r) => r.projectId === projectId && r.status === 'draft').length;
-  return { assignments, openVisits, draftSurveys, total:assignments + openVisits + draftSurveys };
+  const state = projectSyncState(cloudDataStatus());
+  const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
+  return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
 }
 function renderProjects(readOnly = false) {
   const db = viewDB(),
@@ -819,7 +790,7 @@ function renderProjects(readOnly = false) {
         const assignments = (db.projectAssignments || []).filter((a) => a.projectId === p.id && a.status === "active");
         const managers = projectManagerNames(db,p.id);
         const supervisors = projectSupervisorNames(db,p.id);
-        const search = esc(`${p.name} ${p.code} ${client.name || ""} ${managers.join(" ")} ${supervisors.join(" ")}`.toLowerCase());
+        const search = esc(projectSearchDocument(p, { clientName:client.name, managerNames:managers, supervisorNames:supervisors }));
         if (readOnly) {
           return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}">
             <td data-label="Project"><strong>${esc(p.name)}</strong><div class="pm-subtext">${esc(p.code || "")}</div></td>
@@ -1063,29 +1034,29 @@ window.PM = {
     this.filterProjects(projectPage);
   },
   filterProjects(page = projectPage) {
-    const q = String(document.getElementById("projectSearch")?.value || "").trim().toLowerCase();
-    const status = String(document.getElementById("projectStatusFilter")?.value || "");
-    const clientId = String(document.getElementById("projectClientFilter")?.value || "");
+    const filters = {
+      search:String(document.getElementById("projectSearch")?.value || ""),
+      status:String(document.getElementById("projectStatusFilter")?.value || ""),
+      clientId:String(document.getElementById("projectClientFilter")?.value || ""),
+    };
     const rows = [...document.querySelectorAll("#projectRows tr")];
-    const matched = rows.filter((row) => {
-      const matchesSearch = !q || String(row.dataset.search || "").includes(q);
-      const matchesStatus = !status || row.dataset.status === status;
-      const matchesClient = !clientId || row.dataset.client === clientId;
-      return matchesSearch && matchesStatus && matchesClient;
-    });
-    const pageCount = Math.max(1, Math.ceil(matched.length / PROJECT_PAGE_SIZE));
-    projectPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
-    const start = (projectPage - 1) * PROJECT_PAGE_SIZE;
-    const visible = new Set(matched.slice(start, start + PROJECT_PAGE_SIZE));
+    const matched = rows.filter((row) => projectMatchesFilters({
+      search:row.dataset.search || '',
+      status:row.dataset.status || '',
+      clientId:row.dataset.client || '',
+    }, filters));
+    const pageState = paginateProjects(matched, page, PROJECT_PAGE_SIZE);
+    projectPage = pageState.currentPage;
+    const visible = new Set(pageState.items);
     rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
     const summary = document.getElementById("projectResultSummary");
-    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + PROJECT_PAGE_SIZE, matched.length)} dari ${matched.length} project` : "Tidak ada project yang sesuai dengan filter.";
+    if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} project` : "Tidak ada project yang sesuai dengan filter.";
     const empty = document.getElementById("projectEmpty");
-    if (empty) empty.hidden = matched.length !== 0;
+    if (empty) empty.hidden = pageState.total !== 0;
     const pager = document.getElementById("projectPager");
-    if (pager) pager.hidden = matched.length <= PROJECT_PAGE_SIZE;
+    if (pager) pager.hidden = pageState.total <= PROJECT_PAGE_SIZE;
     const label = document.getElementById("projectPageLabel");
-    if (label) label.textContent = `Halaman ${projectPage} / ${pageCount}`;
+    if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
     const sync = document.getElementById("projectSyncState");
     if (sync) sync.innerHTML = projectSyncLabel();
   },
@@ -1347,14 +1318,8 @@ window.PM = {
     if (submit) submit.disabled = true;
     try {
       const cloud = cloudDataStatus();
-      const closingAssignments = old && ['completed','cancelled'].includes(data.status) && old.status !== data.status
-        ? (db.projectAssignments || []).filter((assignment) => assignment.projectId === data.id && assignment.status === 'active').map((assignment) => ({
-            ...assignment,
-            status:'ended',
-            endedAt:now(),
-            endedBy:account()?.id || null,
-            updatedAt:now(),
-          }))
+      const closingAssignments = old && old.status !== data.status
+        ? closingProjectAssignments(db.projectAssignments || [], data.id, data.status, account()?.id || '', now())
         : [];
       const authoritativeChanges = [
         { entity:'projects', op:'upsert', row:data },
