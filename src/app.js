@@ -1835,7 +1835,7 @@ function renderEmployees() {
               const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
               const search = employeeSearchDocument(e, projects);
               return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}">
-                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
+                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
                 <td data-label="Role">${roleBadge(e.role)}</td>
                 <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
                 <td data-label="Area">${esc(e.area || '—')}</td>
@@ -1924,8 +1924,10 @@ function employeePhotoObjectKey(value = '') {
 
 async function employeePhotoFromForm(form, { fallback = '', projectId = '', employeeCode = '' } = {}) {
   const file = form.querySelector('input[name="photoFile"]')?.files?.[0];
-  if (!file) return { url:form.querySelector('input[name="photo"]')?.value || fallback, key:'', uploaded:false };
-  const compressed = await compressImage(file, { maxPx:480, quality:0.82 });
+  const stored = form.querySelector('input[name="photo"]')?.value || fallback || '';
+  if (!file && !String(stored).startsWith('data:image/')) return { url:stored, key:'', uploaded:false };
+  const source = file || await fetch(stored).then(response => response.blob());
+  const compressed = await compressImage(source, { maxPx:480, quality:0.82 });
   const blob = await fetch(compressed).then(response => response.blob());
   const safeName = String(employeeCode || 'employee').replace(/[^a-zA-Z0-9_-]+/g,'-');
   const uploadFile = new File([blob], `${safeName}.jpg`, { type:'image/jpeg' });
@@ -1951,7 +1953,7 @@ window.FT.openEmployeeModal = function() {
   }
   openModal('Tambah Karyawan', `
     <form data-pqt-onsubmit="FT.createEmployee(event)">
-      ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
+      ${employeePhotoField('')}
       <div class="form-row">
         <div class="form-group"><label class="label">Kode Karyawan</label><input class="input" name="employeeCode" required placeholder="EMP-001"></div>
         <div class="form-group"><label class="label">Nama Lengkap</label><input class="input" name="name" required></div>
