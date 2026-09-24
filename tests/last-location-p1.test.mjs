@@ -30,6 +30,13 @@ test('visit GPS evidence takes precedence and outlet coordinates remain referenc
   assert.equal(reference.actual, false);
   assert.equal(reference.source, 'outlet_reference');
   assert.equal(locationSourceLabel(reference), 'Referensi outlet');
+
+  const administrative = visitLocationEvidence({
+    checkInLat:-6.21, checkInLng:106.81, checkInAccuracyM:null,
+    locationSource:'administrative_checkin',
+  }, outlet);
+  assert.equal(administrative.actual, false);
+  assert.equal(administrative.accuracyM, null);
 });
 
 test('location freshness never calls outlet reference a current employee position', () => {
