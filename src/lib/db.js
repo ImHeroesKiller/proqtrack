@@ -2237,14 +2237,23 @@ export function getStocksByProduct(productId) {
 }
 
 export function createStock() {
+  assertLoggedIn();
   throw new Error('Stok adalah read-model dari Inventory Cycle. Gunakan Stock In/Adjustment/Closing pada Inventory Cycle.');
 }
 
-export function updateStock() {
+export function updateStock(id) {
+  const actor = assertLoggedIn();
+  const current = getStocks().find(s => s.id === id);
+  if (current) {
+    const owner = current.updatedBy || current.employeeId || current.recordedBy;
+    if (owner) assertCanAccessEmployee(owner);
+    else if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
+  }
   throw new Error('Stok tidak dapat diedit langsung. Gunakan Inventory Cycle agar penjualan dan saldo tetap konsisten.');
 }
 
 export function deleteStock() {
+  assertProjectAdmin();
   throw new Error('Stok tidak dapat dihapus langsung. Koreksi dilakukan melalui Inventory Cycle.');
 }
 
