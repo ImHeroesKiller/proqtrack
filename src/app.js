@@ -36,7 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -1776,83 +1776,124 @@ window.FT.deleteVisit = function(id) {
 };
 
 // ===== Employees Page =====
+const EMPLOYEE_PAGE_SIZE = 15;
+let employeePage = 1;
+function employeeSyncLabel() {
+  const cloud = cloudDataStatus();
+  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
+  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
+  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
+  return '<span class="pm-sync">Mode lokal</span>';
+}
+function employeeActiveAssignments(employeeId) {
+  const db = getDB();
+  return (db.projectAssignments || []).filter(a => a.employeeId === employeeId && a.status === 'active');
+}
+function employeeProjectIds(employeeId) {
+  return [...new Set(employeeActiveAssignments(employeeId).map(a => String(a.projectId)).filter(Boolean))];
+}
+
 function renderEmployees() {
   const employees = getEmployees();
-  return `
+  const db = getDB();
+  const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
+  const projectOptions = [...new Map(
+    employees.flatMap(employee => employeeProjectIds(employee.id))
+      .map(projectId => [projectId, projectMap[projectId]])
+      .filter(([,project]) => project)
+  ).values()];
+  const rendered = `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="empSearch" placeholder="🔍 Cari karyawan..." data-pqt-oninput="FT.filterEmployees()">
-        <select class="select" id="empRoleFilter" style="width:180px;" data-pqt-onchange="FT.filterEmployees()">
+        <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, area..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
+        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)">
           <option value="">Semua Role</option>
           <option value="Field Sales">Field Sales</option>
           <option value="Supervisor">Supervisor</option>
         </select>
+        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)">
+          <option value="">Semua Status</option>
+          <option value="active">Aktif</option>
+          <option value="inactive">Nonaktif</option>
+          <option value="terminated">Berakhir</option>
+        </select>
+        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)">
+          <option value="">Semua Project</option>
+          ${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}
+        </select>
         <div class="spacer"></div>
+        <span id="employeeSyncState">${employeeSyncLabel()}</span>
         ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkEmployees.open()">Bulk Upload</button>` : ``}
         <button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>
       </div>
+      <div id="employeeResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper">
-        <table class="table" id="empTable">
-          <thead>
-            <tr>
-              <th>Nama</th>
-              <th>Role</th>
-              <th>Area</th>
-              <th>Telepon</th>
-              <th>Sales / Target</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
+        <table class="table employee-table" id="empTable">
+          <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
           <tbody>
-            ${employees.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">👥</div><h3>Belum ada karyawan</h3></div></td></tr>` :
-            employees.map(e => {
+            ${employees.map(e => {
               const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
               const cIdx = e.name.charCodeAt(0) % colors.length;
-              return `
-                <tr>
-                  <td>
-                    <div style="display:flex; align-items:center; gap:10px;">
-                      <div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div>
-                      <div>
-                        <div style="font-weight:600; color:var(--gray-800);">${esc(e.name)}</div>
-                        <div style="font-size:12px; color:var(--gray-400);">${esc(e.email)}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>${roleBadge(e.role)}</td>
-                  <td>${esc(e.area)}</td>
-                  <td>${esc(e.phone)}</td>
-                  <td><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
-                  <td>${e.totalVisits}</td>
-                  <td>${statusBadge(e.status)}</td>
-                  <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>
-                    <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Hapus</button>
-                  </td>
-                </tr>
-              `;
+              const projectIds = employeeProjectIds(e.id);
+              const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
+              const search = `${e.name || ''} ${e.email || ''} ${e.area || ''} ${e.phone || ''} ${e.role || ''} ${projects.map(p => `${p.code || ''} ${p.name || ''}`).join(' ')}`.toLowerCase();
+              return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}">
+                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${e.photo ? `background-image:url('${e.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
+                <td data-label="Role">${roleBadge(e.role)}</td>
+                <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
+                <td data-label="Area">${esc(e.area || '—')}</td>
+                <td data-label="Telepon">${esc(e.phone || '—')}</td>
+                <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
+                <td data-label="Kunjungan">${e.totalVisits}</td>
+                <td data-label="Status">${statusBadge(e.status)}</td>
+                <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
+              </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>
+      <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter.</div>
+      <div id="employeePager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(-1)">Sebelumnya</button><span id="employeePageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(1)">Berikutnya</button></div>
     </div>
   `;
+  queueMicrotask(() => window.FT?.filterEmployees?.(employeePage));
+  return rendered;
 }
 
-window.FT.filterEmployees = function() {
-  const search = document.getElementById('empSearch').value.toLowerCase();
-  const role = document.getElementById('empRoleFilter').value;
-  document.querySelectorAll('#empTable tbody tr').forEach(row => {
-    const text = row.textContent.toLowerCase();
-    let show = true;
-    if (search && !text.includes(search)) show = false;
-    if (role && !text.includes(role.toLowerCase())) show = false;
-    row.style.display = show ? '' : 'none';
-  });
+window.FT.employeePage = function(delta) {
+  employeePage = Math.max(1, employeePage + Number(delta || 0));
+  window.FT.filterEmployees(employeePage);
 };
 
+window.FT.filterEmployees = function(page = employeePage) {
+  const search = String(document.getElementById('empSearch')?.value || '').trim().toLowerCase();
+  const role = String(document.getElementById('empRoleFilter')?.value || '');
+  const status = String(document.getElementById('empStatusFilter')?.value || '');
+  const projectId = String(document.getElementById('empProjectFilter')?.value || '');
+  const rows = [...document.querySelectorAll('#empTable tbody tr')];
+  const matched = rows.filter(row => {
+    const projects = String(row.dataset.projects || '').split('|').filter(Boolean);
+    return (!search || String(row.dataset.search || '').includes(search))
+      && (!role || row.dataset.role === role)
+      && (!status || row.dataset.status === status)
+      && (!projectId || projects.includes(projectId));
+  });
+  const pageCount = Math.max(1, Math.ceil(matched.length / EMPLOYEE_PAGE_SIZE));
+  employeePage = Math.min(Math.max(1, Number(page) || 1), pageCount);
+  const start = (employeePage - 1) * EMPLOYEE_PAGE_SIZE;
+  const visible = new Set(matched.slice(start, start + EMPLOYEE_PAGE_SIZE));
+  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const summary = document.getElementById('employeeResultSummary');
+  if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + EMPLOYEE_PAGE_SIZE, matched.length)} dari ${matched.length} karyawan` : 'Tidak ada karyawan yang sesuai dengan filter.';
+  const empty = document.getElementById('employeeEmpty');
+  if (empty) empty.hidden = matched.length !== 0;
+  const pager = document.getElementById('employeePager');
+  if (pager) pager.hidden = matched.length <= EMPLOYEE_PAGE_SIZE;
+  const label = document.getElementById('employeePageLabel');
+  if (label) label.textContent = `Halaman ${employeePage} / ${pageCount}`;
+  const sync = document.getElementById('employeeSyncState');
+  if (sync) sync.innerHTML = employeeSyncLabel();
+};
 function employeePhotoField(current = '') {
   const src = current || '';
   return `
@@ -1993,6 +2034,12 @@ function renderEmployeeDetail(id) {
   const visits = getVisits().filter(v => v.employeeId === id).sort((a,b) => b.date.localeCompare(a.date));
   const attendance = getAttendance().filter(a => a.employeeId === id);
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const db = getDB();
+  const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
+  const employeeMap = Object.fromEntries((db.employees || []).map(employee => [employee.id, employee]));
+  const assignments = (db.projectAssignments || []).filter(assignment => assignment.employeeId === id).sort((a,b) => String(b.startDate || '').localeCompare(String(a.startDate || '')));
+  const activeAssignments = assignments.filter(assignment => assignment.status === 'active');
+  const account = (getAccounts() || []).find(row => row.employeeId === id || (emp.authUserId && row.id === emp.authUserId));
   const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
   const cIdx = emp.name.charCodeAt(0) % colors.length;
 
@@ -2012,6 +2059,9 @@ function renderEmployeeDetail(id) {
           <div class="detail-label">Area</div><div class="detail-value">${esc(emp.area)}</div>
           <div class="detail-label">Bergabung</div><div class="detail-value">${formatDate(emp.joinDate)}</div>
           <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(emp.lat)) ? `${Number(emp.lat).toFixed(4)}, ${Number(emp.lng).toFixed(4)}` : '—'}</div>
+          <div class="detail-label">Login</div><div class="detail-value">${account ? `${esc(account.email || emp.email || '')} · ${esc(account.status || 'active')}` : 'Tidak terhubung'}</div>
+          <div class="detail-label">Project Aktif</div><div class="detail-value">${activeAssignments.map(a => esc(projectMap[a.projectId]?.code || a.projectId)).join(', ') || '—'}</div>
+          <div class="detail-label">Kapasitas</div><div class="detail-value">${activeAssignments.reduce((sum,a) => sum + Number(a.allocationPercent || 100),0)}%</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:20px;">
           <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employees'">← Kembali</button>
@@ -2023,6 +2073,15 @@ function renderEmployeeDetail(id) {
           <div class="stat-card"><div class="stat-label">Visits today</div><div class="stat-value">${emp.todayVisits}</div></div>
           <div class="stat-card"><div class="stat-label">Total Kunjungan</div><div class="stat-value">${emp.totalVisits}</div></div>
           <div class="stat-card"><div class="stat-label">Kehadiran</div><div class="stat-value">${attendance.length}</div><div style="font-size:12px; color:var(--gray-400); margin-top:4px;">catatan</div></div>
+        </div>
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-title">Project & Assignment</div>
+          <div class="card-subtitle">${assignments.length} riwayat assignment</div>
+          ${assignments.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Role</th><th>Supervisor</th><th>Periode</th><th>Kapasitas</th><th>Status</th></tr></thead><tbody>${assignments.map(a => {
+            const project = projectMap[a.projectId] || {};
+            const supervisor = employeeMap[a.supervisorId] || {};
+            return `<tr><td>${esc(project.code || a.projectId)} — ${esc(project.name || '')}</td><td>${esc(a.roleOnProject || '-')}</td><td>${esc(supervisor.name || (a.roleOnProject === 'supervisor' ? '—' : '-'))}</td><td>${formatDate(a.startDate)} – ${formatDate(a.endDate)}</td><td>${Number(a.allocationPercent || 100)}%</td><td>${statusBadge(a.status === 'removed' ? 'ended' : a.status)}</td></tr>`;
+          }).join('')}</tbody></table></div>` : '<div class="empty-state"><h3>Belum ada assignment</h3></div>'}
         </div>
         <div class="card">
           <div class="card-title">Riwayat Kunjungan</div>

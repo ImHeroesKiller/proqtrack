@@ -63,5 +63,5 @@ test('Projects P2 enriches detail with operational context', async () => {
 
 test('Projects P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.39/);
+  assert.match(sw, /proqtrack-v12\.40/);
 });

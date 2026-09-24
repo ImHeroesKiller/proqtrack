@@ -61,5 +61,5 @@ test('Client P3 module is wired into page and PWA runtime', async () => {
   assert.match(src,/paginateClients\(matched, page, CLIENT_PAGE_SIZE\)/);
   assert.match(src,/normalizeAdditionalPics/);
   assert.match(sw,/src\/lib\/client-ui\.js/);
-  assert.match(sw,/proqtrack-v12\.39/);
+  assert.match(sw,/proqtrack-v12\.40/);
 });
