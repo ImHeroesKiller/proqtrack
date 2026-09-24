@@ -910,7 +910,7 @@ async function validateProjectMutation(env, organizationId, row, existing = null
     }
     if (['completed','cancelled'].includes(nextStatus) && currentStatus !== nextStatus) {
       const activeAssignments = await allRows(env.DB.prepare(
-        "SELECT id FROM core_project_assignments WHERE organization_id=? AND project_id=? AND status='active'"
+        "SELECT id FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND status='active'"
       ).bind(organizationId,id));
       if (activeAssignments.length) {
         const closingIds = new Set((context.batchAssignments || [])
