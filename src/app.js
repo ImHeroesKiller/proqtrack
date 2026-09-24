@@ -662,7 +662,7 @@ function render() {
       pageTitle = 'New Outlet'; pageSubtitle = 'Tambah outlet baru ke project';
       pageContent = renderOutletProposalForm();
     } else if (route === '#/mysales') {
-      pageTitle = 'Product Sales'; pageSubtitle = 'Record product sales against your monthly target';
+      pageTitle = 'Product Sales'; pageSubtitle = 'Derived sales from finalized outlet stock cycles';
       pageContent = renderProductSales({ mine: true });
     }
   } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
@@ -3782,13 +3782,13 @@ function renderMyStocks() {
               return `
                 <tr>
                   <td>${outletIcon(o.type)} ${esc(o.name)}</td>
-                  <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px;color:var(--gray-400);">${p.sku}</span></td>
+                  <td><span style="font-weight:600;">${esc(p.name)}</span><br><span style="font-size:11px;color:var(--gray-400);">${esc(p.sku||'-')}</span></td>
                   ${teamView ? `<td>${esc(salesName)}</td>` : ''}
-                  <td style="font-weight:700;color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
+                  <td style="font-weight:700;color:${isLow?'var(--red-500)':'var(--gray-800)'};">${Number(s.quantity||0)} ${esc(p.unit||'')}</td>
                   <td style="color:var(--gray-400);">${s.minStock}</td>
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px;color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
-                  ${teamView ? '' : `<td><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Edit</button></td>`}
+                  ${teamView ? '' : '<td><span class="am-muted">Update via kunjungan aktif</span></td>'}
                 </tr>
               `;
             }).join('')}
@@ -3958,11 +3958,12 @@ window.FT.prefillStockQty = function(outletId) {
 
 window.FT.saveVisitStock = async function(e, visitId, outletId) {
   e.preventDefault();
-  const empId = myEmployeeId();
+  const actorEmpId = myEmployeeId();
   const visit = getVisits().find(row => String(row.id) === String(visitId));
+  const empId = isSupervisor() ? String(visit?.employeeId || '') : String(actorEmpId || '');
   const rows = [...e.target.querySelectorAll('.fs-product-row')];
   const submit = e.target.querySelector('button[type="submit"]');
-  if (!empId || !visit?.projectId) { showToast('Konteks employee/project kunjungan tidak valid.', 'error'); return; }
+  if (!empId || !visit?.projectId || String(visit.employeeId||'') !== empId) { showToast('Konteks employee/project kunjungan tidak valid.', 'error'); return; }
   try {
     const seen = new Set();
     const entries = [];
