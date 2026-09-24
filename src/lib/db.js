@@ -314,6 +314,7 @@ export function defaultAppSettings() {
 export function defaultStoreCatalog() {
   return {
     allowNewOutlet: true,
+    approvalMode: 'auto',
     notesMode: 'freetext',
     notesOptions: [
       'High potential, high volume',
@@ -346,9 +347,11 @@ function nextOutletNumber(db) {
 export function getProjectStoreSettings(projectId) {
   const db = getDB();
   const row = (db.projectSettings || []).find(s => s.projectId === projectId) || {};
+  const project = (db.projects || []).find(p => p.id === projectId) || {};
   const catalog = { ...defaultStoreCatalog(), ...(row.storeCatalog || {}) };
   const allow = row.modules?.newOutlet !== false && catalog.allowNewOutlet !== false;
-  return { ...catalog, allowNewOutlet: allow, projectId };
+  const approvalMode = project.outletApprovalMode === 'manual' ? 'manual' : 'auto';
+  return { ...catalog, allowNewOutlet: allow, approvalMode, projectId };
 }
 
 export function saveProjectStoreSettings(projectId, data) {
@@ -384,6 +387,24 @@ export function canEmployeeAddStore(employeeId = getActor()?.employeeId) {
     .map(a => a.projectId);
   if (!ids.length) return false;
   return ids.some(id => getProjectStoreSettings(id).allowNewOutlet);
+}
+
+export function hasManualOutletApprovalProjects(actor = getActor()) {
+  const db = getDB();
+  const orgId = getCurrentOrgId();
+  const scopedProjects = (db.projects || []).filter(project => project.organizationId === orgId);
+  if (!actor) return false;
+  if (isOrgAdminRole(actor.role)) {
+    return scopedProjects.some(project => getProjectStoreSettings(project.id).approvalMode === 'manual');
+  }
+  const projectIds = new Set([
+    ...(Array.isArray(actor.projectIds) ? actor.projectIds : []),
+    ...(actor.projectId ? [actor.projectId] : []),
+  ].map(String));
+  return scopedProjects.some(project =>
+    projectIds.has(String(project.id)) &&
+    getProjectStoreSettings(project.id).approvalMode === 'manual'
+  );
 }
 
 export function storeCatalogForEmployee(employeeId = getActor()?.employeeId) {
@@ -1592,6 +1613,7 @@ export function createOutletProposal(data) {
     supervisorStatus: 'pending',
     managerStatus: 'pending',
     status: 'pending',
+    approvalMode: getProjectStoreSettings(projectId).approvalMode,
     outletId: outlet.id,
     outletNumber,
     ...org,
