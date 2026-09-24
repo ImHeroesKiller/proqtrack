@@ -4,13 +4,16 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const fieldSales = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
+const stockSalesUi = readFileSync(new URL('../src/lib/stock-sales-ui.js', import.meta.url), 'utf8');
 
 test('P2 Stock filters project outlet and status using row metadata', () => {
   assert.match(app,/id="stockProjectFilter"/);
   assert.match(app,/id="stockOutletFilter"/);
-  assert.match(app,/row\.dataset\.project === project/);
-  assert.match(app,/row\.dataset\.outlet === outlet/);
-  assert.match(app,/row\.dataset\.status === statusF/);
+  assert.match(app,/stockFilterSnapshot/);
+  assert.match(app,/stockMatchesFilters/);
+  assert.match(stockSalesUi,/projectId/);
+  assert.match(stockSalesUi,/outletId/);
+  assert.match(stockSalesUi,/status/);
 });
 
 test('P2 Stock dashboard exposes operational stock health summaries', () => {
@@ -26,9 +29,10 @@ test('P2 visit stock captures stock-in explicitly instead of inferring replenish
 });
 
 test('P2 Stock preflights daily duplicate cycle and impossible closing balance', () => {
-  assert.match(app,/function inventoryCycleOnDate\(/);
+  assert.match(app,/findInventoryCycleOnDate\(getInventoryCycles\(\)/);
   assert.match(app,/Cycle stok hari ini/);
-  assert.match(app,/closingQty > openingQty \+ stockInQty/);
+  assert.match(app,/validateStockMovementInput/);
+  assert.match(stockSalesUi,/STOCK_CLOSING_EXCEEDS_AVAILABLE/);
 });
 
 test('P2 Manager Stock movement supports explicit recorder employee', () => {
@@ -55,18 +59,19 @@ test('P2 Manual Sale correction uses governed modal instead of browser prompt', 
 });
 
 test('P2 Stock Sales translates common cloud conflict states to user feedback', () => {
-  assert.match(app,/function stockSalesFriendlyError\(/);
-  assert.match(app,/REVISION_CONFLICT/);
-  assert.match(app,/INVENTORY_CYCLE_OPENING_MISMATCH/);
-  assert.match(app,/CLOUD_SYNC_TIMEOUT/);
+  assert.match(app,/stockSalesFriendlyErrorMessage/);
+  assert.match(stockSalesUi,/REVISION_CONFLICT/);
+  assert.match(stockSalesUi,/INVENTORY_CYCLE_OPENING_MISMATCH/);
+  assert.match(stockSalesUi,/CLOUD_SYNC_TIMEOUT/);
 });
 
 
 test('P2 visit stock validates whole batch before creating ledger cycles', () => {
   assert.match(app,/const entries = \[\]/);
   assert.match(app,/if \(!entries\.length\) throw new Error\('Pilih minimal satu produk/);
-  assert.match(app,/for \(const entry of entries\) \{\s*createInventoryCycle/);
-  assert.match(app,/closingQty > openingQty \+ stockInQty/);
+  assert.match(app,/for \(const entry of entries\)/);
+  assert.match(app,/createInventoryCycle/);
+  assert.match(app,/validateStockMovementInput/);
 });
 
 test('P2 Sales exposes pending correction recovery without resurrecting voided source', () => {
@@ -85,7 +90,8 @@ test('P2 sales KPI cards follow the active filters', () => {
   assert.match(app,/id="salesKpiTransactions"/);
   assert.match(app,/id="salesKpiQty"/);
   assert.match(app,/id="salesKpiAmount"/);
-  assert.match(app,/visibleAmount \+= Number\(row\.dataset\.amount/);
+  assert.match(app,/salesSummary\(visibleRows\)/);
+  assert.match(app,/totals\.amount/);
 });
 
 
