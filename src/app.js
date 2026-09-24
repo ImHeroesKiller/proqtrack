@@ -1323,6 +1323,7 @@ function renderVisits() {
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
 
+  setTimeout(() => window.FT?.initVisitFilters?.(), 0);
   return `
     <div class="card">
       <div class="filter-row">
@@ -1337,10 +1338,20 @@ function renderVisits() {
           <option value="">Semua Karyawan</option>
           ${getEmployees().map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
         </select>
+        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
+          <option value="">Semua Project</option>
+        </select>
+        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
+          <option value="">Semua Outlet</option>
+        </select>
+        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
+        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
+        <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetVisitFilters()">Reset</button>
         <div class="spacer"></div>
         <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
       </div>
-      <div class="visits-table-wrapper">
+      <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;"></div>
+      <div class="visits-table-wrapper visit-responsive-table">
         <table class="table" id="visitsTable">
           <thead>
             <tr>
@@ -1362,15 +1373,15 @@ function renderVisits() {
               if (!emp || !out) return '';
               const stars = v.rating > 0 ? `${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}` : '-';
               return `
-                <tr>
-                  <td>${formatDateShort(v.date)}</td>
+                <tr data-visit-id="${esc(v.id)}" data-status="${esc(v.status || '')}" data-emp="${esc(v.employeeId || '')}" data-project="${esc(v.projectId || '')}" data-outlet="${esc(v.outletId || '')}" data-date="${esc(visitDay(v))}">
+                  <td>${formatDateShort(visitDay(v))}</td>
                   <td>
                     <div style="display:flex; align-items:center; gap:8px;">
                       <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
                       <span style="font-weight:600;">${esc(emp.name)}</span>
                     </div>
                   </td>
-                  <td>${outletIcon(out.type)} ${out.name}</td>
+                  <td>${outletIcon(out.type)} ${esc(out.name)}</td>
                   <td>${v.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
@@ -1389,27 +1400,89 @@ function renderVisits() {
   `;
 }
 
-window.FT.filterVisits = function() {
-  const search = document.getElementById('visitSearch').value.toLowerCase();
-  const status = document.getElementById('visitStatusFilter').value;
-  const empF = document.getElementById('visitEmpFilter').value;
-  const rows = document.querySelectorAll('#visitsTable tbody tr');
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  rows.forEach(row => {
+window.FT.initVisitFilters = function() {
+  const projectSelect = document.getElementById('visitProjectFilter');
+  const outletSelect = document.getElementById('visitOutletFilter');
+  if (projectSelect && projectSelect.options.length === 1) {
+    const visits = getVisits();
+    const projects = getDB().projects || [];
+    [...new Set(visits.map(v => String(v.projectId || '')).filter(Boolean))].forEach(id => {
+      const project = projects.find(p => String(p.id) === id);
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = project?.name || project?.code || id;
+      projectSelect.append(option);
+    });
+  }
+  if (outletSelect && outletSelect.options.length === 1) {
+    getOutlets().forEach(outlet => {
+      const option = document.createElement('option');
+      option.value = String(outlet.id);
+      option.textContent = `${outlet.name}${outlet.status !== 'active' ? ' · Nonaktif' : ''}`;
+      outletSelect.append(option);
+    });
+  }
+  FT.filterVisits(1);
+};
+
+window.FT.filterVisits = function(page = 1) {
+  const search = (document.getElementById('visitSearch')?.value || '').toLowerCase().trim();
+  const status = document.getElementById('visitStatusFilter')?.value || '';
+  const empF = document.getElementById('visitEmpFilter')?.value || '';
+  const projectF = document.getElementById('visitProjectFilter')?.value || '';
+  const outletF = document.getElementById('visitOutletFilter')?.value || '';
+  const dateFrom = document.getElementById('visitDateFrom')?.value || '';
+  const dateTo = document.getElementById('visitDateTo')?.value || '';
+  const rows = [...document.querySelectorAll('#visitsTable tbody tr[data-visit-id]')];
+  const pageSize = 20;
+  const matched = rows.filter(row => {
     const text = row.textContent.toLowerCase();
-    const empId = row.dataset.emp || '';
-    const outId = row.dataset.outlet || '';
-    // re-derive from cell content
-    let show = true;
-    if (search && !text.includes(search)) show = false;
-    if (status && !text.includes(status)) show = false;
-    if (empF) {
-      const empName = empMap[empF]?.name || '';
-      if (!text.includes(empName.toLowerCase())) show = false;
-    }
-    row.style.display = show ? '' : 'none';
+    const rowDate = row.dataset.date || '';
+    return (!search || text.includes(search))
+      && (!status || row.dataset.status === status)
+      && (!empF || row.dataset.emp === empF)
+      && (!projectF || row.dataset.project === projectF)
+      && (!outletF || row.dataset.outlet === outletF)
+      && (!dateFrom || rowDate >= dateFrom)
+      && (!dateTo || rowDate <= dateTo);
   });
+  const pageCount = Math.max(1, Math.ceil(matched.length / pageSize));
+  const currentPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
+  const visible = new Set(matched.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const summary = document.getElementById('visitFilterSummary');
+  if (summary) {
+    const from = matched.length ? ((currentPage - 1) * pageSize) + 1 : 0;
+    const to = Math.min(currentPage * pageSize, matched.length);
+    summary.textContent = matched.length ? `Menampilkan ${from}–${to} dari ${matched.length} kunjungan` : 'Tidak ada kunjungan yang cocok dengan filter.';
+  }
+  let pager = document.getElementById('visitPager');
+  if (!pager) {
+    pager = document.createElement('div');
+    pager.id = 'visitPager';
+    pager.className = 'visit-pager';
+    document.querySelector('.visit-responsive-table')?.after(pager);
+  }
+  pager.replaceChildren();
+  if (matched.length > pageSize) {
+    const prev = document.createElement('button');
+    prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = currentPage <= 1;
+    prev.addEventListener('click', () => FT.filterVisits(currentPage - 1));
+    const label = document.createElement('span');
+    label.className = 'visit-page-indicator'; label.textContent = `Halaman ${currentPage} / ${pageCount}`;
+    const next = document.createElement('button');
+    next.className = 'btn btn-secondary btn-sm'; next.type = 'button'; next.textContent = 'Berikutnya ›'; next.disabled = currentPage >= pageCount;
+    next.addEventListener('click', () => FT.filterVisits(currentPage + 1));
+    pager.append(prev, label, next);
+  }
+};
+
+window.FT.resetVisitFilters = function() {
+  ['visitSearch','visitStatusFilter','visitEmpFilter','visitProjectFilter','visitOutletFilter','visitDateFrom','visitDateTo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  FT.filterVisits(1);
 };
 
 window.FT.openVisitModal = function() {
@@ -1489,13 +1562,71 @@ window.FT.viewVisit = function(id) {
       <div class="detail-label">Area</div><div class="detail-value">${esc(emp?.area || '-')}</div>
     </div>
     ${renderVisitDetailHtml(id)}
-    ${canAct && v.status !== 'completed' ? `
+    ${canAct && !['completed','cancelled','rejected'].includes(String(v.status || '')) ? `
       <div style="margin-top:8px; display:flex; gap:8px;">
         ${v.status === 'planned' ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="FT.checkInVisit('${v.id}')">Check In</button>` : ''}
         ${v.status === 'checked-in' ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="FT.checkOutVisit('${v.id}')">Check Out</button>` : ''}
       </div>
     ` : ''}
+    ${['completed','cancelled','rejected'].includes(String(v.status || '')) ? `
+      <div class="tracking-evidence-note" style="margin-top:12px">Data kunjungan final tidak diedit langsung. Koreksi menggunakan approval Supervisor lalu Manager.</div>
+      <div style="margin-top:8px"><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.openVisitCorrection('${v.id}')">Ajukan Koreksi</button></div>
+    ` : ''}
   `);
+};
+window.FT.openVisitCorrection = function(id) {
+  const visit = getVisits().find(v => v.id === id);
+  if (!visit || !['completed','cancelled','rejected'].includes(String(visit.status || ''))) {
+    showToast('Koreksi hanya dapat diajukan untuk kunjungan final.', 'error');
+    return;
+  }
+  openModal('Ajukan Koreksi Kunjungan', `
+    <form data-pqt-onsubmit="FT.submitVisitCorrection(event,'${visit.id}')">
+      <div class="tracking-evidence-note">Pengajuan tidak mengubah data final secara langsung. Supervisor dan Manager harus menyetujui exception.</div>
+      <div class="form-group" style="margin-top:12px">
+        <label class="label">Alasan koreksi</label>
+        <textarea class="textarea" name="reason" maxlength="1000" required placeholder="Jelaskan data yang perlu dikoreksi dan alasannya."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Usulan Check In</label><input class="input" type="time" name="requestedCheckInTime" value="${esc(visit.checkInTime || '')}"></div>
+        <div class="form-group"><label class="label">Usulan Check Out</label><input class="input" type="time" name="requestedCheckOutTime" value="${esc(visit.checkOutTime || '')}"></div>
+      </div>
+      <div class="modal-footer" style="padding:0; margin-top:8px;">
+        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
+        <button type="submit" class="btn btn-primary">Kirim Pengajuan</button>
+      </div>
+    </form>
+  `);
+};
+
+let visitCorrectionInFlight = false;
+window.FT.submitVisitCorrection = async function(event, id) {
+  event.preventDefault();
+  if (visitCorrectionInFlight) return;
+  const visit = getVisits().find(v => v.id === id);
+  if (!visit) return showToast('Kunjungan tidak ditemukan.', 'error');
+  const form = event.currentTarget || event.target;
+  const submit = form?.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
+  const reason = String(data.reason || '').trim();
+  if (reason.length < 10) return showToast('Alasan koreksi minimal 10 karakter.', 'error');
+  const workflows = window.ProQTrackM6?.workflows;
+  if (!workflows?.create) return showToast('Workflow approval belum tersedia pada sesi ini.', 'error');
+  visitCorrectionInFlight = true;
+  if (submit) submit.disabled = true;
+  try {
+    await workflows.create({
+      workflowType:'visit_exception', subjectType:'visit', subjectId:visit.id, projectId:visit.projectId || null,
+      payload:{ reason, requestedCheckInTime:String(data.requestedCheckInTime || ''), requestedCheckOutTime:String(data.requestedCheckOutTime || ''), currentStatus:visit.status, currentDate:visitDay(visit), currentCheckInTime:visit.checkInTime || null, currentCheckOutTime:visit.checkOutTime || null },
+    });
+    closeModal();
+    showToast('Pengajuan koreksi dikirim untuk approval Supervisor dan Manager.', 'success');
+  } catch (error) {
+    showToast(error?.message || 'Pengajuan koreksi gagal dikirim.', 'error');
+  } finally {
+    visitCorrectionInFlight = false;
+    if (submit?.isConnected) submit.disabled = false;
+  }
 };
 
 
