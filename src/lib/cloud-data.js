@@ -527,7 +527,19 @@ export async function restoreCloudSession(localDb) {
 }
 
 export async function establishCloudSession({ email, password, organizationId = '' } = {}) {
-  const token = await issueUploadSession(null, { email, password, organizationId });
+  let token;
+  try {
+    token = await issueUploadSession(null, { email, password, organizationId });
+  } catch (error) {
+    // A hard refresh does not clear localStorage. If the browser carries an old
+    // tenant hint that the server no longer authorizes, retry once without that
+    // hint and let authoritative membership resolution select/ask for a valid org.
+    if (organizationId && error?.code === 'ORGANIZATION_ACCESS_DENIED') {
+      token = await issueUploadSession(null, { email, password, organizationId: '' });
+    } else {
+      throw error;
+    }
+  }
   if (!token) return null;
   try {
     return await apiJson('/api/auth/session');

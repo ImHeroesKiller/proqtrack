@@ -84,15 +84,21 @@ test('online M7 login is cloud-authoritative and single-flight', async () => {
   assert.match(cutover, /await logoutCloudSession\(\)\.catch/);
 });
 
-test('stale tenant rejection is surfaced instead of hidden as a generic login failure', async () => {
-  const uploads = await read('src/lib/uploads.js');
-  assert.match(uploads, /data\.error === 'ORGANIZATION_ACCESS_DENIED'/);
-  assert.match(uploads, /Organisasi tersimpan sudah tidak aktif/);
+test('stale tenant rejection is surfaced and retried without the cached tenant hint', async () => {
+  const [uploads, cloudData] = await Promise.all([
+    read('src/lib/uploads.js'),
+    read('src/lib/cloud-data.js'),
+  ]);
+  assert.match(uploads, /ORGANIZATION_ACCESS_DENIED/);
+  assert.match(uploads, /ORGANIZATION_ACCESS_NOT_CONFIGURED/);
+  assert.match(uploads, /DEVICE_ACCESS_DENIED/);
+  assert.match(cloudData, /organizationId && error\?\.code === 'ORGANIZATION_ACCESS_DENIED'/);
+  assert.match(cloudData, /organizationId: ''/);
 });
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.13/);
+  assert.match(serviceWorker, /proqtrack-v12\.14/);
 });
 
 test('global superadmin session stays global until explicit workspace selection', async () => {
