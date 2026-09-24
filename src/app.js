@@ -432,6 +432,7 @@ function render() {
   }
 
   if (!state.loggedIn) {
+    configureHomeRefresh('#/login');
     app.innerHTML = renderLogin();
     return;
   }
@@ -513,7 +514,7 @@ function render() {
     }
   } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
-    pageTitle = isOrgAdmin() ? 'Organization Home' : isManager() ? 'Project Home' : 'Team Home';
+    pageTitle = isOrgAdmin() ? 'Organization Overview' : isManager() ? 'Project Overview' : 'Team Overview';
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Operational summary';
     pageContent = (isProjectAdmin() || isManager()) ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
@@ -610,6 +611,7 @@ function render() {
           </div>
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
+            ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
             ${route === '#/tracking' ? '<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">Last check-in</div>' : ''}
           </div>
         </div>
@@ -629,6 +631,7 @@ function render() {
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
+  configureHomeRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
