@@ -831,10 +831,8 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
   if (idConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: idConflict.entity, id: idConflict.id }, 409);
 
   const accessibleEmployeeIds = await employeeAccess(env, claims);
-  const actorEmployee = await env.DB.prepare(
-    "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
-  ).bind(organizationId,claims.sub).first();
-  const actorEmployeeId = str(actorEmployee?.id);
+  let actorEmployeeId = '';
+  let actorEmployeeResolved = false;
   const batchAssignments = changes.filter(change => change?.entity === 'projectAssignments' && change?.op !== 'delete').map(change => change.row || {});
   const statements = [];
   for (const change of changes) {
@@ -843,6 +841,13 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (!ENTITY_TABLES[entity] || !['upsert','delete'].includes(op)) return json({ error: 'INVALID_CHANGE', entity, op }, 400);
     const row = { ...(change.row || {}) };
     const existing = await existingRow(env, entity, organizationId, row);
+    if (entity === 'visits' && existing && !actorEmployeeResolved) {
+      actorEmployeeResolved = true;
+      const actorEmployee = await env.DB.prepare(
+        "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
+      ).bind(organizationId,claims.sub).first();
+      actorEmployeeId = str(actorEmployee?.id);
+    }
     if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
