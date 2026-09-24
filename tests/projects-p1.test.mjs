@@ -6,10 +6,14 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Projects P1 uses combined search status and client filters', async () => {
   const src = await read('src/types/index.js');
+  const helper = await read('src/lib/project-ui.js');
   assert.match(src, /id="projectSearch"/);
   assert.match(src, /id="projectStatusFilter"/);
   assert.match(src, /id="projectClientFilter"/);
-  assert.match(src, /matchesSearch && matchesStatus && matchesClient/);
+  assert.match(src, /projectMatchesFilters/);
+  assert.match(helper, /\(!q \|\| search\.includes\(q\)\)/);
+  assert.match(helper, /\(!status \|\| String\(project\.status \|\| ''\) === status\)/);
+  assert.match(helper, /\(!clientId \|\| String\(project\.clientId \|\| ''\) === clientId\)/);
 });
 
 test('Projects P1 waits for authoritative cloud commit before local persistence', async () => {
