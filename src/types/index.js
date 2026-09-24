@@ -931,27 +931,20 @@ function renderMyTeam() {
 
 function renderSupervisorCompare() {
   const db = viewDB(),
-    ids = accessibleProjectIds();
+    ids = accessibleProjectIds(),
+    pm = projectById(db);
   const supervisors = (db.employees || [])
-    .filter((e) =>
-      String(e.role || "")
-        .toLowerCase()
-        .includes("supervisor"),
-    )
-    .filter((e) =>
-      (db.projectAssignments || []).some(
-        (a) =>
-          a.employeeId === e.id &&
-          a.status === "active" &&
-          ids.has(a.projectId),
-      ),
-    );
-  const metric = (s) => {
+    .filter((e) => String(e.role || "").toLowerCase().includes("supervisor"))
+    .filter((e) => (db.projectAssignments || []).some(
+      (a) => a.employeeId === e.id && a.status === "active" && ids.has(a.projectId),
+    ));
+  const metric = (s, projectId = "") => {
+    const scopedIds = projectId ? new Set([projectId]) : ids;
     const team = [...new Set(
       (db.projectAssignments || [])
         .filter((assignment) =>
           assignment.status === "active" &&
-          ids.has(assignment.projectId) &&
+          scopedIds.has(assignment.projectId) &&
           (
             String(assignment.supervisorId || "") === String(s.id) ||
             (s.authUserId && String(assignment.supervisorUserId || "") === String(s.authUserId))
@@ -960,12 +953,12 @@ function renderSupervisorCompare() {
         .map((assignment) => assignment.employeeId)
     )];
     const relevant = (arr, owner = "employeeId") =>
-      (arr || []).filter(
-        (x) =>
-          team.includes(x[owner] || x.recordedBy) &&
-          (!x.projectId || ids.has(x.projectId)),
+      (arr || []).filter((x) =>
+        team.includes(x[owner] || x.recordedBy) &&
+        (!x.projectId || scopedIds.has(x.projectId))
       ).length;
     return {
+      team:team.length,
       visits: relevant(db.visits),
       intel: relevant(db.competitorIntel, "recordedBy"),
       photos: relevant(db.fieldPhotos, "recordedBy"),
@@ -980,17 +973,19 @@ function renderSupervisorCompare() {
       ["Project Bersama", ids.size],
       ["Privasi Detail", "Terjaga", "Hanya metrik agregat"],
       ["Scope", "Project sama"],
-    ])}<div class="card"><div class="pm-supervisor-row head"><span>Supervisor</span><span>Visit</span><span>Intel</span><span>Foto</span><span>Harga</span></div>${
-      supervisors
-        .map((s) => {
-          const m = metric(s);
-          return `<div class="pm-supervisor-row"><strong>${esc(s.name)}</strong><span>${m.visits}</span><span>${m.intel}</span><span>${m.photos}</span><span>${m.prices}</span></div>`;
-        })
-        .join("") ||
-      '<div style="padding:34px;text-align:center;color:#94a3b8">Belum ada supervisor lain pada project yang sama.</div>'
-    }</div>`,
+    ])}<div class="card">
+      <div class="pm-toolbar"><select class="select" id="supervisorCompareProject" aria-label="Filter project komparasi" data-pqt-onchange="PM.filterSupervisorCompare()"><option value="">Semua project</option>${[...ids].map(id => `<option value="${esc(id)}">${esc(pm[id]?.code || id)} — ${esc(pm[id]?.name || '')}</option>`).join("")}</select></div>
+      <div class="pm-supervisor-row head"><span>Supervisor</span><span>Team</span><span>Visit</span><span>Intel</span><span>Foto</span><span>Harga</span></div>
+      <div id="supervisorCompareRows">${supervisors.map((s) => {
+        const m = metric(s);
+        const projects = (db.projectAssignments || []).filter(a => a.employeeId === s.id && a.status === 'active' && ids.has(a.projectId)).map(a => a.projectId);
+        return `<div class="pm-supervisor-row" data-projects="${esc([...new Set(projects)].join('|'))}" data-supervisor="${esc(s.id)}"><strong>${esc(s.name)}</strong><span data-metric="team">${m.team}</span><span data-metric="visits">${m.visits}</span><span data-metric="intel">${m.intel}</span><span data-metric="photos">${m.photos}</span><span data-metric="prices">${m.prices}</span></div>`;
+      }).join("") || '<div style="padding:34px;text-align:center;color:#94a3b8">Belum ada supervisor lain pada project yang sama.</div>'}</div>
+      <div class="pm-subtext" style="margin-top:10px">Metrik adalah total aktivitas anggota team dalam scope Project yang dipilih; Team menunjukkan jumlah anggota aktif sebagai denominator konteks.</div>
+    </div>`,
   );
 }
+
 function renderRoute() {
   const h = location.hash;
   if (!PROJECT_ROUTES.has(h) || !account()) return false;
@@ -1044,6 +1039,34 @@ window.PM = {
   clientPage(delta) {
     clientPage = Math.max(1, clientPage + Number(delta || 0));
     this.filterClients(clientPage);
+  },
+  filterSupervisorCompare() {
+    const db = viewDB();
+    const projectId = String(document.getElementById("supervisorCompareProject")?.value || "");
+    const ids = accessibleProjectIds();
+    document.querySelectorAll("#supervisorCompareRows .pm-supervisor-row").forEach(row => {
+      const supervisorId = String(row.dataset.supervisor || "");
+      const projects = String(row.dataset.projects || "").split("|").filter(Boolean);
+      const visible = !projectId || projects.includes(projectId);
+      row.style.display = visible ? "" : "none";
+      if (!visible) return;
+      const supervisor = (db.employees || []).find(employee => String(employee.id) === supervisorId);
+      if (!supervisor) return;
+      const scopedIds = projectId ? new Set([projectId]) : ids;
+      const team = [...new Set((db.projectAssignments || []).filter(assignment =>
+        assignment.status === "active" && scopedIds.has(assignment.projectId) &&
+        (String(assignment.supervisorId || "") === supervisorId ||
+          (supervisor.authUserId && String(assignment.supervisorUserId || "") === String(supervisor.authUserId)))
+      ).map(assignment => assignment.employeeId))];
+      const relevant = (arr, owner = "employeeId") => (arr || []).filter(item =>
+        team.includes(item[owner] || item.recordedBy) && (!item.projectId || scopedIds.has(item.projectId))
+      ).length;
+      const values = { team:team.length, visits:relevant(db.visits), intel:relevant(db.competitorIntel,"recordedBy"), photos:relevant(db.fieldPhotos,"recordedBy"), prices:relevant(db.priceObservations,"employeeId") };
+      Object.entries(values).forEach(([name,value]) => {
+        const target = row.querySelector(`[data-metric="${name}"]`);
+        if (target) target.textContent = String(value);
+      });
+    });
   },
   filterMyTeam() {
     const search = String(document.getElementById("teamSearch")?.value || "").trim().toLowerCase();
