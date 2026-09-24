@@ -1,6 +1,5 @@
 import {
   authenticate,
-  getCurrentOrgId,
   getDB,
   registerTestDevice,
   pairCloudAuthenticatedSalesDevice,
@@ -71,9 +70,13 @@ async function cloudFirstLogin(event) {
     // A superadmin must authenticate globally first. Reusing a stale tenant id
     // from localStorage can turn valid credentials into a 403 after a tenant
     // was archived or removed.
+    // Never borrow a browser-wide/current workspace as an auth hint for a
+    // different email. After site-data resets the seeded/default organization
+    // can be unrelated to the account being entered and cause a noisy 403.
+    // Only reuse an organization that belongs to the matching local identity.
     const organizationId = localCandidate?.role === 'superadmin'
       ? ''
-      : (localCandidate?.organizationId || db.currentOrganizationId || getCurrentOrgId());
+      : (localCandidate?.organizationId || '');
     let cloudAccount = null;
     let cloudError = null;
     try {
