@@ -65,9 +65,9 @@ test('Products P1 local model sanitizes and preserves history through inactive l
 
 test('Products P1 UI escapes stored product output and form values', () => {
   for (const marker of [
-    'value="${esc(p?.name || \'\')}"',
-    'value="${esc(p?.brand || \'\')}"',
-    'value="${esc(p?.sku || \'\')}"',
+    'value="${esc(model.name)}"',
+    'value="${esc(model.brand)}"',
+    'value="${esc(model.sku)}"',
     '${esc(p.sku)}',
     '${esc(p.name)}',
     "${esc(p.brand||'—')}",
