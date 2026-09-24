@@ -201,6 +201,66 @@ export function validateImportSnapshot(snapshot = {}) {
 }
 
 const finalVisitStatuses = new Set(['completed','cancelled','rejected']);
+const canonicalVisitStatus = value => str(value || 'planned') === 'checked-in' ? 'in_progress' : str(value || 'planned');
+const finiteCoordinate = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+const hasVisitExecutionEvidence = row => [
+  'checkInTime','checkOutTime','startedAt','completedAt','checkInAt','checkOutAt',
+  'lat','lng','checkInLat','checkInLng','startLatitude','startLongitude',
+  'checkOutLat','checkOutLng','endLatitude','endLongitude','checkInCapturedAt','checkOutCapturedAt',
+].some(key => row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '');
+
+function visitDistanceMeters(lat1, lng1, lat2, lng2) {
+  const values = [lat1,lng1,lat2,lng2].map(Number);
+  if (!values.every(Number.isFinite)) return null;
+  const toRad = value => value * Math.PI / 180;
+  const [aLat,aLng,bLat,bLng] = values;
+  const dLat = toRad(bLat-aLat);
+  const dLng = toRad(bLng-aLng);
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(aLat)) * Math.cos(toRad(bLat)) * Math.sin(dLng/2) ** 2;
+  return Math.round(6371000 * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
+  if (!existing) return null;
+  const currentStatus = canonicalVisitStatus(existing.status);
+  const nextStatus = canonicalVisitStatus(row.status || existing.status);
+  const isCheckIn = currentStatus === 'planned' && nextStatus === 'in_progress';
+  const isCheckOut = currentStatus === 'in_progress' && nextStatus === 'completed';
+  if (!isCheckIn && !isCheckOut) return null;
+
+  const outletId = str(row.outletId || row.outlet_id || existing.outlet_id || existing.outletId);
+  const outlet = await env.DB.prepare(
+    'SELECT id,latitude,longitude,geofence_radius_m,status FROM core_outlets WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,outletId).first();
+  if (!outlet || outlet.status !== 'active' || !finiteCoordinate(outlet.latitude) || !finiteCoordinate(outlet.longitude)) {
+    if (isCheckIn) return { error:'VISIT_GEOFENCE_UNAVAILABLE', status:409 };
+    return null;
+  }
+  const radiusRaw = Number(outlet.geofence_radius_m);
+  const radiusM = Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : 50;
+  const lat = firstValue(row, isCheckIn
+    ? ['checkInLat','startLatitude','lat','start_latitude']
+    : ['checkOutLat','endLatitude','end_latitude']);
+  const lng = firstValue(row, isCheckIn
+    ? ['checkInLng','startLongitude','lng','start_longitude']
+    : ['checkOutLng','endLongitude','end_longitude']);
+  if (!finiteCoordinate(lat) || !finiteCoordinate(lng)) {
+    return isCheckIn ? { error:'VISIT_GPS_REQUIRED', status:422 } : null;
+  }
+  const distanceM = visitDistanceMeters(lat,lng,outlet.latitude,outlet.longitude);
+  if (isCheckIn) {
+    row.geofenceDistanceM = distanceM;
+    row.geofenceRadiusM = radiusM;
+    row.geofenceStatus = distanceM <= radiusM ? 'valid' : 'outside';
+    if (distanceM > radiusM) return { error:'VISIT_OUTSIDE_GEOFENCE', status:422, distanceM, radiusM };
+  } else {
+    row.checkOutGeofenceDistanceM = distanceM;
+    row.checkOutGeofenceRadiusM = radiusM;
+    row.checkOutGeofenceStatus = distanceM <= radiusM ? 'valid' : 'outside';
+  }
+  return null;
+}
+
 const finalLeaveStatuses = new Set(['approved','rejected']);
 
 const firstValue = (row, keys) => {
@@ -219,32 +279,53 @@ const unchangedIfProvided = (incoming, existing, incomingKeys, existingKeys = in
 
 export function operationalTransitionAllowed(claims, entity, change, context = {}) {
   const role = roleOf(claims);
-  if (BROAD_ROLES.has(role)) return true;
   const op = str(change?.op || 'upsert');
   const row = change?.row || {};
   const existing = context.existing || null;
-  if (!existing) return op === 'upsert';
-  if (op === 'delete' && ['visits','attendance','leaves'].includes(entity)) return false;
 
   if (entity === 'visits') {
-    if (finalVisitStatuses.has(str(existing.status))) return false;
+    if (!existing) {
+      return op === 'upsert'
+        && canonicalVisitStatus(row.status || 'planned') === 'planned'
+        && !hasVisitExecutionEvidence(row);
+    }
+    if (op === 'delete') return false;
+    if (finalVisitStatuses.has(canonicalVisitStatus(existing.status))) return false;
     if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
     if (!unchangedIfProvided(row, existing, ['outletId','outlet_id'], ['outlet_id','outletId'])) return false;
     if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
     if (!unchangedIfProvided(row, existing, ['startedAt','checkInAt','checkInTime','started_at'], ['started_at','startedAt','checkInAt','checkInTime'])) return false;
-    if (!unchangedIfProvided(row, existing, ['startLatitude','lat','start_latitude'], ['start_latitude','startLatitude','lat'])) return false;
-    if (!unchangedIfProvided(row, existing, ['startLongitude','lng','start_longitude'], ['start_longitude','startLongitude','lng'])) return false;
+    if (!unchangedIfProvided(row, existing, ['startLatitude','checkInLat','lat','start_latitude'], ['start_latitude','startLatitude','checkInLat','lat'])) return false;
+    if (!unchangedIfProvided(row, existing, ['startLongitude','checkInLng','lng','start_longitude'], ['start_longitude','startLongitude','checkInLng','lng'])) return false;
     if (firstValue(existing, ['completed_at','completedAt','checkOutAt','checkOutTime']) !== null
-        && !unchangedIfProvided(row, existing, ['completedAt','checkOutAt','checkOutTime','completed_at'], ['completed_at','completedAt','checkOutAt','checkOutTime'])) return false;
-    const currentStatus = str(existing.status || 'planned');
-    const nextStatus = str(row.status || currentStatus);
+        && !unchangedIfProvided(row, existing, ['completedAt','checkOutCapturedAt','checkOutAt','checkOutTime','completed_at'], ['completed_at','completedAt','checkOutCapturedAt','checkOutAt','checkOutTime'])) return false;
+
+    const currentStatus = canonicalVisitStatus(existing.status || 'planned');
+    const nextStatus = canonicalVisitStatus(row.status || currentStatus);
     const allowed = currentStatus === 'planned'
       ? new Set(['planned','in_progress','cancelled'])
       : currentStatus === 'in_progress'
         ? new Set(['in_progress','completed'])
         : new Set([currentStatus]);
-    return allowed.has(nextStatus);
+    if (!allowed.has(nextStatus)) return false;
+
+    if (currentStatus === 'planned' && nextStatus === 'in_progress') {
+      return str(row.locationSource) === 'device_gps'
+        && finiteCoordinate(firstValue(row,['checkInLat','startLatitude','lat','start_latitude']))
+        && finiteCoordinate(firstValue(row,['checkInLng','startLongitude','lng','start_longitude']))
+        && !!firstValue(row,['startedAt','checkInCapturedAt','checkInAt','started_at']);
+    }
+    if (currentStatus === 'in_progress' && nextStatus === 'completed') {
+      return finiteCoordinate(firstValue(row,['checkOutLat','endLatitude','end_latitude']))
+        && finiteCoordinate(firstValue(row,['checkOutLng','endLongitude','end_longitude']))
+        && !!firstValue(row,['completedAt','checkOutCapturedAt','checkOutAt','completed_at']);
+    }
+    return true;
   }
+
+  if (BROAD_ROLES.has(role)) return true;
+  if (!existing) return op === 'upsert';
+  if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
 
   if (entity === 'attendance') {
     if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
@@ -328,8 +409,16 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
   const role = roleOf(claims);
   const row = change?.row || context.existing || {};
   if (!ENTITY_TABLES[entity]) return false;
-  if (BROAD_ROLES.has(role)) return true;
   if (!operationalTransitionAllowed(claims, entity, change, context)) return false;
+  if (entity === 'visits' && context.existing) {
+    const currentStatus = canonicalVisitStatus(context.existing.status);
+    const nextStatus = canonicalVisitStatus(row.status || context.existing.status);
+    const executionTransition = (currentStatus === 'planned' && nextStatus === 'in_progress')
+      || (currentStatus === 'in_progress' && nextStatus === 'completed');
+    const targetEmployeeId = str(row.employeeId || row.employee_id || context.existing.employee_id || context.existing.employeeId);
+    if (executionTransition && (!context.actorEmployeeId || targetEmployeeId !== context.actorEmployeeId)) return false;
+  }
+  if (BROAD_ROLES.has(role)) return true;
   const projectId = str(row.projectId || row.project_id || context.existing?.project_id || context.existing?.projectId);
   const employeeId = str(row.employeeId || row.recordedBy || row.submittedBy || row.updatedBy || row.employee_id || row.recorded_by || row.submitted_by || context.existing?.employee_id || context.existing?.recorded_by || context.existing?.submitted_by || context.existing?.employeeId);
   if (entity === 'leaves' && ['manager','supervisor','employee'].includes(role)) {
@@ -429,7 +518,7 @@ function upsertStatements(env, entity, rawRow, organizationId, extras = {}) {
       for (const projectId of row.projectIds) statements.push(p(`INSERT INTO core_project_outlets(organization_id,project_id,outlet_id,status) VALUES(?,?,?,'active')`, [organizationId,projectId,row.id]));
       return statements;
     }
-    case 'visits': return [p(`INSERT INTO core_visits(id,organization_id,project_id,outlet_id,employee_id,status,scheduled_at,started_at,completed_at,start_latitude,start_longitude,end_latitude,end_longitude,idempotency_key,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,employee_id=excluded.employee_id,status=excluded.status,scheduled_at=excluded.scheduled_at,started_at=excluded.started_at,completed_at=excluded.completed_at,start_latitude=excluded.start_latitude,start_longitude=excluded.start_longitude,end_latitude=excluded.end_latitude,end_longitude=excluded.end_longitude,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_visits.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_visits.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.employeeId,row.status,nullable(row.scheduledAt || row.date),nullable(row.startedAt || row.checkInCapturedAt || row.checkInAt),nullable(row.completedAt || row.checkOutAt),num(row.startLatitude ?? row.checkInLat ?? row.lat),num(row.startLongitude ?? row.checkInLng ?? row.lng),num(row.endLatitude),num(row.endLongitude),nullable(row.idempotencyKey),m,1])];
+    case 'visits': return [p(`INSERT INTO core_visits(id,organization_id,project_id,outlet_id,employee_id,status,scheduled_at,started_at,completed_at,start_latitude,start_longitude,end_latitude,end_longitude,idempotency_key,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,employee_id=excluded.employee_id,status=excluded.status,scheduled_at=excluded.scheduled_at,started_at=excluded.started_at,completed_at=excluded.completed_at,start_latitude=excluded.start_latitude,start_longitude=excluded.start_longitude,end_latitude=excluded.end_latitude,end_longitude=excluded.end_longitude,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_visits.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_visits.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.employeeId,row.status,nullable(row.scheduledAt || row.date),nullable(row.startedAt || row.checkInCapturedAt || row.checkInAt),nullable(row.completedAt || row.checkOutCapturedAt || row.checkOutAt),num(row.startLatitude ?? row.checkInLat ?? row.lat),num(row.startLongitude ?? row.checkInLng ?? row.lng),num(row.endLatitude ?? row.checkOutLat),num(row.endLongitude ?? row.checkOutLng),nullable(row.idempotencyKey),m,1])];
     case 'attendance': return [p(`INSERT INTO core_attendance(id,organization_id,project_id,employee_id,work_date,status,check_in_at,check_out_at,check_in_latitude,check_in_longitude,check_out_latitude,check_out_longitude,idempotency_key,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,employee_id=excluded.employee_id,work_date=excluded.work_date,status=excluded.status,check_in_at=excluded.check_in_at,check_out_at=excluded.check_out_at,check_in_latitude=excluded.check_in_latitude,check_in_longitude=excluded.check_in_longitude,check_out_latitude=excluded.check_out_latitude,check_out_longitude=excluded.check_out_longitude,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_attendance.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_attendance.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.employeeId,row.workDate,row.status,nullable(row.checkInAt),nullable(row.checkOutAt),num(row.checkInLatitude ?? row.lat),num(row.checkInLongitude ?? row.lng),num(row.checkOutLatitude),num(row.checkOutLongitude),nullable(row.idempotencyKey),m])];
     case 'products': {
       const statements = [p(`INSERT INTO core_products(id,organization_id,client_id,sku,name,unit,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET client_id=excluded.client_id,sku=excluded.sku,name=excluded.name,unit=excluded.unit,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_products.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_products.organization_id=excluded.organization_id`, [row.id,organizationId,row.clientId,row.sku,row.name,nullable(row.unit),row.status,m])];
@@ -544,6 +633,8 @@ function decodeRows(entity, rows, relationMap = new Map()) {
         completedAt: dbRow.completed_at,
         checkInLat: meta.checkInLat ?? dbRow.start_latitude,
         checkInLng: meta.checkInLng ?? dbRow.start_longitude,
+        checkOutLat: meta.checkOutLat ?? dbRow.end_latitude,
+        checkOutLng: meta.checkOutLng ?? dbRow.end_longitude,
       };
       case 'attendance': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, date: dbRow.work_date, workDate: dbRow.work_date, status: dbRow.status, checkInAt: dbRow.check_in_at, checkOutAt: dbRow.check_out_at };
       case 'products': return { ...common, clientId: dbRow.client_id, sku: dbRow.sku, name: dbRow.name, unit: dbRow.unit, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
@@ -740,6 +831,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
   if (idConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: idConflict.entity, id: idConflict.id }, 409);
 
   const accessibleEmployeeIds = await employeeAccess(env, claims);
+  const actorEmployee = await env.DB.prepare(
+    "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
+  ).bind(organizationId,claims.sub).first();
+  const actorEmployeeId = str(actorEmployee?.id);
   const batchAssignments = changes.filter(change => change?.entity === 'projectAssignments' && change?.op !== 'delete').map(change => change.row || {});
   const statements = [];
   for (const change of changes) {
@@ -748,7 +843,17 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (!ENTITY_TABLES[entity] || !['upsert','delete'].includes(op)) return json({ error: 'INVALID_CHANGE', entity, op }, 400);
     const row = { ...(change.row || {}) };
     const existing = await existingRow(env, entity, organizationId, row);
-    if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
+    if (entity === 'visits' && op === 'upsert') {
+      const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
+      if (geofenceError) return json({
+        error: geofenceError.error,
+        entity,
+        id: row.id || null,
+        ...(geofenceError.distanceM != null ? { distanceM:geofenceError.distanceM } : {}),
+        ...(geofenceError.radiusM != null ? { radiusM:geofenceError.radiusM } : {}),
+      }, geofenceError.status || 422);
+    }
     if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
       row.approverId = claims.sub;
       row.approvedAt = new Date().toISOString();
