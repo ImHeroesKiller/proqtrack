@@ -88,7 +88,7 @@ test('manager approval cannot forge supervisor decision and second approval fina
 });
 
 test('final proposal creates master outlet inside the same cloud batch', () => {
-  assert.match(worker, /if \(entity === 'outletProposals' && existing && str\(row\.status\) === 'approved'\)/);
+  assert.match(worker, /if \(entity === 'outletProposals' && str\(row\.status\) === 'approved'\)/);
   assert.match(worker, /approvedProposalOutlet\(env, organizationId, row, existing\)/);
   assert.match(worker, /statements\.push\(\.\.\.finalization\.statements\)/);
   assert.match(worker, /upsertStatements\(env, 'outlets', outletRow, organizationId\)/);
