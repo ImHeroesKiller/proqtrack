@@ -169,6 +169,17 @@ export function renderVisitDetailHtml(visitId) {
   const intel = getCompetitorIntel().filter(i => String(i.visitId || '') === String(visitId));
   const photos = getFieldPhotos().filter(p => String(p.visitId || '') === String(visitId));
   const products = Object.fromEntries(getProducts().map(p => [p.id, p]));
+  const checkInEvidence = visitLocationEvidence(v, o);
+  const checkInFreshness = locationFreshness(checkInEvidence, v, Date.now(), todayISO());
+  const checkOutLat = Number(v.checkOutLat);
+  const checkOutLng = Number(v.checkOutLng);
+  const checkOutValid = Number.isFinite(checkOutLat) && Number.isFinite(checkOutLng);
+  const checkOutAccuracy = Number(v.checkOutAccuracyM);
+  const checkOutEvidence = checkOutValid ? {
+    lat:checkOutLat, lng:checkOutLng, source:'device_gps', actual:true,
+    accuracyM:Number.isFinite(checkOutAccuracy) ? Math.max(0, checkOutAccuracy) : null,
+    capturedAt:v.checkOutCapturedAt || v.completedAt || null,
+  } : null;
   return `
     <div class="detail-grid" style="margin-bottom:14px">
       <div class="detail-label">Toko</div><div class="detail-value">${esc(o?.name || '-')}</div>
@@ -177,6 +188,8 @@ export function renderVisitDetailHtml(visitId) {
       <div class="detail-label">Check out</div><div class="detail-value">${v.checkOutTime || '—'}</div>
       <div class="detail-label">Durasi</div><div class="detail-value">${formatDuration(v.checkInTime, v.checkOutTime)}</div>
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(v.status)}</div>
+      <div class="detail-label">Bukti GPS Check In</div><div class="detail-value">${checkInEvidence ? `${esc(locationSourceLabel(checkInEvidence))} · ${checkInEvidence.lat.toFixed(6)}, ${checkInEvidence.lng.toFixed(6)}${checkInEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkInEvidence.accuracyM)} m` : ''} · ${esc(checkInFreshness.label)}` : '—'}</div>
+      <div class="detail-label">Bukti GPS Check Out</div><div class="detail-value">${checkOutEvidence ? `GPS perangkat · ${checkOutEvidence.lat.toFixed(6)}, ${checkOutEvidence.lng.toFixed(6)}${checkOutEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkOutEvidence.accuracyM)} m` : ''}${checkOutEvidence.capturedAt ? ` · ${esc(checkOutEvidence.capturedAt)}` : ''}` : '—'}</div>
       <div class="detail-label">Catatan</div><div class="detail-value full">${esc(v.notes || '—')}</div>
     </div>
     <h4>Stok outlet saat ini</h4>
