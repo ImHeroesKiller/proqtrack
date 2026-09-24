@@ -45,7 +45,7 @@ import {
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
-import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeAssignmentsForEmployee, activeProjectIdsForEmployee, employeeSearchDocument, employeeMatchesFilters, paginateEmployees } from './lib/team-employee-ui.js';
+import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeAssignmentsForEmployee, activeProjectIdsForEmployee, employeeSearchDocument, employeeMatchesFilters, paginateEmployees, employeeOperationalFlags, employeeOperationalCounts } from './lib/team-employee-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -1793,6 +1793,9 @@ function employeeProjectIds(employeeId) {
 function renderEmployees() {
   const employees = getEmployees();
   const db = getDB();
+  const accounts = getAccounts() || [];
+  const assignments = db.projectAssignments || [];
+  const operationalCounts = employeeOperationalCounts(employees, assignments, accounts);
   const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
   const projectOptions = [...new Map(
     employees.flatMap(employee => employeeProjectIds(employee.id))
@@ -1801,6 +1804,12 @@ function renderEmployees() {
   ).values()];
   const rendered = `
     <div class="card">
+      <div class="pm-kpi-grid" style="margin-bottom:14px;">
+        <div class="pm-kpi"><span>Total Karyawan</span><strong>${operationalCounts.total}</strong></div>
+        <div class="pm-kpi"><span>Aktif</span><strong>${operationalCounts.active}</strong></div>
+        <div class="pm-kpi"><span>Belum Ditugaskan</span><strong>${operationalCounts.unassigned}</strong></div>
+        <div class="pm-kpi"><span>Login Belum Terhubung</span><strong>${operationalCounts.loginMissing}</strong></div>
+      </div>
       <div class="filter-row">
         <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, area..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
         <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)">
@@ -1818,15 +1827,22 @@ function renderEmployees() {
           <option value="">Semua Project</option>
           ${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}
         </select>
+        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)">
+          <option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option>
+        </select>
+        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)">
+          <option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetEmployeeFilters()">Reset</button>
         <div class="spacer"></div>
         <span id="employeeSyncState">${employeeSyncLabel()}</span>
-        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkEmployees.open()">Bulk Upload</button>` : ``}
-        <button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>
+        <button class="btn btn-secondary" id="employeeRefreshBtn" type="button" data-pqt-onclick="FT.refreshEmployees()">Refresh</button>
+        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkEmployees.open()">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>` : ``}
       </div>
       <div id="employeeResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper">
         <table class="table employee-table" id="empTable">
-          <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
+          <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Operational</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
           <tbody>
             ${employees.map(e => {
               const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
@@ -1834,16 +1850,20 @@ function renderEmployees() {
               const projectIds = employeeProjectIds(e.id);
               const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
               const search = employeeSearchDocument(e, projects);
-              return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}">
-                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.email)}</div></div></div></td>
+              const flags = employeeOperationalFlags(e, assignments, accounts);
+              const assignmentLabel = flags.assigned ? `${flags.assignmentCount} assignment` : 'Belum ditugaskan';
+              const loginLabel = flags.loginLinked ? (flags.loginActive ? 'Login aktif' : 'Login nonaktif') : 'Login belum terhubung';
+              return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
+                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
                 <td data-label="Role">${roleBadge(e.role)}</td>
                 <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
+                <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
                 <td data-label="Area">${esc(e.area || '—')}</td>
                 <td data-label="Telepon">${esc(e.phone || '—')}</td>
                 <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
                 <td data-label="Kunjungan">${e.totalVisits}</td>
                 <td data-label="Status">${statusBadge(e.status)}</td>
-                <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
+                <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -1868,6 +1888,8 @@ window.FT.filterEmployees = function(page = employeePage) {
     role:String(document.getElementById('empRoleFilter')?.value || ''),
     status:String(document.getElementById('empStatusFilter')?.value || ''),
     projectId:String(document.getElementById('empProjectFilter')?.value || ''),
+    assignment:String(document.getElementById('empAssignmentFilter')?.value || ''),
+    login:String(document.getElementById('empLoginFilter')?.value || ''),
   };
   const rows = [...document.querySelectorAll('#empTable tbody tr')];
   const matched = rows.filter(row => employeeMatchesFilters({
@@ -1875,6 +1897,8 @@ window.FT.filterEmployees = function(page = employeePage) {
     role:row.dataset.role || '',
     status:row.dataset.status || '',
     projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
+    assigned:row.dataset.assigned === '1',
+    loginLinked:row.dataset.login === '1',
   }, filters));
   const pageState = paginateEmployees(matched, page, EMPLOYEE_PAGE_SIZE);
   employeePage = pageState.currentPage;
@@ -1890,6 +1914,35 @@ window.FT.filterEmployees = function(page = employeePage) {
   if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
   const sync = document.getElementById('employeeSyncState');
   if (sync) sync.innerHTML = employeeSyncLabel();
+};
+
+window.FT.resetEmployeeFilters = function() {
+  ['empSearch','empRoleFilter','empStatusFilter','empProjectFilter','empAssignmentFilter','empLoginFilter'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  employeePage = 1;
+  window.FT.filterEmployees(1);
+};
+
+window.FT.refreshEmployees = async function() {
+  const button = document.getElementById('employeeRefreshBtn');
+  if (!getActor()?.organizationId) return;
+  try {
+    if (button) { button.disabled = true; button.textContent = 'Memuat…'; }
+    const result = await refreshOperationalData(getDB(), getActor());
+    if (result?.refreshed) {
+      showToast('Data Employees diperbarui', 'success');
+      render();
+    } else {
+      showToast('Data Employees sudah terbaru');
+      window.FT.filterEmployees(employeePage);
+    }
+  } catch (error) {
+    showToast(error?.message || 'Refresh Employees gagal', 'error');
+  } finally {
+    if (button?.isConnected) { button.disabled = false; button.textContent = 'Refresh'; }
+  }
 };
 function employeePhotoField(current = '') {
   const src = safePhotoUrl(current || '');
@@ -2014,7 +2067,7 @@ window.FT.createEmployee = async function(e) {
   }
   let uploadedPhoto = null;
   try {
-    if (submit) submit.disabled = true;
+    if (submit) { submit.disabled = true; submit.textContent = 'Memeriksa…'; }
     const { checked } = await window.BulkEmployees.previewSingleEmployee({ ...data, photo:'' });
     if (!checked?.valid) {
       const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
@@ -2030,8 +2083,10 @@ window.FT.createEmployee = async function(e) {
       }
       return;
     }
+    if (submit) submit.textContent = 'Mengunggah…';
     uploadedPhoto = await employeePhotoFromForm(form, { projectId:data.projectId, employeeCode:data.employeeCode });
     data.photo = uploadedPhoto.url;
+    if (submit) submit.textContent = 'Menyimpan…';
     delete data.photoFile;
     await window.BulkEmployees.createSingleEmployee(data);
     closeModal();
@@ -2043,14 +2098,16 @@ window.FT.createEmployee = async function(e) {
     if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
     showToast(error.message || String(error), 'error');
   } finally {
-    if (submit?.isConnected) submit.disabled = false;
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
   }
 };
 window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const current = getEmployees().find(row => row.id === id);
   if (!current) return;
-  if (!confirm('Nonaktifkan karyawan ini? Akses login aktif akan dicabut.')) return;
+  const activeAssignmentCount = employeeActiveAssignments(id).length;
+  const impact = activeAssignmentCount ? ` Karyawan memiliki ${activeAssignmentCount} assignment aktif yang akan ditutup.` : '';
+  if (!confirm(`Nonaktifkan karyawan ini?${impact} Akses login aktif akan dicabut.`)) return;
   try {
     await window.BulkEmployees.updateSingleEmployee({
       employeeCode: current.employeeCode || current.code || id,
