@@ -1511,6 +1511,10 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
 
   const adjustmentReason = str(row.adjustmentReason || row.reason || parseMetadata(existing?.metadata_json)?.adjustmentReason);
   const correctionOfCycleId = nullable(str(row.correctionOfCycleId || parseMetadata(existing?.metadata_json)?.correctionOfCycleId));
+  const adjustmentRole = roleOf(context.claims);
+  if ((values.adjustmentQty !== 0 || correctionOfCycleId) && !(BROAD_ROLES.has(adjustmentRole) || adjustmentRole === 'manager')) {
+    return { error:'INVENTORY_CYCLE_ADJUSTMENT_FORBIDDEN', status:403 };
+  }
   if (values.adjustmentQty !== 0 && adjustmentReason.length < 10) {
     return { error:'INVENTORY_CYCLE_ADJUSTMENT_REASON_REQUIRED', status:422 };
   }
@@ -1551,7 +1555,9 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
-  row.minStock = Math.max(0, Number(currentStock?.min_stock || 0));
+  const requestedMinStock = num(row.minStock);
+  if (requestedMinStock != null && requestedMinStock < 0) return { error:'INVENTORY_CYCLE_MIN_STOCK_INVALID', status:422 };
+  row.minStock = requestedMinStock == null ? Math.max(0, Number(currentStock?.min_stock || 0)) : requestedMinStock;
   row.adjustmentReason = adjustmentReason;
   row.correctionOfCycleId = correctionOfCycleId;
 
@@ -1817,7 +1823,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       if (saleError) return json({ error:saleError.error, entity, id:row.id || null }, saleError.status || 409);
     }
     if (entity === 'inventoryCycles') {
-      const cycleError = await validateInventoryCycleMutation(env, organizationId, row, existing, { op });
+      const cycleError = await validateInventoryCycleMutation(env, organizationId, row, existing, { op, claims });
       if (cycleError) return json({
         error:cycleError.error,
         entity,
