@@ -435,7 +435,12 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       if (!context.existing) return context.batchAssignments?.some(a => str(a.employeeId) === str(row.id) && projectAllowed(claims, str(a.projectId)));
       return true;
     }
-    if (entity === 'projects') return projectAllowed(claims, str(row.id));
+    if (entity === 'projects') {
+      if (!context.existing || !projectAllowed(claims, str(row.id))) return false;
+      const currentClientId = str(context.existing.client_id || context.existing.clientId);
+      const nextClientId = str(row.clientId || row.client_id || currentClientId);
+      return !!currentClientId && nextClientId === currentClientId && clientAllowed(claims, currentClientId);
+    }
     if (entity === 'outlets' || entity === 'products') {
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
       return projectIds.length > 0 && projectIds.every(id => projectAllowed(claims, id));
@@ -464,7 +469,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'projects': {
       const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
       const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
-      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name || 'Project'), uiStatus, status };
+      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status };
     }
     case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName || 'Employee'), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
     case 'projectAssignments': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), status: ({ removed: 'ended', assigned: 'active' }[str(row.status)] || safeStatus(row.status, ['active','inactive','ended'], 'active')) };
@@ -847,6 +852,66 @@ async function validateClientMutation(env, organizationId, row, existing = null)
   return null;
 }
 
+function projectUiStatus(row = {}, existing = null) {
+  const existingMeta = parseMetadata(existing?.metadata_json);
+  return str(row.status || row.uiStatus || existingMeta?.uiStatus || existing?.status || 'draft');
+}
+
+function projectTransitionAllowed(current, next) {
+  if (!current || current === next) return true;
+  const allowed = {
+    draft:new Set(['active','cancelled']),
+    active:new Set(['on_hold','completed','cancelled']),
+    on_hold:new Set(['active','completed','cancelled']),
+    completed:new Set(),
+    cancelled:new Set(),
+  };
+  return !!allowed[current]?.has(next);
+}
+
+async function validateProjectMutation(env, organizationId, row, existing = null) {
+  const id = str(row.id);
+  const name = str(row.name);
+  const code = str(row.code || existing?.code || id);
+  const clientId = str(row.clientId || existing?.client_id);
+  const nextStatus = projectUiStatus(row, existing);
+  if (!id) return { error:'PROJECT_ID_REQUIRED', status:400 };
+  if (!name) return { error:'PROJECT_NAME_REQUIRED', status:422 };
+  if (!code) return { error:'PROJECT_CODE_REQUIRED', status:422 };
+  if (!clientId) return { error:'PROJECT_CLIENT_REQUIRED', status:422 };
+  if (!['draft','active','on_hold','completed','cancelled'].includes(nextStatus)) return { error:'PROJECT_INVALID_STATUS', status:422 };
+
+  const client = await env.DB.prepare(
+    'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,clientId).first();
+  if (!client) return { error:'PROJECT_CLIENT_NOT_FOUND', status:422 };
+
+  const start = str(row.startDate || parseMetadata(existing?.metadata_json)?.startDate);
+  const finish = str(row.endDate || parseMetadata(existing?.metadata_json)?.endDate);
+  if (!start || !finish) return { error:'PROJECT_PERIOD_REQUIRED', status:422 };
+  if (finish < start) return { error:'PROJECT_INVALID_PERIOD', status:422 };
+
+  for (const [field, codeName] of [['contractValue','PROJECT_INVALID_CONTRACT_VALUE'],['targetVisits','PROJECT_INVALID_TARGET_VISITS'],['targetOutlets','PROJECT_INVALID_TARGET_OUTLETS']]) {
+    const value = row[field];
+    if (value != null && value !== '' && (!Number.isFinite(Number(value)) || Number(value) < 0)) {
+      return { error:codeName, status:422 };
+    }
+  }
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id FROM core_projects WHERE organization_id=? AND id<>? AND lower(code)=lower(?) LIMIT 1'
+  ).bind(organizationId,id,code).first();
+  if (duplicate) return { error:'PROJECT_CODE_CONFLICT', status:409 };
+
+  if (existing) {
+    const currentStatus = projectUiStatus({}, existing);
+    if (!projectTransitionAllowed(currentStatus, nextStatus)) {
+      return { error:'PROJECT_INVALID_TRANSITION', status:409, currentStatus, nextStatus };
+    }
+  }
+  return null;
+}
+
 async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
@@ -888,6 +953,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'clients' && op === 'upsert') {
       const clientError = await validateClientMutation(env, organizationId, row, existing);
       if (clientError) return json({ error:clientError.error, entity, id:row.id || null }, clientError.status || 422);
+    }
+    if (entity === 'projects' && op === 'upsert') {
+      const projectError = await validateProjectMutation(env, organizationId, row, existing);
+      if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
     }
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
