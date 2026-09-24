@@ -33,7 +33,7 @@ import {
   formatDate, formatDateShort, getInitials, statusBadge, roleBadge, outletIcon,
   calculateDistance, formatDuration, uid, formatCurrency, visibilityBadge,
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
-  normalizeAttendanceStatus,
+  normalizeAttendanceStatus, validCoordinatePair, captureDevicePosition,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData } from './lib/cloud-data.js';
@@ -70,6 +70,8 @@ const state = {
   homeRefreshTimer: null,
   homeRefreshInFlight: false,
   homeRefreshedAt: null,
+  trackingRefreshInFlight: false,
+  trackingRefreshedAt: null,
 };
 
 const PROJECT_MANAGEMENT_ROUTES = new Set([
@@ -960,6 +962,133 @@ function renderSupervisorDashboard() {
 function renderDashboard() {
   return isSupervisor() ? renderSupervisorDashboard() : renderManagerDashboard();
 }
+function isTrackingRoute(route = state.route) {
+  return route === '#/tracking';
+}
+
+function trackingLocationEvidence(visit, outlet) {
+  const hasCheckInGps = validCoordinatePair(visit?.checkInLat, visit?.checkInLng);
+  const hasLegacyVisitGps = validCoordinatePair(visit?.lat, visit?.lng);
+  if (hasCheckInGps) {
+    return {
+      lat:Number(visit.checkInLat),
+      lng:Number(visit.checkInLng),
+      source:'device_gps',
+      accuracyM:Number.isFinite(Number(visit.checkInAccuracyM)) ? Number(visit.checkInAccuracyM) : null,
+      capturedAt:visit.checkInCapturedAt || null,
+    };
+  }
+  if (hasLegacyVisitGps) {
+    return {
+      lat:Number(visit.lat),
+      lng:Number(visit.lng),
+      source:visit.locationSource === 'device_gps' ? 'device_gps' : 'legacy_visit',
+      accuracyM:Number.isFinite(Number(visit.checkInAccuracyM)) ? Number(visit.checkInAccuracyM) : null,
+      capturedAt:visit.checkInCapturedAt || null,
+    };
+  }
+  if (validCoordinatePair(outlet?.lat, outlet?.lng)) {
+    return {
+      lat:Number(outlet.lat),
+      lng:Number(outlet.lng),
+      source:'outlet_reference',
+      accuracyM:null,
+      capturedAt:null,
+    };
+  }
+  return null;
+}
+
+function locationFreshness(loc) {
+  if (!loc) return { key:'none', label:'Belum ada lokasi', color:'var(--gray-300)' };
+  if (loc.source === 'outlet_reference') return { key:'reference', label:'Referensi outlet', color:'var(--amber-500)' };
+  const sameDay = visitDay(loc.visit) === todayISO();
+  if (!sameDay) return { key:'stale', label:'Lokasi lama', color:'var(--gray-400)' };
+  if (loc.capturedAt) {
+    const ageMs = Date.now() - new Date(loc.capturedAt).getTime();
+    const ageMin = Number.isFinite(ageMs) ? Math.max(0, Math.floor(ageMs / 60000)) : null;
+    if (ageMin != null && ageMin <= 30) return { key:'fresh', label:`GPS ${ageMin < 1 ? 'baru saja' : ageMin + ' mnt lalu'}`, color:'var(--green-500)' };
+    if (ageMin != null && ageMin <= 240) return { key:'today', label:`GPS ${Math.floor(ageMin / 60)} jam lalu`, color:'var(--blue-500)' };
+    return { key:'stale', label:'GPS hari ini · stale', color:'var(--amber-500)' };
+  }
+  return { key:'today', label:loc.source === 'device_gps' ? 'GPS hari ini' : 'Lokasi visit hari ini', color:'var(--blue-500)' };
+}
+
+async function refreshTrackingData({ manual = false } = {}) {
+  if (state.trackingRefreshInFlight || !state.loggedIn || !isTrackingRoute()) return false;
+  const actor = getActor();
+  if (!actor?.organizationId) return false;
+  state.trackingRefreshInFlight = true;
+  try {
+    const result = await refreshOperationalData(getDB(), actor);
+    if (result?.refreshed) {
+      state.trackingRefreshedAt = result.refreshedAt || new Date().toISOString();
+      if (manual) showToast('Last Location diperbarui', 'success');
+      if (isTrackingRoute()) render();
+      return true;
+    }
+    if (manual) {
+      const message = ['local-sync-pending','local-changes-pending'].includes(result?.reason)
+        ? 'Perubahan lokal sedang disinkronkan. Coba lagi setelah sinkronisasi selesai.'
+        : 'Belum ada data baru untuk dimuat.';
+      showToast(message);
+    }
+    return false;
+  } catch (error) {
+    if (manual) showToast(error?.message || 'Refresh Last Location gagal', 'error');
+    else if (![401,403].includes(Number(error?.status || 0))) {
+      console.warn('tracking_refresh_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    state.trackingRefreshInFlight = false;
+  }
+}
+
+function configureTrackingRefresh(route = state.route) {
+  const shouldRun = state.loggedIn && isTrackingRoute(route) && !!getActor()?.organizationId;
+  if (!shouldRun) {
+    if (state.livePolling) clearInterval(state.livePolling);
+    state.livePolling = null;
+    return;
+  }
+  if (!state.livePolling) {
+    state.livePolling = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshTrackingData().catch(() => {});
+    }, 30000);
+  }
+}
+
+window.FT.refreshTracking = () => refreshTrackingData({ manual:true });
+
+async function checkInVisitWithGps(id) {
+  const visit = getVisits().find(row => row.id === id);
+  if (!visit) throw new Error('Kunjungan tidak ditemukan atau di luar cakupan tim.');
+  const actor = getActor();
+  const ownVisit = !!actor?.employeeId && String(actor.employeeId) === String(visit.employeeId);
+  const now = new Date();
+  const payload = {
+    status:'checked-in',
+    checkInTime:now.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', hour12:false }),
+  };
+  if (ownVisit) {
+    const gps = await captureDevicePosition({ timeout:15000, maximumAge:5000 });
+    Object.assign(payload, {
+      checkInLat:gps.lat,
+      checkInLng:gps.lng,
+      lat:gps.lat,
+      lng:gps.lng,
+      checkInAccuracyM:gps.accuracyM,
+      checkInCapturedAt:gps.capturedAt,
+      locationSource:'device_gps',
+    });
+  } else {
+    payload.locationSource = 'admin_record';
+  }
+  updateVisit(id,payload);
+  return payload;
+}
+
 
 function lastKnownLocation(empId) {
   const visits = getVisits()
