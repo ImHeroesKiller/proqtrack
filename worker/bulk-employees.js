@@ -149,12 +149,14 @@ function validateRows(rows, ctx, claims) {
     else if (project && claims.role === 'manager' && !claims.projectIds?.includes(String(project.id))) errors.push('PROJECT_OUT_OF_SCOPE');
     if (existing && claims.role === 'manager') {
       const managerProjects = new Set((claims.projectIds || []).map(String));
-      const accessible = ctx.assignments.some(assignment =>
-        String(assignment.employee_id) === String(existing.id)
-        && assignment.status === 'active'
-        && managerProjects.has(String(assignment.project_id))
+      const employeeAssignments = ctx.assignments.filter(assignment =>
+        String(assignment.employee_id) === String(existing.id) && assignment.status === 'active'
       );
+      const accessible = employeeAssignments.some(assignment => managerProjects.has(String(assignment.project_id)));
       if (!accessible) errors.push('EMPLOYEE_OUT_OF_SCOPE');
+      if (row.status !== 'active' && employeeAssignments.some(assignment => !managerProjects.has(String(assignment.project_id)))) {
+        errors.push('EMPLOYEE_HAS_OUT_OF_SCOPE_ASSIGNMENTS');
+      }
     }
     const emailOwner = row.email ? ctx.employeeByEmail.get(row.email) : null;
     if (emailOwner && (!existing || String(emailOwner.id) !== String(existing.id))) errors.push('EMAIL_USED_BY_ANOTHER_EMPLOYEE');
