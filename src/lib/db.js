@@ -8,7 +8,7 @@ import {
   seedPromoTypes, seedFieldPhotos,
 } from '../data/seed.js';
 import {
-  uid, sanitizePlainText, todayISO, normalizeAttendanceStatus,
+  uid, sanitizePlainText, todayISO, normalizeAttendanceStatus, validCoordinatePair,
   hashPassword, passwordMatches, publicAccount,
 } from './utils.js';
 import { defaultPortrait } from './avatars.js';
@@ -1634,6 +1634,14 @@ export function createVisit(data) {
 }
 
 export function updateVisit(id, data) {
+  const hasCheckInLat = Object.prototype.hasOwnProperty.call(data || {}, 'checkInLat');
+  const hasCheckInLng = Object.prototype.hasOwnProperty.call(data || {}, 'checkInLng');
+  if (hasCheckInLat !== hasCheckInLng) throw new Error('Koordinat check-in harus berupa pasangan latitude dan longitude.');
+  if (hasCheckInLat && !validCoordinatePair(data.checkInLat,data.checkInLng)) throw new Error('Koordinat check-in tidak valid.');
+  const hasLat = Object.prototype.hasOwnProperty.call(data || {}, 'lat');
+  const hasLng = Object.prototype.hasOwnProperty.call(data || {}, 'lng');
+  if (hasLat !== hasLng) throw new Error('Koordinat lokasi harus berupa pasangan latitude dan longitude.');
+  if (hasLat && !validCoordinatePair(data.lat,data.lng)) throw new Error('Koordinat lokasi tidak valid.');
   const db = getDB();
   const idx = db.visits.findIndex(v => v.id === id);
   if (idx === -1) return null;
