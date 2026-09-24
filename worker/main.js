@@ -207,7 +207,7 @@ export default {
           response = await handleAnalyticsRoute(request, env, claims, url, id);
         }
 
-        if (!response && url.pathname.startsWith('/api/admin/organizations')) {
+        if (!response && (url.pathname.startsWith('/api/admin/organizations') || url.pathname === '/api/organization/profile')) {
           response = await handleOrganizationAdminRoute(request, env, claims, url, id);
         }
 
