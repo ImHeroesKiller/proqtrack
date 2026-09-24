@@ -14,8 +14,9 @@ const boot = {
 window.__PROQTRACK_BOOT__ = boot;
 
 async function load(path, name) {
-  await import(path);
+  const module = await import(path);
   boot.modules.push(name);
+  return module;
 }
 
 // Preserve the proven legacy evaluation order while making it explicit.
@@ -38,13 +39,16 @@ await load('./project-client-logos.js', 'project-client-logos');
 await load('./employee-avatars.js', 'employee-avatars');
 await load('./lib/uploads.js', 'uploads');
 await load('./organization.js', 'organization');
-await load('./cloud-cutover.js', 'cloud-cutover');
+const cloudCutoverModule = await load('./cloud-cutover.js', 'cloud-cutover');
 await load('./m4-bootstrap.js', 'm4-bootstrap');
 await load('./lib/m6-client.js', 'm6-client');
 await load('./app.js', 'app');
 
-// cloud-cutover and offline-login intentionally attach after FT is created.
-// Queue our readiness check behind those installers.
+// cloud-cutover is imported before app.js for dependency ordering, but its
+// FT hook must be installed only after app.js has created window.FT.
+cloudCutoverModule.installCloudCutover?.();
+
+// offline-login and other deferred installers still attach on the next task.
 await new Promise(resolve => setTimeout(resolve, 0));
 
 const checks = Object.freeze({
