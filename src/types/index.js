@@ -772,7 +772,7 @@ function renderProjects(readOnly = false) {
             x.status === "active" && rows.some((p) => p.id === x.projectId),
         ).length,
       ],
-    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}<input class="input" placeholder="Cari project, kode, klien" data-pqt-oninput="PM.filterRows('projectRows',this.value)"><select class="select" data-pqt-onchange="PM.filterStatus('projectRows',this.value)"><option value="">Semua status</option><option>active</option><option>draft</option><option>on_hold</option><option>completed</option><option>cancelled</option></select><select class="select" data-pqt-onchange="PM.filterClient('projectRows',this.value)"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
+    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}<input class="input" id="projectSearch" placeholder="Cari project, kode, klien" aria-label="Cari project" data-pqt-oninput="PM.filterProjects()"><select class="select" id="projectStatusFilter" aria-label="Filter status project" data-pqt-onchange="PM.filterProjects()"><option value="">Semua status</option><option value="active">active</option><option value="draft">draft</option><option value="on_hold">on_hold</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select><select class="select" id="projectClientFilter" aria-label="Filter klien project" data-pqt-onchange="PM.filterProjects()"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
       .map((p) => {
         const c = cm[p.clientId] || {},
           ass = (db.projectAssignments || []).filter(
@@ -1000,6 +1000,17 @@ window.PM = {
     const sync = document.getElementById("clientSyncState");
     if (sync) sync.innerHTML = clientSyncLabel();
   },
+  filterProjects() {
+    const q = String(document.getElementById("projectSearch")?.value || "").trim().toLowerCase();
+    const status = String(document.getElementById("projectStatusFilter")?.value || "");
+    const clientId = String(document.getElementById("projectClientFilter")?.value || "");
+    document.querySelectorAll("#projectRows tr").forEach((row) => {
+      const matchesSearch = !q || String(row.dataset.search || "").includes(q);
+      const matchesStatus = !status || row.dataset.status === status;
+      const matchesClient = !clientId || row.dataset.client === clientId;
+      row.style.display = matchesSearch && matchesStatus && matchesClient ? "" : "none";
+    });
+  },
   filterStatus(id, v) {
     document
       .querySelectorAll(`#${id} tr`)
@@ -1193,10 +1204,10 @@ window.PM = {
     }
     modal(
       id ? "Edit Project" : "Tambah Project",
-      `<form class="pm-form" data-pqt-onsubmit="PM.saveProject(event,'${id}')"><div class="full"><label class="label">Nama Project</label><input class="input" name="name" value="${esc(p.name || "")}" required></div><div><label class="label">Klien</label><select class="select" name="clientId" required>${db.clients.map((c) => `<option value="${c.id}" ${p.clientId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select></div><div><label class="label">Kode Internal</label><input class="input" name="code" value="${esc(p.code || "")}" required></div><div class="full"><label class="label">Description / SoW</label><textarea class="textarea" style="min-height:130px" name="description" required>${esc(p.description || "")}</textarea></div><div><label class="label">Mulai</label><input class="input" type="date" name="startDate" value="${esc(p.startDate || "")}" required></div><div><label class="label">Selesai</label><input class="input" type="date" name="endDate" value="${esc(p.endDate || "")}" required></div><div><label class="label">Status</label><select class="select" name="status">${["draft", "active", "on_hold", "completed", "cancelled"].map((x) => `<option ${p.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">Nilai Kontrak</label><input class="input" type="number" min="0" name="contractValue" value="${p.contractValue || ""}"></div><div><label class="label">Target Visit</label><input class="input" type="number" min="0" name="targetVisits" value="${p.targetVisits || ""}"></div><div><label class="label">Target Outlet</label><input class="input" type="number" min="0" name="targetOutlets" value="${p.targetOutlets || ""}"></div><div class="full"><label class="label">Coverage Area</label><input class="input" name="region" value="${esc(p.region || "")}"></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(p.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Project</button></div></form>`,
+      `<form class="pm-form" data-pqt-onsubmit="PM.saveProject(event,'${id}')"><div class="full"><label class="label">Nama Project</label><input class="input" name="name" value="${esc(p.name || "")}" required></div><div><label class="label">Klien</label>${canCreateProject() ? `<select class="select" name="clientId" required>${db.clients.map((c) => `<option value="${c.id}" ${p.clientId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : `<input type="hidden" name="clientId" value="${esc(p.clientId || "")}"><select class="select" disabled aria-label="Klien project">${db.clients.filter((c) => c.id === p.clientId).map((c) => `<option selected>${esc(c.name)}</option>`).join("")}</select>`}</div><div><label class="label">Kode Internal</label><input class="input" name="code" value="${esc(p.code || "")}" required></div><div class="full"><label class="label">Description / SoW</label><textarea class="textarea" style="min-height:130px" name="description" required>${esc(p.description || "")}</textarea></div><div><label class="label">Mulai</label><input class="input" type="date" name="startDate" value="${esc(p.startDate || "")}" required></div><div><label class="label">Selesai</label><input class="input" type="date" name="endDate" value="${esc(p.endDate || "")}" required></div><div><label class="label">Status</label><select class="select" name="status">${["draft", "active", "on_hold", "completed", "cancelled"].map((x) => `<option ${p.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">Nilai Kontrak</label><input class="input" type="number" min="0" name="contractValue" value="${p.contractValue || ""}"></div><div><label class="label">Target Visit</label><input class="input" type="number" min="0" name="targetVisits" value="${p.targetVisits || ""}"></div><div><label class="label">Target Outlet</label><input class="input" type="number" min="0" name="targetOutlets" value="${p.targetOutlets || ""}"></div><div class="full"><label class="label">Coverage Area</label><input class="input" name="region" value="${esc(p.region || "")}"></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(p.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Project</button></div></form>`,
     );
   },
-  saveProject(e, id) {
+  async saveProject(e, id) {
     e.preventDefault();
     if (!canManage() || (!id && !canCreateProject())) return;
     const db = viewDB(),
@@ -1238,31 +1249,67 @@ window.PM = {
       targetOutlets: Number(fd.get("targetOutlets") || 0) || null,
       region: formValue(fd, "region"),
       notes: formValue(fd, "notes"),
+      modules: { ...defaultModules(), ...(old?.modules || db.projectSettings.find((s) => s.projectId === (id || ""))?.modules || {}) },
       createdAt: old?.createdAt || now(),
       updatedAt: now(),
     };
-    const i = rows.findIndex((x) => x.id === id);
-    i >= 0 ? (rows[i] = data) : rows.push(data);
-    db.projects = rows;
-    if (!db.projectSettings.some((s) => s.projectId === data.id))
-      db.projectSettings.push({
-        projectId: data.id,
-        organizationId: data.organizationId,
-        modules: defaultModules(),
-        updatedAt: now(),
-        updatedBy: account()?.id,
-      });
-    persistView(db);
-    this.close();
-    renderProjects(false);
+    const submit = e.target.querySelector('button[type="submit"], button:not([type])');
+    if (submit) submit.disabled = true;
+    try {
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'projects', op:'upsert', row:data }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+
+      const i = rows.findIndex((x) => x.id === id);
+      i >= 0 ? (rows[i] = data) : rows.push(data);
+      db.projects = rows;
+      if (!db.projectSettings.some((s) => s.projectId === data.id)) {
+        db.projectSettings.push({
+          projectId: data.id,
+          organizationId: data.organizationId,
+          modules: defaultModules(),
+          updatedAt: now(),
+          updatedBy: account()?.id,
+        });
+      }
+      persistView(db);
+      this.close();
+      renderProjects(false);
+      window.showToast?.('Project tersimpan dan tersinkron.', 'success');
+    } catch (error) {
+      const message = {
+        REVISION_CONFLICT:'Data berubah di server. Muat ulang data lalu coba simpan kembali.',
+        PROJECT_NAME_REQUIRED:'Nama project wajib diisi.',
+        PROJECT_CODE_REQUIRED:'Kode project wajib diisi.',
+        PROJECT_CLIENT_REQUIRED:'Klien project wajib dipilih.',
+        PROJECT_CLIENT_NOT_FOUND:'Klien project tidak ditemukan atau tidak valid.',
+        PROJECT_PERIOD_REQUIRED:'Periode project wajib diisi.',
+        PROJECT_INVALID_PERIOD:'Tanggal selesai project tidak boleh sebelum tanggal mulai.',
+        PROJECT_CODE_CONFLICT:'Kode project harus unik.',
+        PROJECT_INVALID_STATUS:'Status project tidak valid.',
+        PROJECT_INVALID_TRANSITION:'Perubahan status project tidak diizinkan.',
+        PROJECT_INVALID_CONTRACT_VALUE:'Nilai kontrak tidak valid.',
+        PROJECT_INVALID_TARGET_VISITS:'Target visit tidak valid.',
+        PROJECT_INVALID_TARGET_OUTLETS:'Target outlet tidak valid.',
+        CHANGE_FORBIDDEN:'Anda tidak memiliki izin untuk mengubah project ini.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Project belum disimpan.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba simpan kembali.',
+      }[error?.code || error?.message] || error?.message || 'Project gagal disimpan.';
+      window.showToast?.(message, 'error');
+    } finally {
+      if (submit?.isConnected) submit.disabled = false;
+    }
   },
   viewProject(id) {
     const db = viewDB(),
       p = db.projects.find((x) => x.id === id),
       c = db.clients.find((x) => x.id === p?.clientId),
       ass = (db.projectAssignments || []).filter((a) => a.projectId === id),
-      set = db.projectSettings.find((s) => s.projectId === id) || {
-        modules: defaultModules(),
+      set = {
+        modules: { ...defaultModules(), ...(p?.modules || db.projectSettings.find((s) => s.projectId === id)?.modules || {}) },
       },
       em = Object.fromEntries(db.employees.map((e) => [e.id, e]));
     if (!p || (!canManage() && !accessibleProjectIds().has(id))) return;
@@ -1279,20 +1326,44 @@ window.PM = {
       }</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Modul Field Aktif</div><div class="pm-modules" style="margin-top:10px">${ALL_MODULES.map((m) => `<label class="pm-module"><span>${esc(MODULE_LABELS[m])}</span><input type="checkbox" ${set.modules?.[m] !== false ? "checked" : ""} ${canManage() ? "" : "disabled"} data-pqt-onchange="PM.setModule('${id}','${m}',this.checked)"></label>`).join("")}</div></div></div>`,
     );
   },
-  setModule(projectId, module, value) {
-    if (!canManage()) return;
+  async setModule(projectId, module, value) {
+    if (!canManage() || !ALL_MODULES.includes(module)) return;
     const db = viewDB();
-    let s = db.projectSettings.find((x) => x.projectId === projectId);
-    if (!s) {
-      s = { projectId, organizationId: currentOrgId(), modules: defaultModules() };
-      db.projectSettings.push(s);
+    const project = db.projects.find((x) => x.id === projectId);
+    if (!project || (!canManage() && !accessibleProjectIds().has(projectId))) return;
+    const nextModules = { ...defaultModules(), ...(project.modules || db.projectSettings.find((s) => s.projectId === projectId)?.modules || {}), [module]: !!value };
+    const nextProject = { ...project, modules: nextModules, updatedAt: now() };
+    try {
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+      Object.assign(project, nextProject);
+      let s = db.projectSettings.find((x) => x.projectId === projectId);
+      if (!s) {
+        s = { projectId, organizationId:currentOrgId(), modules:defaultModules() };
+        db.projectSettings.push(s);
+      }
+      s.organizationId ||= currentOrgId();
+      s.modules = nextModules;
+      s.updatedAt = nextProject.updatedAt;
+      s.updatedBy = account()?.id;
+      persistView(db);
+      applyModuleVisibility();
+      window.showToast?.('Pengaturan modul project tersimpan.', 'success');
+    } catch (error) {
+      window.showToast?.({
+        REVISION_CONFLICT:'Data project berubah di server. Muat ulang lalu coba kembali.',
+        PROJECT_INVALID_TRANSITION:'Status project tidak mengizinkan perubahan ini.',
+        CHANGE_FORBIDDEN:'Anda tidak memiliki izin untuk mengubah project ini.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba kembali.',
+      }[error?.code || error?.message] || 'Pengaturan modul project gagal disimpan.', 'error');
+      const checkbox = document.querySelector(`input[data-pqt-onchange*="PM.setModule('${projectId}','${module}'"]`);
+      if (checkbox) checkbox.checked = !value;
     }
-    if (!s.organizationId) s.organizationId = currentOrgId();
-    s.modules = { ...defaultModules(), ...s.modules, [module]: value };
-    s.updatedAt = now();
-    s.updatedBy = account()?.id;
-    persistView(db);
-    applyModuleVisibility();
   },
   openAssign(projectId) {
     if (!canManage()) return;
