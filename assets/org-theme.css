@@ -171,3 +171,70 @@ html[data-org-branding="1"] .mq-store-ico {
 html[data-org-branding="1"] .role-sales .field-dock-item.active::after {
   background: var(--brand) !important;
 }
+
+
+.home-hero {
+  background:
+    radial-gradient(480px 180px at 100% 0%, rgba(var(--brand-rgb), .13), transparent 65%),
+    linear-gradient(135deg, var(--brand-soft), rgba(255,255,255,.96)) !important;
+  border-color: rgba(var(--brand-rgb), .18) !important;
+}
+.home-hero .card-title {
+  font-size: 18px;
+}
+.home-hero .card-subtitle {
+  margin-bottom: 0;
+}
+.home-hero-row {
+  margin-bottom: 0 !important;
+}
+.home-freshness {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), .07);
+  color: var(--gray-500);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.home-team-row,
+.home-action-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--gray-100);
+}
+.home-team-row > div,
+.home-action-row > div {
+  min-width: 0;
+}
+.home-action-row {
+  display: block;
+}
+.home-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+@media (max-width: 639px) {
+  .home-freshness {
+    display: none;
+  }
+  .home-hero-row {
+    align-items: stretch !important;
+  }
+  .home-hero-row .spacer {
+    display: none;
+  }
+  .home-hero-row .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+  .home-team-row {
+    align-items: center;
+  }
+}
