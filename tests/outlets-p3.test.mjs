@@ -75,6 +75,6 @@ test('Outlets P3 runtime uses shared helpers instead of local duplicate models',
 
 test('Outlets P3 helper is available in offline PWA shell', () => {
   assert.match(sw,/Outlets P3 maintainability refresh/);
-  assert.match(sw,/proqtrack-v12\.43/);
+  assert.match(sw,/proqtrack-v12\.44/);
   assert.match(sw,/\.\/src\/lib\/outlet-ui\.js/);
 });
