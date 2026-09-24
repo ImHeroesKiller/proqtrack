@@ -1892,16 +1892,16 @@ window.FT.filterEmployees = function(page = employeePage) {
   if (sync) sync.innerHTML = employeeSyncLabel();
 };
 function employeePhotoField(current = '') {
-  const src = current || '';
+  const src = safePhotoUrl(current || '');
   return `
     <div class="form-group emp-photo-field">
       <label class="label">Foto karyawan</label>
       <div class="employee-photo-editor">
-        <img class="employee-photo-preview" alt="Preview" src="${src || ''}" onerror="this.style.opacity=.3">
+        <img class="employee-photo-preview" alt="Preview" src="${esc(src)}" onerror="this.style.opacity=.3">
         <div>
           <input class="input" type="file" name="photoFile" accept="image/jpeg,image/png,image/webp" data-pqt-onchange="FT.previewEmployeePhoto(this)">
           <input type="hidden" name="photo" value="${esc(src)}">
-          <div class="employee-photo-help">Gunakan satu foto profil yang jelas.</div>
+          <div class="employee-photo-help">JPG/PNG/WebP. Foto dikompresi lalu disimpan di cloud storage.</div>
         </div>
       </div>
     </div>`;
@@ -1913,10 +1913,30 @@ window.FT.previewEmployeePhoto = function(input) {
   if (file && preview) preview.src = URL.createObjectURL(file);
 };
 
-async function photoFromEmployeeForm(form, fallback = '') {
+function employeePhotoObjectKey(value = '') {
+  const text = String(value || '').trim();
+  const marker = '/api/files/';
+  const index = text.indexOf(marker);
+  if (index < 0) return '';
+  try { return decodeURIComponent(text.slice(index + marker.length).split(/[?#]/)[0]); }
+  catch { return ''; }
+}
+
+async function employeePhotoFromForm(form, { fallback = '', projectId = '', employeeCode = '' } = {}) {
   const file = form.querySelector('input[name="photoFile"]')?.files?.[0];
-  if (file) return compressImage(file, { maxPx: 320, quality: 0.82 });
-  return form.querySelector('input[name="photo"]')?.value || fallback;
+  if (!file) return { url:form.querySelector('input[name="photo"]')?.value || fallback, key:'', uploaded:false };
+  const compressed = await compressImage(file, { maxPx:480, quality:0.82 });
+  const blob = await fetch(compressed).then(response => response.blob());
+  const safeName = String(employeeCode || 'employee').replace(/[^a-zA-Z0-9_-]+/g,'-');
+  const uploadFile = new File([blob], `${safeName}.jpg`, { type:'image/jpeg' });
+  const uploaded = await uploadAsset(uploadFile, { category:'employee-profile', projectId:projectId || 'general', name:uploadFile.name });
+  return { url:uploaded.url, key:uploaded.key, uploaded:true };
+}
+
+async function cleanupEmployeePhoto(key) {
+  if (!key) return;
+  try { await deleteUploadedAsset(key); }
+  catch (error) { console.warn('employee_photo_cleanup_failed', error?.message || error); }
 }
 
 window.FT.openEmployeeModal = function() {
