@@ -38,3 +38,11 @@ test('Visits P2 surfaces GPS evidence and mobile card layout', async () => {
   assert.match(html, /visit-responsive-table tbody tr\[data-visit-id\]/);
   assert.match(html, /@media \(max-width: 760px\)/);
 });
+
+test('Visits P2 correction workflow validates canonical visit scope and deduplicates pending requests', async () => {
+  const workflows = await read('worker/workflows.js');
+  assert.match(workflows, /SELECT id,project_id,status FROM core_visits WHERE organization_id=\? AND id=\? LIMIT 1/);
+  assert.match(workflows, /VISIT_NOT_FINAL/);
+  assert.match(workflows, /WORKFLOW_ALREADY_PENDING/);
+  assert.match(workflows, /workflow_type='visit_exception'/);
+});
