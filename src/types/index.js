@@ -6,6 +6,7 @@
 
 import { getDB, saveDB, getCurrentOrgId, getActor, DEFAULT_ORG_ID } from "../lib/db.js";
 import { commitOperationalChanges, cloudDataStatus } from "../lib/cloud-data.js";
+import { CLIENT_PAGE_SIZE, clientStatusLabel, normalizeClientWebsite, clientSyncState, clientMatchesFilters, paginateClients, normalizeAdditionalPics, clientSearchDocument } from "../lib/client-ui.js";
 
 const ALL_MODULES = [
   "visits",
@@ -690,28 +691,11 @@ function kpis(items) {
   return `<div class="pm-grid">${items.map((x) => `<div class="pm-kpi"><div class="pm-kpi-label">${esc(x[0])}</div><div class="pm-kpi-value">${esc(x[1])}</div>${x[2] ? `<div class="pm-kpi-note">${esc(x[2])}</div>` : ""}</div>`).join("")}</div>`;
 }
 
-const CLIENT_PAGE_SIZE = 15;
 let clientPage = 1;
-function clientStatusLabel(value) {
-  return ({ active:'Aktif', prospect:'Prospect', inactive:'Nonaktif', archived:'Arsip' })[String(value || '')] || String(value || '-');
-}
-function normalizeWebsite(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
-  try {
-    const parsed = new URL(candidate);
-    return ['http:','https:'].includes(parsed.protocol) ? parsed.toString() : '';
-  } catch {
-    return '';
-  }
-}
 function clientSyncLabel() {
-  const cloud = cloudDataStatus();
-  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
-  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
-  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
-  return '<span class="pm-sync">Mode lokal</span>';
+  const state = clientSyncState(cloudDataStatus());
+  const suffix = state.tone === 'local' ? '' : ` pm-sync-${state.tone}`;
+  return `<span class="pm-sync${suffix}">${esc(state.label)}</span>`;
 }
 function additionalPicRows(pics = []) {
   const rows = pics.length ? pics : [{ name:'', role:'', phone:'', email:'' }];
@@ -745,7 +729,7 @@ function renderClients() {
         const projectCount=(db.projects || []).filter((p) => p.clientId === c.id).length;
         const initials=String(c.name || '?').split(" ").map((x) => x[0]).slice(0,2).join("");
         const logo=c.logoUrl || c.logo || '';
-        return `<tr data-client-id="${esc(c.id)}" data-status="${esc(c.status)}" data-search="${esc(`${c.name} ${c.legalName || ''} ${c.picName || ''} ${c.city || ''} ${c.province || ''}`.toLowerCase())}">
+        return `<tr data-client-id="${esc(c.id)}" data-status="${esc(c.status)}" data-search="${esc(clientSearchDocument(c))}">
           <td data-label="Klien"><div class="pm-client-cell">${logo ? `<img class="pm-client-logo-img" alt="" src="${esc(logo)}">` : `<span class="pm-client-logo">${esc(initials)}</span>`}<div><strong>${esc(c.name)}</strong><div class="pm-subtext">${esc(c.legalName || "")}</div></div></div></td>
           <td data-label="Industri">${esc(c.industry || '-')}</td>
           <td data-label="PIC Utama"><strong>${esc(c.picName || "-")}</strong><div class="pm-subtext">${esc(c.picRole || "")}</div></td>
@@ -992,27 +976,27 @@ window.PM = {
       );
   },
   filterClients(page = clientPage) {
-    const q = String(document.getElementById("clientSearch")?.value || "").trim().toLowerCase();
-    const status = String(document.getElementById("clientStatusFilter")?.value || "");
+    const filters = {
+      search:String(document.getElementById("clientSearch")?.value || ""),
+      status:String(document.getElementById("clientStatusFilter")?.value || ""),
+    };
     const rows = [...document.querySelectorAll("#clientRows tr")];
-    const matched = rows.filter((row) => {
-      const matchesSearch = !q || String(row.dataset.search || "").includes(q);
-      const matchesStatus = !status || row.dataset.status === status;
-      return matchesSearch && matchesStatus;
-    });
-    const pageCount = Math.max(1, Math.ceil(matched.length / CLIENT_PAGE_SIZE));
-    clientPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
-    const start = (clientPage - 1) * CLIENT_PAGE_SIZE;
-    const visible = new Set(matched.slice(start, start + CLIENT_PAGE_SIZE));
+    const matched = rows.filter((row) => clientMatchesFilters({
+      name:row.dataset.search || '',
+      status:row.dataset.status || '',
+    }, filters));
+    const pageState = paginateClients(matched, page, CLIENT_PAGE_SIZE);
+    clientPage = pageState.currentPage;
+    const visible = new Set(pageState.items);
     rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
     const summary = document.getElementById("clientResultSummary");
-    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + CLIENT_PAGE_SIZE, matched.length)} dari ${matched.length} klien` : "Tidak ada klien yang sesuai dengan filter.";
+    if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} klien` : "Tidak ada klien yang sesuai dengan filter.";
     const empty = document.getElementById("clientEmpty");
-    if (empty) empty.hidden = matched.length !== 0;
+    if (empty) empty.hidden = pageState.total !== 0;
     const pager = document.getElementById("clientPager");
-    if (pager) pager.hidden = matched.length <= CLIENT_PAGE_SIZE;
+    if (pager) pager.hidden = pageState.total <= CLIENT_PAGE_SIZE;
     const label = document.getElementById("clientPageLabel");
-    if (label) label.textContent = `Halaman ${clientPage} / ${pageCount}`;
+    if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
     const sync = document.getElementById("clientSyncState");
     if (sync) sync.innerHTML = clientSyncLabel();
   },
@@ -1054,12 +1038,12 @@ window.PM = {
       fd = new FormData(e.target),
       rows = db.clients || [],
       old = rows.find((x) => x.id === id),
-      pics = fd.getAll("additionalPicName").map((name, index) => ({
-        name:String(name || '').trim(),
-        role:String(fd.getAll("additionalPicRole")[index] || '').trim(),
-        phone:String(fd.getAll("additionalPicPhone")[index] || '').trim(),
-        email:String(fd.getAll("additionalPicEmail")[index] || '').trim(),
-      })).filter((pic) => pic.name || pic.role || pic.phone || pic.email);
+      pics = normalizeAdditionalPics({
+        names:fd.getAll("additionalPicName"),
+        roles:fd.getAll("additionalPicRole"),
+        phones:fd.getAll("additionalPicPhone"),
+        emails:fd.getAll("additionalPicEmail"),
+      });
     const name = formValue(fd, "name");
     const legalName = formValue(fd, "legalName");
     const cooperationStart = formValue(fd, "cooperationStart");
@@ -1090,7 +1074,7 @@ window.PM = {
       return;
     }
     const websiteInput = formValue(fd, "website");
-    if (websiteInput && !normalizeWebsite(websiteInput)) {
+    if (websiteInput && !normalizeClientWebsite(websiteInput)) {
       window.showToast?.("Alamat website tidak valid.", "error");
       return;
     }
@@ -1105,7 +1089,7 @@ window.PM = {
       address: formValue(fd, "address"),
       city: formValue(fd, "city"),
       province: formValue(fd, "province"),
-      website: normalizeWebsite(formValue(fd, "website")),
+      website: normalizeClientWebsite(formValue(fd, "website")),
       notes: formValue(fd, "notes"),
       status: formValue(fd, "status"),
       picName: formValue(fd, "picName"),
@@ -1179,7 +1163,7 @@ window.PM = {
       c = db.clients.find((x) => x.id === id),
       projects = db.projects.filter((p) => p.clientId === id);
     if (!c) return;
-    const website = normalizeWebsite(c.website);
+    const website = normalizeClientWebsite(c.website);
     modal(
       c.name,
       `<div class="pm-detail-grid">
