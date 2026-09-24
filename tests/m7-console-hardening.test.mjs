@@ -123,3 +123,12 @@ test('successful cloud login refreshes only the hashed offline credential', asyn
   assert.match(cutover, /ensureCloudIdentity\(db, cloudAccount, localAccount \|\| localCandidate, password\)/);
   assert.doesNotMatch(bridge, /next\.password = verifiedPassword/);
 });
+
+
+test('evidence bootstrap hydration keeps the restored bearer token stable', async () => {
+  const bridge = await read('src/lib/cloud-data.js');
+  assert.match(bridge, /const bootstrapToken = getApiToken\(\)/);
+  assert.match(bridge, /getApiToken\(\) === bootstrapToken/);
+  assert.match(bridge, /fetchCloudFieldPhotos\(bootstrapToken\)/);
+  assert.match(bridge, /authorization: `Bearer \${sessionToken}`/);
+});
