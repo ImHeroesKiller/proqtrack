@@ -1,7 +1,8 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   updateOwnProfile,
-  getDB, getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
+  getDB, getOrganization, getCurrentOrgId,
+  getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
   getAttendancePolicy, getAttendancePoints, createAttendancePoint,
   isTestDevice,
 } from './lib/db.js';
@@ -11,6 +12,9 @@ import {
   syncCloudAccounts, createCloudAccount, updateCloudAccount,
   resetCloudAccountDevice, changeCloudPassword, updateCloudProfile,
 } from './lib/cloud-accounts.js';
+import {
+  syncCurrentOrganizationProfile, updateCurrentOrganizationProfile,
+} from './lib/cloud-organizations.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -165,6 +169,47 @@ const TIMEZONES = [
   ['Asia/Jayapura', 'WIT — Jayapura'],
   ['UTC', 'UTC'],
 ];
+
+let organizationProfileSyncInFlight = false;
+let organizationProfileSyncedOrg = '';
+let organizationSaveInFlight = false;
+
+function organizationErrorMessage(error) {
+  const messages = {
+    ORGANIZATION_PROFILE_FORBIDDEN: 'Anda tidak memiliki izin untuk mengubah profil organisasi.',
+    ORGANIZATION_NOT_FOUND: 'Organisasi aktif tidak ditemukan.',
+    ORGANIZATION_NAME_REQUIRED: 'Nama organisasi wajib diisi.',
+    ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
+    ORGANIZATION_LOGO_INVALID: 'Format logo tidak didukung. Gunakan JPG, PNG, atau WebP.',
+    ORGANIZATION_LOGO_TOO_LARGE: 'Logo terlalu besar setelah kompresi.',
+  };
+  const message = messages[error?.code] || error?.message || String(error || 'Profil organisasi gagal diperbarui.');
+  const requestId = error?.payload?.requestId;
+  return requestId ? `${message} Ref: ${requestId}` : message;
+}
+
+function dataUrlBytes(value) {
+  const match = String(value || '').match(/^data:image\/(?:jpeg|png|webp);base64,(.+)$/i);
+  if (!match) return 0;
+  return Math.floor(match[1].replace(/=+$/,'').length * 3 / 4);
+}
+
+function scheduleOrganizationProfileRefresh(acc) {
+  const orgId = String(acc?.organizationId || getCurrentOrgId() || '');
+  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId) return;
+  organizationProfileSyncInFlight = true;
+  queueMicrotask(async () => {
+    try {
+      await syncCurrentOrganizationProfile();
+      organizationProfileSyncedOrg = orgId;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(organizationErrorMessage(error), 'error');
+    } finally {
+      organizationProfileSyncInFlight = false;
+    }
+  });
+}
 
 function storageKb() {
   try {
