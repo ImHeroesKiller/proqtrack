@@ -338,6 +338,22 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return currentStatus === 'active' && ['active','ended'].includes(nextStatus);
   }
 
+  if (entity === 'inventoryCycles') {
+    if (op === 'delete') return false;
+    if (!existing) return op === 'upsert' && ['draft','finalized'].includes(str(row.status || 'draft'));
+    if (str(existing.status) === 'finalized') return false;
+    for (const pair of [
+      [['projectId','project_id'],['project_id','projectId']],
+      [['outletId','outlet_id'],['outlet_id','outletId']],
+      [['productId','product_id'],['product_id','productId']],
+      [['employeeId','employee_id'],['employee_id','employeeId']],
+      [['cycleDate','cycle_date'],['cycle_date','cycleDate']],
+    ]) {
+      if (!unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+    }
+    return ['draft','finalized'].includes(str(row.status || existing.status || 'draft'));
+  }
+
   if (BROAD_ROLES.has(role)) return true;
   if (!existing) return op === 'upsert';
   if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
@@ -1268,6 +1284,27 @@ export async function validateProductMutation(env, organizationId, row, existing
   return null;
 }
 
+async function validateStockAuthorityMutation(existing = null, op = 'upsert') {
+  if (!existing) return null;
+  const meta = parseMetadata(existing.metadata_json);
+  if (str(meta.provenance) === 'inventory_cycle') {
+    return { error:'STOCK_LEDGER_MANAGED', status:409 };
+  }
+  return null;
+}
+
+async function validateProductSaleAuthorityMutation(existing = null, row = {}, op = 'upsert') {
+  const existingMeta = parseMetadata(existing?.metadata_json);
+  const incomingProvenance = str(row.provenance || row.source || row.metadata?.provenance);
+  if (str(existingMeta.provenance) === 'derived_stock') {
+    return { error:'DERIVED_SALE_IMMUTABLE', status:409 };
+  }
+  if (!existing && ['derived_stock','inventory_cycle'].includes(incomingProvenance)) {
+    return { error:'DERIVED_SALE_SERVER_ONLY', status:403 };
+  }
+  return null;
+}
+
 export async function validateInventoryCycleMutation(env, organizationId, row, existing = null, context = {}) {
   const op = str(context.op || 'upsert');
   if (op === 'delete') return { error:'INVENTORY_CYCLE_DELETE_FORBIDDEN', status:409 };
@@ -1602,6 +1639,23 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       const productError = await validateProductMutation(env, organizationId, row, existing, { op, existingProjectIds });
       if (productError) return json({ error:productError.error, entity, id:row.id || null, referenceCount:productError.referenceCount }, productError.status || 422);
     }
+    if (entity === 'stocks') {
+      const stockError = await validateStockAuthorityMutation(existing, op);
+      if (stockError) return json({ error:stockError.error, entity, id:row.id || null }, stockError.status || 409);
+    }
+    if (entity === 'productSales') {
+      const saleError = await validateProductSaleAuthorityMutation(existing, row, op);
+      if (saleError) return json({ error:saleError.error, entity, id:row.id || null }, saleError.status || 409);
+    }
+    if (entity === 'inventoryCycles') {
+      const cycleError = await validateInventoryCycleMutation(env, organizationId, row, existing, { op });
+      if (cycleError) return json({
+        error:cycleError.error,
+        entity,
+        id:row.id || null,
+        ...(cycleError.authoritativeOpening != null ? { authoritativeOpening:cycleError.authoritativeOpening } : {}),
+      }, cycleError.status || 422);
+    }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
       if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated, remainingSubordinates:assignmentError.remainingSubordinates }, assignmentError.status || 422);
@@ -1632,6 +1686,9 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
         statements.push(...finalization.statements);
+      }
+      if (entity === 'inventoryCycles' && str(row.status) === 'finalized') {
+        statements.push(...inventoryCycleFinalizationStatements(env, organizationId, row));
       }
     }
     if (entity === 'projectAssignments') statements.push(membershipRefreshStatement(env, organizationId, str(row.employeeId || existing?.employee_id), str(row.projectId || existing?.project_id)));
