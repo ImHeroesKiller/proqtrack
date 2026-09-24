@@ -1202,7 +1202,7 @@ export async function validateProductMutation(env, organizationId, row, existing
   if (!clientId) return { error:'PRODUCT_CLIENT_REQUIRED', status:422 };
   if (!projectIds.length) return { error:'PRODUCT_PROJECT_REQUIRED', status:422 };
   if (!['active','inactive','archived'].includes(status)) return { error:'PRODUCT_INVALID_STATUS', status:422 };
-  if (price == null || price < 0) return { error:'PRODUCT_INVALID_PRICE', status:422 };
+  if (price != null && price < 0) return { error:'PRODUCT_INVALID_PRICE', status:422 };
   if (cost != null && cost < 0) return { error:'PRODUCT_INVALID_COST', status:422 };
   if (margin != null && (margin < 0 || margin > 100)) return { error:'PRODUCT_INVALID_MARGIN', status:422 };
 
@@ -1214,10 +1214,13 @@ export async function validateProductMutation(env, organizationId, row, existing
     if (str(project.client_id) !== clientId) return { error:'PRODUCT_PROJECT_CLIENT_MISMATCH', status:409 };
   }
 
-  const client = await env.DB.prepare(
-    'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
-  ).bind(organizationId,clientId).first();
-  if (!client) return { error:'PRODUCT_CLIENT_NOT_FOUND', status:422 };
+  const existingClientId = str(existing?.client_id || existing?.clientId);
+  if (!existing || clientId !== existingClientId) {
+    const client = await env.DB.prepare(
+      'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,clientId).first();
+    if (!client) return { error:'PRODUCT_CLIENT_NOT_FOUND', status:422 };
+  }
 
   const duplicate = await env.DB.prepare(
     'SELECT id FROM core_products WHERE organization_id=? AND client_id=? AND lower(sku)=lower(?) AND id<>? LIMIT 1'
