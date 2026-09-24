@@ -65,6 +65,6 @@ test('superadmin keeps global authority while production login binds an active w
   assert.match(authz, /organizationId = String\(selected\.id\)/);
   assert.match(cutover, /account\.role === 'superadmin'/);
   assert.match(gateway, /if \(!claims\?\.organizationId\)/);
-  assert.match(sw, /proqtrack-v12\.25/);
+  assert.match(sw, /proqtrack-v12\.26/);
 });
 
