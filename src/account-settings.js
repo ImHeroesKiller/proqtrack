@@ -301,20 +301,36 @@ export function renderSettings() {
         ${isOrgAdmin ? `
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
-          <div class="card-subtitle">Identitas perusahaan di header dan dokumen</div>
+          <div class="card-subtitle">Profil tenant aktif. Perubahan berlaku untuk seluruh pengguna organisasi ini.</div>
           <form class="am-form" data-pqt-onsubmit="AM.saveOrg(event)">
-            <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="companyName" value="${esc(settings.companyName || '')}" required></div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(activeOrg.name || '')}" required></div>
+              <div class="form-group"><label class="label">Nama legal</label><input class="input" name="legalName" value="${esc(activeOrg.legalName || '')}"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Industri</label><input class="input" name="industry" value="${esc(activeOrg.industry || '')}"></div>
+              <div class="form-group"><label class="label">Kota</label><input class="input" name="city" value="${esc(activeOrg.city || '')}"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="label">Zona waktu</label>
+                <select class="select" name="timezone">
+                  ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${(activeOrg.timezone || 'Asia/Jakarta') === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+                </select>
+              </div>
+              <div class="form-group"><label class="label">Kode organisasi</label><input class="input" value="${esc(activeOrg.code || '')}" disabled></div>
+            </div>
             <div class="form-group emp-photo-field">
               <label class="label">Logo organisasi</label>
               <div class="employee-photo-editor">
-                <img class="employee-photo-preview" alt="Logo" src="${esc(settings.companyLogo || './assets/logo-light.svg')}">
+                <img class="employee-photo-preview" alt="Logo" src="${esc(activeOrg.logo || './assets/logo-light.svg')}">
                 <div>
-                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp,image/svg+xml" data-pqt-onchange="AM.previewLogo(this)">
-                  <input type="hidden" name="companyLogo" value="${esc(settings.companyLogo || '')}">
-                  <div class="am-muted">Disimpan di database aplikasi, dipakai di sidebar dan dokumen.</div>
+                  <input class="input" type="file" name="logoFile" accept="image/jpeg,image/png,image/webp" data-pqt-onchange="AM.previewLogo(this)">
+                  <input type="hidden" name="logo" value="${esc(activeOrg.logo || '')}">
+                  <div class="am-muted">JPG/PNG/WebP. Maksimum 1 MB sebelum kompresi; hasil akhir disimpan pada profil organisasi.</div>
                 </div>
               </div>
             </div>
+            <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(activeOrg.notes || '')}</textarea></div>
             <button class="btn btn-primary" type="submit">Simpan organisasi</button>
           </form>
         </section>
