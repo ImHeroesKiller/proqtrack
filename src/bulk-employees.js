@@ -304,6 +304,28 @@ export async function commit() {
   }
 }
 
+export async function previewSingleEmployee(input = {}) {
+  const row = {
+    _row_number: 2,
+    employee_code: input.employeeCode,
+    full_name: input.name,
+    email: input.email,
+    phone: input.phone,
+    role: input.role || 'Field Sales',
+    area: input.area || '',
+    position: input.position || input.role || 'Field Sales',
+    project_code: input.projectId,
+    supervisor_email: input.supervisorEmail || '',
+    status: input.status || 'active',
+    create_login: input.createLogin === false ? 'TIDAK' : 'YA',
+    salesTargetAmount: Number(input.salesTargetAmount || 0),
+    attendancePointId: input.attendancePointId || '',
+    photo: input.photo || '',
+    joinDate: input.joinDate || new Date().toISOString().slice(0,10),
+  };
+  const preview = await apiJson('/api/bulk/employees/preview', { rows:[row] });
+  return { preview, checked:preview.rows?.[0] || null, row };
+}
 export async function createSingleEmployee(input = {}) {
   const password = String(input.password || '');
   const row = {
@@ -470,7 +492,7 @@ function installStyles() {
 
 if (typeof window !== 'undefined') {
   installStyles();
-  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials, createSingleEmployee, updateSingleEmployee };
+  window.BulkEmployees = { open, handleFile, commit, reset, downloadTemplate, downloadCredentials, previewSingleEmployee, createSingleEmployee, updateSingleEmployee };
 }
 
 export const __test = { MAX_FILE_ROWS, PREVIEW_CHUNK, COMMIT_CHUNK, summary, strongInitialPassword, duplicateErrors };
