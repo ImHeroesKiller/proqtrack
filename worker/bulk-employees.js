@@ -143,15 +143,24 @@ function validateRows(rows, ctx, claims) {
     }
 
     const existing = ctx.employeeByCode.get(codeKey) || null;
+    let existingMeta = {};
+    try { existingMeta = JSON.parse(existing?.metadata_json || '{}') || {}; } catch { existingMeta = {}; }
+    const existingRole = existing
+      ? loginRole(existingMeta.role || existingMeta.position || '')
+      : '';
+    const existingActiveAssignments = existing
+      ? ctx.assignments.filter(assignment => String(assignment.employee_id) === String(existing.id) && assignment.status === 'active')
+      : [];
+    if (existing && existingActiveAssignments.length && existingRole && row.role !== existingRole) {
+      errors.push('EMPLOYEE_ROLE_CHANGE_REQUIRES_ASSIGNMENT_FLOW');
+    }
     if (!existing && !row.projectRef) errors.push('PROJECT_REQUIRED');
     const project = row.projectRef ? ctx.projectByRef.get(lower(row.projectRef)) : null;
     if (row.projectRef && !project) errors.push('PROJECT_NOT_FOUND');
     else if (project && claims.role === 'manager' && !claims.projectIds?.includes(String(project.id))) errors.push('PROJECT_OUT_OF_SCOPE');
     if (existing && claims.role === 'manager') {
       const managerProjects = new Set((claims.projectIds || []).map(String));
-      const employeeAssignments = ctx.assignments.filter(assignment =>
-        String(assignment.employee_id) === String(existing.id) && assignment.status === 'active'
-      );
+      const employeeAssignments = existingActiveAssignments;
       const accessible = employeeAssignments.some(assignment => managerProjects.has(String(assignment.project_id)));
       if (!accessible) errors.push('EMPLOYEE_OUT_OF_SCOPE');
       if (row.status !== 'active' && employeeAssignments.some(assignment => !managerProjects.has(String(assignment.project_id)))) {
@@ -167,14 +176,29 @@ function validateRows(rows, ctx, claims) {
       if (row.email && row.supervisorEmail === row.email) errors.push('SUPERVISOR_CANNOT_BE_SELF');
       supervisor = ctx.userByEmail.get(row.supervisorEmail) || null;
       const membership = supervisor ? ctx.membershipByUser.get(String(supervisor.id)) : null;
-      const projectMembership = supervisor && project
-        ? ctx.projectMembershipByKey.get(`${project.id}:${supervisor.id}`)
+      const supervisorEmployee = supervisor ? ctx.employeeByAuthUser.get(String(supervisor.id)) : null;
+      const projectStart = String(project?.starts_on || '');
+      const projectEnd = String(project?.ends_on || '');
+      const supervisorAssignment = supervisorEmployee && project
+        ? ctx.assignments.find(assignment => {
+            if (String(assignment.project_id) !== String(project.id)
+              || String(assignment.employee_id) !== String(supervisorEmployee.id)
+              || assignment.status !== 'active') return false;
+            let meta = {};
+            try { meta = JSON.parse(assignment.metadata_json || '{}') || {}; } catch { meta = {}; }
+            const assignmentRole = String(meta.roleOnProject || assignment.position_name || '').toLowerCase();
+            const assignmentStart = String(assignment.starts_on || meta.startDate || '');
+            const assignmentEnd = String(assignment.ends_on || meta.endDate || '');
+            return assignmentRole === 'supervisor'
+              && (!projectStart || assignmentStart <= projectStart)
+              && (!projectEnd || assignmentEnd >= projectEnd);
+          })
         : null;
       if (!supervisor || supervisor.user_status !== 'active' || membership?.status !== 'active'
-        || String(membership?.role || '') !== 'supervisor') {
+        || String(membership?.role || '') !== 'supervisor' || !supervisorEmployee) {
         errors.push('SUPERVISOR_NOT_FOUND');
-      } else if (!projectMembership || projectMembership.status !== 'active' || projectMembership.role !== 'supervisor') {
-        errors.push('SUPERVISOR_NOT_ASSIGNED_TO_PROJECT');
+      } else if (!supervisorAssignment) {
+        errors.push('SUPERVISOR_ASSIGNMENT_NOT_COVERING_PROJECT');
       }
     }
 
