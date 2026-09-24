@@ -80,12 +80,18 @@ export async function syncCloudAccounts() {
 export async function createCloudAccount(payload) {
   const data = await apiJson('/api/admin/accounts', {
     method:'POST',
-    body:JSON.stringify(payload),
+    body:JSON.stringify({ ...payload, attachExisting:true }),
   });
   const passwords = new Map();
-  if (data.account?.id && payload.password) passwords.set(String(data.account.id),String(payload.password));
+  if (data.account?.id && payload.password && data.passwordUnchanged !== true) {
+    passwords.set(String(data.account.id),String(payload.password));
+  }
   mergeServerAccounts([data.account],passwords);
-  return data.account;
+  return {
+    ...data.account,
+    attachedExisting:data.attachedExisting === true,
+    passwordUnchanged:data.passwordUnchanged === true,
+  };
 }
 
 export async function updateCloudAccount(id, payload) {
