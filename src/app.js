@@ -1811,7 +1811,7 @@ function renderEmployees() {
         <div class="pm-kpi"><span>Login Belum Terhubung</span><strong>${operationalCounts.loginMissing}</strong></div>
       </div>
       <div class="filter-row">
-        <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, area..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
+        <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, kode, area, project..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
         <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)">
           <option value="">Semua Role</option>
           <option value="Field Sales">Field Sales</option>
@@ -1869,7 +1869,7 @@ function renderEmployees() {
           </tbody>
         </table>
       </div>
-      <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter.</div>
+      <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter. Gunakan Reset untuk menampilkan seluruh data.</div>
       <div id="employeePager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(-1)">Sebelumnya</button><span id="employeePageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(1)">Berikutnya</button></div>
     </div>
   `;
@@ -2151,7 +2151,7 @@ function renderEmployeeDetail(id) {
     <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px;">
       <div class="card" style="flex:0 0 320px;">
         <div style="text-align:center; padding:12px 0 20px;">
-          <div class="avatar avatar-lg" style="background:${colors[cIdx]}; margin:0 auto 12px;${emp.photo ? `background-image:url('${emp.photo}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(emp.name)}</div>
+          <div class="avatar avatar-lg" style="background:${colors[cIdx]}; margin:0 auto 12px;${safePhotoUrl(emp.photo) ? `background-image:url('${safePhotoUrl(emp.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(emp.name)}</div>
           <div style="font-size:20px; font-weight:800; color:var(--gray-900);">${esc(emp.name)}</div>
           <div style="margin-top:4px;">${roleBadge(emp.role)}</div>
           <div style="margin-top:8px;">${statusBadge(emp.status)}</div>
@@ -2260,7 +2260,7 @@ window.FT.updateEmployee = async function(e, id) {
   delete data.lng;
   let uploadedPhoto = null;
   try {
-    if (submit) submit.disabled = true;
+    if (submit) { submit.disabled = true; submit.textContent = 'Mengunggah…'; }
     data.employeeCode = current.employeeCode || current.code || id;
     data.projectId = '';
     data.joinDate = current.joinDate || '';
@@ -2268,6 +2268,7 @@ window.FT.updateEmployee = async function(e, id) {
     uploadedPhoto = await employeePhotoFromForm(form, { fallback:current.photo || '', projectId:photoProjectId, employeeCode:data.employeeCode });
     data.photo = uploadedPhoto.url;
     delete data.photoFile;
+    if (submit) submit.textContent = 'Menyimpan…';
     await window.BulkEmployees.updateSingleEmployee(data);
     const oldKey = uploadedPhoto?.uploaded ? employeePhotoObjectKey(current.photo) : '';
     if (oldKey && oldKey !== uploadedPhoto.key) await cleanupEmployeePhoto(oldKey);
@@ -2276,7 +2277,7 @@ window.FT.updateEmployee = async function(e, id) {
     if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
     showToast(error.message || String(error), 'error');
   } finally {
-    if (submit?.isConnected) submit.disabled = false;
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
   }
 };
 // ===== Outlets Page =====
