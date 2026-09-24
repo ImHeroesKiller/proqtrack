@@ -152,3 +152,22 @@ html[data-org-branding="1"] .stat-card:hover {
 .am-theme-swatch.active {
   box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--brand);
 }
+
+html[data-org-branding="1"] .mq-bar i,
+html[data-org-branding="1"] .mq-checkout {
+  background: linear-gradient(180deg, var(--brand-bright), var(--brand)) !important;
+}
+html[data-org-branding="1"] .mq-bar-label,
+html[data-org-branding="1"] .mq-live,
+html[data-org-branding="1"] .mq-store-ico,
+html[data-org-branding="1"] .mq-tile-ico,
+html[data-org-branding="1"] .mq-tile:nth-child(5) .mq-tile-ico,
+html[data-org-branding="1"] .role-sales .field-dock-item.active {
+  color: var(--brand-dark) !important;
+}
+html[data-org-branding="1"] .mq-store-ico {
+  background: var(--brand-soft) !important;
+}
+html[data-org-branding="1"] .role-sales .field-dock-item.active::after {
+  background: var(--brand) !important;
+}
