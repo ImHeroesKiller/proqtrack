@@ -1084,7 +1084,20 @@ function initMap() {
     `);
     _markers[e.id] = m;
   });
+  if (state._trackFocus && _markers[state._trackFocus]) {
+    const target = state._trackFocus;
+    state._trackFocus = '';
+    requestAnimationFrame(() => window.FT.focusEmployee?.(target));
+  }
 }
+
+window.FT.openTrackingEmployee = function(event, empId) {
+  event?.preventDefault?.();
+  state._trackFocus = String(empId || '');
+  if (state.route === '#/tracking') render();
+  else location.hash = '#/tracking';
+  return false;
+};
 
 window.FT.filterTracking = function(value) { state._trackQuery = value; render(); };
 window.FT.filterTrackingArea = function(value) { state._trackArea = value; render(); };
