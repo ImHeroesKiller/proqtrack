@@ -17,7 +17,7 @@ test('Projects P2 adds pagination, result summary and empty state', async () => 
 test('Projects P2 renders responsive project cards on mobile', async () => {
   const src = await read('src/types/index.js');
   assert.match(src, /pm-project-table/);
-  assert.match(src, /pm-project-table thead\{display:none\}/);
+  assert.match(src, /pm-client-table thead,\.pm-project-table thead,\.pm-assignment-table thead\{display:none\}/);
   assert.match(src, /pm-project-table td::before/);
   assert.match(src, /data-label="Project"/);
 });
