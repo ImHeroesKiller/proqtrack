@@ -823,33 +823,24 @@ function renderAssignments() {
   const db = viewDB(),
     pm = projectById(db),
     cm = clientById(db),
-    em = Object.fromEntries((db.employees || []).map((x) => [x.id, x]));
-  const rows = db.projectAssignments || [];
+    em = Object.fromEntries((db.employees || []).map((x) => [x.id, x])),
+    ids = accessibleProjectIds(),
+    scopedProjects = (db.projects || []).filter((p) => role() === "manager" || ids.has(p.id)),
+    rows = (db.projectAssignments || []).filter((a) => role() === "manager" || ids.has(a.projectId));
   return shell(
     "Assignment Project",
     "Penugasan supervisor, sales dan viewer per project",
     `${kpis([
       ["Assignment", rows.length],
       ["Aktif", rows.filter((x) => x.status === "active").length],
-      [
-        "Supervisor",
-        rows.filter(
-          (x) => x.status === "active" && x.roleOnProject === "supervisor",
-        ).length,
-      ],
-      [
-        "Sales",
-        rows.filter((x) => x.status === "active" && x.roleOnProject === "sales")
-          .length,
-      ],
-    ])}<div class="card"><div class="pm-toolbar"><select class="select" data-pqt-onchange="PM.filterProject('assignmentRows',this.value)"><option value="">Semua project</option>${(db.projects || []).map((p) => `<option value="${p.id}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")}</select><input class="input" placeholder="Cari project atau karyawan" data-pqt-oninput="PM.filterRows('assignmentRows',this.value)"></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Karyawan</th><th>Role</th><th>Supervisor</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assignmentRows">${rows
-      .map((a) => {
-        const p = pm[a.projectId] || {},
-          e = em[a.employeeId] || {},
-          sp = em[e.supervisorId] || {};
-        return `<tr data-project="${esc(a.projectId)}" data-search="${esc(`${p.name} ${e.name}`.toLowerCase())}"><td><strong>${esc(p.name || a.projectId)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code || "")}</div></td><td>${esc(cm[p.clientId]?.name || "-")}</td><td>${esc(e.name || a.employeeId)}</td><td>${statusBadge(a.roleOnProject)}</td><td>${esc(sp.name || "-")}</td><td>${statusBadge(a.status)}</td><td><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">${svg("unlink")} ${a.status === "active" ? "Unassign" : "Aktifkan"}</button></td></tr>`;
-      })
-      .join("")}</tbody></table></div></div>`,
+      ["Supervisor", rows.filter((x) => x.status === "active" && x.roleOnProject === "supervisor").length],
+      ["Sales", rows.filter((x) => x.status === "active" && x.roleOnProject === "sales").length],
+    ])}<div class="card"><div class="pm-toolbar"><select class="select" data-pqt-onchange="PM.filterProject('assignmentRows',this.value)"><option value="">Semua project</option>${scopedProjects.map((p) => `<option value="${p.id}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")}</select><input class="input" placeholder="Cari project atau karyawan" data-pqt-oninput="PM.filterRows('assignmentRows',this.value)"></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Karyawan</th><th>Role</th><th>Supervisor</th><th>Status</th><th>Aksi</th></tr></thead><tbody id="assignmentRows">${rows.map((a) => {
+      const p = pm[a.projectId] || {},
+        e = em[a.employeeId] || {},
+        sp = em[a.supervisorId] || {};
+      return `<tr data-project="${esc(a.projectId)}" data-search="${esc(`${p.name} ${e.name}`.toLowerCase())}"><td><strong>${esc(p.name || a.projectId)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code || "")}</div></td><td>${esc(cm[p.clientId]?.name || "-")}</td><td>${esc(e.name || a.employeeId)}</td><td>${statusBadge(a.roleOnProject)}</td><td>${esc(sp.name || "-")}</td><td>${statusBadge(a.status)}</td><td>${a.status === "active" ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">${svg("unlink")} Unassign</button>` : '<span class="pm-subtext">Riwayat</span>'}</td></tr>`;
+    }).join("")}</tbody></table></div></div>`,
   );
 }
 function renderMyTeam() {
@@ -1455,7 +1446,7 @@ window.PM = {
       active = db.projectAssignments.filter(
         (a) => a.projectId === projectId && a.status === "active",
       );
-    if (!p) return;
+    if (!p || (role() === "project-manager" && !accessibleProjectIds().has(projectId))) return;
     const eligible = db.employees.filter(
       (employee) =>
         employee.status === "active" &&
@@ -1474,139 +1465,179 @@ window.PM = {
         active
           .map((a) => {
             const e = db.employees.find((x) => x.id === a.employeeId);
-            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(a.roleOnProject)} · ${a.allocationPercent || 0}% · ${dateLabel(a.startDate)}–${dateLabel(a.endDate)}</small></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}');PM.openAssign('${projectId}')">Unassign</button></div>`;
+            return `<div class="pm-module"><span><strong>${esc(e?.name || a.employeeId)}</strong><br><small>${esc(a.roleOnProject)} · ${a.allocationPercent || 0}% · ${dateLabel(a.startDate)}–${dateLabel(a.endDate)}</small></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.toggleAssignment('${a.id}')">Unassign</button></div>`;
           })
           .join("") ||
         '<div style="padding:34px;text-align:center;color:#94a3b8">Belum ada assignment.</div>'
       }</div>`,
     );
   },
-  saveAssignment(e, projectId) {
+  async saveAssignment(e, projectId) {
     e.preventDefault();
-    if (!canManage()) return;
+    if (!canManage() || (role() === "project-manager" && !accessibleProjectIds().has(projectId))) return;
     const db = viewDB(),
       fd = new FormData(e.target),
       employeeId = formValue(fd, "employeeId"),
-      roleOnProject = formValue(fd, "roleOnProject"),
-      existing = db.projectAssignments.find(
-        (a) => a.projectId === projectId && a.employeeId === employeeId,
-      );
+      roleOnProject = formValue(fd, "roleOnProject");
     const project = db.projects.find((x) => x.id === projectId);
     const emp = db.employees.find((x) => x.id === employeeId);
     if (!project || !emp) {
-      alert("Project atau karyawan tidak valid.");
+      window.showToast?.("Project atau karyawan tidak valid.", "error");
+      return;
+    }
+    if (db.projectAssignments.some((a) => a.projectId === projectId && a.employeeId === employeeId && a.status === "active")) {
+      window.showToast?.("Karyawan sudah memiliki assignment aktif pada project ini.", "error");
       return;
     }
     if (!["supervisor", "sales", "viewer"].includes(roleOnProject)) {
-      alert("Role project tidak valid.");
+      window.showToast?.("Role project tidak valid.", "error");
       return;
     }
-    if (emp.status === "inactive") {
-      alert("Karyawan nonaktif tidak dapat di-assign.");
+    if (emp.status !== "active") {
+      window.showToast?.("Karyawan nonaktif tidak dapat di-assign.", "error");
       return;
     }
     const user = db.accounts.find((a) => a.employeeId === employeeId);
     if (!user || user.status === "inactive") {
-      alert("Karyawan harus memiliki akun login aktif sebelum di-assign.");
+      window.showToast?.("Karyawan harus memiliki akun login aktif sebelum di-assign.", "error");
       return;
     }
     if (!["active", "draft"].includes(project.status)) {
-      alert("Assignment hanya dapat dibuat untuk project draft atau aktif.");
+      window.showToast?.("Assignment hanya dapat dibuat untuk project draft atau aktif.", "error");
       return;
     }
     const startDate = formValue(fd, "startDate");
     const endDate = formValue(fd, "endDate");
     const allocationPercent = Number(fd.get("allocationPercent"));
-    if (
-      startDate < project.startDate ||
-      endDate > project.endDate ||
-      endDate < startDate
-    ) {
-      alert("Periode assignment harus berada di dalam periode project.");
+    if (startDate < project.startDate || endDate > project.endDate || endDate < startDate) {
+      window.showToast?.("Periode assignment harus berada di dalam periode project.", "error");
       return;
     }
-    if (
-      !Number.isFinite(allocationPercent) ||
-      allocationPercent < 1 ||
-      allocationPercent > 100
-    ) {
-      alert("Alokasi kapasitas harus 1–100%.");
+    if (!Number.isFinite(allocationPercent) || allocationPercent < 1 || allocationPercent > 100) {
+      window.showToast?.("Alokasi kapasitas harus 1–100%.", "error");
       return;
     }
     const allocated = db.projectAssignments
-      .filter(
-        (a) =>
-          a.employeeId === employeeId &&
-          a.status === "active" &&
-          a.id !== existing?.id &&
-          a.startDate <= endDate &&
-          a.endDate >= startDate,
-      )
+      .filter((a) => a.employeeId === employeeId && a.status === "active" && a.startDate <= endDate && a.endDate >= startDate)
       .reduce((sum, a) => sum + Number(a.allocationPercent || 100), 0);
     if (allocated + allocationPercent > 100) {
-      alert(`Kapasitas bentrok. Periode tersebut sudah teralokasi ${allocated}%.`);
+      window.showToast?.(`Kapasitas bentrok. Periode tersebut sudah teralokasi ${allocated}%.`, "error");
       return;
     }
-    const sp = formValue(fd, "supervisorId");
-    if (sp === employeeId) {
-      alert("Karyawan tidak dapat menjadi supervisor untuk dirinya sendiri.");
+    const supervisorId = formValue(fd, "supervisorId");
+    if (supervisorId === employeeId) {
+      window.showToast?.("Karyawan tidak dapat menjadi supervisor untuk dirinya sendiri.", "error");
       return;
     }
+    const supervisorEmployee = db.employees.find((employee) => employee.id === supervisorId);
     if (
       roleOnProject !== "supervisor" &&
       !db.projectAssignments.some(
         (a) =>
           a.projectId === projectId &&
-          a.employeeId === sp &&
+          a.employeeId === supervisorId &&
           a.roleOnProject === "supervisor" &&
           a.status === "active" &&
-          a.startDate <= endDate &&
-          a.endDate >= startDate,
+          a.startDate <= startDate &&
+          a.endDate >= endDate,
       )
     ) {
-      alert(
-        "Sales/viewer wajib memiliki supervisor aktif pada project dan periode yang sama.",
-      );
+      window.showToast?.("Sales/viewer wajib memiliki supervisor aktif yang mencakup seluruh periode assignment.", "error");
       return;
     }
-    const assignmentData = {
+    const timestamp = now();
+    const row = {
+      id: uid("ASN"),
+      projectId,
+      employeeId,
+      organizationId: currentOrgId(),
       roleOnProject,
-      supervisorId: roleOnProject === "supervisor" ? null : sp,
+      positionName: roleOnProject,
+      supervisorId: roleOnProject === "supervisor" ? null : supervisorId,
+      supervisorUserId: roleOnProject === "supervisor" ? null : (supervisorEmployee?.authUserId || null),
       startDate,
       endDate,
       allocationPercent,
       notes: formValue(fd, "notes"),
       status: "active",
-      assignedAt: now(),
+      assignedAt: timestamp,
       assignedBy: account()?.id,
-      updatedAt: now(),
+      updatedAt: timestamp,
     };
-    if (existing) {
-      Object.assign(existing, assignmentData);
-    } else
-      db.projectAssignments.push({
-        id: uid("ASN"),
-        projectId,
-        employeeId,
-        organizationId: currentOrgId(),
-        ...assignmentData,
-      });
-    persistView(db);
-    this.openAssign(projectId);
+    const submit = e.target.querySelector('button[type="submit"], button:not([type])');
+    if (submit) submit.disabled = true;
+    try {
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'projectAssignments', op:'upsert', row }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+      db.projectAssignments.push(row);
+      persistView(db);
+      window.showToast?.("Assignment tersimpan dan tersinkron.", "success");
+      this.openAssign(projectId);
+    } catch (error) {
+      const message = {
+        REVISION_CONFLICT:'Data berubah di server. Muat ulang data lalu coba kembali.',
+        ASSIGNMENT_PROJECT_NOT_FOUND:'Project tidak ditemukan.',
+        ASSIGNMENT_PROJECT_NOT_ASSIGNABLE:'Project tidak menerima assignment baru.',
+        ASSIGNMENT_EMPLOYEE_NOT_FOUND:'Karyawan tidak ditemukan.',
+        ASSIGNMENT_EMPLOYEE_INACTIVE:'Karyawan tidak aktif.',
+        ASSIGNMENT_EMPLOYEE_LOGIN_REQUIRED:'Karyawan harus memiliki akun login aktif.',
+        ASSIGNMENT_INVALID_ROLE:'Role project tidak valid.',
+        ASSIGNMENT_INVALID_PERIOD:'Periode assignment tidak valid.',
+        ASSIGNMENT_INVALID_ALLOCATION:'Alokasi kapasitas harus 1–100%.',
+        ASSIGNMENT_ACTIVE_DUPLICATE:'Karyawan sudah memiliki assignment aktif pada project ini.',
+        ASSIGNMENT_CAPACITY_CONFLICT:'Kapasitas karyawan melebihi 100% pada periode tersebut.',
+        ASSIGNMENT_SUPERVISOR_REQUIRED:'Supervisor wajib dipilih.',
+        ASSIGNMENT_SELF_SUPERVISION:'Karyawan tidak dapat menjadi supervisor dirinya sendiri.',
+        ASSIGNMENT_SUPERVISOR_INVALID:'Supervisor tidak valid atau tidak aktif.',
+        ASSIGNMENT_SUPERVISOR_NOT_COVERING_PERIOD:'Supervisor harus aktif sepanjang periode assignment.',
+        CHANGE_FORBIDDEN:'Anda tidak memiliki akses ke project ini.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Assignment belum disimpan.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba kembali.',
+      }[error?.code || error?.message] || error?.message || 'Assignment gagal disimpan.';
+      window.showToast?.(message, "error");
+    } finally {
+      if (submit?.isConnected) submit.disabled = false;
+    }
   },
-  toggleAssignment(id) {
+  async toggleAssignment(id) {
     if (!canManage()) return;
     const db = viewDB(),
-      a = db.projectAssignments.find((x) => x.id === id);
-    if (!a) return;
-    a.status = a.status === "active" ? "removed" : "active";
-    a.updatedAt = now();
-    if (a.status === "removed") {
-      a.removedAt = now();
-      a.removedBy = account()?.id;
+      assignment = db.projectAssignments.find((x) => x.id === id);
+    if (!assignment || assignment.status !== "active") return;
+    if (role() === "project-manager" && !accessibleProjectIds().has(assignment.projectId)) return;
+    const timestamp = now();
+    const next = {
+      ...assignment,
+      status:"ended",
+      endedAt:timestamp,
+      endedBy:account()?.id || null,
+      updatedAt:timestamp,
+    };
+    try {
+      const cloud = cloudDataStatus();
+      if (cloud.cutoverMode === 'cloud') {
+        await commitOperationalChanges([{ entity:'projectAssignments', op:'upsert', row:next }]);
+      } else if (account()?.cloudIdentity) {
+        throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
+      }
+      Object.assign(assignment,next);
+      persistView(db);
+      window.showToast?.("Assignment diakhiri.", "success");
+      if (location.hash === "#/assignments") renderAssignments();
+    } catch (error) {
+      window.showToast?.({
+        REVISION_CONFLICT:'Data berubah di server. Muat ulang lalu coba kembali.',
+        ASSIGNMENT_FINAL:'Assignment sudah berakhir dan tidak dapat diaktifkan kembali.',
+        ASSIGNMENT_INVALID_TRANSITION:'Perubahan status assignment tidak diizinkan.',
+        CHANGE_FORBIDDEN:'Anda tidak memiliki akses untuk mengubah assignment ini.',
+        CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap.',
+        CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba kembali.',
+      }[error?.code || error?.message] || 'Assignment gagal diakhiri.', "error");
     }
-    persistView(db);
-    if (location.hash === "#/assignments") renderAssignments();
   },
 };
 function enhanceDashboard() {
