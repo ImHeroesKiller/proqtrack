@@ -42,6 +42,20 @@ function validEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : '';
 }
 
+function mutationErrorResponse(error, requestId) {
+  const code = String(error?.message || error || 'ACCOUNT_CONFLICT');
+  const status = {
+    EMPLOYEE_NOT_FOUND: 404,
+    PROJECT_NOT_FOUND: 404,
+    PROJECT_REQUIRED: 400,
+    EMPLOYEE_ALREADY_LINKED: 409,
+    ACCOUNT_ALREADY_IN_ORGANIZATION: 409,
+    ACCOUNT_IS_GLOBAL_SUPERADMIN: 409,
+    EXISTING_ACCOUNT_DISABLED: 409,
+  }[code] || 409;
+  return json({ error:code, requestId },status);
+}
+
 async function writeAudit(env, requestId, claims, action, resourceId, detail = {}) {
   try {
     await env.DB.prepare(`
@@ -175,12 +189,79 @@ async function createAccount(env, claims, request, requestId) {
   const status = ['active','inactive','suspended'].includes(lower(body.status)) ? lower(body.status) : 'active';
   const employeeId = clean(body.employeeId,120);
   const projectId = clean(body.projectId,120);
+  const attachExisting = body.attachExisting === true;
   if (!email) return json({ error:'EMAIL_INVALID', requestId },400);
-  if (password.length < 8) return json({ error:'PASSWORD_TOO_SHORT', requestId },400);
   if (!permittedRole(claims.role,role)) return json({ error:'ACCOUNT_ROLE_FORBIDDEN', requestId },403);
 
-  const conflict = await env.DB.prepare('SELECT id FROM auth_users WHERE lower(email)=? LIMIT 1').bind(email).first();
-  if (conflict) return json({ error:'EMAIL_ALREADY_USED', requestId },409);
+  const existingUser = await env.DB.prepare(
+    'SELECT id,email,role,status FROM auth_users WHERE lower(email)=? LIMIT 1',
+  ).bind(email).first();
+
+  if (existingUser) {
+    if (!attachExisting) return json({ error:'EMAIL_ALREADY_USED', requestId },409);
+    if (lower(existingUser.role) === 'superadmin') {
+      return json({ error:'ACCOUNT_IS_GLOBAL_SUPERADMIN', requestId },409);
+    }
+    if (lower(existingUser.status) !== 'active') {
+      return json({ error:'EXISTING_ACCOUNT_DISABLED', requestId },409);
+    }
+    const membership = await env.DB.prepare(
+      'SELECT role,status FROM core_organization_users WHERE organization_id=? AND user_id=? LIMIT 1',
+    ).bind(claims.organizationId,existingUser.id).first();
+    if (membership) return json({ error:'ACCOUNT_ALREADY_IN_ORGANIZATION', requestId },409);
+
+    const employee = await employeeForLink(env,claims.organizationId,employeeId,existingUser.id);
+    if (role === 'manager') await projectForManager(env,claims.organizationId,projectId);
+    const statements = [
+      env.DB.prepare(`
+        INSERT INTO core_organization_users(
+          organization_id,user_id,role,status,created_at,updated_at
+        ) VALUES(?,?,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+      `).bind(claims.organizationId,existingUser.id,role,status),
+    ];
+
+    if (employee) {
+      statements.push(env.DB.prepare(`
+        UPDATE core_employees
+        SET auth_user_id=?,email=?,updated_at=CURRENT_TIMESTAMP
+        WHERE organization_id=? AND id=?
+      `).bind(existingUser.id,email,claims.organizationId,employee.id));
+    }
+
+    let projects = [];
+    if (role === 'manager') projects = [{ project_id:projectId }];
+    else if (['supervisor','employee'].includes(role)) {
+      projects = await activeEmployeeProjects(env,claims.organizationId,employee?.id);
+    }
+    for (const project of projects) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO core_project_memberships(
+          organization_id,project_id,user_id,role,status,created_at,updated_at
+        ) VALUES(?,?,?,?, 'active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)
+        ON CONFLICT(organization_id,project_id,user_id) DO UPDATE SET
+          role=excluded.role,status='active',updated_at=CURRENT_TIMESTAMP
+      `).bind(claims.organizationId,project.project_id,existingUser.id,role === 'manager' ? 'manager' : role));
+    }
+
+    await env.DB.batch(statements);
+    await writeAudit(env,requestId,claims,'attach_existing_account',existingUser.id,{
+      role,employeeId:employee?.id || null,projectId:projectId || null,passwordUnchanged:true,
+    });
+    return json({
+      ok:true,
+      attachedExisting:true,
+      passwordUnchanged:true,
+      account:{
+        id:existingUser.id,organizationId:claims.organizationId,email,
+        name:employee?.full_name || clean(body.name) || email,
+        role,status,employeeId:employee?.id || null,projectId:role === 'manager' ? projectId : null,
+        deviceBound:false,
+      },
+      requestId,
+    },201);
+  }
+
+  if (password.length < 8) return json({ error:'PASSWORD_TOO_SHORT', requestId },400);
   const employee = await employeeForLink(env,claims.organizationId,employeeId);
   if (role === 'manager') await projectForManager(env,claims.organizationId,projectId);
 
@@ -225,6 +306,8 @@ async function createAccount(env, claims, request, requestId) {
   await writeAudit(env,requestId,claims,'create_account',userId,{ role,employeeId:employee?.id || null,projectId:projectId || null });
   return json({
     ok:true,
+    attachedExisting:false,
+    passwordUnchanged:false,
     account:{
       id:userId,organizationId:claims.organizationId,email,
       name:employee?.full_name || clean(body.name) || email,
@@ -372,7 +455,7 @@ export async function handleAccountAdminRoute(request, env, claims, url = new UR
   }
   if (url.pathname === '/api/admin/accounts' && request.method === 'POST') {
     try { return await createAccount(env,claims,request,requestId); }
-    catch (error) { return json({ error:String(error?.message || error), requestId },409); }
+    catch (error) { return mutationErrorResponse(error,requestId); }
   }
 
   const resetMatch = url.pathname.match(/^\/api\/admin\/accounts\/([^/]+)\/reset-device$/);
@@ -383,7 +466,7 @@ export async function handleAccountAdminRoute(request, env, claims, url = new UR
   const accountMatch = url.pathname.match(/^\/api\/admin\/accounts\/([^/]+)$/);
   if (accountMatch && request.method === 'PATCH') {
     try { return await updateAccount(env,claims,request,decodeURIComponent(accountMatch[1]),requestId); }
-    catch (error) { return json({ error:String(error?.message || error), requestId },409); }
+    catch (error) { return mutationErrorResponse(error,requestId); }
   }
   return null;
 }
