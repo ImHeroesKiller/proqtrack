@@ -453,6 +453,12 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
     organizationId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
       ? null
       : (cloudAccount.organizationId || existing.organizationId || null),
+    projectIds: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
+      ? []
+      : (Array.isArray(cloudAccount.projectIds) ? [...new Set(cloudAccount.projectIds.map(String).filter(Boolean))] : (existing.projectIds || [])),
+    clientIds: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
+      ? []
+      : (Array.isArray(cloudAccount.clientIds) ? [...new Set(cloudAccount.clientIds.map(String).filter(Boolean))] : (existing.clientIds || [])),
     projectId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
       ? null
       : (cloudAccount.role === 'manager' ? (cloudAccount.projectIds?.[0] || existing.projectId || null) : (existing.projectId || null)),
