@@ -39,6 +39,10 @@ import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetF
 import { refreshOperationalData } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
+import {
+  captureDevicePosition, currentTenantTimeHHMM, locationFreshness,
+  locationSourceLabel, visitLocationEvidence,
+} from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
@@ -70,6 +74,9 @@ const state = {
   homeRefreshTimer: null,
   homeRefreshInFlight: false,
   homeRefreshedAt: null,
+  trackingRefreshTimer: null,
+  trackingRefreshInFlight: false,
+  trackingRefreshedAt: null,
 };
 
 const PROJECT_MANAGEMENT_ROUTES = new Set([
