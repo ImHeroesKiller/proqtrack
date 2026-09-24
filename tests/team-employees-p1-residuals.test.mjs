@@ -30,5 +30,5 @@ test('Employee edit UI keeps operational role read-only', async () => {
 
 test('Team Employee residual advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.41/);
+  assert.match(sw, /proqtrack-v12\.42/);
 });

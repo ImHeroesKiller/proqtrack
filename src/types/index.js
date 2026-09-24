@@ -877,12 +877,13 @@ function renderMyTeam() {
     ids = accessibleProjectIds(),
     team = scopedEmployees();
   const pm = projectById(db);
+  const members = team.filter((e) => e.id !== me?.id);
+  const memberIds = new Set(members.map((e) => String(e.id)));
   const visits = (db.visits || []).filter(
     (v) =>
-      team.some((e) => e.id === v.employeeId) &&
+      memberIds.has(String(v.employeeId)) &&
       (!v.projectId || ids.has(v.projectId)),
   );
-  const members = team.filter((e) => e.id !== me?.id);
   return shell(
     "Tim Saya",
     "Sales di bawah supervisi dan project yang sama",
