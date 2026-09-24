@@ -1,6 +1,6 @@
 # Current Production State
 
-Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P3. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
+Snapshot kondisi pada **25 September 2026**, setelah hardening P0–P3. Perbarui dokumen ini jika arsitektur, resource, milestone, risiko, atau baseline test berubah.
 
 ## Baseline
 
@@ -11,9 +11,9 @@ Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P3. Perbarui
 | D1 live | binding `DB` → `proqtrack-mvp` |
 | R2 live | binding `FILES` → `proqtrack-mvp-files` |
 | Milestone config | `M7` |
-| Service Worker | `proqtrack-v12.22` |
-| Migrasi terakhir | `0024_p2_operational_cloud_authority.sql` |
-| Test baseline | 214 tests pada baseline pasca hotfix superadmin |
+| Service Worker | `proqtrack-v12.44` |
+| Migrasi terakhir | `0027_inventory_cycle_correction_uat.sql` |
+| Test baseline | CI `main` hijau; baseline numerik divalidasi ulang pada stabilization pass 25 Sep 2026 |
 | Deploy | PR → merge `main` → GitHub Actions |
 
 Fitur bulk master sering disebut M8, tetapi `APP_MILESTONE` dan health masih `M7`. Ubah label hanya jika workflow, health assertion, dokumentasi, dan test diperbarui bersama.
@@ -153,3 +153,15 @@ Regression guard berada di `tests/p3-maintainability.test.mjs`. Baseline P3 awal
 - Last Location melakukan guarded cloud refresh setiap 30 detik, saat focus/visibility recovery, dan manual Refresh.
 - Cloud visit authority memetakan UI `checked-in` ↔ D1 `in_progress`; GPS juga dinormalisasi ke `start_latitude/start_longitude` serta tetap tersimpan di metadata.
 - PWA cache v12.22.
+
+
+## Stabilization pass — 25 September 2026
+
+Fokus sementara dialihkan dari pengembangan fitur baru ke konsistensi dan stabilitas lintas modul setelah rangkaian audit P0–P3.
+
+- Stock correction chain mempertahankan basis penjualan asli pada koreksi berulang.
+- Products dan Outlets melakukan authoritative refresh setelah sync sebelum UI dianggap final.
+- Copy operasional Stock/Sales tidak lagi menampilkan istilah implementasi internal kepada user.
+- Migration live terakhir adalah `0027_inventory_cycle_correction_uat.sql`.
+- Service Worker cache baseline dinaikkan ke `proqtrack-v12.44` untuk memastikan shell terbaru menggantikan cache lama.
+- Semua perubahan stabilisasi harus melewati full CI, build, migration-from-empty, dan Worker dry-run sebelum merge.
