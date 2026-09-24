@@ -70,4 +70,11 @@ if (!Array.isArray(data.organizations) || !data.organizations.some(x => x?.statu
 }
 NODE
 
-echo "Superadmin production smoke PASS: login, active workspace binding, and global organization access"
+EVIDENCE_STATUS="$(curl --silent --show-error --retry 3 --output /tmp/proqtrack-evidence-smoke.json --write-out '%{http_code}' "$BASE_URL/api/evidence?limit=1&offset=0" -H "authorization: Bearer $TOKEN")"
+if [ "$EVIDENCE_STATUS" != "200" ]; then
+  echo "::error::Authenticated evidence listing expected HTTP 200, got $EVIDENCE_STATUS"
+  cat /tmp/proqtrack-evidence-smoke.json
+  exit 1
+fi
+
+echo "Superadmin production smoke PASS: login, active workspace binding, global organization access, and evidence auth"
