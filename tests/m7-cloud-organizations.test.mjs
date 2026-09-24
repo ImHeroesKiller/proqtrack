@@ -143,3 +143,17 @@ test('report preview inherits organization theme color', async () => {
   assert.match(preview, /org\.themeColor/);
   assert.match(preview, /var\(--r4-brand/);
 });
+
+
+test('organization profile restore pins the original bearer token and skips stale sessions', async () => {
+  const [client, cutover] = await Promise.all([
+    read('src/lib/cloud-organizations.js'),
+    read('src/cloud-cutover.js'),
+  ]);
+  assert.match(client, /syncCurrentOrganizationProfile\(sessionToken = ''\)/);
+  assert.match(client, /getApiToken\(\) !== sessionToken/);
+  assert.match(client, /headers:\{ authorization:/);
+  assert.match(cutover, /const restoreToken = getApiToken\(\)/);
+  assert.match(cutover, /getApiToken\(\) === restoreToken/);
+  assert.match(cutover, /syncCurrentOrganizationProfile\(restoreToken\)/);
+});

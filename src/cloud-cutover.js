@@ -155,16 +155,19 @@ async function cloudFirstLogin(event) {
 let restoreInFlight = false;
 
 async function restoreCloudSessionOnReload() {
-  if (restoreInFlight || !getApiToken() || window.FT?.state?.loggedIn) return false;
+  const restoreToken = getApiToken();
+  if (restoreInFlight || !restoreToken || window.FT?.state?.loggedIn) return false;
   restoreInFlight = true;
   const state = window.FT.state;
   try {
     const restored = await restoreCloudSession(getDB());
     const account = restored?.account;
     if (!account) return false;
-    if (account.organizationId) {
-      await syncCurrentOrganizationProfile().catch(error => {
-        console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+    if (account.organizationId && getApiToken() === restoreToken) {
+      await syncCurrentOrganizationProfile(restoreToken).catch(error => {
+        if (![401,403].includes(Number(error?.status || 0))) {
+          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+        }
       });
     }
 
