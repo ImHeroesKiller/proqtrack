@@ -26,7 +26,7 @@ test('Assignment P1 preserves history and blocks reactivation UX', async () => {
   assert.match(src, /id: uid\("ASN"\)/);
   assert.match(src, /Karyawan sudah memiliki assignment aktif pada project ini/);
   assert.match(src, /assignment\.status !== "active"/);
-  assert.match(src, /Riwayat/);
+  assert.match(src, /viewAssignment\('\$\{a\.id\}'\)/);
   assert.doesNotMatch(src, /\? "Unassign" : "Aktifkan"/);
 });
 
