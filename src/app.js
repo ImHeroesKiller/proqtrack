@@ -3039,30 +3039,67 @@ window.FT.filterStocks = function() {
 };
 
 window.FT.openStockModal = function() {
-  openModal('Tambah Stok', `
+  openModal('Catat Stock In', `
     <form data-pqt-onsubmit="FT.createStock(event)">
-      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
-      <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${p.name} (${p.sku})</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Outlet</label><select class="select" name="outletId" required><option value="">Pilih outlet</option>${getOutlets().map(o=>`<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="label">Produk</label><select class="select" name="productId" required><option value="">Pilih produk</option>${getProducts().filter(p=>p.status==='active').map(p=>`<option value="${p.id}">${esc(p.name)} (${esc(p.sku||'-')})</option>`).join('')}</select></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Quantity</label><input class="input" type="number" name="quantity" required></div>
-        <div class="form-group"><label class="label">Min. Stok</label><input class="input" type="number" name="minStock" value="5" required></div>
+        <div class="form-group"><label class="label">Stock masuk</label><input class="input" type="number" name="stockInQty" min="0" step="1" required></div>
+        <div class="form-group"><label class="label">Closing stock</label><input class="input" type="number" name="closingQty" min="0" step="1" required></div>
       </div>
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
+      <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="5" min="0" step="1" required></div>
+      <div class="am-muted" style="margin-top:-4px">Opening stock diambil otomatis dari saldo cloud. Penjualan dihitung dari selisih pergerakan stok.</div>
+      <div class="modal-footer" style="padding:0; margin-top:14px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
+        <button type="submit" class="btn btn-primary">Finalisasi</button>
       </div>
     </form>
   `);
 };
 
-window.FT.createStock = function(e) {
+function stockProjectFor(outletId, productId, fallback = '') {
+  if (fallback) return String(fallback);
+  const outlet = getOutlets().find(row => String(row.id) === String(outletId));
+  const product = getProducts().find(row => String(row.id) === String(productId));
+  const outletProjects = new Set((outlet?.projectIds || []).map(String));
+  const common = (product?.projectIds || []).map(String).filter(id => outletProjects.has(id));
+  return common.length === 1 ? common[0] : '';
+}
+
+window.FT.createStock = async function(e) {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target));
-  data.quantity = parseInt(data.quantity);
-  data.minStock = parseInt(data.minStock);
-  data.updatedBy = myEmployeeId() || 'system';
-  createStock(data);
-  closeModal(); showToast('Stok berhasil ditambahkan', 'success'); render();
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
+  const employeeId = myEmployeeId();
+  const projectId = stockProjectFor(data.outletId, data.productId);
+  const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && (!projectId || row.projectId === projectId));
+  if (!employeeId) { showToast('Akun ini belum terhubung ke employee untuk mencatat stock movement.', 'error'); return; }
+  if (!projectId) { showToast('Outlet dan produk harus memiliki tepat satu project yang sama.', 'error'); return; }
+  const openingQty = Number(current?.quantity || 0);
+  const stockInQty = Number(data.stockInQty);
+  const closingQty = Number(data.closingQty);
+  const minStock = Number(data.minStock);
+  if (![stockInQty,closingQty,minStock].every(Number.isFinite) || stockInQty < 0 || closingQty < 0 || minStock < 0) {
+    showToast('Nilai stok tidak valid.', 'error'); return;
+  }
+  try {
+    if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
+    createInventoryCycle({
+      projectId, outletId:data.outletId, productId:data.productId, employeeId,
+      cycleDate:todayISO(), status:'finalized', openingQty, stockInQty, adjustmentQty:0,
+      returnQty:0, damagedQty:0, transferOutQty:0, closingQty, minStock,
+      idempotencyKey:`stock-in:${projectId}:${data.outletId}:${data.productId}:${todayISO()}:${Date.now()}`,
+    });
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(), getActor());
+    closeModal(); showToast('Stock movement berhasil difinalisasi.', 'success'); render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error'); render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled=false; submit.textContent='Finalisasi'; }
+  }
 };
 
 window.FT.editStock = function(id) {
@@ -3070,34 +3107,57 @@ window.FT.editStock = function(id) {
   if (!s) return;
   const pMap = Object.fromEntries(getProducts().map(p=>[p.id,p]));
   const oMap = Object.fromEntries(getOutlets().map(o=>[o.id,o]));
-  openModal('Edit Stok', `
+  openModal('Stock Adjustment', `
     <form data-pqt-onsubmit="FT.updateStock(event,'${id}')">
-      <div class="form-group"><label class="label">Outlet / Produk</label><div style="padding:10px 12px; background:var(--gray-50); border-radius:10px; font-size:14px;">${oMap[s.outletId]?.name||'-'} → ${pMap[s.productId]?.name||'-'}</div></div>
+      <div class="form-group"><label class="label">Outlet / Produk</label><div style="padding:10px 12px;background:var(--gray-50);border-radius:10px;font-size:14px">${esc(oMap[s.outletId]?.name||'-')} → ${esc(pMap[s.productId]?.name||'-')}</div></div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Quantity</label><input class="input" type="number" name="quantity" value="${s.quantity}" required></div>
-        <div class="form-group"><label class="label">Min. Stok</label><input class="input" type="number" name="minStock" value="${s.minStock}" required></div>
+        <div class="form-group"><label class="label">Opening stock</label><input class="input" value="${s.quantity}" disabled></div>
+        <div class="form-group"><label class="label">Closing stock hasil koreksi</label><input class="input" type="number" name="closingQty" value="${s.quantity}" min="0" step="1" required></div>
       </div>
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
+      <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="${s.minStock}" min="0" step="1" required></div>
+      <div class="form-group"><label class="label">Alasan adjustment</label><textarea class="textarea" name="adjustmentReason" minlength="10" required placeholder="Jelaskan penyebab koreksi stok..."></textarea></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
+        <button type="submit" class="btn btn-primary">Finalisasi Adjustment</button>
       </div>
     </form>
   `);
 };
 
-window.FT.updateStock = function(e, id) {
+window.FT.updateStock = async function(e, id) {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target));
-  data.quantity = parseInt(data.quantity);
-  data.minStock = parseInt(data.minStock);
-  updateStock(id, data);
-  closeModal(); showToast('Stok diperbarui', 'success'); render();
+  const stock = getStocks().find(row => row.id === id);
+  if (!stock) return;
+  const form=e.target, submit=form.querySelector('button[type="submit"]');
+  const data=Object.fromEntries(new FormData(form));
+  const employeeId=myEmployeeId() || stock.updatedBy;
+  const closingQty=Number(data.closingQty), openingQty=Number(stock.quantity), minStock=Number(data.minStock);
+  const adjustmentQty=closingQty-openingQty;
+  if (!employeeId) { showToast('Employee pencatat stok tidak tersedia.', 'error'); return; }
+  if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(minStock) || minStock < 0) { showToast('Nilai stok tidak valid.', 'error'); return; }
+  if (adjustmentQty === 0 && minStock === Number(stock.minStock)) { showToast('Tidak ada perubahan stok.'); return; }
+  try {
+    if(submit){submit.disabled=true;submit.textContent='Finalisasi…';}
+    createInventoryCycle({
+      projectId:stock.projectId, outletId:stock.outletId, productId:stock.productId, employeeId,
+      cycleDate:todayISO(), status:'finalized', openingQty, stockInQty:0, adjustmentQty,
+      adjustmentReason:data.adjustmentReason, returnQty:0, damagedQty:0, transferOutQty:0,
+      closingQty, minStock,
+      idempotencyKey:`stock-adjustment:${stock.id}:${todayISO()}:${Date.now()}`,
+    });
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(), getActor());
+    closeModal(); showToast('Adjustment stok berhasil difinalisasi.', 'success'); render();
+  } catch(error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message||String(error),'error'); render();
+  } finally {
+    if(submit?.isConnected){submit.disabled=false;submit.textContent='Finalisasi Adjustment';}
+  }
 };
 
-window.FT.deleteStock = function(id) {
-  if (!confirm('Hapus data stok ini?')) return;
-  deleteStock(id);
-  showToast('Stok dihapus', 'success'); render();
+window.FT.deleteStock = function() {
+  showToast('Stok tidak dihapus langsung. Gunakan Stock Adjustment agar audit trail tetap utuh.', 'error');
 };
 
 // ===== Attendance Manager Page =====
