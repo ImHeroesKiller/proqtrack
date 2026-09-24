@@ -26,7 +26,7 @@ test('Assignment P1 preserves history and blocks reactivation UX', async () => {
   assert.match(src, /id: uid\("ASN"\)/);
   assert.match(src, /Karyawan sudah memiliki assignment aktif pada project ini/);
   assert.match(src, /assignment\.status !== "active"/);
-  assert.match(src, /Riwayat/);
+  assert.match(src, /viewAssignment\('\$\{a\.id\}'\)/);
   assert.doesNotMatch(src, /\? "Unassign" : "Aktifkan"/);
 });
 
@@ -74,5 +74,5 @@ test('Assignment P1 uses canonical ended status and membership refresh remains w
 
 test('Assignment P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.34/);
+  assert.match(sw, /proqtrack-v12\.35/);
 });

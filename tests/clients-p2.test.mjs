@@ -16,7 +16,7 @@ test('Client P2 adds pagination, empty state and mobile cards', async () => {
   assert.match(src, /clientResultSummary/);
   assert.match(src, /clientEmpty/);
   assert.match(src, /clientPager/);
-  assert.match(src, /pm-client-table thead,\.pm-project-table thead\{display:none\}/);
+  assert.match(src, /pm-client-table thead,\.pm-project-table thead,\.pm-assignment-table thead\{display:none\}/);
   assert.match(src, /content:attr\(data-label\)/);
 });
 
@@ -60,5 +60,5 @@ test('Client P2 cleans orphan uploaded logo after failed commit', async () => {
 
 test('Client P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.34/);
+  assert.match(sw, /proqtrack-v12\.35/);
 });
