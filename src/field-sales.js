@@ -82,23 +82,25 @@ export function renderLastLocation() {
     </div>`;
 }
 
-export function outletNotesField(catalog) {
+export function outletNotesField(catalog, current = '') {
   const mode = catalog?.notesMode === 'dropdown' ? 'dropdown' : 'freetext';
   const options = catalog?.notesOptions || [];
+  const value = String(current || '');
   if (mode === 'dropdown') {
+    const rows = value && !options.includes(value) ? [value, ...options] : options;
     return `<div class="form-group">
       <label class="label">Notes</label>
       <input type="hidden" name="notesKind" value="dropdown">
       <select class="select" name="notesChoice" id="outletNotesSelect">
         <option value="">Select notes</option>
-        ${options.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('')}
+        ${rows.map(v => `<option value="${esc(v)}" ${value === v ? 'selected' : ''}>${esc(v)}</option>`).join('')}
       </select>
     </div>`;
   }
   return `<div class="form-group">
     <label class="label">Notes</label>
     <input type="hidden" name="notesKind" value="freetext">
-    <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Optional notes"></textarea>
+    <textarea class="textarea" name="notes" id="outletNotesText" placeholder="Optional notes">${esc(value)}</textarea>
   </div>`;
 }
 
@@ -486,12 +488,22 @@ window.FS.initOutletMap = function() {
     _outletMap = null;
     _outletMarker = null;
   }
-  const start = [-6.2, 106.82];
-  _outletMap = L.map(el, { zoomControl: true }).setView(start, 12);
+  const currentLat = Number(document.getElementById('outletLat')?.value);
+  const currentLng = Number(document.getElementById('outletLng')?.value);
+  const hasCurrent = Number.isFinite(currentLat) && Number.isFinite(currentLng)
+    && currentLat >= -90 && currentLat <= 90 && currentLng >= -180 && currentLng <= 180;
+  const start = hasCurrent ? [currentLat, currentLng] : [-6.2, 106.82];
+  _outletMap = L.map(el, { zoomControl: true }).setView(start, hasCurrent ? 16 : 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
     maxZoom: 19,
   }).addTo(_outletMap);
+  if (hasCurrent) {
+    _outletMarker = L.marker(start).addTo(_outletMap);
+    showMapsLink(currentLat, currentLng);
+    const hint = document.getElementById('outletMapHint');
+    if (hint) hint.textContent = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} · Lokasi outlet saat ini`;
+  }
   _outletMap.on('click', async ev => {
     const { lat, lng } = ev.latlng;
     if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
