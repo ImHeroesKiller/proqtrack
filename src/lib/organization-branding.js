@@ -41,6 +41,9 @@ export function applyOrganizationBranding(org = null) {
   const branded = !!org?.id;
 
   root.dataset.orgBranding = branded ? '1' : '0';
+  const timezone = String(org?.timezone || 'Asia/Jakarta');
+  root.dataset.orgTimezone = timezone;
+  window.__PROQTRACK_TIMEZONE__ = timezone;
   root.style.setProperty('--brand',theme.brand);
   root.style.setProperty('--brand-dark',theme.dark);
   root.style.setProperty('--brand-deeper',theme.deeper);
