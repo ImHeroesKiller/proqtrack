@@ -1633,41 +1633,15 @@ export function reviewOutletProposal(id, decision, note = '', projectId = null) 
   } else {
     throw new Error('Akses ditolak');
   }
-  if (projectId) row.projectId = projectId;
+  if (projectId && projectId !== row.projectId) {
+    throw new Error('Project pengajuan tidak dapat diubah saat approval.');
+  }
   if (row.supervisorStatus === 'rejected' || row.managerStatus === 'rejected') {
     row.status = 'rejected';
-    const existing = (db.outlets || []).find(o => o.id === row.outletId);
-    if (existing) existing.status = 'inactive';
   } else if (row.supervisorStatus === 'approved' && row.managerStatus === 'approved') {
+    // Master outlet is created atomically by the cloud authority in the same
+    // transaction that finalizes this proposal. Do not create it locally.
     row.status = 'approved';
-    let outlet = (db.outlets || []).find(o => o.id === row.outletId);
-    if (!outlet) {
-      outlet = {
-        id: row.outletId || uid('OUT'),
-        outletNumber: row.outletNumber || nextOutletNumber(db),
-        status: 'active',
-        name: row.name,
-        address: row.address,
-        type: row.type,
-        channel: row.channel,
-        ownership: row.ownership || '',
-        area: row.area || row.city,
-        phone: row.phone,
-        owner: row.owner,
-        lat: row.lat,
-        lng: row.lng,
-        organizationId: row.organizationId,
-        projectIds: row.projectId ? [row.projectId] : [],
-        clientId: (db.projects || []).find(p => p.id === row.projectId)?.clientId || null,
-      };
-      db.outlets.push(outlet);
-      row.outletId = outlet.id;
-    } else {
-      outlet.status = 'active';
-      outlet.ownership = row.ownership || outlet.ownership;
-      outlet.channel = row.channel || outlet.channel;
-      outlet.type = row.type || outlet.type;
-    }
   }
   saveDB();
   return row;
