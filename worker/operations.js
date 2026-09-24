@@ -541,7 +541,7 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
     if (entity === 'outlets' || entity === 'products') {
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
       if (!projectIds.length || !projectIds.every(id => projectAllowed(claims, id))) return false;
-      if (entity === 'outlets' && context.existing) {
+      if (context.existing) {
         const existingProjectIds = unique(context.existingProjectIds || []);
         if (!existingProjectIds.length || !existingProjectIds.every(id => projectAllowed(claims, id))) return false;
       }
@@ -1314,6 +1314,11 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'outlets' && existing) {
       const links = await allRows(env.DB.prepare(
         "SELECT project_id FROM core_project_outlets WHERE organization_id=? AND outlet_id=? AND status='active'"
+      ).bind(organizationId,str(existing.id || row.id)));
+      existingProjectIds = unique(links.map(link => link.project_id));
+    } else if (entity === 'products' && existing) {
+      const links = await allRows(env.DB.prepare(
+        "SELECT project_id FROM core_project_products WHERE organization_id=? AND product_id=? AND status='active'"
       ).bind(organizationId,str(existing.id || row.id)));
       existingProjectIds = unique(links.map(link => link.project_id));
     }
