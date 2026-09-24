@@ -56,9 +56,17 @@ test('field evidence lifecycle rejects destructive or retroactive mutations', ()
 
   assert.equal(operationalTransitionAllowed(employee, 'visits', {
     op: 'upsert',
-    row: { id: 'V1', projectId: 'P1', outletId: 'O1', employeeId: 'E1', status: 'completed' },
+    row: {
+      id: 'V1', projectId: 'P1', outletId: 'O1', employeeId: 'E1', status: 'completed',
+      completedAt: '2026-09-24T08:30:00.000Z',
+      checkOutLat: -6.2, checkOutLng: 106.8,
+      checkOutCapturedAt: '2026-09-24T08:30:00.000Z',
+    },
   }, {
-    existing: { id: 'V1', project_id: 'P1', outlet_id: 'O1', employee_id: 'E1', status: 'in_progress' },
+    existing: {
+      id: 'V1', project_id: 'P1', outlet_id: 'O1', employee_id: 'E1', status: 'in_progress',
+      started_at: '2026-09-24T08:00:00.000Z', start_latitude: -6.2, start_longitude: 106.8,
+    },
   }), true);
 
   assert.equal(operationalTransitionAllowed(employee, 'attendance', {
