@@ -27,7 +27,7 @@ test('Post-P3 My Team KPI excludes supervisor own visits', async () => {
 
 test('Post-P3 bugfix advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.43/);
+  assert.match(sw, /proqtrack-v12\.44/);
 });
 
 
