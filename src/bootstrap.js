@@ -23,9 +23,7 @@ async function load(path, name) {
 // Several modules install their FT hooks on the next task because app.js
 // intentionally loads after compatibility/runtime extensions.
 await load('./lib/ui-events.js', 'ui-events');
-await load('./phase0-data.js', 'phase0-data');
 await load('./data/uat-seed-v1.js', 'uat-seed');
-await load('./phase0-ui.js', 'phase0-ui');
 await load('./types/index.js', 'project-management');
 await load('./reports/index-v2.js', 'reports-core');
 await load('./types/reports-export.js', 'reports-export');
@@ -37,6 +35,7 @@ await load('./dashboard-deep-links.js', 'dashboard-deep-links');
 await load('./client-logo-auto.js', 'client-logo-auto');
 await load('./project-client-logos.js', 'project-client-logos');
 await load('./employee-avatars.js', 'employee-avatars');
+await load('./pwa-install.js', 'pwa-install');
 await load('./lib/uploads.js', 'uploads');
 await load('./organization.js', 'organization');
 const cloudCutoverModule = await load('./cloud-cutover.js', 'cloud-cutover');

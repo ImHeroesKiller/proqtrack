@@ -36,6 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { refreshOperationalData } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
@@ -66,6 +67,9 @@ const state = {
   selectedMobileEmp: 'EMP001',
   mobileTab: 'home',
   livePolling: null,
+  homeRefreshTimer: null,
+  homeRefreshInFlight: false,
+  homeRefreshedAt: null,
 };
 
 const PROJECT_MANAGEMENT_ROUTES = new Set([
@@ -120,7 +124,7 @@ function defaultRouteFor(account) {
 }
 
 function visitsTodayCount(employeeId) {
-  return getVisits().filter(v => v.employeeId === employeeId && v.date === todayISO()).length;
+  return getVisits().filter(v => v.employeeId === employeeId && visitDay(v) === todayISO()).length;
 }
 
 function salesTargetOf(employee) {
@@ -208,7 +212,7 @@ const NAV_ITEMS = [
 
 const NAV_ITEMS_PM = [
   { section: 'Main', items: [
-    { id: 'dashboard', label: 'Project Home',   icon: 'home', route: '#/' },
+    { id: 'dashboard', label: 'Home',           icon: 'home', route: '#/' },
     { id: 'tracking',  label: 'Last Location',  icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Visits',         icon: 'visits', route: '#/visits' },
   ]},
@@ -243,7 +247,7 @@ const NAV_ITEMS_PM = [
 
 const NAV_ITEMS_SUPERVISOR = [
   { section: 'Main', items: [
-    { id: 'dashboard', label: 'Team Home',          icon: 'home', route: '#/' },
+    { id: 'dashboard', label: 'Home',               icon: 'home', route: '#/' },
     { id: 'myday',     label: 'My Day',             icon: 'calendar', route: '#/myday' },
     { id: 'tracking',  label: 'Team Last Location', icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Team Visits',        icon: 'visits', route: '#/visits' },
@@ -339,6 +343,75 @@ window.showToast = function(msg, type = '') {
   setTimeout(() => { el.style.opacity = '0'; el.style.transform = 'translateX(100%)'; setTimeout(() => el.remove(), 300); }, 3000);
 };
 
+const HOME_REFRESH_MS = 45000;
+
+function isHomeRoute(route = state.route) {
+  return route === '#/' || route === '#';
+}
+
+function formatHomeRefreshTime(value) {
+  if (!value) return 'Auto refresh aktif';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Auto refresh aktif';
+  const timezone = getOrganization()?.timezone || 'Asia/Jakarta';
+  try {
+    return `Diperbarui ${new Intl.DateTimeFormat('id-ID', {
+      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:timezone,
+    }).format(date)}`;
+  } catch {
+    return 'Data terbaru';
+  }
+}
+
+async function refreshHomeData({ manual = false } = {}) {
+  if (state.homeRefreshInFlight || !state.loggedIn || !isHomeRoute()) return false;
+  const actor = getActor();
+  if (!actor?.organizationId) return false;
+  state.homeRefreshInFlight = true;
+  try {
+    const result = await refreshOperationalData(getDB(), actor);
+    if (result?.refreshed) {
+      state.homeRefreshedAt = result.refreshedAt || new Date().toISOString();
+      if (manual) showToast('Data Home diperbarui', 'success');
+      if (isHomeRoute()) render();
+      return true;
+    }
+    if (manual) {
+      const message = ['local-sync-pending','local-changes-pending'].includes(result?.reason)
+        ? 'Perubahan lokal sedang disinkronkan. Coba lagi setelah sinkronisasi selesai.'
+        : 'Belum ada data baru untuk dimuat.';
+      showToast(message);
+    }
+    return false;
+  } catch (error) {
+    if (manual) showToast(error?.message || 'Refresh Home gagal', 'error');
+    else if (![401,403].includes(Number(error?.status || 0))) {
+      console.warn('home_refresh_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    state.homeRefreshInFlight = false;
+  }
+}
+
+function configureHomeRefresh(route = state.route) {
+  const shouldRun = state.loggedIn && isHomeRoute(route)
+    && (isProjectAdmin() || isSupervisor())
+    && !!getActor()?.organizationId;
+  if (!shouldRun) {
+    if (state.homeRefreshTimer) clearInterval(state.homeRefreshTimer);
+    state.homeRefreshTimer = null;
+    return;
+  }
+  if (!state.homeRefreshTimer) {
+    state.homeRefreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshHomeData().catch(() => {});
+    }, HOME_REFRESH_MS);
+  }
+}
+
+window.FT.refreshHome = () => refreshHomeData({ manual:true });
+
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
@@ -359,6 +432,7 @@ function render() {
   }
 
   if (!state.loggedIn) {
+    configureHomeRefresh('#/login');
     app.innerHTML = renderLogin();
     return;
   }
@@ -440,7 +514,7 @@ function render() {
     }
   } else if ((isProjectAdmin() || isSupervisor()) && (route === '#/' || route === '#')) {
     const org = getOrganization();
-    pageTitle = isOrgAdmin() ? 'Organization Home' : isManager() ? 'Project Home' : 'Team Home';
+    pageTitle = isOrgAdmin() ? 'Organization Overview' : isManager() ? 'Project Overview' : 'Team Overview';
     pageSubtitle = org ? `${org.name} · ${org.code}` : 'Operational summary';
     pageContent = (isProjectAdmin() || isManager()) ? renderManagerDashboard() : renderSupervisorDashboard();
   } else if (teamOps && route === '#/tracking') {
@@ -537,6 +611,7 @@ function render() {
           </div>
           <div class="topbar-spacer"></div>
           <div class="topbar-actions">
+            ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
             ${route === '#/tracking' ? '<div class="live-badge" style="background:var(--gray-100);color:var(--gray-700)">Last check-in</div>' : ''}
           </div>
         </div>
@@ -556,6 +631,7 @@ function render() {
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
+  configureHomeRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -578,8 +654,10 @@ function renderSidebar() {
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
       let badge = '';
       if (canViewTeamOps() && item.id === 'tracking') {
-        const activeEmps = getEmployees().filter(e => e.status === 'active').length;
-        badge = `<span class="nav-badge">${activeEmps}</span>`;
+        const fieldNow = getVisits().filter(v =>
+          visitDay(v) === todayISO() && ['checked-in','in_progress'].includes(String(v.status || ''))
+        ).length;
+        if (fieldNow > 0) badge = `<span class="nav-badge" title="Sedang di lapangan">${fieldNow}</span>`;
       }
       if (canViewTeamOps() && item.id === 'leaves' && getAppSettings().notifyLeave !== false) {
         const pending = getLeaves().filter(l => l.status === 'pending').length;
@@ -627,7 +705,7 @@ function renderSidebar() {
 function renderFieldDock(route) {
   const tabs = isSupervisor()
     ? [
-        { route: '#/', label: 'Beranda', icon: 'home' },
+        { route: '#/', label: 'Home', icon: 'home' },
         { route: '#/myday', label: 'My Day', icon: 'calendar' },
         { route: '#/tracking', label: 'Team Loc', icon: 'pin' },
         { route: '#/visits', label: 'Visits', icon: 'visits' },
@@ -749,6 +827,8 @@ window.FT.logout = function() {
   state.account = null;
   state.route = '#/login';
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
+  if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
+  state.homeRefreshedAt = null;
   render();
 };
 
@@ -760,15 +840,27 @@ function dashLink(href, label) {
 function renderManagerDashboard() {
   const stats = getDashboardStats();
   const org = getOrganization();
-  const todayVisits = getVisits().filter(v => v.date === todayISO());
+  const today = todayISO();
+  const todayVisits = getVisits()
+    .filter(v => visitDay(v) === today)
+    .sort((a,b) => String(b.checkInTime || '').localeCompare(String(a.checkInTime || '')));
   const employees = getEmployees();
+  const activeEmployees = employees.filter(e => e.status === 'active');
   const pendingLeaves = getLeaves().filter(l => l.status === 'pending').length;
+  const project = isManager() && state.account?.projectId
+    ? (getDB().projects || []).find(row => String(row.id) === String(state.account.projectId))
+    : null;
+  const scopeTitle = project?.name || org?.name || 'Organisasi';
+  const scopeMeta = project
+    ? `${project.code || project.id} · ${activeEmployees.length} tenaga aktif`
+    : `Workspace ${org?.code || '-'} · ${activeEmployees.length} tenaga aktif`;
+  const shortcutCaption = project ? 'Data project aktif' : 'Data organisasi aktif';
   return `
-    <div class="card" style="background:linear-gradient(135deg,#fff7ed,#fff);border-color:#fed7aa">
-      <div class="filter-row">
+    <div class="card home-hero">
+      <div class="filter-row home-hero-row">
         <div>
-          <div class="card-title">${esc(org?.name || 'Organisasi')}</div>
-          <div class="card-subtitle">Workspace ${esc(org?.code || '-')} · ${employees.filter(e=>e.status==='active').length} tenaga aktif</div>
+          <div class="card-title">${esc(scopeTitle)}</div>
+          <div class="card-subtitle">${esc(scopeMeta)}</div>
         </div>
         <div class="spacer"></div>
         ${isSuperadmin() ? dashLink('#/organizations','Ganti organisasi') : ''}
@@ -779,7 +871,7 @@ function renderManagerDashboard() {
     </div>
     <div class="grid-4">
       ${[
-        ['Karyawan aktif', employees.filter(e=>e.status==='active').length, '#/employees'],
+        ['Karyawan aktif', activeEmployees.length, '#/employees'],
         ['Kunjungan hari ini', stats.todayVisits, '#/visits'],
         ['Stok menipis', stats.lowStocks, '#/stocks'],
         ['Cuti pending', pendingLeaves, '#/leaves'],
@@ -788,16 +880,18 @@ function renderManagerDashboard() {
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Aktivitas hari ini</div>
+        <div class="card-subtitle">${esc(today)} · terbaru lebih dulu</div>
         ${todayVisits.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Waktu</th><th>Sales</th><th>Outlet</th><th>Status</th></tr></thead><tbody>${todayVisits.slice(0,8).map(v => {
           const emp = employees.find(e => e.id === v.employeeId);
           const out = getOutlets().find(o => o.id === v.outletId);
           return `<tr><td>${esc(v.checkInTime || '-')}</td><td>${esc(emp?.name || '-')}</td><td>${esc(out?.name || '-')}</td><td>${statusBadge(v.status)}</td></tr>`;
-        }).join('')}</tbody></table></div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Live Tracking atau buat kunjungan.</p></div>'}
+        }).join('')}</tbody></table></div><div class="home-card-footer">${dashLink('#/visits','Lihat semua kunjungan')}</div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Last Location atau lihat jadwal kunjungan.</p></div>'}
       </div>
       <div class="card">
         <div class="card-title">Pintasan workspace</div>
+        <div class="card-subtitle">Akses cepat ke data operasional utama</div>
         <div class="org-hub">
-          ${[['#/clients','Klien'],['#/projects','Project'],['#/employees','Karyawan'],['#/outlets','Toko'],['#/products','Produk'],['#/competitors','Kompetitor']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>Data organisasi aktif</span></a>`).join('')}
+          ${[['#/clients','Klien'],['#/projects','Project'],['#/employees','Karyawan'],['#/outlets','Toko'],['#/products','Produk'],['#/competitors','Kompetitor']].map(([h,l]) => `<a class="org-tile" href="${h}"><strong>${l}</strong><span>${shortcutCaption}</span></a>`).join('')}
         </div>
       </div>
     </div>
@@ -808,25 +902,56 @@ function renderSupervisorDashboard() {
   const mine = myEmployeeId();
   const team = getEmployees().filter(e => e.supervisorId === mine || e.id === mine);
   const teamIds = new Set(team.map(e => e.id));
-  const visits = getVisits().filter(v => teamIds.has(v.employeeId) && v.date === todayISO());
+  const visits = getVisits()
+    .filter(v => teamIds.has(v.employeeId) && visitDay(v) === todayISO())
+    .sort((a,b) => String(b.checkInTime || '').localeCompare(String(a.checkInTime || '')));
   const pending = getLeaves().filter(l => teamIds.has(l.employeeId) && l.status === 'pending');
   const pendingStores = getOutletProposals().filter(p => p.status === 'pending');
-  const active = visits.filter(v => v.status === 'checked-in');
+  const active = visits.filter(v => ['checked-in','in_progress'].includes(String(v.status || '')));
+  const employeeMap = new Map(team.map(row => [String(row.id),row]));
+  const leaveTypes = new Map((getLeaveTypes() || []).map(row => [String(row.code || row.id || row.value || ''),row.label || row.name || row.code]));
+  const org = getOrganization();
+  const leavePeriod = row => {
+    const from = row.startDate || row.fromDate || row.dateFrom || row.date || '';
+    const to = row.endDate || row.toDate || row.dateTo || '';
+    if (!from) return '';
+    return to && to !== from ? `${formatDateShort(from)} – ${formatDateShort(to)}` : formatDateShort(from);
+  };
   return `
+    <div class="card home-hero home-hero-compact">
+      <div class="filter-row home-hero-row">
+        <div>
+          <div class="card-title">${esc(org?.name || 'Tim lapangan')}</div>
+          <div class="card-subtitle">${team.length} anggota dalam cakupan Anda · ${active.length} sedang di lapangan</div>
+        </div>
+        <div class="spacer"></div>
+        ${dashLink('#/tracking','Last Location')}
+        ${dashLink('#/visits','Kunjungan tim')}
+      </div>
+    </div>
     <div class="grid-4">
       ${[['Anggota tim', team.length, '#/my-team'],['Kunjungan tim', visits.length, '#/visits'],['Sedang di lapangan', active.length, '#/tracking'],['Ijin menunggu', pending.length, '#/leaves']].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Tim hari ini</div>
-        ${team.map(e => `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--gray-100)"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" data-pqt-onclick="FT.focusEmployee('${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">No team members yet.</p>'}
+        <div class="card-subtitle">Aktivitas dan penjualan bulan berjalan</div>
+        ${team.slice(0,8).map(e => `<div class="home-team-row"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" data-pqt-onclick="return FT.openTrackingEmployee(event,'${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">Belum ada anggota tim.</p>'}
+        ${team.length > 8 ? `<div class="home-card-footer">${dashLink('#/my-team',`Lihat semua ${team.length} anggota`)}</div>` : ''}
       </div>
       <div class="card">
         <div class="card-title">Perlu tindakan</div>
-        ${pending.length ? pending.map(l => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>${esc(l.type)}</strong><div class="am-muted">${esc(l.reason || '')}</div></div>`).join('') : ''}
-        ${pendingStores.length ? pendingStores.map(p => `<div style="padding:10px 0;border-bottom:1px solid var(--gray-100)"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || '')}</div></div>`).join('') : ''}
+        <div class="card-subtitle">Pengajuan yang masih menunggu keputusan</div>
+        ${pending.slice(0,5).map(l => {
+          const employee = employeeMap.get(String(l.employeeId));
+          const type = leaveTypes.get(String(l.type || '')) || l.type || 'Cuti';
+          const period = leavePeriod(l);
+          return `<div class="home-action-row"><strong>${esc(type)} · ${esc(employee?.name || 'Karyawan')}</strong><div class="am-muted">${period ? esc(period) + ' · ' : ''}${esc(l.reason || 'Tanpa catatan')}</div></div>`;
+        }).join('')}
+        ${pendingStores.slice(0,5).map(p => `<div class="home-action-row"><strong>Toko baru: ${esc(p.name)}</strong><div class="am-muted">${esc(p.submittedByName || '')} · ${esc(p.area || p.city || '')}</div></div>`).join('')}
+        ${pending.length + pendingStores.length > 10 ? `<div class="am-muted" style="margin-top:8px">+${pending.length + pendingStores.length - 10} pengajuan lainnya</div>` : ''}
         ${!pending.length && !pendingStores.length ? '<p class="am-muted">Tidak ada pengajuan pending.</p>' : ''}
-        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/visits','Kunjungan tim')} ${dashLink('#/myday','Hari saya')}</div>
+        <div class="am-actions" style="margin-top:12px">${dashLink('#/outlet-approvals','Persetujuan toko')} ${dashLink('#/leaves','Cuti')} ${dashLink('#/myday','Hari saya')}</div>
       </div>
     </div>
   `;
@@ -959,7 +1084,20 @@ function initMap() {
     `);
     _markers[e.id] = m;
   });
+  if (state._trackFocus && _markers[state._trackFocus]) {
+    const target = state._trackFocus;
+    state._trackFocus = '';
+    requestAnimationFrame(() => window.FT.focusEmployee?.(target));
+  }
 }
+
+window.FT.openTrackingEmployee = function(event, empId) {
+  event?.preventDefault?.();
+  state._trackFocus = String(empId || '');
+  if (state.route === '#/tracking') render();
+  else location.hash = '#/tracking';
+  return false;
+};
 
 window.FT.filterTracking = function(value) { state._trackQuery = value; render(); };
 window.FT.filterTrackingArea = function(value) { state._trackArea = value; render(); };
@@ -4339,6 +4477,12 @@ function init() {
   // Initialize DB
   getDB();
   state.route = getRoute();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isHomeRoute()) refreshHomeData().catch(() => {});
+  });
+  window.addEventListener('focus', () => {
+    if (isHomeRoute()) refreshHomeData().catch(() => {});
+  });
   render();
 }
 
