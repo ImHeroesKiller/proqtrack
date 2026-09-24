@@ -1628,6 +1628,7 @@ window.PM = {
       persistView(db);
       window.showToast?.("Assignment diakhiri.", "success");
       if (location.hash === "#/assignments") renderAssignments();
+      else if (document.getElementById("pmModal")) this.openAssign(assignment.projectId);
     } catch (error) {
       window.showToast?.({
         REVISION_CONFLICT:'Data berubah di server. Muat ulang lalu coba kembali.',
