@@ -2000,22 +2000,50 @@ window.FT.createEmployee = async function(e) {
   e.preventDefault();
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
   data.joinDate = new Date().toISOString().slice(0, 10);
+  data.status = 'active';
   if (data.role === 'Field Sales' && !String(data.supervisorEmail || '').trim()) {
     showToast('Supervisor wajib dipilih untuk Field Sales.', 'error');
     return;
   }
+  let uploadedPhoto = null;
   try {
-    data.photo = await photoFromEmployeeForm(form, '');
+    if (submit) submit.disabled = true;
+    const { checked } = await window.BulkEmployees.previewSingleEmployee({ ...data, photo:'' });
+    if (!checked?.valid) {
+      const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
+      error.code = checked?.errors?.[0] || 'VALIDATION_FAILED';
+      throw error;
+    }
+    if (checked.loginAction === 'create' && !String(data.password || '')) {
+      const password = form.elements.password;
+      if (password) {
+        password.setCustomValidity('Password wajib untuk akun baru.');
+        password.reportValidity();
+        password.setCustomValidity('');
+      }
+      return;
+    }
+    uploadedPhoto = await employeePhotoFromForm(form, { projectId:data.projectId, employeeCode:data.employeeCode });
+    data.photo = uploadedPhoto.url;
     delete data.photoFile;
     await window.BulkEmployees.createSingleEmployee(data);
-    closeModal(); showToast('Karyawan, penugasan, dan akun login berhasil dibuat', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    closeModal();
+    showToast(checked.loginAction === 'create'
+      ? 'Karyawan, penugasan, dan akun login berhasil dibuat'
+      : 'Karyawan berhasil dibuat dan akun login existing berhasil dihubungkan', 'success');
+    render();
+  } catch (error) {
+    if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
+    showToast(error.message || String(error), 'error');
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
 };
-
 window.FT.deleteEmployee = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const current = getEmployees().find(row => row.id === id);
@@ -2159,25 +2187,39 @@ window.FT.editEmployee = function(id) {
 
 window.FT.updateEmployee = async function(e, id) {
   e.preventDefault();
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
   const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
   const current = getEmployees().find(x => x.id === id);
+  if (!current) return;
   const data = Object.fromEntries(new FormData(form));
   data.salesTargetAmount = parseInt(data.salesTargetAmount, 10) || 0;
   data.attendancePointId = data.attendancePointId || null;
+  data.status = current.status;
   delete data.password;
   delete data.lat;
   delete data.lng;
+  let uploadedPhoto = null;
   try {
-    data.photo = await photoFromEmployeeForm(form, current?.photo || '');
-    delete data.photoFile;
-    data.employeeCode = current?.employeeCode || current?.code || id;
+    if (submit) submit.disabled = true;
+    data.employeeCode = current.employeeCode || current.code || id;
     data.projectId = '';
-    data.joinDate = current?.joinDate || '';
+    data.joinDate = current.joinDate || '';
+    const photoProjectId = employeeProjectIds(id)[0] || 'general';
+    uploadedPhoto = await employeePhotoFromForm(form, { fallback:current.photo || '', projectId:photoProjectId, employeeCode:data.employeeCode });
+    data.photo = uploadedPhoto.url;
+    delete data.photoFile;
     await window.BulkEmployees.updateSingleEmployee(data);
+    const oldKey = uploadedPhoto?.uploaded ? employeePhotoObjectKey(current.photo) : '';
+    if (oldKey && oldKey !== uploadedPhoto.key) await cleanupEmployeePhoto(oldKey);
     closeModal(); showToast('Data operasional karyawan berhasil diperbarui', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+  } catch (error) {
+    if (uploadedPhoto?.uploaded) await cleanupEmployeePhoto(uploadedPhoto.key);
+    showToast(error.message || String(error), 'error');
+  } finally {
+    if (submit?.isConnected) submit.disabled = false;
+  }
 };
-
 // ===== Outlets Page =====
 function renderOutlets() {
   const outlets = getOutlets();
