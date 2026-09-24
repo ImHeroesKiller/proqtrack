@@ -1,4 +1,4 @@
-const CACHE = 'proqtrack-v12.23';
+const CACHE = 'proqtrack-v12.24';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
