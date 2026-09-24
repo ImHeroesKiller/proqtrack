@@ -380,13 +380,24 @@ export function saveProjectStoreSettings(projectId, data) {
   return getProjectStoreSettings(projectId);
 }
 
-export function canEmployeeAddStore(employeeId = getActor()?.employeeId) {
+export function outletProjectsForEmployee(employeeId = getActor()?.employeeId) {
+  if (!employeeId) return [];
   const db = getDB();
-  const ids = (db.projectAssignments || [])
-    .filter(a => a.employeeId === employeeId && a.status === 'active')
-    .map(a => a.projectId);
-  if (!ids.length) return false;
-  return ids.some(id => getProjectStoreSettings(id).allowNewOutlet);
+  const activeProjects = new Map(
+    (db.projects || [])
+      .filter(project => project.status === 'active')
+      .map(project => [String(project.id), project])
+  );
+  const seen = new Set();
+  return (db.projectAssignments || [])
+    .filter(assignment => assignment.employeeId === employeeId && assignment.status === 'active')
+    .map(assignment => activeProjects.get(String(assignment.projectId)))
+    .filter(project => project && !seen.has(project.id) && seen.add(project.id))
+    .filter(project => getProjectStoreSettings(project.id).allowNewOutlet);
+}
+
+export function canEmployeeAddStore(employeeId = getActor()?.employeeId) {
+  return outletProjectsForEmployee(employeeId).length > 0;
 }
 
 export function hasManualOutletApprovalProjects(actor = getActor()) {
@@ -407,9 +418,9 @@ export function hasManualOutletApprovalProjects(actor = getActor()) {
   );
 }
 
-export function storeCatalogForEmployee(employeeId = getActor()?.employeeId) {
-  const projectId = defaultProjectIdForEmployee(employeeId);
-  return getProjectStoreSettings(projectId);
+export function storeCatalogForEmployee(employeeId = getActor()?.employeeId, projectId = null) {
+  const selectedProjectId = projectId || defaultProjectIdForEmployee(employeeId);
+  return getProjectStoreSettings(selectedProjectId);
 }
 
 /** Ensure product rows have brand/cost/margin fields without wiping user data */
@@ -1559,8 +1570,14 @@ export function createOutletProposal(data) {
   const actor = assertLoggedIn();
   if (!actor.employeeId && actor.role === 'employee') throw new Error('Akun sales belum tertaut karyawan.');
   const projectId = data.projectId || defaultProjectIdForEmployee(actor.employeeId);
-  if (actor.role === 'employee' && !getProjectStoreSettings(projectId).allowNewOutlet) {
-    throw new Error('Pengajuan toko baru tidak aktif pada project ini.');
+  if (actor.role === 'employee') {
+    const allowedProjectIds = new Set(outletProjectsForEmployee(actor.employeeId).map(project => String(project.id)));
+    if (!projectId || !allowedProjectIds.has(String(projectId))) {
+      throw new Error('Project outlet tidak valid atau tidak aktif untuk akun ini.');
+    }
+    if (!getProjectStoreSettings(projectId).allowNewOutlet) {
+      throw new Error('Pengajuan toko baru tidak aktif pada project ini.');
+    }
   }
   const db = getDB();
   const org = withOrg(data);
@@ -1627,12 +1644,7 @@ export function createOutletProposal(data) {
 }
 
 function defaultProjectIdForEmployee(employeeId) {
-  if (!employeeId) return null;
-  const db = getDB();
-  const active = (db.projectAssignments || []).filter(a =>
-    a.employeeId === employeeId && a.status === 'active'
-  );
-  return active[0]?.projectId || null;
+  return outletProjectsForEmployee(employeeId)[0]?.id || null;
 }
 
 export function reviewOutletProposal(id, decision, note = '', projectId = null) {
