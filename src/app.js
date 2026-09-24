@@ -41,7 +41,7 @@ import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
   captureDevicePosition, currentTenantTimeHHMM, locationFreshness,
-  locationSourceLabel, visitLocationEvidence,
+  locationSourceLabel, visitLocationEvidence, assertVisitGeofence, visitGeofenceEvidence,
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
@@ -77,6 +77,9 @@ const state = {
   trackingRefreshTimer: null,
   trackingRefreshInFlight: false,
   trackingRefreshedAt: null,
+  visitsRefreshTimer: null,
+  visitsRefreshInFlight: false,
+  visitsRefreshedAt: null,
 };
 
 const PROJECT_MANAGEMENT_ROUTES = new Set([
@@ -486,6 +489,74 @@ function configureTrackingRefresh(route = state.route) {
 
 window.FT.refreshTracking = () => refreshTrackingData({ manual:true });
 
+const VISITS_REFRESH_MS = 30000;
+
+function isVisitsRoute(route = state.route) {
+  return route === '#/visits' || route === '#/myvisits';
+}
+
+function formatVisitsRefreshTime(value) {
+  if (!value) return 'Auto refresh 30 detik';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Auto refresh 30 detik';
+  const timezone = getOrganization()?.timezone || 'Asia/Jakarta';
+  try {
+    return `Diperbarui ${new Intl.DateTimeFormat('id-ID', {
+      hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone:timezone,
+    }).format(date)}`;
+  } catch {
+    return 'Data terbaru';
+  }
+}
+
+async function refreshVisitsData({ manual = false } = {}) {
+  if (state.visitsRefreshInFlight || !state.loggedIn || !isVisitsRoute()) return false;
+  const actor = getActor();
+  if (!actor?.organizationId) return false;
+  state.visitsRefreshInFlight = true;
+  try {
+    const result = await refreshOperationalData(getDB(), actor);
+    if (result?.refreshed) {
+      state.visitsRefreshedAt = result.refreshedAt || new Date().toISOString();
+      if (manual) showToast('Data kunjungan diperbarui', 'success');
+      if (isVisitsRoute()) render();
+      return true;
+    }
+    if (manual) {
+      const message = ['local-sync-pending','local-changes-pending'].includes(result?.reason)
+        ? 'Perubahan lokal sedang disinkronkan. Coba lagi setelah sinkronisasi selesai.'
+        : 'Belum ada data baru untuk dimuat.';
+      showToast(message);
+    }
+    return false;
+  } catch (error) {
+    if (manual) showToast(error?.message || 'Refresh kunjungan gagal', 'error');
+    else if (![401,403].includes(Number(error?.status || 0))) {
+      console.warn('visits_refresh_failed', error?.code || error?.message || error);
+    }
+    return false;
+  } finally {
+    state.visitsRefreshInFlight = false;
+  }
+}
+
+function configureVisitsRefresh(route = state.route) {
+  const shouldRun = state.loggedIn && isVisitsRoute(route) && !!getActor()?.organizationId;
+  if (!shouldRun) {
+    if (state.visitsRefreshTimer) clearInterval(state.visitsRefreshTimer);
+    state.visitsRefreshTimer = null;
+    return;
+  }
+  if (!state.visitsRefreshTimer) {
+    state.visitsRefreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshVisitsData().catch(() => {});
+    }, VISITS_REFRESH_MS);
+  }
+}
+
+window.FT.refreshVisits = () => refreshVisitsData({ manual:true });
+
+
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
@@ -508,6 +579,7 @@ function render() {
   if (!state.loggedIn) {
     configureHomeRefresh('#/login');
     configureTrackingRefresh('#/login');
+    configureVisitsRefresh('#/login');
     app.innerHTML = renderLogin();
     return;
   }
@@ -688,6 +760,7 @@ function render() {
           <div class="topbar-actions">
             ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
             ${isTrackingRoute(route) ? `<span class="tracking-freshness">${esc(formatTrackingRefreshTime(state.trackingRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
+            ${isVisitsRoute(route) ? `<span class="tracking-freshness">${esc(formatVisitsRefreshTime(state.visitsRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshVisits()" ${state.visitsRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
           </div>
         </div>
         <div class="content">
@@ -708,6 +781,7 @@ function render() {
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
   configureHomeRefresh(route);
   configureTrackingRefresh(route);
+  configureVisitsRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -905,8 +979,10 @@ window.FT.logout = function() {
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
   if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
   if (state.trackingRefreshTimer) { clearInterval(state.trackingRefreshTimer); state.trackingRefreshTimer = null; }
+  if (state.visitsRefreshTimer) { clearInterval(state.visitsRefreshTimer); state.visitsRefreshTimer = null; }
   state.homeRefreshedAt = null;
   state.trackingRefreshedAt = null;
+  state.visitsRefreshedAt = null;
   render();
 };
 
@@ -1337,8 +1413,12 @@ window.FT.filterVisits = function() {
 };
 
 window.FT.openVisitModal = function() {
-  const employees = getEmployees();
-  const outlets = getOutlets();
+  const employees = getEmployees().filter(employee => employee.status === 'active');
+  const outlets = getOutlets().filter(outlet => outlet.status === 'active');
+  if (!employees.length || !outlets.length) {
+    showToast('Karyawan aktif dan outlet aktif diperlukan untuk menjadwalkan kunjungan.', 'error');
+    return;
+  }
   openModal('Tambah Kunjungan', `
     <form data-pqt-onsubmit="FT.createVisit(event)">
       <div class="form-group">
@@ -1353,56 +1433,44 @@ window.FT.openVisitModal = function() {
           ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
         </select>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Tanggal</label>
-          <input class="input" type="date" name="date" value="${todayISO()}" required>
-        </div>
-        <div class="form-group">
-          <label class="label">Status</label>
-          <select class="select" name="status">
-            <option value="planned">Direncanakan</option>
-            <option value="checked-in">Sedang Berlangsung</option>
-            <option value="completed">Selesai</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Check In</label>
-          <input class="input" type="time" name="checkInTime">
-        </div>
-        <div class="form-group">
-          <label class="label">Check Out</label>
-          <input class="input" type="time" name="checkOutTime">
-        </div>
+      <div class="form-group">
+        <label class="label">Tanggal</label>
+        <input class="input" type="date" name="date" value="${todayISO()}" required>
       </div>
       <div class="form-group">
         <label class="label">Catatan</label>
         <textarea class="textarea" name="notes" placeholder="Catatan kunjungan..."></textarea>
       </div>
+      <div class="tracking-evidence-note">Kunjungan baru selalu dibuat sebagai Direncanakan. Check-in dan check-out dilakukan oleh karyawan yang ditugaskan dengan bukti GPS perangkat.</div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
+        <button type="submit" class="btn btn-primary">Simpan Jadwal</button>
       </div>
     </form>
   `);
 };
 
+let visitCreateInFlight = false;
+
 window.FT.createVisit = function(e) {
   e.preventDefault();
-  const fd = new FormData(e.target);
-  const data = Object.fromEntries(fd);
-  if (data.checkInTime === '') data.checkInTime = null;
-  if (data.checkOutTime === '') data.checkOutTime = null;
-  if (data.status !== 'planned' || data.checkInTime) data.locationSource = 'administrative_entry';
+  if (visitCreateInFlight) return;
+  const form = e.currentTarget || e.target;
+  const submit = form?.querySelector('button[type="submit"]');
+  visitCreateInFlight = true;
+  if (submit) submit.disabled = true;
   try {
+    const data = Object.fromEntries(new FormData(form));
+    data.status = 'planned';
     createVisit(data);
     closeModal();
-    showToast('Kunjungan berhasil ditambahkan', 'success');
+    showToast('Kunjungan berhasil dijadwalkan', 'success');
     render();
   } catch (error) {
     showToast(error.message || 'Akses ditolak', 'error');
+  } finally {
+    visitCreateInFlight = false;
+    if (submit?.isConnected) submit.disabled = false;
   }
 };
 
@@ -1414,7 +1482,7 @@ window.FT.viewVisit = function(id) {
   }
   const emp = getEmployees().find(e => e.id === v.employeeId);
   const mine = myEmployeeId();
-  const canAct = !mine || v.employeeId === mine || isProjectAdmin();
+  const canAct = !!mine && String(v.employeeId) === String(mine);
   openModal('Detail Kunjungan', `
     <div class="detail-grid" style="margin-bottom:8px">
       <div class="detail-label">Sales</div><div class="detail-value">${esc(emp?.name || '-')}</div>
@@ -1467,6 +1535,7 @@ window.FT.closeSidebar = function() {
 };
 
 const visitCheckInInFlight = new Set();
+const visitCheckOutInFlight = new Set();
 
 async function checkInVisitWithEvidence(id) {
   const key = String(id || '');
@@ -1476,24 +1545,74 @@ async function checkInVisitWithEvidence(id) {
 
   const actor = getActor();
   const ownsVisit = !!actor?.employeeId && String(actor.employeeId) === String(visit.employeeId);
+  if (!ownsVisit) throw new Error('Check-in hanya dapat dilakukan oleh karyawan yang ditugaskan.');
+  if (String(visit.status || '') !== 'planned') throw new Error('Kunjungan ini tidak lagi berstatus Direncanakan.');
+
+  const outlet = getOutlets().find(row => String(row.id) === String(visit.outletId));
+  if (!outlet) throw new Error('Outlet kunjungan tidak ditemukan.');
+
   visitCheckInInFlight.add(key);
   try {
+    showToast('Mengambil lokasi GPS...');
+    const gps = await captureDevicePosition();
+    const geofence = assertVisitGeofence(outlet, gps, 50);
     const patch = {
       status:'checked-in',
       checkInTime:currentTenantTimeHHMM(),
-      locationSource:ownsVisit ? 'device_gps' : 'administrative_checkin',
+      startedAt:gps.capturedAt,
+      locationSource:'device_gps',
+      checkInLat:gps.lat,
+      checkInLng:gps.lng,
+      checkInAccuracyM:gps.accuracyM,
+      checkInCapturedAt:gps.capturedAt,
+      geofenceDistanceM:geofence.distanceM,
+      geofenceRadiusM:geofence.radiusM,
+      geofenceStatus:geofence.status,
     };
-    if (ownsVisit) {
-      showToast('Mengambil lokasi GPS...');
-      const gps = await captureDevicePosition();
-      patch.checkInLat = gps.lat;
-      patch.checkInLng = gps.lng;
-      patch.checkInAccuracyM = gps.accuracyM;
-      patch.checkInCapturedAt = gps.capturedAt;
-    }
-    return updateVisit(key,patch);
+    return updateVisit(key, patch);
   } finally {
     visitCheckInInFlight.delete(key);
+  }
+}
+
+async function checkOutVisitWithEvidence(id) {
+  const key = String(id || '');
+  if (!key || visitCheckOutInFlight.has(key)) return null;
+  const visit = getVisits().find(row => String(row.id) === key);
+  if (!visit) throw new Error('Kunjungan tidak ditemukan atau di luar cakupan Anda.');
+
+  const actor = getActor();
+  const ownsVisit = !!actor?.employeeId && String(actor.employeeId) === String(visit.employeeId);
+  if (!ownsVisit) throw new Error('Check-out hanya dapat dilakukan oleh karyawan yang ditugaskan.');
+  if (!['checked-in','in_progress'].includes(String(visit.status || ''))) {
+    throw new Error('Check-out hanya dapat dilakukan setelah check-in.');
+  }
+
+  visitCheckOutInFlight.add(key);
+  try {
+    showToast('Mengambil lokasi GPS check-out...');
+    const gps = await captureDevicePosition();
+    const outlet = getOutlets().find(row => String(row.id) === String(visit.outletId));
+    let geofence = null;
+    try { geofence = outlet ? visitGeofenceEvidence(outlet, gps, 50) : null; } catch { geofence = null; }
+    const patch = {
+      status:'completed',
+      checkOutTime:currentTenantTimeHHMM(),
+      completedAt:gps.capturedAt,
+      checkOutLat:gps.lat,
+      checkOutLng:gps.lng,
+      checkOutAccuracyM:gps.accuracyM,
+      checkOutCapturedAt:gps.capturedAt,
+      checkOutLocationSource:'device_gps',
+      ...(geofence ? {
+        checkOutGeofenceDistanceM:geofence.distanceM,
+        checkOutGeofenceRadiusM:geofence.radiusM,
+        checkOutGeofenceStatus:geofence.status,
+      } : {}),
+    };
+    return updateVisit(key, patch);
+  } finally {
+    visitCheckOutInFlight.delete(key);
   }
 }
 
@@ -1502,20 +1621,25 @@ window.FT.checkInVisit = async function(id) {
     const visit = await checkInVisitWithEvidence(id);
     if (!visit) return;
     closeModal();
-    showToast(visit.locationSource === 'device_gps'
-      ? 'Check-in berhasil dengan GPS perangkat'
-      : 'Check-in administratif tercatat tanpa posisi perangkat', 'success');
+    showToast('Check-in berhasil dengan GPS dan geofence valid', 'success');
     render();
   } catch (error) {
     showToast(error.message || 'Check-in gagal', 'error');
   }
 };
-window.FT.checkOutVisit = function(id) {
+
+window.FT.checkOutVisit = async function(id) {
   try {
-    updateVisit(id, { status: 'completed', checkOutTime: currentTenantTimeHHMM() });
-    closeModal(); showToast('Berhasil check out', 'success'); render();
-  } catch (error) { showToast(error.message || 'Akses ditolak', 'error'); }
+    const visit = await checkOutVisitWithEvidence(id);
+    if (!visit) return;
+    closeModal();
+    showToast('Check-out berhasil dengan bukti GPS', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Check-out gagal', 'error');
+  }
 };
+
 window.FT.deleteVisit = function(id) {
   if (!confirm('Hapus kunjungan ini?')) return;
   try {
@@ -4601,17 +4725,22 @@ window.FT.mobileCheckIn = async function(visitId) {
   try {
     const visit = await checkInVisitWithEvidence(visitId);
     if (!visit) return;
-    showToast(visit.locationSource === 'device_gps'
-      ? 'Check-in berhasil dengan GPS perangkat'
-      : 'Check-in administratif tercatat', 'success');
+    showToast('Check-in berhasil dengan GPS dan geofence valid', 'success');
     render();
   } catch (error) {
     showToast(error.message || 'Check-in gagal', 'error');
   }
 };
-window.FT.mobileCheckOut = function(visitId) {
-  updateVisit(visitId, { status: 'completed', checkOutTime: currentTenantTimeHHMM() });
-  showToast('Berhasil check out!', 'success'); render();
+
+window.FT.mobileCheckOut = async function(visitId) {
+  try {
+    const visit = await checkOutVisitWithEvidence(visitId);
+    if (!visit) return;
+    showToast('Check-out berhasil dengan bukti GPS', 'success');
+    render();
+  } catch (error) {
+    showToast(error.message || 'Check-out gagal', 'error');
+  }
 };
 
 // ===== Modal Helper =====
@@ -4651,10 +4780,12 @@ function init() {
     if (document.visibilityState !== 'visible') return;
     if (isHomeRoute()) refreshHomeData().catch(() => {});
     if (isTrackingRoute()) refreshTrackingData().catch(() => {});
+    if (isVisitsRoute()) refreshVisitsData().catch(() => {});
   });
   window.addEventListener('focus', () => {
     if (isHomeRoute()) refreshHomeData().catch(() => {});
     if (isTrackingRoute()) refreshTrackingData().catch(() => {});
+    if (isVisitsRoute()) refreshVisitsData().catch(() => {});
   });
   render();
 }
