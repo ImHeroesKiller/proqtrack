@@ -36,6 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
+import { refreshOperationalData } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
@@ -66,6 +67,9 @@ const state = {
   selectedMobileEmp: 'EMP001',
   mobileTab: 'home',
   livePolling: null,
+  homeRefreshTimer: null,
+  homeRefreshInFlight: false,
+  homeRefreshedAt: null,
 };
 
 const PROJECT_MANAGEMENT_ROUTES = new Set([
@@ -208,7 +212,7 @@ const NAV_ITEMS = [
 
 const NAV_ITEMS_PM = [
   { section: 'Main', items: [
-    { id: 'dashboard', label: 'Project Home',   icon: 'home', route: '#/' },
+    { id: 'dashboard', label: 'Home',           icon: 'home', route: '#/' },
     { id: 'tracking',  label: 'Last Location',  icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Visits',         icon: 'visits', route: '#/visits' },
   ]},
@@ -243,7 +247,7 @@ const NAV_ITEMS_PM = [
 
 const NAV_ITEMS_SUPERVISOR = [
   { section: 'Main', items: [
-    { id: 'dashboard', label: 'Team Home',          icon: 'home', route: '#/' },
+    { id: 'dashboard', label: 'Home',               icon: 'home', route: '#/' },
     { id: 'myday',     label: 'My Day',             icon: 'calendar', route: '#/myday' },
     { id: 'tracking',  label: 'Team Last Location', icon: 'tracking', route: '#/tracking' },
     { id: 'visits',    label: 'Team Visits',        icon: 'visits', route: '#/visits' },
@@ -627,7 +631,7 @@ function renderSidebar() {
 function renderFieldDock(route) {
   const tabs = isSupervisor()
     ? [
-        { route: '#/', label: 'Beranda', icon: 'home' },
+        { route: '#/', label: 'Home', icon: 'home' },
         { route: '#/myday', label: 'My Day', icon: 'calendar' },
         { route: '#/tracking', label: 'Team Loc', icon: 'pin' },
         { route: '#/visits', label: 'Visits', icon: 'visits' },
