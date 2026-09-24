@@ -44,6 +44,7 @@ import {
   locationSourceLabel, visitLocationEvidence, assertVisitGeofence, visitGeofenceEvidence,
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
+import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -1327,7 +1328,7 @@ function renderVisits() {
   return `
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits()">
+        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits()">
         <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits()">
           <option value="">Semua Status</option>
           <option value="completed">Selesai</option>
@@ -1350,7 +1351,7 @@ function renderVisits() {
         <div class="spacer"></div>
         <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
       </div>
-      <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;"></div>
+      <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper visit-responsive-table">
         <table class="table" id="visitsTable">
           <thead>
@@ -1434,27 +1435,21 @@ window.FT.filterVisits = function(page = 1) {
   const dateFrom = document.getElementById('visitDateFrom')?.value || '';
   const dateTo = document.getElementById('visitDateTo')?.value || '';
   const rows = [...document.querySelectorAll('#visitsTable tbody tr[data-visit-id]')];
-  const pageSize = 20;
-  const matched = rows.filter(row => {
-    const text = row.textContent.toLowerCase();
-    const rowDate = row.dataset.date || '';
-    return (!search || text.includes(search))
-      && (!status || row.dataset.status === status)
-      && (!empF || row.dataset.emp === empF)
-      && (!projectF || row.dataset.project === projectF)
-      && (!outletF || row.dataset.outlet === outletF)
-      && (!dateFrom || rowDate >= dateFrom)
-      && (!dateTo || rowDate <= dateTo);
-  });
-  const pageCount = Math.max(1, Math.ceil(matched.length / pageSize));
-  const currentPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
-  const visible = new Set(matched.slice((currentPage - 1) * pageSize, currentPage * pageSize));
+  const filters = { search, status, employeeId:empF, projectId:projectF, outletId:outletF, dateFrom, dateTo };
+  const matched = rows.filter(row => visitMatchesFilters({
+    status:row.dataset.status,
+    employeeId:row.dataset.emp,
+    projectId:row.dataset.project,
+    outletId:row.dataset.outlet,
+    date:row.dataset.date,
+  }, filters, row.textContent));
+  const pageState = paginateVisits(matched, page, VISITS_PAGE_SIZE);
+  const { currentPage, pageCount } = pageState;
+  const visible = new Set(pageState.items);
   rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
   const summary = document.getElementById('visitFilterSummary');
   if (summary) {
-    const from = matched.length ? ((currentPage - 1) * pageSize) + 1 : 0;
-    const to = Math.min(currentPage * pageSize, matched.length);
-    summary.textContent = matched.length ? `Menampilkan ${from}–${to} dari ${matched.length} kunjungan` : 'Tidak ada kunjungan yang cocok dengan filter.';
+    summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} kunjungan` : 'Tidak ada kunjungan yang cocok dengan filter.';
   }
   let pager = document.getElementById('visitPager');
   if (!pager) {
@@ -1464,7 +1459,7 @@ window.FT.filterVisits = function(page = 1) {
     document.querySelector('.visit-responsive-table')?.after(pager);
   }
   pager.replaceChildren();
-  if (matched.length > pageSize) {
+  if (pageState.total > VISITS_PAGE_SIZE) {
     const prev = document.createElement('button');
     prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = currentPage <= 1;
     prev.addEventListener('click', () => FT.filterVisits(currentPage - 1));
@@ -1622,7 +1617,7 @@ window.FT.submitVisitCorrection = async function(event, id) {
     closeModal();
     showToast('Pengajuan koreksi dikirim untuk approval Supervisor dan Manager.', 'success');
   } catch (error) {
-    showToast(error?.message || 'Pengajuan koreksi gagal dikirim.', 'error');
+    showToast(visitCorrectionErrorMessage(error?.code || error?.message), 'error');
   } finally {
     visitCorrectionInFlight = false;
     if (submit?.isConnected) submit.disabled = false;
