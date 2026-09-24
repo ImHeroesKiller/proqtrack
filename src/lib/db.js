@@ -1956,12 +1956,16 @@ export function getDashboardStats() {
   };
 }
 
-export function getProductSales() {
-  const rows = scoped(getDB().productSales || []).filter(row => String(row.lifecycleStatus || 'active') !== 'voided');
+export function getProductSalesAudit() {
+  const rows = scoped(getDB().productSales || []);
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
   return rows.filter(s => ids.has(s.employeeId));
+}
+
+export function getProductSales() {
+  return getProductSalesAudit().filter(row => String(row.lifecycleStatus || 'active') !== 'voided');
 }
 
 export function createProductSale(data) {
