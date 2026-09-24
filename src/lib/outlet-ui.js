@@ -93,3 +93,74 @@ export function paginateOutlets(items = [], page = 1, pageSize = OUTLET_PAGE_SIZ
     to: total ? fromIndex + pageItems.length : 0,
   };
 }
+
+
+export function outletStatusSummary(outlets = []) {
+  return {
+    total:outlets.length,
+    active:outlets.filter(outlet => outlet.status === 'active').length,
+    inactive:outlets.filter(outlet => outlet.status === 'inactive').length,
+    archived:outlets.filter(outlet => outlet.status === 'archived').length,
+  };
+}
+
+export function outletSyncPresentation(sync = {}) {
+  if (sync.error) return { state:'error', label:'Sync bermasalah', className:'status-inactive' };
+  if (sync.syncing || sync.queued) return { state:'syncing', label:'Sinkronisasi…', className:'status-pending' };
+  return { state:'synced', label:'Cloud synced', className:'status-active' };
+}
+
+export function normalizeOutletCatalog(catalog = {}, outlet = null) {
+  const unique = values => [...new Set((values || []).map(text).filter(Boolean))];
+  const withCurrent = (values, current) => {
+    const rows = unique(values);
+    const value = text(current);
+    return value && !rows.includes(value) ? [value, ...rows] : rows;
+  };
+  return {
+    segments:withCurrent(catalog.segments, outlet?.channel),
+    ownerships:withCurrent(catalog.ownerships, outlet?.ownership),
+    types:withCurrent(catalog.types, outlet?.type),
+    notesMode:catalog.notesMode === 'dropdown' ? 'dropdown' : 'freetext',
+    notesOptions:withCurrent(catalog.notesOptions, outlet?.notes),
+  };
+}
+
+export function outletFormModel(outlet = {}, catalog = {}) {
+  const normalizedCatalog = normalizeOutletCatalog(catalog, outlet);
+  return {
+    id:text(outlet.id),
+    name:text(outlet.name),
+    projectId:text(outlet.projectIds?.[0] || outlet.projectId),
+    address:text(outlet.address),
+    lat:outlet.lat ?? '',
+    lng:outlet.lng ?? '',
+    area:text(outlet.area),
+    phone:text(outlet.phone),
+    owner:text(outlet.owner),
+    type:text(outlet.type),
+    channel:text(outlet.channel),
+    ownership:text(outlet.ownership),
+    notes:text(outlet.notes),
+    visitFrequency:text(outlet.visitFrequency || 'Mingguan'),
+    status:['active','inactive','archived'].includes(text(outlet.status)) ? text(outlet.status) : 'active',
+    catalog:normalizedCatalog,
+    isEdit:Boolean(outlet.id),
+  };
+}
+
+export function outletLifecycleAction(outlet = {}, referenceCount = 0) {
+  const refs = Math.max(0, Number(referenceCount) || 0);
+  if (refs > 0) {
+    return {
+      action:'deactivate',
+      label:'Nonaktifkan',
+      confirm:`Outlet memiliki ${refs} data operasional terkait. Outlet akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`,
+    };
+  }
+  return {
+    action:'delete',
+    label:text(outlet.status) === 'active' ? 'Hapus' : 'Hapus',
+    confirm:'Hapus outlet ini? Tindakan ini hanya berlaku bila outlet belum memiliki data operasional terkait.',
+  };
+}
