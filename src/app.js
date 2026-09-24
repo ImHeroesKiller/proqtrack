@@ -1136,6 +1136,7 @@ function renderTracking() {
           <option value="hasloc" ${state._trackField==='hasloc'?'selected':''}>Punya last location</option>
           <option value="noloc" ${state._trackField==='noloc'?'selected':''}>Belum ada last location</option>
         </select>
+        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>
         <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.fitTracking()">Tampilkan semua</button>
       </div>
     </div>
@@ -1146,20 +1147,28 @@ function renderTracking() {
         <div id="mapEmpList">
           ${employees.map(e => {
             const loc = lastKnownLocation(e.id);
-            const maps = loc ? `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}` : '#';
+            const maps = loc ? `https://www.google.com/maps/dir/?api=1&destination=${loc.lat},${loc.lng}` : '';
+            const freshness = locationFreshness(loc);
+            const sourceLabel = loc?.source === 'device_gps'
+              ? 'GPS check-in'
+              : loc?.source === 'outlet_reference'
+                ? 'Referensi outlet'
+                : loc?.source === 'legacy_visit'
+                  ? 'Lokasi visit lama'
+                  : 'Belum ada lokasi';
             const lastLabel = loc
-              ? `${esc(loc.outlet?.name || 'Lokasi kerja')} · ${formatDateShort(visitDay(loc.visit))} ${loc.visit.checkInTime || ''}`
+              ? `${esc(loc.outlet?.name || 'Lokasi kerja')} · ${formatDateShort(visitDay(loc.visit))} ${loc.visit.checkInTime || ''} · ${esc(sourceLabel)} · ${esc(freshness.label)}`
               : 'Belum ada last location';
             return `
               <div class="map-emp-item" data-emp="${e.id}">
-                <div class="emp-status-dot" style="background:${loc ? 'var(--green-500)' : 'var(--gray-300)'};"></div>
+                <div class="emp-status-dot" style="background:${loc ? freshness.color : 'var(--gray-300)'};" title="${esc(freshness.label)}"></div>
                 <div class="emp-info" data-pqt-onclick="FT.focusEmployee('${e.id}')" style="cursor:pointer;flex:1">
                   <div class="emp-name">${esc(e.name)}</div>
                   <div class="emp-area">${esc(e.area)} · ${lastLabel}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;gap:4px">
                   <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.focusEmployee('${e.id}')">Fokus</button>
-                  <a class="btn btn-secondary btn-sm" href="${maps}" target="_blank" rel="noreferrer">Navigasi</a>
+                  ${maps ? `<a class="btn btn-secondary btn-sm" href="${maps}" target="_blank" rel="noreferrer">Navigasi</a>` : ''}
                   ${e.phone ? `<a class="btn btn-secondary btn-sm" href="https://wa.me/${String(e.phone).replace(/\D/g,'')}" target="_blank">WA</a>` : ''}
                 </div>
               </div>
