@@ -8,11 +8,18 @@ const normalizeCode = value => clean(value, 32).toUpperCase().replace(/[^A-Z0-9_
 const TIMEZONES = new Set(['Asia/Jakarta','Asia/Makassar','Asia/Jayapura','UTC']);
 const PROFILE_ROLES = new Set(['superadmin','head','admin']);
 const MAX_LOGO_BYTES = 192 * 1024;
+const DEFAULT_THEME_COLOR = '#ef5000';
 
 const validTimezone = value => {
   const v = clean(value, 64) || 'Asia/Jakarta';
   return TIMEZONES.has(v) ? v : '';
 };
+
+function normalizedThemeColor(value, fallback = DEFAULT_THEME_COLOR) {
+  const raw = clean(value || fallback, 16).toLowerCase();
+  if (!/^#[0-9a-f]{6}$/.test(raw)) throw new Error('ORGANIZATION_THEME_INVALID');
+  return raw;
+}
 
 function normalizedLogo(value, fallback = '') {
   const raw = String(value ?? fallback ?? '').trim();
@@ -37,6 +44,7 @@ function metadata(input = {}, existing = '{}') {
     website: clean(input.website ?? base.website, 300),
     notes: clean(input.notes ?? base.notes, 1200),
     logo: input.logo === undefined ? normalizedLogo(base.logo || '') : normalizedLogo(input.logo, ''),
+    themeColor: input.themeColor === undefined ? normalizedThemeColor(base.themeColor || DEFAULT_THEME_COLOR) : normalizedThemeColor(input.themeColor),
   };
   return JSON.stringify(next);
 }
@@ -56,6 +64,7 @@ function publicOrg(row) {
     province: meta.province || '',
     website: meta.website || '',
     logo: meta.logo || '',
+    themeColor: normalizedThemeColor(meta.themeColor || DEFAULT_THEME_COLOR),
     notes: meta.notes || '',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null,
@@ -254,4 +263,4 @@ export async function handleOrganizationAdminRoute(
   return null;
 }
 
-export const __test = { normalizeCode, validTimezone, metadata, publicOrg, normalizedLogo };
+export const __test = { normalizeCode, validTimezone, metadata, publicOrg, normalizedLogo, normalizedThemeColor };
