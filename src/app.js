@@ -4477,6 +4477,12 @@ function init() {
   // Initialize DB
   getDB();
   state.route = getRoute();
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && isHomeRoute()) refreshHomeData().catch(() => {});
+  });
+  window.addEventListener('focus', () => {
+    if (isHomeRoute()) refreshHomeData().catch(() => {});
+  });
   render();
 }
 
