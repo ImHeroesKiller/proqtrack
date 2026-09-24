@@ -1547,7 +1547,7 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.sellOutQty = sellOutQty;
   row.unitPrice = unitPrice;
   row.salesAmount = unitPrice == null ? null : sellOutQty * unitPrice;
-  row.saleId = status === 'finalized' ? `SALE-CYCLE-${id}` : null;
+  row.saleId = status === 'finalized' && sellOutQty > 0 ? `SALE-CYCLE-${id}` : null;
   row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
@@ -1556,13 +1556,15 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.correctionOfCycleId = correctionOfCycleId;
 
   if (status === 'finalized') {
-    const saleCollision = await env.DB.prepare(
-      'SELECT id,project_id,outlet_id,product_id,metadata_json FROM core_product_sales WHERE organization_id=? AND id=? LIMIT 1'
-    ).bind(organizationId,row.saleId).first();
-    if (saleCollision) {
-      const saleMeta = parseMetadata(saleCollision.metadata_json);
-      if (str(saleMeta.provenance) !== 'derived_stock' || str(saleMeta.inventoryCycleId) !== id) {
-        return { error:'INVENTORY_CYCLE_SALE_ID_CONFLICT', status:409 };
+    if (row.saleId) {
+      const saleCollision = await env.DB.prepare(
+        'SELECT id,project_id,outlet_id,product_id,metadata_json FROM core_product_sales WHERE organization_id=? AND id=? LIMIT 1'
+      ).bind(organizationId,row.saleId).first();
+      if (saleCollision) {
+        const saleMeta = parseMetadata(saleCollision.metadata_json);
+        if (str(saleMeta.provenance) !== 'derived_stock' || str(saleMeta.inventoryCycleId) !== id) {
+          return { error:'INVENTORY_CYCLE_SALE_ID_CONFLICT', status:409 };
+        }
       }
     }
     if (!currentStock) {
@@ -1592,19 +1594,26 @@ function inventoryCycleFinalizationStatements(env, organizationId, row) {
     provenance:'inventory_cycle',
     inventoryCycleId:row.id,
   });
-  return [
+  const statements = [
     p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
        ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP
        WHERE core_stocks.organization_id=excluded.organization_id AND core_stocks.project_id=excluded.project_id AND core_stocks.outlet_id=excluded.outlet_id AND core_stocks.product_id=excluded.product_id`,
       [row.stockBalanceId,organizationId,row.projectId,row.outletId,row.productId,row.closingQty,row.minStock,row.employeeId,row.cycleDate,stockMeta]),
-    p(`INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity,unit_price,total_amount,sold_at,idempotency_key,metadata_json,row_version,updated_at)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
-       ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,unit_price=excluded.unit_price,total_amount=excluded.total_amount,sold_at=excluded.sold_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_product_sales.row_version+1,updated_at=CURRENT_TIMESTAMP
-       WHERE core_product_sales.organization_id=excluded.organization_id`,
-      [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
-    p('UPDATE core_inventory_cycles SET sale_id=?,updated_at=CURRENT_TIMESTAMP WHERE organization_id=? AND id=?', [row.saleId,organizationId,row.id]),
   ];
+  if (row.saleId && Number(row.sellOutQty) > 0) {
+    statements.push(
+      p(`INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity,unit_price,total_amount,sold_at,idempotency_key,metadata_json,row_version,updated_at)
+         VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+         ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,unit_price=excluded.unit_price,total_amount=excluded.total_amount,sold_at=excluded.sold_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_product_sales.row_version+1,updated_at=CURRENT_TIMESTAMP
+         WHERE core_product_sales.organization_id=excluded.organization_id`,
+        [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
+    );
+  }
+  statements.push(
+    p('UPDATE core_inventory_cycles SET sale_id=?,updated_at=CURRENT_TIMESTAMP WHERE organization_id=? AND id=?', [row.saleId,organizationId,row.id]),
+  );
+  return statements;
 }
 
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
