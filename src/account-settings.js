@@ -15,6 +15,7 @@ import {
 import {
   syncCurrentOrganizationProfile, updateCurrentOrganizationProfile,
 } from './lib/cloud-organizations.js';
+import { applyOrganizationBranding, normalizeThemeColor } from './lib/organization-branding.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -170,6 +171,8 @@ const TIMEZONES = [
   ['UTC', 'UTC'],
 ];
 
+const THEME_PRESETS = ['#ef5000','#2563eb','#0f766e','#7c3aed','#be123c','#334155'];
+
 let organizationProfileSyncInFlight = false;
 let organizationProfileSyncedOrg = '';
 let organizationSaveInFlight = false;
@@ -182,6 +185,7 @@ function organizationErrorMessage(error) {
     ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
     ORGANIZATION_LOGO_INVALID: 'Format logo tidak didukung. Gunakan JPG, PNG, atau WebP.',
     ORGANIZATION_LOGO_TOO_LARGE: 'Logo terlalu besar setelah kompresi.',
+    ORGANIZATION_THEME_INVALID: 'Warna tema organisasi tidak valid.',
   };
   const message = messages[error?.code] || error?.message || String(error || 'Profil organisasi gagal diperbarui.');
   const requestId = error?.payload?.requestId;
@@ -318,6 +322,14 @@ export function renderSettings() {
                 </select>
               </div>
               <div class="form-group"><label class="label">Kode organisasi</label><input class="input" value="${esc(activeOrg.code || '')}" disabled></div>
+            </div>
+            <div class="form-group am-theme-picker">
+              <label class="label">Warna tema</label>
+              <div class="am-theme-row">
+                <input id="orgThemeColor" class="am-theme-color" type="color" name="themeColor" value="${esc(activeOrg.themeColor || '#ef5000')}" data-pqt-oninput="AM.previewThemeColor(this)">
+                ${THEME_PRESETS.map(color => `<button type="button" class="am-theme-swatch ${(activeOrg.themeColor || '#ef5000').toLowerCase() === color ? 'active' : ''}" style="background:${color}" title="${color}" aria-label="Gunakan warna ${color}" data-pqt-onclick="AM.selectThemeColor('${color}')"></button>`).join('')}
+              </div>
+              <div class="am-muted">Warna ini dipakai untuk tombol utama, menu aktif, progress, highlight, mobile dock, dan browser theme.</div>
             </div>
             <div class="form-group emp-photo-field">
               <label class="label">Logo organisasi</label>
@@ -635,6 +647,20 @@ window.AM = {
       toast(error.message || error, 'error');
     }
   },
+  previewThemeColor(input) {
+    const color = normalizeThemeColor(input?.value || '#ef5000');
+    const current = getOrganization(account()?.organizationId || getCurrentOrgId()) || {};
+    applyOrganizationBranding({ ...current, themeColor:color });
+    document.querySelectorAll('.am-theme-swatch').forEach(node => {
+      node.classList.toggle('active', String(node.title || '').toLowerCase() === color);
+    });
+  },
+  selectThemeColor(color) {
+    const input = document.getElementById('orgThemeColor');
+    if (!input) return;
+    input.value = normalizeThemeColor(color);
+    this.previewThemeColor(input);
+  },
   previewLogo(input) {
     const file = input.files?.[0];
     const preview = input.closest('.emp-photo-field')?.querySelector('.employee-photo-preview');
@@ -666,7 +692,7 @@ window.AM = {
           throw Object.assign(new Error('ORGANIZATION_LOGO_TOO_LARGE'), { code:'ORGANIZATION_LOGO_TOO_LARGE' });
         }
       }
-      await updateCurrentOrganizationProfile({
+      const updatedOrganization = await updateCurrentOrganizationProfile({
         name:data.name,
         legalName:data.legalName,
         industry:data.industry,
@@ -674,7 +700,9 @@ window.AM = {
         timezone:data.timezone,
         notes:data.notes,
         logo,
+        themeColor:normalizeThemeColor(data.themeColor || '#ef5000'),
       });
+      applyOrganizationBranding(updatedOrganization);
       organizationProfileSyncedOrg = String(account()?.organizationId || getCurrentOrgId() || '');
       toast('Profil organisasi tersimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
