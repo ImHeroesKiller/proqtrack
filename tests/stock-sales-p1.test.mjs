@@ -161,7 +161,7 @@ test('P1 correction cycle must reference finalized cycle in same scope', async (
   });
   const ok = await validateInventoryCycleMutation(cycleEnv({
     sourceCycle:{id:'IC-OLD',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1'}
-  }),'ORG-1',row,null,{op:'upsert'});
+  }),'ORG-1',row,null,{op:'upsert',claims:{role:'manager',sub:'USR-MGR'}});
   assert.equal(ok,null);
   assert.equal(row.correctionOfCycleId,'IC-OLD');
 });
