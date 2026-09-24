@@ -199,6 +199,25 @@ export async function uploadAsset(file, { category = 'attachment', projectId = '
   return { ...data, url: fileUrl(data.key) };
 }
 
+export async function deleteUploadedAsset(key) {
+  const objectKey = String(key || '').trim();
+  if (!objectKey) return false;
+  if (!getApiToken()) return false;
+  const res = await fetch(`/api/files/${encodeURIComponent(objectKey)}`, {
+    method:'DELETE',
+    headers:authHeaders({ accept:'application/json' }),
+  });
+  if (res.status === 404) return true;
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const error = new Error(data.message || data.error || `HTTP ${res.status}`);
+    error.code = data.error;
+    error.status = res.status;
+    throw error;
+  }
+  return true;
+}
+
 export function assetField({ name = 'assetUrl', current = '', accept = 'image/jpeg,image/png,image/webp', label = 'Unggah file', category = 'attachment', projectId = '' } = {}) {
   const preview = current ? `<img class="r2-preview" alt="Preview" src="${current}">` : '<div class="r2-preview r2-preview-empty">Belum ada file</div>';
   return `<div class="r2-upload" data-r2-category="${category}" data-r2-project="${projectId}">
@@ -266,6 +285,7 @@ installStyles();
 if (typeof window !== 'undefined') {
   window.R2 = {
     uploadAsset,
+    deleteUploadedAsset,
     issueUploadSession,
     revokeApiSession,
     bindAssetFields,

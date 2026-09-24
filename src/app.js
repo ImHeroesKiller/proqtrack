@@ -228,6 +228,7 @@ const NAV_ITEMS_PM = [
     { id: 'visits',    label: 'Visits',         icon: 'visits', route: '#/visits' },
   ]},
   { section: 'Project', items: [
+    { id: 'clients',     label: 'Clients',      icon: 'clients', route: '#/clients' },
     { id: 'projects',    label: 'My Project',   icon: 'briefcase', route: '#/projects' },
     { id: 'assignments', label: 'Assignments',  icon: 'team', route: '#/assignments' },
   ]},

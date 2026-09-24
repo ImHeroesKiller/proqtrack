@@ -460,6 +460,20 @@ export async function handleApi(request, env, url = new URL(request.url)) {
       },
     });
   }
+  if (url.pathname.startsWith('/api/files/') && request.method === 'DELETE') {
+    const key = decodeURIComponent(url.pathname.slice('/api/files/'.length));
+    const meta = await env.DB.prepare('SELECT object_key,owner_id,project_id FROM file_metadata WHERE object_key=?').bind(key).first();
+    if (!meta) return json({ error:'FILE_NOT_FOUND', requestId:id },404);
+    const canDelete = meta.owner_id === claims.sub || roleAllowed(claims, ['head','admin','superadmin']);
+    if (!canDelete) {
+      await audit(env, { requestId:id, actor:claims, action:'delete', resourceType:'file', resourceId:key, projectId:meta.project_id, outcome:'denied' });
+      return json({ error:'FORBIDDEN', requestId:id },403);
+    }
+    await env.FILES.delete(key);
+    await env.DB.prepare('DELETE FROM file_metadata WHERE object_key=?').bind(key).run();
+    await audit(env, { requestId:id, actor:claims, action:'delete', resourceType:'file', resourceId:key, projectId:meta.project_id });
+    return json({ ok:true, requestId:id });
+  }
 
   if (url.pathname === '/api/report-jobs' && request.method === 'POST') {
     if (!roleAllowed(claims, ['head', 'manager', 'admin', 'supervisor'])) return json({ error: 'FORBIDDEN', requestId: id }, 403);

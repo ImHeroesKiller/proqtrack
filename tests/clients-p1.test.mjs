@@ -8,7 +8,7 @@ test('Client P1 combines search and status filters instead of overwriting visibi
   const src = await read('src/types/index.js');
   assert.match(src, /id="clientSearch"/);
   assert.match(src, /id="clientStatusFilter"/);
-  assert.match(src, /filterClients\(\)/);
+  assert.match(src, /filterClients\((?:1)?\)/);
   assert.match(src, /matchesSearch && matchesStatus/);
 });
 
@@ -49,5 +49,5 @@ test('Client P1 enforces canonical validation and uniqueness in Worker', async (
 
 test('Client P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.26/);
+  assert.match(sw, /proqtrack-v12\.27/);
 });
