@@ -3254,7 +3254,8 @@ function renderStocks() {
                   <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
                   <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
                   <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editStock('${s.id}')">Adjustment</button>
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewStockHistory('${s.id}')">Riwayat</button>
+                    <button class="btn btn-secondary btn-sm" style="margin-left:4px" data-pqt-onclick="FT.editStock('${s.id}')">Adjustment</button>
                   </td>
                 </tr>
               `;
@@ -3278,6 +3279,27 @@ window.FT.filterStocks = function() {
       && (!statusF || row.dataset.status === statusF);
     row.style.display = show ? '' : 'none';
   });
+};
+
+window.FT.viewStockHistory = function(id) {
+  const stock=getStocks().find(row=>row.id===id);
+  if(!stock)return;
+  const product=getProducts().find(row=>row.id===stock.productId);
+  const outlet=getOutlets().find(row=>row.id===stock.outletId);
+  const cycles=getInventoryCycles()
+    .filter(row=>String(row.projectId||'')===String(stock.projectId||'') && row.outletId===stock.outletId && row.productId===stock.productId)
+    .sort((a,b)=>String(b.cycleDate||'').localeCompare(String(a.cycleDate||'')) || String(b.finalizedAt||'').localeCompare(String(a.finalizedAt||'')));
+  openModal('Riwayat Stok', `
+    <div style="margin-bottom:12px"><strong>${esc(outlet?.name||stock.outletId||'-')} → ${esc(product?.name||stock.productId||'-')}</strong><div class="am-muted">Saldo saat ini: ${Number(stock.quantity||0)} ${esc(product?.unit||'')}</div></div>
+    <div class="visits-table-wrapper"><table class="table">
+      <thead><tr><th>Tanggal</th><th>Opening</th><th>Stock In</th><th>Adjustment</th><th>Closing</th><th>Sell-out</th><th>Status</th></tr></thead>
+      <tbody>${cycles.length ? cycles.map(row=>`<tr>
+        <td>${formatDateShort(row.cycleDate)}</td><td>${Number(row.openingQty||0)}</td><td>${Number(row.stockInQty||0)}</td>
+        <td>${Number(row.adjustmentQty||0)}</td><td>${Number(row.closingQty||0)}</td><td>${Number(row.sellOutQty||0)}</td><td>${statusBadge(row.status||'draft')}</td>
+      </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><p>Belum ada riwayat Inventory Cycle.</p></div></td></tr>'}</tbody>
+    </table></div>
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>
+  `);
 };
 
 window.FT.openStockModal = function() {
