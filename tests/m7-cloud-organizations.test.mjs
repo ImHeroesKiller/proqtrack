@@ -135,3 +135,11 @@ test('full application branding follows the active organization profile', async 
   assert.match(themeCss, /html\[data-org-branding="1"\] \.sidebar-logo img/);
   assert.match(worker, /themeColor:/);
 });
+
+
+test('report preview inherits organization theme color', async () => {
+  const preview = await read('src/reports/phase4-preview.js');
+  assert.match(preview, /--r4-brand:/);
+  assert.match(preview, /org\.themeColor/);
+  assert.match(preview, /var\(--r4-brand/);
+});
