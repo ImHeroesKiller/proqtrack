@@ -44,5 +44,5 @@ test('Worker rejects finalization if active assignments are not closed in batch'
 
 test('Projects residual fix advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.35/);
+  assert.match(sw, /proqtrack-v12\.36/);
 });
