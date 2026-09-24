@@ -14,8 +14,8 @@ test('Outlets P1 escapes stored outlet and visit output', () => {
   assert.match(app, /esc\(displayValue\(o\.phone\)\)/);
   assert.match(app, /esc\(displayValue\(o\.area\)\)/);
   assert.match(app, /esc\(displayValue\(o\.visitFrequency\)\)/);
-  assert.match(app, /esc\(emp \? emp\.name : '-'\)/);
-  assert.match(app, /esc\(v\.checkInTime \|\| '-'\)/);
+  assert.match(app, /esc\(emp\s*\?\s*emp\.name\s*:\s*'-'\)/);
+  assert.match(app, /esc\(v\.checkInTime\s*\|\|\s*'-'\)/);
   assert.match(app, /FT\.deleteOutlet\(\$\{jsArg\(o\.id\)\}\)/);
   assert.match(app, /FT\.editOutlet\(\$\{jsArg\(o\.id\)\}\)/);
 });
