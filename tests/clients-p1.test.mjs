@@ -6,10 +6,12 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Client P1 combines search and status filters instead of overwriting visibility', async () => {
   const src = await read('src/types/index.js');
+  const helper = await read('src/lib/client-ui.js');
   assert.match(src, /id="clientSearch"/);
   assert.match(src, /id="clientStatusFilter"/);
   assert.match(src, /filterClients\((?:1)?\)/);
-  assert.match(src, /matchesSearch && matchesStatus/);
+  assert.match(src, /clientMatchesFilters/);
+  assert.match(helper, /\(!q \|\| haystack\.includes\(q\)\) && \(!status \|\| String\(client\.status \|\| ''\) === status\)/);
 });
 
 test('Client P1 waits for authoritative cloud commit before local persistence', async () => {
@@ -49,5 +51,5 @@ test('Client P1 enforces canonical validation and uniqueness in Worker', async (
 
 test('Client P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.27/);
+  assert.match(sw, /proqtrack-v12\.28/);
 });
