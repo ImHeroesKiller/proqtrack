@@ -39,3 +39,14 @@ test('stability shell cache and production state move together', () => {
   assert.match(state,/0027_inventory_cycle_correction_uat\.sql/);
   assert.match(state,/proqtrack-v12\.44/);
 });
+
+
+test('stability field Stock and Price product pickers stay inside visit project scope', () => {
+  const field = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
+  assert.match(field,/productPickerRows\(kind, outletId, projectId = ''\)/);
+  assert.match(field,/\(p\.projectIds \|\| \[\]\)\.map\(String\)\.includes\(String\(projectId\)\)/);
+  assert.match(field,/data-project-id="\$\{esc\(projectId\)\}"/);
+  assert.match(field,/const scopedProjectId = String\(projectId \|\| wrap\.dataset\.projectId \|\| ''\)/);
+  assert.match(app,/productPickerRows\('stock', outletId, visit\?\.projectId \|\| ''\)/);
+  assert.match(app,/productPickerRows\('price', outletId, visit\?\.projectId \|\| ''\)/);
+});
