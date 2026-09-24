@@ -48,6 +48,7 @@ import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionE
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
 import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation, productFormModel, normalizeProductFormPayload, productStatusSummary, productLifecycleAction } from './lib/product-ui.js';
+import { stockSalesFriendlyErrorMessage, inventoryCycleOnDate as findInventoryCycleOnDate, commonProjectIds, stockSummary, stockFilterSnapshot, stockMatchesFilters, salesSummary, salesFilterSnapshot, salesMatchesFilters, pendingManualCorrections, validateStockMovementInput } from './lib/stock-sales-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -2581,7 +2582,7 @@ window.FT.updateOutlet = async function(e,id) {
     if(submit)submit.textContent='Sinkronisasi…';
     await confirmOutletCloudSync();
     closeModal();showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud','success');render();
-  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
@@ -2977,31 +2978,7 @@ function stockProjectRows() {
 function stockCommonProjectIds(outletId, productId) {
   const outlet = getOutlets().find(row => String(row.id) === String(outletId));
   const product = getProducts().find(row => String(row.id) === String(productId));
-  const outletProjects = new Set((outlet?.projectIds || []).map(String));
-  return (product?.projectIds || []).map(String).filter(id => outletProjects.has(id));
-}
-
-function stockSalesFriendlyError(error) {
-  const code = String(error?.code || error?.message || error || '');
-  const messages = {
-    INVENTORY_CYCLE_PERIOD_CONFLICT:'Cycle stok untuk outlet/produk ini sudah ada pada tanggal yang sama. Gunakan data cycle yang sudah difinalisasi atau lakukan koreksi pada cycle berikutnya.',
-    INVENTORY_CYCLE_OPENING_MISMATCH:'Saldo opening berubah karena ada update terbaru. Data akan dimuat ulang; periksa saldo lalu submit kembali.',
-    REVISION_CONFLICT:'Data cloud berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
-    CLOUD_SYNC_TIMEOUT:'Sinkronisasi belum selesai. Periksa koneksi lalu coba kembali.',
-    CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Muat ulang aplikasi lalu coba kembali.',
-    MANUAL_SALE_IDEMPOTENCY_CONFLICT:'Transaksi manual yang sama sudah pernah tersimpan.',
-    MANUAL_SALE_CORRECTION_SOURCE_NOT_VOIDED:'Transaksi sumber harus di-void terlebih dahulu sebelum replacement dibuat.',
-  };
-  return messages[code] || error?.message || String(error);
-}
-
-function inventoryCycleOnDate(projectId,outletId,productId,date=todayISO()) {
-  return getInventoryCycles().find(row =>
-    String(row.projectId||'')===String(projectId||'')
-    && String(row.outletId||'')===String(outletId||'')
-    && String(row.productId||'')===String(productId||'')
-    && String(row.cycleDate||'')===String(date||'')
-  ) || null;
+  return commonProjectIds(outlet, product);
 }
 
 async function recoverStockSalesAfterError(error) {
@@ -3159,7 +3136,7 @@ window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
     await waitForOperationalSync();
     await refreshOperationalData(getDB(),getActor());
     closeModal();showToast('Manual sale tersimpan dengan audit trail.','success');render();
-  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
@@ -3187,7 +3164,7 @@ window.FT.confirmManualSaleCorrection = async function(e,id) {
     await refreshOperationalData(getDB(),getActor());
     closeModal();render();
     window.FT.openManualSaleModal(id);
-  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Void & Buat Replacement';}}
 };
 
@@ -3340,7 +3317,7 @@ window.FT.createStock = async function(e) {
   const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && row.projectId === projectId);
   if (!employeeId) { showToast('Akun ini belum terhubung ke employee untuk mencatat stock movement.', 'error'); return; }
   if (!projectId || !stockCommonProjectIds(data.outletId,data.productId).includes(projectId)) { showToast('Project tidak sesuai dengan relasi outlet dan produk.', 'error'); return; }
-  const existingCycle = inventoryCycleOnDate(projectId,data.outletId,data.productId,todayISO());
+  const existingCycle = findInventoryCycleOnDate(getInventoryCycles(),projectId,data.outletId,data.productId,todayISO());
   if (existingCycle) { showToast('Cycle stok hari ini untuk outlet/produk tersebut sudah ada. Tidak dibuat duplikat.', 'error'); return; }
   const openingQty = Number(current?.quantity || 0);
   const stockInQty = Number(data.stockInQty);
@@ -3365,7 +3342,7 @@ window.FT.createStock = async function(e) {
     closeModal(); showToast('Stock movement berhasil difinalisasi.', 'success'); render();
   } catch (error) {
     restoreOperationalBaseline(getDB());
-    showToast(stockSalesFriendlyError(error), 'error'); render();
+    showToast(stockSalesFriendlyErrorMessage(error), 'error'); render();
     await recoverStockSalesAfterError(error);
   } finally {
     if (submit?.isConnected) { submit.disabled=false; submit.textContent='Finalisasi'; }
@@ -3406,7 +3383,7 @@ window.FT.updateStock = async function(e, id) {
   const closingQty=Number(data.closingQty), openingQty=Number(stock.quantity), minStock=Number(data.minStock);
   const adjustmentQty=closingQty-openingQty;
   if (!employeeId) { showToast('Employee pencatat stok tidak tersedia.', 'error'); return; }
-  if (inventoryCycleOnDate(stock.projectId,stock.outletId,stock.productId,todayISO())) { showToast('Cycle stok hari ini sudah ada. Adjustment kedua pada tanggal yang sama diblokir untuk menjaga ledger.', 'error'); return; }
+  if (findInventoryCycleOnDate(getInventoryCycles(),stock.projectId,stock.outletId,stock.productId,todayISO())) { showToast('Cycle stok hari ini sudah ada. Adjustment kedua pada tanggal yang sama diblokir untuk menjaga ledger.', 'error'); return; }
   if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(minStock) || minStock < 0) { showToast('Nilai stok tidak valid.', 'error'); return; }
   if (adjustmentQty === 0 && minStock === Number(stock.minStock)) { showToast('Tidak ada perubahan stok.'); return; }
   try {
@@ -3423,7 +3400,7 @@ window.FT.updateStock = async function(e, id) {
     closeModal(); showToast('Adjustment stok berhasil difinalisasi.', 'success'); render();
   } catch(error) {
     restoreOperationalBaseline(getDB());
-    showToast(stockSalesFriendlyError(error),'error'); render();
+    showToast(stockSalesFriendlyErrorMessage(error),'error'); render();
     await recoverStockSalesAfterError(error);
   } finally {
     if(submit?.isConnected){submit.disabled=false;submit.textContent='Finalisasi Adjustment';}
@@ -4005,7 +3982,7 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
       if (seen.has(productId)) throw new Error('Produk yang sama tidak boleh dicatat dua kali dalam satu kunjungan.');
       seen.add(productId);
       if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(stockInQty) || stockInQty < 0 || !Number.isFinite(minStock) || minStock < 0) throw new Error('Nilai stok tidak valid.');
-      if (inventoryCycleOnDate(visit.projectId,outletId,productId,todayISO())) throw new Error('Cycle stok hari ini untuk salah satu produk sudah ada. Tidak dibuat duplikat.');
+      if (findInventoryCycleOnDate(getInventoryCycles(),visit.projectId,outletId,productId,todayISO())) throw new Error('Cycle stok hari ini untuk salah satu produk sudah ada. Tidak dibuat duplikat.');
       const existing = getStocksByOutlet(outletId).find(s => s.productId === productId && (!s.projectId || s.projectId === visit.projectId));
       const openingQty = Number(existing?.quantity || 0);
       if (closingQty > openingQty + stockInQty) throw new Error(`Closing stock produk melebihi stok tersedia (${openingQty + stockInQty}).`);
@@ -4029,7 +4006,7 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
     render();
   } catch (error) {
     restoreOperationalBaseline(getDB());
-    showToast(stockSalesFriendlyError(error), 'error');
+    showToast(stockSalesFriendlyErrorMessage(error), 'error');
     render();
     await recoverStockSalesAfterError(error);
   } finally {
