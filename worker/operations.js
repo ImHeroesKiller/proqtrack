@@ -810,7 +810,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
 
 async function bootstrapData(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,priceObservations,competitorIntel,outletProposals] = await Promise.all([
+  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles,priceObservations,competitorIntel,outletProposals] = await Promise.all([
     allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
@@ -829,6 +829,7 @@ async function bootstrapData(env, claims) {
     allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_leaves WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_stocks WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_inventory_cycles WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_price_observations WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_competitor_intel WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_outlet_proposals WHERE organization_id=?').bind(org)),
@@ -854,6 +855,7 @@ async function bootstrapData(env, claims) {
     attendancePoints: decodeRows('attendancePoints', attendancePoints),
     leaves: decodeRows('leaves', leaves),
     stocks: decodeRows('stocks', stocks),
+    inventoryCycles: decodeRows('inventoryCycles', inventoryCycles),
     priceObservations: decodeRows('priceObservations', priceObservations),
     competitorIntel: decodeRows('competitorIntel', competitorIntel),
     outletProposals: decodeRows('outletProposals', outletProposals),
@@ -875,6 +877,7 @@ async function bootstrapData(env, claims) {
     for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
     data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
+    data.inventoryCycles = data.inventoryCycles.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
   }
   return data;
@@ -944,7 +947,7 @@ async function handleImport(request, env, claims) {
 
   const { statements: authStatements, userIdByEmployee } = await importAuthStatements(env, canonical, claims, organizationId);
   const statements = [...authStatements];
-  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','priceObservations','competitorIntel','outletProposals','surveyTemplates','surveyResponses','leaves','stocks'];
+  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','priceObservations','competitorIntel','outletProposals','surveyTemplates','surveyResponses','leaves','stocks','inventoryCycles'];
   for (const entity of order) {
     for (const row of canonical[entity] || []) {
       const extras = entity === 'employees' ? { authUserId: userIdByEmployee.get(str(row.id)) || null } : {};
