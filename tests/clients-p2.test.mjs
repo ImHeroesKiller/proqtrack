@@ -16,7 +16,7 @@ test('Client P2 adds pagination, empty state and mobile cards', async () => {
   assert.match(src, /clientResultSummary/);
   assert.match(src, /clientEmpty/);
   assert.match(src, /clientPager/);
-  assert.match(src, /pm-client-table thead,\.pm-project-table thead\{display:none\}/);
+  assert.match(src, /pm-client-table thead,\.pm-project-table thead,\.pm-assignment-table thead\{display:none\}/);
   assert.match(src, /content:attr\(data-label\)/);
 });
 
