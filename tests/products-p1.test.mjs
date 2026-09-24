@@ -68,17 +68,17 @@ test('Products P1 UI escapes stored product output and form values', () => {
     'value="${esc(p?.name || \'\')}"',
     'value="${esc(p?.brand || \'\')}"',
     'value="${esc(p?.sku || \'\')}"',
-    '${esc(p.sku)}</span>',
-    '${esc(p.name)}</span>',
-    "${esc(p.brand || '—')}</span>",
-    '${esc(p.category)}</span>',
+    '${esc(p.sku)}',
+    '${esc(p.name)}',
+    "${esc(p.brand||'—')}",
+    "${esc(p.category||'—')}",
   ]) assert.ok(app.includes(marker), marker);
   assert.match(app,/FT\.editProduct\(\$\{jsArg\(p\.id\)\}\)/);
   assert.match(app,/FT\.deleteProductConfirm\(\$\{jsArg\(p\.id\)\}\)/);
 });
 
 test('Products P1 create update delete wait for cloud authority and rollback failures', () => {
-  const start=app.indexOf('window.FT.createProduct = async function');
+  const start=Math.max(app.indexOf('window.FT.createProduct = async function'), app.indexOf('window.FT.createProduct=async function'));
   const end=app.indexOf('// ===== Stocks Page',start);
   const block=app.slice(start,end);
   assert.match(block,/await waitForOperationalSync\(\)/);

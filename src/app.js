@@ -47,6 +47,7 @@ import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
+import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation } from './lib/product-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -2773,10 +2774,39 @@ function renderMyVisits() {
 }
 
 // ===== Products Page (Manager full CRUD) =====
+let productPage = 1;
+
+function productAvailableProjects() {
+  const db=getDB(), actor=getActor();
+  const allowed=new Set([...(actor?.projectIds||[]), ...(actor?.projectId?[actor.projectId]:[])].map(String));
+  return (db.projects||[]).filter(project =>
+    ['active','planning'].includes(project.status) &&
+    (isOrgAdminRole(actor?.role) || allowed.has(String(project.id)))
+  );
+}
+
+function productScopeFields(product = {}) {
+  const db=getDB();
+  const selected=new Set((product.projectIds||[]).map(String));
+  const projects=productAvailableProjects();
+  if (!projects.length) return '<div class="pm-empty">Tidak ada project aktif yang dapat digunakan.</div>';
+  return `
+    <div class="form-group">
+      <label class="label">Project / Klien</label>
+      <select class="select" name="projectIds" multiple size="${Math.min(6,Math.max(2,projects.length))}" required>
+        ${projects.map(project => {
+          const client=(db.clients||[]).find(client=>client.id===project.clientId);
+          return `<option value="${esc(project.id)}" ${selected.has(String(project.id))?'selected':''}>${esc(client?.name||'Tanpa klien')} — ${esc(project.code||project.id)} / ${esc(project.name||'')}</option>`;
+        }).join('')}
+      </select>
+      <div class="am-muted" style="margin-top:5px">Bisa memilih beberapa project, tetapi seluruh project harus berasal dari client yang sama.</div>
+    </div>`;
+}
+
 function productFormFields(p = null) {
   return `
     <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${esc(p?.name || '')}" required></div>
-    ${entityScopeFields(p || {})}
+    ${productScopeFields(p || {})}
     <div class="form-row">
       <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${esc(p?.brand || '')}" placeholder="Nestlé, Unilever..." required></div>
       <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(p?.sku || '')}" placeholder="NST-XXX-001" required></div>
@@ -2787,307 +2817,159 @@ function productFormFields(p = null) {
     </div>
     <div class="form-row">
       <div class="form-group"><label class="label">Harga Jual (Rp)</label><input class="input" type="number" name="price" value="${p?.price ?? ''}" required min="0"></div>
-      <div class="form-group"><label class="label">Cost / HPP (opsional)</label><input class="input" type="number" name="cost" value="${p?.cost ?? ''}" min="0" placeholder="Opsional"></div>
+      <div class="form-group"><label class="label">Cost / HPP (opsional)</label><input class="input" type="number" name="cost" value="${p?.cost ?? ''}" min="0"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="label">Margin % (opsional)</label><input class="input" type="number" name="margin" value="${p?.margin ?? ''}" min="0" max="100" step="0.1" placeholder="Opsional"></div>
-      <div class="form-group"><label class="label">Status</label>
-        <select class="select" name="status">
-          <option value="active" ${!p || p.status==='active'?'selected':''}>Active</option>
-          <option value="inactive" ${p?.status==='inactive'?'selected':''}>Inactive</option>
-        </select>
-      </div>
-    </div>
-  `;
-}
-
-function renderProductSales({ mine } = {}) {
-  const empId = myEmployeeId();
-  const sales = getProductSales().filter(s => !mine || s.employeeId === empId);
-  const products = getProducts().filter(p => p.status === 'active');
-  const outlets = getOutlets();
-  const employees = getEmployees();
-  const empMap = Object.fromEntries(employees.map(e => [e.id, e]));
-  const prodMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
-  const outMap = Object.fromEntries(outlets.map(o => [o.id, o]));
-  const month = todayISO().slice(0, 7);
-  const monthRows = sales.filter(s => String(s.date || '').startsWith(month));
-  const monthTotal = monthRows.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
-  const myTarget = mine ? salesTargetOf(employees.find(e => e.id === empId) || {}) : 0;
-  const pct = myTarget > 0 ? Math.min(100, Math.round((monthTotal / myTarget) * 100)) : 0;
-  return `
-    ${mine ? `<div class="card" style="margin-bottom:16px">
-      <div class="card-title">Monthly target</div>
-      <div class="stat-value">${formatCurrency(monthTotal)}${myTarget ? ` <small>/ ${formatCurrency(myTarget)}</small>` : ''}</div>
-      <div class="mq-bar" style="margin-top:10px"><i style="width:${pct}%"></i></div>
-    </div>` : `<div class="grid-3" style="margin-bottom:14px">
-      <div class="stat-card"><div class="stat-label">Sales this month</div><div class="stat-value">${formatCurrency(monthTotal)}</div></div>
-      <div class="stat-card"><div class="stat-label">Entries</div><div class="stat-value">${monthRows.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Team target</div><div class="stat-value">${formatCurrency(employees.reduce((s, e) => s + salesTargetOf(e), 0))}</div></div>
-    </div>`}
-    <div class="card">
-      <div class="card-title">${mine ? 'Record a sale' : 'New sale'}</div>
-      <form data-pqt-onsubmit="FT.submitProductSale(event)">
-        ${!mine ? `<div class="form-group"><label class="label">Employee</label>
-          <select class="select" name="employeeId" required>${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select></div>` : `<input type="hidden" name="employeeId" value="${esc(empId || '')}">`}
-        <div class="form-row">
-          <div class="form-group"><label class="label">Product</label>
-            <select class="select" name="productId" required data-pqt-onchange="FT.fillSalePrice(this)">
-              <option value="">Select product</option>
-              ${products.map(p => `<option value="${p.id}" data-price="${p.price || 0}">${esc(p.name)} (${esc(p.sku || '-')})</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label class="label">Outlet</label>
-            <select class="select" name="outletId">
-              <option value="">Optional</option>
-              ${outlets.map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
-            </select>
-          </div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label class="label">Qty</label><input class="input" type="number" name="qty" min="1" value="1" required></div>
-          <div class="form-group"><label class="label">Unit price</label><input class="input" type="number" name="unitPrice" id="saleUnitPrice" min="0" required></div>
-          <div class="form-group"><label class="label">Date</label><input class="input" type="date" name="date" value="${todayISO()}" required></div>
-        </div>
-        <div class="form-group"><label class="label">Notes</label><input class="input" name="notes"></div>
-        <button class="btn btn-primary" type="submit">Save sale</button>
-      </form>
-    </div>
-    <div class="card" style="margin-top:16px">
-      <div class="card-title">Sales log</div>
-      <div class="visits-table-wrapper"><table class="table">
-        <thead><tr><th>Date</th>${mine ? '' : '<th>Employee</th>'}<th>Product</th><th>Outlet</th><th>Qty</th><th>Amount</th><th></th></tr></thead>
-        <tbody>
-          ${sales.length ? sales.slice().sort((a,b)=>String(b.date).localeCompare(a.date)).map(s => `
-            <tr>
-              <td>${formatDateShort(s.date)}</td>
-              ${mine ? '' : `<td>${esc(empMap[s.employeeId]?.name || s.employeeId)}</td>`}
-              <td>${esc(prodMap[s.productId]?.name || s.productId)}</td>
-              <td>${esc(s.outletId ? formatOutletLabel(outMap[s.outletId]) : '—')}</td>
-              <td>${s.qty}</td>
-              <td>${formatCurrency(s.amount)}</td>
-              <td><button class="btn btn-danger btn-sm" data-pqt-onclick="FT.removeProductSale('${s.id}')">Delete</button></td>
-            </tr>`).join('') : `<tr><td colspan="7"><div class="empty-state"><h3>No sales yet</h3></div></td></tr>`}
-        </tbody>
-      </table></div>
+      <div class="form-group"><label class="label">Margin % (opsional)</label><input class="input" type="number" name="margin" value="${p?.margin ?? ''}" min="0" max="100" step="0.1"></div>
+      <div class="form-group"><label class="label">Status</label><select class="select" name="status">
+        <option value="active" ${!p||p.status==='active'?'selected':''}>Active</option>
+        <option value="inactive" ${p?.status==='inactive'?'selected':''}>Inactive</option>
+        <option value="archived" ${p?.status==='archived'?'selected':''}>Archived</option>
+      </select></div>
     </div>`;
 }
 
-window.FT.fillSalePrice = function(sel) {
-  const price = sel.selectedOptions[0]?.dataset?.price;
-  const input = document.getElementById('saleUnitPrice');
-  if (input && price != null) input.value = price;
-};
+function productFormData(form) {
+  const fd=new FormData(form);
+  const data=Object.fromEntries(fd);
+  data.projectIds=fd.getAll('projectIds').map(String).filter(Boolean);
+  delete data.projectId;
+  return data;
+}
 
-window.FT.submitProductSale = function(e) {
-  e.preventDefault();
-  try {
-    const data = Object.fromEntries(new FormData(e.target));
-    createProductSale(data);
-    showToast('Sale saved', 'success');
-    render();
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
-};
+function productSyncLabel() {
+  const presentation=productSyncPresentation(cloudDataStatus());
+  return `<span class="status-badge ${presentation.className}">${esc(presentation.label)}</span>`;
+}
 
-window.FT.removeProductSale = function(id) {
-  if (!confirm('Delete this sale?')) return;
-  try {
-    deleteProductSale(id);
-    showToast('Sale deleted', 'success');
-    render();
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
-};
+function productOptionList(rows, valueKey, labelFn) {
+  return (rows||[]).map(row=>`<option value="${esc(row[valueKey])}">${esc(labelFn(row))}</option>`).join('');
+}
 
 function renderProducts() {
-  const products = getProducts();
-  const brands = [...new Set(products.map(p => p.brand).filter(Boolean))].sort();
-  const cats = [...new Set(products.map(p => p.category).filter(Boolean))].sort();
-  const activeCount = products.filter(p => p.status === 'active').length;
-
-  return `
-    <div class="grid-3" style="margin-bottom:14px;">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">▦</div>
-        <div class="stat-label">Total Produk</div>
-        <div class="stat-value">${products.length}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">✓</div>
-        <div class="stat-label">Aktif</div>
-        <div class="stat-value">${activeCount}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--purple-50);color:var(--purple);">◇</div>
-        <div class="stat-label">Brand</div>
-        <div class="stat-value">${brands.length}</div>
-      </div>
+  const products=getProducts(), db=getDB();
+  const models=products.map(product=>productOperationalModel(product,{projects:db.projects||[],clients:db.clients||[]}));
+  const options=productFilterOptions(products,{projects:db.projects||[],clients:db.clients||[]});
+  const activeCount=products.filter(p=>p.status==='active').length;
+  const sharedCount=models.filter(model=>model.shared).length;
+  const rendered=`
+    <div class="grid-4" style="margin-bottom:14px">
+      <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${products.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Aktif</div><div class="stat-value">${activeCount}</div></div>
+      <div class="stat-card"><div class="stat-label">Brand</div><div class="stat-value">${options.brands.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Shared Product</div><div class="stat-value">${sharedCount}</div></div>
     </div>
     <div class="card">
       <div class="filter-row">
-        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand..." data-pqt-oninput="FT.filterProducts()">
-        <select class="select" id="productCatFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
-          <option value="">Semua Kategori</option>
-          ${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
-        </select>
-        <select class="select" id="productBrandFilter" style="width:140px;" data-pqt-onchange="FT.filterProducts()">
-          <option value="">Semua Brand</option>
-          ${brands.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}
-        </select>
-        <select class="select" id="productStatusFilter" style="width:120px;" data-pqt-onchange="FT.filterProducts()">
-          <option value="">Semua Status</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
+        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand, project, client..." data-pqt-oninput="FT.filterProducts(1)">
+        <select class="select" id="productProjectFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Project</option>${productOptionList(options.projects,'id',p=>`${p.code||p.id} — ${p.name||''}`)}</select>
+        <select class="select" id="productClientFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Client</option>${productOptionList(options.clients,'id',c=>c.name||c.code||c.id)}</select>
+        <select class="select" id="productCatFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Kategori</option>${options.categories.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+        <select class="select" id="productBrandFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Brand</option>${options.brands.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+        <select class="select" id="productStatusFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select>
+        <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetProductFilters()">Reset</button>
         <div class="spacer"></div>
+        <span id="productSyncState">${productSyncLabel()}</span>
+        <button class="btn btn-secondary" id="productRefreshBtn" data-pqt-onclick="FT.refreshProducts()">Refresh</button>
         <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('products')">Bulk Upload</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
-      <datalist id="catList">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
-      <div class="visits-table-wrapper">
-        <table class="table" id="productTable">
-          <thead>
-            <tr>
-              <th>SKU</th><th>Produk</th><th>Brand</th><th>Kategori</th>
-              <th>Unit</th><th>Harga</th><th>Margin</th><th>Status</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${products.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📦</div><h3>Belum ada produk</h3></div></td></tr>` :
-            products.map(p => `
-              <tr data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
-                <td><span style="font-family:ui-monospace,monospace; font-size:11px; color:var(--gray-500);">${esc(p.sku)}</span></td>
-                <td><span style="font-weight:600; color:var(--gray-800);">${esc(p.name)}</span>
-                  ${p.cost != null ? `<br><span style="font-size:11px;color:var(--gray-400);">HPP ${formatCurrency(p.cost)}</span>` : ''}
-                </td>
-                <td><span style="font-size:12px; font-weight:600; color:var(--brand-dark);">${esc(p.brand || '—')}</span></td>
-                <td><span style="font-size:11px; background:var(--gray-100); padding:3px 8px; border-radius:99px;">${esc(p.category)}</span></td>
-                <td>${esc(p.unit)}</td>
-                <td style="font-weight:700;">${formatCurrency(p.price)}</td>
-                <td style="font-size:12px;color:var(--gray-500);">${p.margin != null ? p.margin + '%' : '—'}</td>
-                <td>${statusBadge(p.status)}</td>
-                <td style="white-space:nowrap;">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">Hapus</button>
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+      <datalist id="catList">${options.categories.map(v=>`<option value="${esc(v)}">`).join('')}</datalist>
+      <div id="productResultSummary" class="am-muted" style="margin:10px 0"></div>
+      <div class="visits-table-wrapper"><table class="table" id="productTable">
+        <thead><tr><th>Produk</th><th>Project / Client</th><th>Brand / Kategori</th><th>Harga</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${models.map(model=>{const p=model.product;return `
+            <tr data-search="${esc(model.search)}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}" data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
+              <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
+              <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
+              <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
+              <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
+              <td>${statusBadge(p.status)}</td>
+              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">Hapus</button></td>
+            </tr>`;}).join('')}
+        </tbody>
+      </table></div>
+      <div id="productEmpty" class="pm-empty" hidden></div>
+      <div id="productPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(-1)">Sebelumnya</button><span id="productPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(1)">Berikutnya</button></div>
+    </div>`;
+  queueMicrotask(()=>window.FT?.filterProducts?.(productPage));
+  return rendered;
 }
 
-window.FT.filterProducts = function() {
-  const search = (document.getElementById('productSearch')?.value || '').toLowerCase();
-  const cat = document.getElementById('productCatFilter')?.value || '';
-  const brand = document.getElementById('productBrandFilter')?.value || '';
-  const status = document.getElementById('productStatusFilter')?.value || '';
-  document.querySelectorAll('#productTable tbody tr').forEach(row => {
-    if (!row.dataset.status && row.querySelector('.empty-state')) return;
-    let show = true;
-    if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (cat && row.dataset.cat !== cat) show = false;
-    if (brand && row.dataset.brand !== brand) show = false;
-    if (status && row.dataset.status !== status) show = false;
-    row.style.display = show ? '' : 'none';
-  });
+window.FT.productPage=function(delta){ productPage=Math.max(1,productPage+Number(delta||0)); window.FT.filterProducts(productPage); };
+
+window.FT.filterProducts=function(page=productPage){
+  const ids={search:'productSearch',projectId:'productProjectFilter',clientId:'productClientFilter',category:'productCatFilter',brand:'productBrandFilter',status:'productStatusFilter'};
+  const filters=productFilterSnapshot(key=>document.getElementById(ids[key])?.value||'');
+  const rows=[...document.querySelectorAll('#productTable tbody tr')];
+  const matched=rows.filter(row=>productMatchesFilters({
+    search:row.dataset.search||'',
+    projectIds:String(row.dataset.projects||'').split('|').filter(Boolean),
+    clientId:row.dataset.client||'',
+    product:{category:row.dataset.cat||'',brand:row.dataset.brand||'',status:row.dataset.status||''},
+  },filters));
+  const state=paginateProducts(matched,page,PRODUCT_PAGE_SIZE);
+  productPage=state.currentPage;
+  const visible=new Set(state.items);
+  rows.forEach(row=>{row.style.display=visible.has(row)?'':'none';});
+  const summary=document.getElementById('productResultSummary');
+  if(summary) summary.textContent=state.total?`Menampilkan ${state.from}–${state.to} dari ${state.total} produk`:(rows.length?'Tidak ada produk yang sesuai filter.':'Belum ada produk.');
+  const empty=document.getElementById('productEmpty');
+  if(empty){empty.hidden=state.total!==0;empty.textContent=rows.length?'Tidak ada produk yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.':'Belum ada produk. Tambahkan produk atau gunakan Bulk Upload.';}
+  const pager=document.getElementById('productPager'); if(pager) pager.hidden=state.total<=PRODUCT_PAGE_SIZE;
+  const label=document.getElementById('productPageLabel'); if(label) label.textContent=`Halaman ${state.currentPage} / ${state.pageCount}`;
+  const sync=document.getElementById('productSyncState'); if(sync) sync.innerHTML=productSyncLabel();
 };
 
-window.FT.openProductModal = function() {
-  openModal('Tambah Produk', `
-    <form data-pqt-onsubmit="FT.createProduct(event)">
-      ${productFormFields()}
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
-      </div>
-    </form>
-  `);
+window.FT.resetProductFilters=function(){
+  ['productSearch','productProjectFilter','productClientFilter','productCatFilter','productBrandFilter','productStatusFilter'].forEach(id=>{const field=document.getElementById(id);if(field)field.value='';});
+  productPage=1; window.FT.filterProducts(1);
 };
 
-window.FT.createProduct = async function(e) {
-  e.preventDefault();
-  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const form = e.target;
-  const submit = form.querySelector('button[type="submit"]');
-  const data = Object.fromEntries(new FormData(form));
-  try {
-    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
-    createProduct(data);
-    if (submit) submit.textContent = 'Sinkronisasi…';
-    await waitForOperationalSync();
-    closeModal();
-    showToast('Produk berhasil ditambahkan dan tersinkron ke cloud', 'success');
-    render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  } finally {
-    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
-  }
+window.FT.refreshProducts=async function(){
+  const button=document.getElementById('productRefreshBtn');
+  try{
+    if(button){button.disabled=true;button.textContent='Memuat…';}
+    const result=await refreshOperationalData(getDB(),getActor());
+    if(result?.refreshed){showToast('Data Products diperbarui','success');render();}
+    else{showToast('Data Products sudah terbaru');window.FT.filterProducts(productPage);}
+  }catch(error){showToast(error?.message||'Refresh Products gagal','error');}
+  finally{if(button?.isConnected){button.disabled=false;button.textContent='Refresh';}}
 };
 
-window.FT.editProduct = function(id) {
-  if (!isProjectAdmin()) return;
-  const p = getProducts().find(x => x.id === id);
-  if (!p) return;
-  openModal('Edit Produk', `
-    <form data-pqt-onsubmit="FT.updateProduct(event,${jsArg(id)})">
-      ${productFormFields(p)}
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
-      </div>
-    </form>
-  `);
+window.FT.openProductModal=function(){
+  openModal('Tambah Produk',`<form data-pqt-onsubmit="FT.createProduct(event)">${productFormFields()}<div class="modal-footer" style="padding:0;margin-top:8px"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div></form>`);
 };
 
-window.FT.updateProduct = async function(e, id) {
-  e.preventDefault();
-  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const form = e.target;
-  const submit = form.querySelector('button[type="submit"]');
-  const data = Object.fromEntries(new FormData(form));
-  try {
-    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
-    updateProduct(id, data);
-    if (submit) submit.textContent = 'Sinkronisasi…';
-    await waitForOperationalSync();
-    closeModal();
-    showToast('Produk dan relasi project berhasil diperbarui', 'success');
-    render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  } finally {
-    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
-  }
+window.FT.createProduct=async function(e){
+  e.preventDefault(); if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
+  const form=e.target,submit=form.querySelector('button[type="submit"]'),data=productFormData(form);
+  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}createProduct(data);if(submit)submit.textContent='Sinkronisasi…';await waitForOperationalSync();closeModal();showToast('Produk berhasil ditambahkan dan tersinkron ke cloud','success');render();}
+  catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
-window.FT.deleteProductConfirm = async function(id) {
-  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const references = productReferenceSummary(id);
-  const message = references.total > 0
-    ? `Produk memiliki ${references.total} data operasional terkait. Produk akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`
-    : 'Hapus produk ini? Tindakan ini hanya berlaku jika produk belum memiliki histori operasional.';
-  if (!confirm(message)) return;
-  try {
-    const result = deleteProduct(id);
-    await waitForOperationalSync();
-    showToast(result.deactivated ? 'Produk dinonaktifkan dan histori tetap dipertahankan' : 'Produk berhasil dihapus', 'success');
-    render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  }
+window.FT.editProduct=function(id){
+  if(!isProjectAdmin())return;const p=getProducts().find(x=>x.id===id);if(!p)return;
+  openModal('Edit Produk',`<form data-pqt-onsubmit="FT.updateProduct(event,${jsArg(id)})">${productFormFields(p)}<div class="modal-footer" style="padding:0;margin-top:8px"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div></form>`);
+};
+
+window.FT.updateProduct=async function(e,id){
+  e.preventDefault();if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
+  const form=e.target,submit=form.querySelector('button[type="submit"]'),data=productFormData(form);
+  try{if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}updateProduct(id,data);if(submit)submit.textContent='Sinkronisasi…';await waitForOperationalSync();closeModal();showToast('Produk dan relasi project berhasil diperbarui','success');render();}
+  catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
+};
+
+window.FT.deleteProductConfirm=async function(id){
+  if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
+  const references=productReferenceSummary(id);
+  const message=references.total>0?`Produk memiliki ${references.total} data operasional terkait. Produk akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`:'Hapus produk ini? Tindakan ini hanya berlaku jika produk belum memiliki histori operasional.';
+  if(!confirm(message))return;
+  try{const result=deleteProduct(id);await waitForOperationalSync();showToast(result.deactivated?'Produk dinonaktifkan dan histori tetap dipertahankan':'Produk berhasil dihapus','success');render();}
+  catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
 };
 
 // ===== Stocks Page (Manager) =====
