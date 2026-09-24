@@ -69,7 +69,7 @@ test('self check-in captures immutable GPS evidence while administrative check-i
 
 test('Last Location UI distinguishes evidence source and never says still at location', async () => {
   const [app, field] = await Promise.all([read('src/app.js'),read('src/field-sales.js')]);
-  assert.match(app, /Lokasi outlet — bukan posisi perangkat/);
+  assert.match(app, /Referensi outlet — bukan posisi aktual perangkat/);
   assert.match(app, /locationSourceLabel\(loc\.evidence\)/);
   assert.match(app, /belum check-out/);
   assert.doesNotMatch(app, /masih di lokasi/);
