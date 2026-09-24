@@ -2581,7 +2581,7 @@ window.FT.updateOutlet = async function(e,id) {
     if(submit)submit.textContent='Sinkronisasi…';
     await confirmOutletCloudSync();
     closeModal();showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud','success');render();
-  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyError(error),'error');render();await recoverStockSalesAfterError(error);}
   finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
@@ -2981,6 +2981,39 @@ function stockCommonProjectIds(outletId, productId) {
   return (product?.projectIds || []).map(String).filter(id => outletProjects.has(id));
 }
 
+function stockSalesFriendlyError(error) {
+  const code = String(error?.code || error?.message || error || '');
+  const messages = {
+    INVENTORY_CYCLE_PERIOD_CONFLICT:'Cycle stok untuk outlet/produk ini sudah ada pada tanggal yang sama. Gunakan data cycle yang sudah difinalisasi atau lakukan koreksi pada cycle berikutnya.',
+    INVENTORY_CYCLE_OPENING_MISMATCH:'Saldo opening berubah karena ada update terbaru. Data akan dimuat ulang; periksa saldo lalu submit kembali.',
+    REVISION_CONFLICT:'Data cloud berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
+    CLOUD_SYNC_TIMEOUT:'Sinkronisasi belum selesai. Periksa koneksi lalu coba kembali.',
+    CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Muat ulang aplikasi lalu coba kembali.',
+    MANUAL_SALE_IDEMPOTENCY_CONFLICT:'Transaksi manual yang sama sudah pernah tersimpan.',
+    MANUAL_SALE_CORRECTION_SOURCE_NOT_VOIDED:'Transaksi sumber harus di-void terlebih dahulu sebelum replacement dibuat.',
+  };
+  return messages[code] || error?.message || String(error);
+}
+
+function inventoryCycleOnDate(projectId,outletId,productId,date=todayISO()) {
+  return getInventoryCycles().find(row =>
+    String(row.projectId||'')===String(projectId||'')
+    && String(row.outletId||'')===String(outletId||'')
+    && String(row.productId||'')===String(productId||'')
+    && String(row.cycleDate||'')===String(date||'')
+  ) || null;
+}
+
+async function recoverStockSalesAfterError(error) {
+  if (!['REVISION_CONFLICT','INVENTORY_CYCLE_OPENING_MISMATCH'].includes(String(error?.code || error?.message || ''))) return false;
+  try {
+    location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ===== Product Sales =====
 function renderProductSales({ mine = false } = {}) {
   const employeeId = myEmployeeId();
@@ -2991,36 +3024,74 @@ function renderProductSales({ mine = false } = {}) {
     .filter(row => !mine || String(row.employeeId || '') === String(employeeId || ''))
     .sort((a,b) => String(b.soldAt || b.date || '').localeCompare(String(a.soldAt || a.date || '')));
   const manualAllowed = !mine && isProjectAdmin();
+  const totalQty = rows.reduce((sum,row)=>sum+Number(row.quantity ?? row.qty ?? 0),0);
+  const totalAmount = rows.reduce((sum,row)=>sum+Number(row.totalAmount ?? row.amount ?? 0),0);
+  const manualCount = rows.filter(row => !['derived_stock','inventory_cycle'].includes(String(row.provenance||'manual_legacy'))).length;
+  const thisMonth = todayISO().slice(0,7);
+  queueMicrotask(()=>window.FT?.filterProductSales?.());
   return `
+    <div class="grid-3" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Transaksi aktif</div><div class="stat-value">${rows.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Qty terjual</div><div class="stat-value">${totalQty}</div></div>
+      <div class="stat-card"><div class="stat-label">Nilai penjualan</div><div class="stat-value" style="font-size:20px">${formatCurrency(totalAmount)}</div><div class="am-muted">${manualCount} manual exception</div></div>
+    </div>
     <div class="card">
       <div class="filter-row">
-        <div>
-          <div class="card-title">Product Sales</div>
-          <div class="card-subtitle">Derived sales dihitung otomatis dari Inventory Cycle. Manual sale hanya untuk exception/correction.</div>
-        </div>
+        <input class="input search-input" id="salesSearch" placeholder="Cari employee, outlet, produk..." data-pqt-oninput="FT.filterProductSales()">
+        <select class="select" id="salesSourceFilter" style="width:170px" data-pqt-onchange="FT.filterProductSales()">
+          <option value="">Semua sumber</option><option value="derived">Derived Stock</option><option value="manual">Manual Exception</option>
+        </select>
+        <input class="input" id="salesFromFilter" type="date" value="${thisMonth}-01" data-pqt-onchange="FT.filterProductSales()" style="width:155px">
+        <input class="input" id="salesToFilter" type="date" value="${todayISO()}" data-pqt-onchange="FT.filterProductSales()" style="width:155px">
         <div class="spacer"></div>
+        <span id="salesResultSummary" class="am-muted"></span>
         ${manualAllowed ? '<button class="btn btn-primary" data-pqt-onclick="FT.openManualSaleModal()">+ Manual Exception</button>' : ''}
       </div>
+      <div class="card-subtitle" style="margin-bottom:12px">Derived sales berasal dari Inventory Cycle. Manual sale hanya dipakai untuk exception/correction dan memiliki audit trail.</div>
       <div class="visits-table-wrapper">
-        <table class="table"><thead><tr><th>Tanggal</th><th>Employee</th><th>Outlet</th><th>Produk</th><th>Qty</th><th>Nilai</th><th>Sumber</th><th></th></tr></thead>
+        <table class="table" id="productSalesTable"><thead><tr><th>Tanggal</th><th>Employee</th><th>Outlet</th><th>Produk</th><th>Qty</th><th>Nilai</th><th>Sumber</th><th></th></tr></thead>
           <tbody>${rows.length ? rows.map(row => {
             const provenance=String(row.provenance || 'manual_legacy');
             const manual=!['derived_stock','inventory_cycle'].includes(provenance);
-            return `<tr>
-              <td>${formatDateShort(String(row.soldAt || row.date || '').slice(0,10))}</td>
+            const date=String(row.soldAt || row.date || '').slice(0,10);
+            const search=[employees[row.employeeId]?.name,row.employeeId,outlets[row.outletId]?.name,row.outletId,products[row.productId]?.name,products[row.productId]?.sku].filter(Boolean).join(' ').toLowerCase();
+            return `<tr data-search="${esc(search)}" data-source="${manual?'manual':'derived'}" data-date="${esc(date)}">
+              <td>${formatDateShort(date)}</td>
               <td>${esc(employees[row.employeeId]?.name || row.employeeId || '-')}</td>
               <td>${esc(outlets[row.outletId]?.name || row.outletId || '-')}</td>
               <td>${esc(products[row.productId]?.name || row.productId || '-')}</td>
               <td>${Number(row.quantity ?? row.qty ?? 0)}</td>
               <td>${formatCurrency(Number(row.totalAmount ?? row.amount ?? 0))}</td>
-              <td>${provenance === 'derived_stock' ? '<span class="badge badge-success">Derived Stock</span>' : '<span class="badge badge-warning">Manual Exception</span>'}</td>
+              <td>${manual ? '<span class="badge badge-warning">Manual Exception</span>' : '<span class="badge badge-success">Derived Stock</span>'}</td>
               <td>${manualAllowed && manual ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.correctManualSale(${jsArg(row.id)})">Koreksi</button>` : ''}</td>
             </tr>`;
           }).join('') : '<tr><td colspan="8"><div class="empty-state"><h3>Belum ada penjualan</h3><p>Penjualan akan muncul setelah Inventory Cycle difinalisasi.</p></div></td></tr>'}</tbody>
         </table>
       </div>
+      <div id="salesEmptyFilter" class="empty-state" hidden><h3>Tidak ada transaksi sesuai filter</h3><p>Ubah periode, sumber, atau kata pencarian.</p></div>
     </div>`;
 }
+
+window.FT.filterProductSales = function() {
+  const search=(document.getElementById('salesSearch')?.value||'').trim().toLowerCase();
+  const source=document.getElementById('salesSourceFilter')?.value||'';
+  const from=document.getElementById('salesFromFilter')?.value||'';
+  const to=document.getElementById('salesToFilter')?.value||'';
+  const rows=[...document.querySelectorAll('#productSalesTable tbody tr[data-search]')];
+  let visible=0;
+  rows.forEach(row=>{
+    const show=(!search || String(row.dataset.search||'').includes(search))
+      && (!source || row.dataset.source===source)
+      && (!from || String(row.dataset.date||'')>=from)
+      && (!to || String(row.dataset.date||'')<=to);
+    row.style.display=show?'':'none';
+    if(show) visible++;
+  });
+  const summary=document.getElementById('salesResultSummary');
+  if(summary) summary.textContent=`${visible} dari ${rows.length} transaksi`;
+  const empty=document.getElementById('salesEmptyFilter');
+  if(empty) empty.hidden=visible!==0 || rows.length===0;
+};
 
 window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
   if (!isProjectAdmin()) { showToast('Manual sale hanya untuk Manager/Admin.', 'error'); return; }
@@ -3086,8 +3157,15 @@ function renderStocks() {
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const stocks = getStocks().filter(s => productMap[s.productId] && outletMap[s.outletId]);
   const lowStocks = stocks.filter(s => s.quantity <= s.minStock);
+  const outOfStock = stocks.filter(s => Number(s.quantity) <= 0);
+  const projectRows = stockProjectRows();
 
   return `
+    <div class="grid-3" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Saldo stok</div><div class="stat-value">${stocks.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Stok menipis</div><div class="stat-value">${lowStocks.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Stok habis</div><div class="stat-value">${outOfStock.length}</div></div>
+    </div>
     ${lowStocks.length > 0 ? `
       <div class="card" style="margin-bottom:20px; border-color:var(--red-500); background:var(--red-50);">
         <div style="display:flex; align-items:center; gap:12px;">
@@ -3102,6 +3180,10 @@ function renderStocks() {
     <div class="card">
       <div class="filter-row">
         <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." data-pqt-oninput="FT.filterStocks()">
+        <select class="select" id="stockProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterStocks()">
+          <option value="">Semua Project</option>
+          ${projectRows.map(p=>`<option value="${p.id}">${esc(p.name||p.code||p.id)}</option>`).join('')}
+        </select>
         <select class="select" id="stockOutletFilter" style="width:200px;" data-pqt-onchange="FT.filterStocks()">
           <option value="">Semua Outlet</option>
           ${getOutlets().map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
@@ -3124,7 +3206,7 @@ function renderStocks() {
               if (!p || !o) return '';
               const isLow = s.quantity <= s.minStock;
               return `
-                <tr>
+                <tr data-project="${esc(s.projectId||'')}" data-outlet="${esc(s.outletId||'')}" data-status="${isLow?'low':'ok'}">
                   <td>${outletIcon(o.type)} ${esc(o.name)}</td>
                   <td><span style="font-weight:600;">${p.name}</span><br><span style="font-size:11px; color:var(--gray-400);">${p.sku}</span></td>
                   <td style="font-weight:700; color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
@@ -3146,12 +3228,14 @@ function renderStocks() {
 
 window.FT.filterStocks = function() {
   const search = (document.getElementById('stockSearch')?.value || '').toLowerCase();
+  const project = document.getElementById('stockProjectFilter')?.value || '';
+  const outlet = document.getElementById('stockOutletFilter')?.value || '';
   const statusF = document.getElementById('stockStatusFilter')?.value || '';
-  document.querySelectorAll('#stockTable tbody tr').forEach(row => {
-    let show = true;
-    if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (statusF === 'low' && !row.textContent.includes('Menipis')) show = false;
-    if (statusF === 'ok' && !row.textContent.includes('Aman')) show = false;
+  document.querySelectorAll('#stockTable tbody tr[data-outlet]').forEach(row => {
+    const show = (!search || row.textContent.toLowerCase().includes(search))
+      && (!project || row.dataset.project === project)
+      && (!outlet || row.dataset.outlet === outlet)
+      && (!statusF || row.dataset.status === statusF);
     row.style.display = show ? '' : 'none';
   });
 };
@@ -3193,6 +3277,8 @@ window.FT.createStock = async function(e) {
   const current = getStocks().find(row => row.outletId === data.outletId && row.productId === data.productId && row.projectId === projectId);
   if (!employeeId) { showToast('Akun ini belum terhubung ke employee untuk mencatat stock movement.', 'error'); return; }
   if (!projectId || !stockCommonProjectIds(data.outletId,data.productId).includes(projectId)) { showToast('Project tidak sesuai dengan relasi outlet dan produk.', 'error'); return; }
+  const existingCycle = inventoryCycleOnDate(projectId,data.outletId,data.productId,todayISO());
+  if (existingCycle) { showToast('Cycle stok hari ini untuk outlet/produk tersebut sudah ada. Tidak dibuat duplikat.', 'error'); return; }
   const openingQty = Number(current?.quantity || 0);
   const stockInQty = Number(data.stockInQty);
   const closingQty = Number(data.closingQty);
@@ -3213,7 +3299,8 @@ window.FT.createStock = async function(e) {
     closeModal(); showToast('Stock movement berhasil difinalisasi.', 'success'); render();
   } catch (error) {
     restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error'); render();
+    showToast(stockSalesFriendlyError(error), 'error'); render();
+    await recoverStockSalesAfterError(error);
   } finally {
     if (submit?.isConnected) { submit.disabled=false; submit.textContent='Finalisasi'; }
   }
@@ -3841,18 +3928,20 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
     for (const row of rows) {
       const productId = row.querySelector('[name="productId"]')?.value;
       const closingQty = Number(row.querySelector('[name="quantity"]')?.value);
+      const stockInQty = Number(row.querySelector('[name="stockInQty"]')?.value || 0);
+      const minStock = Number(row.querySelector('[name="minStock"]')?.value || 0);
       if (!productId) continue;
       if (seen.has(productId)) throw new Error('Produk yang sama tidak boleh dicatat dua kali dalam satu kunjungan.');
       seen.add(productId);
-      if (!Number.isFinite(closingQty) || closingQty < 0) throw new Error('Closing stock tidak valid.');
+      if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(stockInQty) || stockInQty < 0 || !Number.isFinite(minStock) || minStock < 0) throw new Error('Nilai stok tidak valid.');
+      if (inventoryCycleOnDate(visit.projectId,outletId,productId,todayISO())) throw new Error('Cycle stok hari ini untuk salah satu produk sudah ada. Tidak dibuat duplikat.');
       const existing = getStocksByOutlet(outletId).find(s => s.productId === productId && (!s.projectId || s.projectId === visit.projectId));
       const openingQty = Number(existing?.quantity || 0);
-      const inferredStockIn = Math.max(0, closingQty - openingQty);
       createInventoryCycle({
         projectId:visit.projectId, outletId, productId, employeeId:empId, visitId,
-        cycleDate:todayISO(), status:'finalized', openingQty, stockInQty:inferredStockIn,
+        cycleDate:todayISO(), status:'finalized', openingQty, stockInQty,
         adjustmentQty:0, returnQty:0, damagedQty:0, transferOutQty:0, closingQty,
-        minStock:Number(existing?.minStock || 0),
+        minStock,
         idempotencyKey:`visit-stock:${visitId}:${productId}`,
       });
     }
@@ -3863,8 +3952,9 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
     render();
   } catch (error) {
     restoreOperationalBaseline(getDB());
-    showToast(error.message || error, 'error');
+    showToast(stockSalesFriendlyError(error), 'error');
     render();
+    await recoverStockSalesAfterError(error);
   } finally {
     if (submit?.isConnected) { submit.disabled=false; submit.textContent='Simpan Stok'; }
   }
