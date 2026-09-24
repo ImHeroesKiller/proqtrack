@@ -7,7 +7,7 @@ import {
   createOutlet, updateOutlet, deleteEmployee, deleteOutlet, outletReferenceSummary, deleteVisit, getDB, getAccounts,
   getProducts, createProduct, updateProduct, deleteProduct, productReferenceSummary,
   getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
-  getStocks, getStocksByOutlet, getStocksByProduct, getInventoryCycles, createInventoryCycle,
+  getStocks, getStocksByOutlet, getInventoryCycles, createInventoryCycle,
   getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit,
   getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation,
   getVisitedOutletIds, getProductsForVisitedOutlets,
@@ -22,7 +22,7 @@ import {
   getOrganization, getCurrentOrgId,
   getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
   canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
-  getProductSales, getProductSalesAudit, createProductSale, deleteProductSale, voidProductSale, monthSalesAmount,
+  getProductSales, getProductSalesAudit, createProductSale, voidProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
   isOrgAdminRole, isProjectAdminRole,
 } from './lib/db.js';
@@ -2991,6 +2991,23 @@ async function recoverStockSalesAfterError(error) {
   }
 }
 
+async function runStockSalesMutation(execute, { successMessage = '', onSuccess = null } = {}) {
+  try {
+    const result = await execute();
+    await waitForOperationalSync();
+    await refreshOperationalData(getDB(), getActor());
+    if (onSuccess) await onSuccess(result);
+    if (successMessage) showToast(successMessage, 'success');
+    return { ok:true, result };
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(stockSalesFriendlyErrorMessage(error), 'error');
+    render();
+    await recoverStockSalesAfterError(error);
+    return { ok:false, error };
+  }
+}
+
 // ===== Product Sales =====
 function renderProductSales({ mine = false } = {}) {
   const employeeId = myEmployeeId();
@@ -3123,17 +3140,16 @@ window.FT.saveManualSale = async function(e, correctionOfSaleId = '') {
   if(!projectId || !stockCommonProjectIds(data.outletId,data.productId).includes(projectId)){showToast('Project tidak sesuai dengan relasi outlet dan produk.','error');return;}
   try{
     if(submit){submit.disabled=true;submit.textContent='Sinkronisasi…';}
-    createProductSale({
+    await runStockSalesMutation(() => createProductSale({
       ...data, projectId, qty:Number(data.qty), unitPrice:Number(data.unitPrice),
       soldAt:`${data.date}T12:00:00+07:00`,
       correctionOfSaleId:correctionOfSaleId || null,
       idempotencyKey:String(data.idempotencyKey || ''),
+    }), {
+      successMessage:'Manual sale tersimpan dengan audit trail.',
+      onSuccess:()=>{ closeModal(); render(); },
     });
-    await waitForOperationalSync();
-    await refreshOperationalData(getDB(),getActor());
-    closeModal();showToast('Manual sale tersimpan dengan audit trail.','success');render();
-  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
-  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
+  } finally { if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';} }
 };
 
 window.FT.correctManualSale = function(id) {
@@ -3155,13 +3171,10 @@ window.FT.confirmManualSaleCorrection = async function(e,id) {
   const reason=String(new FormData(form).get('reason')||'').trim();
   try{
     if(submit){submit.disabled=true;submit.textContent='Memproses…';}
-    voidProductSale(id,reason);
-    await waitForOperationalSync();
-    await refreshOperationalData(getDB(),getActor());
-    closeModal();render();
-    window.FT.openManualSaleModal(id);
-  }catch(error){restoreOperationalBaseline(getDB());showToast(stockSalesFriendlyErrorMessage(error),'error');render();await recoverStockSalesAfterError(error);}
-  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Void & Buat Replacement';}}
+    await runStockSalesMutation(() => voidProductSale(id,reason), {
+      onSuccess:()=>{ closeModal(); render(); window.FT.openManualSaleModal(id); },
+    });
+  } finally { if(submit?.isConnected){submit.disabled=false;submit.textContent='Void & Buat Replacement';} }
 };
 
 // ===== Stocks Page (Manager) =====
@@ -3298,12 +3311,6 @@ window.FT.openStockModal = function() {
   `);
 };
 
-function stockProjectFor(outletId, productId, fallback = '') {
-  if (fallback) return String(fallback);
-  const common = stockCommonProjectIds(outletId,productId);
-  return common.length === 1 ? common[0] : '';
-}
-
 window.FT.createStock = async function(e) {
   e.preventDefault();
   const form = e.target;
@@ -3326,19 +3333,15 @@ window.FT.createStock = async function(e) {
   const { stockInQty, closingQty, minStock }=validation;
   try {
     if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
-    createInventoryCycle({
+    await runStockSalesMutation(() => createInventoryCycle({
       projectId, outletId:data.outletId, productId:data.productId, employeeId,
       cycleDate:todayISO(), status:'finalized', openingQty, stockInQty, adjustmentQty:0,
       returnQty:0, damagedQty:0, transferOutQty:0, closingQty, minStock,
       idempotencyKey:`stock-in:${projectId}:${data.outletId}:${data.productId}:${todayISO()}:${Date.now()}`,
+    }), {
+      successMessage:'Stock movement berhasil difinalisasi.',
+      onSuccess:()=>{ closeModal(); render(); },
     });
-    await waitForOperationalSync();
-    await refreshOperationalData(getDB(), getActor());
-    closeModal(); showToast('Stock movement berhasil difinalisasi.', 'success'); render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(stockSalesFriendlyErrorMessage(error), 'error'); render();
-    await recoverStockSalesAfterError(error);
   } finally {
     if (submit?.isConnected) { submit.disabled=false; submit.textContent='Finalisasi'; }
   }
@@ -3383,20 +3386,16 @@ window.FT.updateStock = async function(e, id) {
   if (adjustmentQty === 0 && minStock === Number(stock.minStock)) { showToast('Tidak ada perubahan stok.'); return; }
   try {
     if(submit){submit.disabled=true;submit.textContent='Finalisasi…';}
-    createInventoryCycle({
+    await runStockSalesMutation(() => createInventoryCycle({
       projectId:stock.projectId, outletId:stock.outletId, productId:stock.productId, employeeId,
       cycleDate:todayISO(), status:'finalized', openingQty, stockInQty:0, adjustmentQty,
       adjustmentReason:data.adjustmentReason, returnQty:0, damagedQty:0, transferOutQty:0,
       closingQty, minStock,
       idempotencyKey:`stock-adjustment:${stock.id}:${todayISO()}:${Date.now()}`,
+    }), {
+      successMessage:'Adjustment stok berhasil difinalisasi.',
+      onSuccess:()=>{ closeModal(); render(); },
     });
-    await waitForOperationalSync();
-    await refreshOperationalData(getDB(), getActor());
-    closeModal(); showToast('Adjustment stok berhasil difinalisasi.', 'success'); render();
-  } catch(error) {
-    restoreOperationalBaseline(getDB());
-    showToast(stockSalesFriendlyErrorMessage(error),'error'); render();
-    await recoverStockSalesAfterError(error);
   } finally {
     if(submit?.isConnected){submit.disabled=false;submit.textContent='Finalisasi Adjustment';}
   }
