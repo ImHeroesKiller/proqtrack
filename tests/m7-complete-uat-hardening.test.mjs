@@ -129,3 +129,33 @@ test('M7 health and PWA require UAT hardening generation', async () => {
   assert.match(sw, /\.\/src\/lib\/cloud-accounts\.js/);
   assert.match(workflow, /uatSchema/);
 });
+
+
+test('account create attaches an existing global identity without changing its password', async () => {
+  const [server, client] = await Promise.all([
+    read('worker/accounts.js'),
+    read('src/lib/cloud-accounts.js'),
+  ]);
+  assert.match(server, /attachExisting = body\.attachExisting === true/);
+  assert.match(server, /ACCOUNT_ALREADY_IN_ORGANIZATION/);
+  assert.match(server, /ACCOUNT_IS_GLOBAL_SUPERADMIN/);
+  assert.match(server, /EXISTING_ACCOUNT_DISABLED/);
+  assert.match(server, /attach_existing_account/);
+  assert.match(server, /passwordUnchanged:true/);
+  assert.match(client, /attachExisting:true/);
+  assert.match(client, /data\.passwordUnchanged !== true/);
+});
+
+test('account management UI mirrors server hierarchy and prevents duplicate mutations', async () => {
+  const settings = await read('src/account-settings.js');
+  assert.match(settings, /function managedRoles\(actorRole\)/);
+  assert.match(settings, /function canManageAccount\(actor, target\)/);
+  assert.match(settings, /function canChangeAccountStatus\(actor, target\)/);
+  assert.match(settings, /let accountSaveInFlight = false/);
+  assert.match(settings, /if \(accountSaveInFlight\) return/);
+  assert.match(settings, /submit\.disabled = true/);
+  assert.match(settings, /ACCOUNT_ALREADY_IN_ORGANIZATION/);
+  assert.match(settings, /Akun existing ditautkan\. Password lama tetap berlaku\./);
+  assert.match(settings, /data\.role = current\.role/);
+  assert.match(settings, /data\.status = 'active'/);
+});
