@@ -62,5 +62,5 @@ test('Supervisor Compare P2 is project-aware and exposes team denominator', asyn
 
 test('Team Employees P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.43/);
+  assert.match(sw, /proqtrack-v12\.44/);
 });
