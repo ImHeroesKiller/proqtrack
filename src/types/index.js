@@ -857,6 +857,7 @@ function renderAssignments() {
       ["Sales", rows.filter((x) => x.status === "active" && x.roleOnProject === "sales").length],
     ])}<div class="card">
       <div class="pm-toolbar">
+        <button class="btn btn-primary" data-pqt-onclick="PM.openAssignmentCreate()">${svg("plus")} Tambah Assignment</button>
         <select class="select" id="assignmentProjectFilter" aria-label="Filter project" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua project</option>${scopedProjects.map((p) => `<option value="${p.id}">${esc(p.code)} — ${esc(p.name)}</option>`).join("")}</select>
         <select class="select" id="assignmentStatusFilter" aria-label="Filter status assignment" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua status</option><option value="active">Aktif</option><option value="ended">Selesai</option></select>
         <select class="select" id="assignmentRoleFilter" aria-label="Filter role assignment" data-pqt-onchange="PM.filterAssignments(1)"><option value="">Semua role</option><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select>
@@ -1481,6 +1482,26 @@ window.PM = {
       if (checkbox) checkbox.checked = !value;
     }
   },
+  openAssignmentCreate() {
+    if (!canManage()) return;
+    const db = viewDB(), ids = accessibleProjectIds();
+    const projects = (db.projects || []).filter((project) =>
+      ['active','draft'].includes(project.status) &&
+      (role() === 'manager' || ids.has(project.id))
+    );
+    modal(
+      'Tambah Assignment',
+      `<div class="pm-form"><div class="full"><label class="label">Project</label><select class="select" id="assignmentCreateProject" required><option value="">Pilih project</option>${projects.map((project) => `<option value="${project.id}">${esc(project.code)} — ${esc(project.name)}</option>`).join('')}</select></div><div class="full"><button class="btn btn-primary btn-block" data-pqt-onclick="PM.openSelectedAssignmentProject()">Lanjutkan</button></div></div>`
+    );
+  },
+  openSelectedAssignmentProject() {
+    const projectId = String(document.getElementById('assignmentCreateProject')?.value || '');
+    if (!projectId) {
+      window.showToast?.('Pilih project terlebih dahulu.', 'error');
+      return;
+    }
+    this.openAssign(projectId);
+  },
   assignmentPage(delta) {
     assignmentPage = Math.max(1, assignmentPage + Number(delta || 0));
     this.filterAssignments(assignmentPage);
@@ -1547,12 +1568,35 @@ window.PM = {
     const startDate = String(form.elements.startDate?.value || '');
     const endDate = String(form.elements.endDate?.value || '');
     const requested = Number(form.elements.allocationPercent?.value || 0);
+    const roleOnProject = String(form.elements.roleOnProject?.value || 'supervisor');
+    const supervisorSelect = form.elements.supervisorId;
+    const projectId = String(form.dataset.projectId || '');
     const hint = document.getElementById('assignmentCapacityHint');
-    if (!hint || !employeeId || !startDate || !endDate) return;
-    const used = employeeCapacityUsage(db, employeeId, startDate, endDate);
-    const available = Math.max(0, 100 - used);
-    hint.textContent = `Terpakai ${used}% · Tersedia ${available}% · Permintaan ${Number.isFinite(requested) ? requested : 0}%`;
-    hint.classList.toggle('pm-sync-error', Number.isFinite(requested) && requested > available);
+    if (hint && employeeId && startDate && endDate) {
+      const used = employeeCapacityUsage(db, employeeId, startDate, endDate);
+      const available = Math.max(0, 100 - used);
+      hint.textContent = `Terpakai ${used}% · Tersedia ${available}% · Permintaan ${Number.isFinite(requested) ? requested : 0}%`;
+      hint.classList.toggle('pm-sync-error', Number.isFinite(requested) && requested > available);
+    }
+    if (supervisorSelect) {
+      const previous = String(supervisorSelect.value || '');
+      const supervisors = (db.projectAssignments || [])
+        .filter((assignment) =>
+          assignment.projectId === projectId &&
+          assignment.status === 'active' &&
+          assignment.roleOnProject === 'supervisor' &&
+          (!startDate || assignment.startDate <= startDate) &&
+          (!endDate || assignment.endDate >= endDate)
+        )
+        .map((assignment) => db.employees.find((employee) => employee.id === assignment.employeeId))
+        .filter((employee) => employee && employee.status === 'active');
+      supervisorSelect.innerHTML = '<option value="">Pilih untuk sales/viewer</option>' + supervisors
+        .map((employee) => `<option value="${esc(employee.id)}">${esc(employee.name)}</option>`)
+        .join('');
+      supervisorSelect.disabled = roleOnProject === 'supervisor';
+      if (roleOnProject === 'supervisor') supervisorSelect.value = '';
+      else if (supervisors.some((employee) => employee.id === previous)) supervisorSelect.value = previous;
+    }
   },
   openAssign(projectId) {
     if (!canManage()) return;
@@ -1562,21 +1606,21 @@ window.PM = {
         (a) => a.projectId === projectId && a.status === "active",
       );
     if (!p || (role() === "project-manager" && !accessibleProjectIds().has(projectId))) return;
+    const staffingScope = role() === "project-manager"
+      ? new Set(scopedEmployees().map((employee) => employee.id))
+      : null;
     const eligible = db.employees.filter(
       (employee) =>
         employee.status === "active" &&
+        (!staffingScope || staffingScope.has(employee.id)) &&
         db.accounts.some(
           (user) =>
             user.employeeId === employee.id && user.status !== "inactive",
         ),
     );
-    const supervisors = active
-      .filter((a) => a.roleOnProject === "supervisor")
-      .map((a) => db.employees.find((employee) => employee.id === a.employeeId))
-      .filter(Boolean);
     modal(
       `Assignment — ${p?.name || projectId}`,
-      `<form class="pm-form" data-pqt-onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required data-pqt-onchange="PM.refreshAssignmentCapacity()">${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject"><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId"><option value="">Pilih untuk sales/viewer</option>${supervisors.map((employee) => `<option value="${employee.id}">${esc(employee.name)}</option>`).join("")}</select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required data-pqt-oninput="PM.refreshAssignmentCapacity()"><div id="assignmentCapacityHint" class="pm-subtext" style="margin-top:6px">Terpakai 0% · Tersedia 100% · Permintaan 100%</div></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
+      `<form class="pm-form" data-project-id="${projectId}" data-pqt-onsubmit="PM.saveAssignment(event,'${projectId}')"><div class="full"><label class="label">Karyawan aktif dengan akun login</label><select class="select" name="employeeId" required data-pqt-onchange="PM.refreshAssignmentCapacity()">${eligible.map((employee) => `<option value="${employee.id}">${esc(employee.name)} — ${esc(employee.role)}</option>`).join("")}</select></div><div><label class="label">Role pada Project</label><select class="select" name="roleOnProject" data-pqt-onchange="PM.refreshAssignmentCapacity()"><option value="supervisor">Supervisor</option><option value="sales">Field Sales</option><option value="viewer">Viewer</option></select></div><div><label class="label">Supervisor Project</label><select class="select" name="supervisorId" disabled><option value="">Pilih untuk sales/viewer</option></select></div><div><label class="label">Mulai Assignment</label><input class="input" type="date" name="startDate" min="${p.startDate}" max="${p.endDate}" value="${p.startDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Selesai Assignment</label><input class="input" type="date" name="endDate" min="${p.startDate}" max="${p.endDate}" value="${p.endDate}" required data-pqt-onchange="PM.refreshAssignmentCapacity()"></div><div><label class="label">Alokasi Kapasitas (%)</label><input class="input" type="number" name="allocationPercent" min="1" max="100" value="100" required data-pqt-oninput="PM.refreshAssignmentCapacity()"><div id="assignmentCapacityHint" class="pm-subtext" style="margin-top:6px">Terpakai 0% · Tersedia 100% · Permintaan 100%</div></div><div><label class="label">Alasan / cakupan kerja</label><input class="input" name="notes" required placeholder="Contoh: coverage Jakarta Selatan"></div><div class="full"><button class="btn btn-primary btn-block">Validasi & Assign</button></div></form><div style="margin-top:18px"><div class="card-title">Assignment aktif</div>${
         active
           .map((a) => {
             const e = db.employees.find((x) => x.id === a.employeeId);
@@ -1597,6 +1641,10 @@ window.PM = {
       roleOnProject = formValue(fd, "roleOnProject");
     const project = db.projects.find((x) => x.id === projectId);
     const emp = db.employees.find((x) => x.id === employeeId);
+    if (role() === "project-manager" && !scopedEmployees().some((employee) => employee.id === employeeId)) {
+      window.showToast?.("Karyawan berada di luar staffing scope Anda.", "error");
+      return;
+    }
     if (!project || !emp) {
       window.showToast?.("Project atau karyawan tidak valid.", "error");
       return;

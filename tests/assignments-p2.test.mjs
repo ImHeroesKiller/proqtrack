@@ -60,5 +60,5 @@ test('Assignment P2 provides live capacity visibility', async () => {
 
 test('Assignment P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.35/);
+  assert.match(sw, /proqtrack-v12\.36/);
 });

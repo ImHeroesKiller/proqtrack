@@ -458,7 +458,10 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
     }
     if (['competitors','competitorProducts'].includes(entity)) return false;
     if (entity === 'attendancePoints') return true;
-    if (entity === 'projectAssignments' || entity === 'projectProducts' || entity === 'surveyTemplates') return projectAllowed(claims, projectId);
+    if (entity === 'projectAssignments') {
+      return projectAllowed(claims, projectId) && !!employeeId && context.accessibleEmployeeIds?.has(employeeId);
+    }
+    if (entity === 'projectProducts' || entity === 'surveyTemplates') return projectAllowed(claims, projectId);
     if (FIELD_ENTITIES.has(entity)) return projectAllowed(claims, projectId) && (!employeeId || context.accessibleEmployeeIds?.has(employeeId));
     return false;
   }
