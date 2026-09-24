@@ -6,7 +6,8 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Assignment P2 adds combined filters pagination summary and empty state', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /ASSIGNMENT_PAGE_SIZE = 15/);
+  const helper = await read('src/lib/assignment-ui.js');
+  assert.match(helper, /ASSIGNMENT_PAGE_SIZE = 15/);
   assert.match(src, /assignmentProjectFilter/);
   assert.match(src, /assignmentStatusFilter/);
   assert.match(src, /assignmentRoleFilter/);
@@ -27,15 +28,17 @@ test('Assignment P2 renders responsive mobile assignment cards', async () => {
 
 test('Assignment P2 localizes role and status labels', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function assignmentRoleLabel/);
-  assert.match(src, /sales:'Field Sales'/);
-  assert.match(src, /function assignmentStatusLabel/);
-  assert.match(src, /ended:'Selesai'/);
+  const helper = await read('src/lib/assignment-ui.js');
+  assert.match(src, /assignmentRoleLabel/);
+  assert.match(helper, /sales:'Field Sales'/);
+  assert.match(src, /assignmentStatusLabel/);
+  assert.match(helper, /ended:'Selesai'/);
 });
 
 test('Assignment P2 exposes live sync state', async () => {
   const src = await read('src/types/index.js');
   assert.match(src, /function assignmentSyncLabel/);
+  assert.match(src, /assignmentSyncState/);
   assert.match(src, /assignmentSyncState/);
   assert.match(src, /location\.hash === "#\/assignments"/);
 });
@@ -52,7 +55,8 @@ test('Assignment P2 provides assignment detail and history metadata', async () =
 
 test('Assignment P2 provides live capacity visibility', async () => {
   const src = await read('src/types/index.js');
-  assert.match(src, /function employeeCapacityUsage/);
+  const helper = await read('src/lib/assignment-ui.js');
+  assert.match(helper, /function employeeCapacityUsage/);
   assert.match(src, /refreshAssignmentCapacity\(\)/);
   assert.match(src, /Terpakai \$\{used\}% · Tersedia \$\{available\}%/);
   assert.match(src, /assignmentCapacityHint/);
@@ -60,5 +64,5 @@ test('Assignment P2 provides live capacity visibility', async () => {
 
 test('Assignment P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.36/);
+  assert.match(sw, /proqtrack-v12\.37/);
 });
