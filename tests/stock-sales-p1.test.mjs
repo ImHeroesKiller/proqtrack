@@ -120,7 +120,7 @@ function cycleEnv({ sourceCycle=null }={}) {
                 if (/core_project_outlets/.test(sql)) return { ok:1 };
                 if (/core_project_products/.test(sql)) return { ok:1 };
                 if (/JOIN core_employee_project_assignments/.test(sql)) return { id:'EMP-1' };
-                if (/FROM core_inventory_cycles/.test(sql) && /id=\?/.test(sql)) return sourceCycle;
+                if (/FROM core_inventory_cycles/.test(sql) && /AND id=\? LIMIT 1/.test(sql)) return sourceCycle;
                 if (/FROM core_inventory_cycles/.test(sql)) return null;
                 if (/FROM core_products/.test(sql)) return { id:'PRD-1', metadata_json:JSON.stringify({price:10000}) };
                 if (/FROM core_product_sales/.test(sql)) return null;
