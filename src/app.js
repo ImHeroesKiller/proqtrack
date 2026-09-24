@@ -46,6 +46,7 @@ import {
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
+import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets } from './lib/outlet-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -2268,134 +2269,212 @@ window.FT.updateEmployee = async function(e, id) {
   }
 };
 // ===== Outlets Page =====
+let outletPage = 1;
+
+function outletOptionList(rows, valueKey, labelOf, selected = '') {
+  return (rows || []).map(row => {
+    const value = String(row?.[valueKey] || '');
+    return `<option value="${esc(value)}" ${String(selected) === value ? 'selected' : ''}>${esc(labelOf(row))}</option>`;
+  }).join('');
+}
+
+function outletStatusSummary(outlets = []) {
+  return {
+    total:outlets.length,
+    active:outlets.filter(outlet => outlet.status === 'active').length,
+    inactive:outlets.filter(outlet => outlet.status === 'inactive').length,
+    archived:outlets.filter(outlet => outlet.status === 'archived').length,
+  };
+}
+
+function outletSyncLabel() {
+  const sync = cloudDataStatus();
+  if (sync.error) return '<span class="status-badge status-inactive">Sync bermasalah</span>';
+  if (sync.syncing || sync.queued) return '<span class="status-badge status-pending">Sinkronisasi…</span>';
+  return '<span class="status-badge status-active">Cloud synced</span>';
+}
+
 function renderOutlets() {
+  const db = getDB();
   const outlets = getOutlets();
-  return `
+  const projects = db.projects || [];
+  const clients = db.clients || [];
+  const visits = getVisits();
+  const options = outletFilterOptions(outlets, { projects, clients });
+  const summary = outletStatusSummary(outlets);
+  const models = outlets.map(outlet => outletOperationalModel(outlet, { projects, clients, visits }));
+  const rendered = `
+    <div class="pm-kpis">
+      <div class="pm-kpi"><span>Total Outlet</span><strong>${summary.total}</strong></div>
+      <div class="pm-kpi"><span>Aktif</span><strong>${summary.active}</strong></div>
+      <div class="pm-kpi"><span>Nonaktif</span><strong>${summary.inactive}</strong></div>
+      <div class="pm-kpi"><span>Archived</span><strong>${summary.archived}</strong></div>
+    </div>
     <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" id="outletSearch" placeholder="🔍 Cari outlet..." data-pqt-oninput="FT.filterOutlets()">
-        <select class="select" id="outletTypeFilter" style="width:180px;" data-pqt-onchange="FT.filterOutlets()">
-          <option value="">Semua Tipe</option>
-          <option>Toko Kelontong</option><option>Minimarket</option><option>Restoran</option>
-          <option>Warung Kopi</option><option>Apotek</option><option>Toko Bangunan</option>
-          <option>Toko Elektronik</option><option>Bakery</option><option>Toko Fashion</option>
+      <div class="filter-row" style="gap:8px;flex-wrap:wrap">
+        <input class="input search-input" id="outletSearch" placeholder="🔍 Nama, kode, alamat, PIC, project..." data-pqt-oninput="FT.filterOutlets(1)">
+        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)">
+          <option value="">Semua Project</option>
+          ${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}
         </select>
+        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)">
+          <option value="">Semua Client</option>
+          ${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}
+        </select>
+        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)">
+          <option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option>
+        </select>
+        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)">
+          <option value="">Semua Tipe</option>${storeOptionList(options.types)}
+        </select>
+        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)">
+          <option value="">Semua Area</option>${storeOptionList(options.areas)}
+        </select>
+        <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetOutletFilters()">Reset</button>
         <div class="spacer"></div>
+        <span id="outletSyncState">${outletSyncLabel()}</span>
+        <button class="btn btn-secondary" id="outletRefreshBtn" data-pqt-onclick="FT.refreshOutlets()">Refresh</button>
         <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('outlets')">Bulk Upload</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openOutletModal()">+ Tambah Outlet</button>
       </div>
+      <div id="outletResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper">
         <table class="table" id="outletTable">
           <thead>
-            <tr><th>Nama</th><th>Tipe</th><th>Area</th><th>Pemilik</th><th>Telepon</th><th>Frekuensi</th><th>Status</th><th></th></tr>
+            <tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
-            ${outlets.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏪</div><h3>Belum ada outlet</h3></div></td></tr>` :
-            outlets.map(o => `
-              <tr>
-                <td><div style="font-weight:600; color:var(--gray-800);">${outletIcon(o.type)} ${esc(o.name)}</div><div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div></td>
-                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${esc(displayValue(o.type))}</span></td>
-                <td>${esc(displayValue(o.area))}</td>
-                <td>${esc(displayValue(o.owner))}</td>
-                <td>${esc(displayValue(o.phone))}</td>
-                <td>${esc(displayValue(o.visitFrequency))}</td>
-                <td>${statusBadge(o.status)}</td>
+            ${models.map(model => {
+              const o = model.outlet;
+              return `
+              <tr data-search="${esc(model.search)}" data-type="${esc(o.type || '')}" data-area="${esc(o.area || '')}" data-status="${esc(o.status || '')}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}">
                 <td>
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">Hapus</button>
+                  <div style="font-weight:700;color:var(--gray-800)">${outletIcon(o.type)} ${esc(o.name)}</div>
+                  <div class="am-muted">${esc(o.outletNumber || o.code || o.id)} · ${esc(displayValue(o.address))}</div>
                 </td>
-              </tr>
-            `).join('')}
+                <td>
+                  <div style="font-weight:600">${esc(model.projectLabel || 'Belum terhubung')}</div>
+                  <div class="am-muted">${esc(model.clientLabel || 'Tanpa client')}${model.shared ? ' · Shared outlet' : ''}</div>
+                </td>
+                <td>
+                  <div>${esc(displayValue(o.type))}</div>
+                  <div class="am-muted">${esc(displayValue(o.area))} · ${esc(displayValue(o.channel))}</div>
+                </td>
+                <td>
+                  <div>${model.visitCount} kunjungan</div>
+                  <div class="am-muted">Terakhir: ${model.lastVisitDate ? esc(formatDateShort(model.lastVisitDate)) : 'Belum ada'}</div>
+                </td>
+                <td>${statusBadge(o.status)}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${o.status === 'active' ? 'Nonaktifkan/Hapus' : 'Hapus'}</button>
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
+      <div id="outletEmpty" class="pm-empty" hidden>Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.</div>
+      <div id="outletPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.outletPage(-1)">Sebelumnya</button><span id="outletPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.outletPage(1)">Berikutnya</button></div>
     </div>
   `;
+  queueMicrotask(() => window.FT?.filterOutlets?.(outletPage));
+  return rendered;
 }
 
-window.FT.filterOutlets = function() {
-  const search = document.getElementById('outletSearch').value.toLowerCase();
-  const type = document.getElementById('outletTypeFilter').value;
-  document.querySelectorAll('#outletTable tbody tr').forEach(row => {
-    let show = true;
-    if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (type && !row.textContent.includes(type)) show = false;
-    row.style.display = show ? '' : 'none';
-  });
+window.FT.outletPage = function(delta) {
+  outletPage = Math.max(1, outletPage + Number(delta || 0));
+  window.FT.filterOutlets(outletPage);
 };
 
-function storeOptionList(rows) {
-  return (rows || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+window.FT.filterOutlets = function(page = outletPage) {
+  const ids = { search:'outletSearch', projectId:'outletProjectFilter', clientId:'outletClientFilter', status:'outletStatusFilter', type:'outletTypeFilter', area:'outletAreaFilter' };
+  const filters = outletFilterSnapshot(key => document.getElementById(ids[key])?.value || '');
+  const rows = [...document.querySelectorAll('#outletTable tbody tr')];
+  const matched = rows.filter(row => outletMatchesFilters({
+    search:row.dataset.search || '',
+    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
+    clientId:row.dataset.client || '',
+    outlet:{ type:row.dataset.type || '', area:row.dataset.area || '', status:row.dataset.status || '' },
+  }, filters));
+  const pageState = paginateOutlets(matched, page, OUTLET_PAGE_SIZE);
+  outletPage = pageState.currentPage;
+  const visible = new Set(pageState.items);
+  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const summary = document.getElementById('outletResultSummary');
+  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} outlet` : (rows.length ? 'Tidak ada outlet yang sesuai filter.' : 'Belum ada outlet.');
+  const empty = document.getElementById('outletEmpty');
+  if (empty) { empty.hidden = pageState.total !== 0; empty.textContent = rows.length ? 'Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.' : 'Belum ada outlet. Tambahkan outlet atau gunakan Bulk Upload.'; }
+  const pager = document.getElementById('outletPager');
+  if (pager) pager.hidden = pageState.total <= OUTLET_PAGE_SIZE;
+  const label = document.getElementById('outletPageLabel');
+  if (label) label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
+  const sync = document.getElementById('outletSyncState');
+  if (sync) sync.innerHTML = outletSyncLabel();
+};
+
+window.FT.resetOutletFilters = function() {
+  ['outletSearch','outletProjectFilter','outletClientFilter','outletStatusFilter','outletTypeFilter','outletAreaFilter'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  outletPage = 1;
+  window.FT.filterOutlets(1);
+};
+
+window.FT.refreshOutlets = async function() {
+  const button = document.getElementById('outletRefreshBtn');
+  try {
+    if (button) { button.disabled = true; button.textContent = 'Memuat…'; }
+    const result = await refreshOperationalData(getDB(), getActor());
+    if (result?.refreshed) { showToast('Data Outlets diperbarui', 'success'); render(); }
+    else { showToast('Data Outlets sudah terbaru'); window.FT.filterOutlets(outletPage); }
+  } catch (error) {
+    showToast(error?.message || 'Refresh Outlets gagal', 'error');
+  } finally {
+    if (button?.isConnected) { button.disabled = false; button.textContent = 'Refresh'; }
+  }
+};
+
+function storeOptionList(rows, selected = '') {
+  return (rows || []).map(v => `<option value="${esc(v)}" ${String(selected) === String(v) ? 'selected' : ''}>${esc(v)}</option>`).join('');
 }
 
 window.FT.syncManagerOutletCatalog = function(projectId) {
   const cat = projectId ? getProjectStoreSettings(projectId) : defaultStoreCatalog();
   const fill = (name, values) => {
-    const sel = document.querySelector(`form[onsubmit*="createOutlet"] select[name="${name}"]`);
+    const sel = document.querySelector(`form[data-outlet-form="1"] select[name="${name}"]`);
     if (!sel) return;
     const cur = sel.value;
-    sel.innerHTML = storeOptionList(values);
-    if (cur && values.includes(cur)) sel.value = cur;
+    sel.innerHTML = storeOptionList(values, cur);
+    if (cur && !values.includes(cur)) sel.insertAdjacentHTML('afterbegin', `<option value="${esc(cur)}" selected>${esc(cur)}</option>`);
   };
   fill('channel', cat.segments);
   fill('ownership', cat.ownerships);
   fill('type', cat.types);
-  const notesWrap = document.getElementById('outletNotesWrap');
-  if (notesWrap) notesWrap.outerHTML = `<div id="outletNotesWrap">${outletNotesField(cat)}</div>`;
 };
 
 window.FT.openOutletModal = function() {
   const cat = defaultStoreCatalog();
   openModal('New Outlet', `
-    <form data-pqt-onsubmit="FT.createOutlet(event)">
+    <form data-outlet-form="1" data-pqt-onsubmit="FT.createOutlet(event)">
       <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
       ${entityScopeFields().replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required data-pqt-onchange="FT.syncManagerOutletCatalog(this.value)">')}
       <div class="form-group">
         <label class="label">Lokasi di peta</label>
-        <div class="filter-row" style="margin-bottom:8px">
-          <input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat...">
-          <button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button>
-        </div>
+        <div class="filter-row" style="margin-bottom:8px"><input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat..."><button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button></div>
         <div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div>
         <div class="am-muted" id="outletMapHint" style="margin-top:6px">Klik peta untuk menandai titik toko. Alamat terisi otomatis.</div>
-        <input type="hidden" name="lat" id="outletLat" required>
-        <input type="hidden" name="lng" id="outletLng" required>
-        <input type="hidden" name="mapLabel" id="outletMapLabel">
+        <input type="hidden" name="lat" id="outletLat" required><input type="hidden" name="lng" id="outletLng" required><input type="hidden" name="mapLabel" id="outletMapLabel">
       </div>
       <div class="form-group"><label class="label">Alamat (otomatis dari peta, bisa diedit)</label><textarea class="textarea" name="address" id="outletAddress" required></textarea></div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Segment</label>
-          <select class="select" name="channel">${storeOptionList(cat.segments)}</select>
-        </div>
-        <div class="form-group"><label class="label">Akun (ownership store)</label>
-          <select class="select" name="ownership">${storeOptionList(cat.ownerships)}</select>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Type (tipe store)</label>
-          <select class="select" name="type">${storeOptionList(cat.types)}</select>
-        </div>
-        <div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div>
-        <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
-      </div>
+      <div class="form-row"><div class="form-group"><label class="label">Segment</label><select class="select" name="channel">${storeOptionList(cat.segments)}</select></div><div class="form-group"><label class="label">Akun (ownership store)</label><select class="select" name="ownership">${storeOptionList(cat.ownerships)}</select></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Type (tipe store)</label><select class="select" name="type">${storeOptionList(cat.types)}</select></div><div class="form-group"><label class="label">Area / Kota</label><input class="input" name="area" id="outletArea" required></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Telepon</label><input class="input" name="phone"></div><div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div></div>
       <div id="outletNotesWrap">${outletNotesField(cat)}</div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Frekuensi kunjungan</label>
-          <select class="select" name="visitFrequency"><option>Mingguan</option><option>Bulanan</option></select>
-        </div>
-        <div class="form-group"><label class="label">Status</label>
-          <select class="select" name="status"><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select>
-        </div>
-      </div>
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
-      </div>
-    </form>
-  `);
+      <div class="form-row"><div class="form-group"><label class="label">Frekuensi kunjungan</label><select class="select" name="visitFrequency"><option>Mingguan</option><option>Bulanan</option></select></div><div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div>
+    </form>`);
   setTimeout(() => window.FS?.initOutletMap?.(), 80);
 };
 
@@ -2407,172 +2486,104 @@ function normalizeOutletFormCoordinates(data) {
   return { lat, lng };
 }
 
-async function confirmOutletCloudSync() {
-  await waitForOperationalSync();
-}
+async function confirmOutletCloudSync() { await waitForOperationalSync(); }
 
 window.FT.createOutlet = async function(e) {
   e.preventDefault();
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const form = e.target;
-  const submit = form.querySelector('button[type="submit"]');
-  const fd = new FormData(form);
-  const data = Object.fromEntries(fd);
+  const form=e.target, submit=form.querySelector('button[type="submit"]'), data=Object.fromEntries(new FormData(form));
   try {
     if (!data.lat || !data.lng) throw new Error('Tandai titik toko di peta atau cari lokasi dulu.');
-    const coordinates = normalizeOutletFormCoordinates(data);
-    data.lat = coordinates.lat;
-    data.lng = coordinates.lng;
-    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
+    Object.assign(data, normalizeOutletFormCoordinates(data));
+    if (submit) { submit.disabled=true; submit.textContent='Menyimpan…'; }
     createOutlet(data);
-    if (submit) submit.textContent = 'Sinkronisasi…';
+    if (submit) submit.textContent='Sinkronisasi…';
     await confirmOutletCloudSync();
-    closeModal();
-    showToast('Outlet berhasil disimpan dan tersinkron ke cloud', 'success');
-    render();
+    closeModal(); showToast('Outlet berhasil disimpan dan tersinkron ke cloud','success'); render();
   } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  } finally {
-    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
-  }
+    restoreOperationalBaseline(getDB()); showToast(error.message || String(error),'error'); render();
+  } finally { if (submit?.isConnected) { submit.disabled=false; submit.textContent='Simpan'; } }
 };
 
 window.FT.deleteOutlet = async function(id) {
-  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const references = outletReferenceSummary(id);
-  const message = references.total > 0
-    ? `Outlet memiliki ${references.total} data operasional terkait. Outlet akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`
-    : 'Hapus outlet ini? Tindakan ini hanya berlaku bila outlet belum memiliki data operasional terkait.';
+  if (!isProjectAdmin()) { showToast('Akses ditolak','error'); return; }
+  const references=outletReferenceSummary(id);
+  const message=references.total>0 ? `Outlet memiliki ${references.total} data operasional terkait. Outlet akan dinonaktifkan agar histori tetap utuh. Lanjutkan?` : 'Hapus outlet ini? Tindakan ini hanya berlaku bila outlet belum memiliki data operasional terkait.';
   if (!confirm(message)) return;
   try {
-    const result = deleteOutlet(id);
-    await confirmOutletCloudSync();
-    showToast(result.deactivated ? 'Outlet dinonaktifkan dan histori tetap dipertahankan' : 'Outlet berhasil dihapus', 'success');
-    render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  }
+    const result=deleteOutlet(id); await confirmOutletCloudSync();
+    showToast(result.deactivated ? 'Outlet dinonaktifkan dan histori tetap dipertahankan' : 'Outlet berhasil dihapus','success'); render();
+  } catch (error) { restoreOperationalBaseline(getDB()); showToast(error.message || String(error),'error'); render(); }
 };
 
 // ===== Outlet Detail =====
 function renderOutletDetail(id) {
-  const o = getOutlets().find(x => x.id === id);
-  if (!o) return `<div class="empty-state"><h3>Outlet tidak ditemukan</h3></div>`;
-  const visits = getVisits().filter(v => v.outletId === id).sort((a,b) => b.date.localeCompare(a.date));
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-
+  const o=getOutlets().find(x=>x.id===id);
+  if(!o) return '<div class="empty-state"><h3>Outlet tidak ditemukan</h3></div>';
+  const db=getDB(), model=outletOperationalModel(o,{projects:db.projects||[],clients:db.clients||[],visits:getVisits()});
+  const visits=getVisits().filter(v=>v.outletId===id).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const empMap=Object.fromEntries(getEmployees().map(e=>[e.id,e]));
   return `
-    <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; margin-bottom:24px;">
-      <div class="card" style="flex:0 0 320px;">
-        <div style="text-align:center; padding:12px 0 20px;">
-          <div style="font-size:48px; margin-bottom:8px;">${outletIcon(o.type)}</div>
-          <div style="font-size:18px; font-weight:800; color:var(--gray-900);">${esc(o.name)}</div>
-          <div style="margin-top:4px;">${statusBadge(o.status)}</div>
-        </div>
+    <div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap;margin-bottom:24px">
+      <div class="card" style="flex:0 0 340px">
+        <div style="text-align:center;padding:12px 0 20px"><div style="font-size:48px;margin-bottom:8px">${outletIcon(o.type)}</div><div style="font-size:18px;font-weight:800;color:var(--gray-900)">${esc(o.name)}</div><div style="margin-top:4px">${statusBadge(o.status)}</div></div>
         <div class="detail-grid">
-          <div class="detail-label">ID</div><div class="detail-value">${esc(displayValue(o.id))}</div>
+          <div class="detail-label">Kode</div><div class="detail-value">${esc(displayValue(o.outletNumber||o.code||o.id))}</div>
+          <div class="detail-label">Project</div><div class="detail-value">${esc(model.projectLabel||'—')}</div>
+          <div class="detail-label">Client</div><div class="detail-value">${esc(model.clientLabel||'—')}</div>
           <div class="detail-label">Tipe</div><div class="detail-value">${esc(displayValue(o.type))}</div>
-          <div class="detail-label">Alamat</div><div class="detail-value full">${esc(o.address)}</div>
+          <div class="detail-label">Segment</div><div class="detail-value">${esc(displayValue(o.channel))}</div>
+          <div class="detail-label">Ownership</div><div class="detail-value">${esc(displayValue(o.ownership))}</div>
+          <div class="detail-label">Alamat</div><div class="detail-value full">${esc(displayValue(o.address))}</div>
           <div class="detail-label">Pemilik</div><div class="detail-value">${esc(displayValue(o.owner))}</div>
           <div class="detail-label">Telepon</div><div class="detail-value">${esc(displayValue(o.phone))}</div>
           <div class="detail-label">Area</div><div class="detail-value">${esc(displayValue(o.area))}</div>
-          <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lng)) ? `${Number(o.lat).toFixed(4)}, ${Number(o.lng).toFixed(4)}` : '—'}</div>
+          <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(o.lat))&&Number.isFinite(Number(o.lng))?`${Number(o.lat).toFixed(4)}, ${Number(o.lng).toFixed(4)}`:'—'}</div>
           <div class="detail-label">Frekuensi</div><div class="detail-value">${esc(displayValue(o.visitFrequency))}</div>
+          <div class="detail-label">Notes</div><div class="detail-value full">${esc(displayValue(o.notes))}</div>
         </div>
-        <div style="display:flex; gap:8px; margin-top:20px;">
-          <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlets'">← Kembali</button>
-          <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editOutlet(${jsArg(o.id)})">Edit</button>
-        </div>
+        <div style="display:flex;gap:8px;margin-top:20px"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlets'">← Kembali</button><button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editOutlet(${jsArg(o.id)})">Edit</button></div>
       </div>
-      <div style="flex:1; min-width:300px;">
-        <div class="card">
-          <div class="card-title">Riwayat Kunjungan</div>
-          <div class="card-subtitle">${visits.length} kunjungan</div>
-          ${visits.length === 0 ? `<div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada riwayat</h3></div>` : `
-          <div class="visits-table-wrapper"><table class="table">
-            <thead><tr><th>Tanggal</th><th>Karyawan</th><th>Check In</th><th>Status</th></tr></thead>
-            <tbody>
-              ${visits.map(v => { const emp = empMap[v.employeeId]; return `
-                <tr>
-                  <td>${formatDateShort(v.date)}</td>
-                  <td>${esc(emp ? emp.name : '-')}</td>
-                  <td>${esc(v.checkInTime || '-')}</td>
-                  <td>${statusBadge(v.status)}</td>
-                </tr>
-              `; }).join('')}
-            </tbody>
-          </table></div>
-          `}
-        </div>
-      </div>
-    </div>
-  `;
+      <div style="flex:1;min-width:300px"><div class="card"><div class="card-title">Riwayat Kunjungan</div><div class="card-subtitle">${visits.length} kunjungan · terakhir ${model.lastVisitDate?esc(formatDateShort(model.lastVisitDate)):'belum ada'}</div>
+        ${visits.length===0?'<div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada riwayat</h3></div>':`<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Tanggal</th><th>Karyawan</th><th>Check In</th><th>Status</th></tr></thead><tbody>${visits.map(v=>{const emp=empMap[v.employeeId];return `<tr><td>${formatDateShort(v.date)}</td><td>${esc(emp?emp.name:'-')}</td><td>${esc(v.checkInTime||'-')}</td><td>${statusBadge(v.status)}</td></tr>`}).join('')}</tbody></table></div>`}
+      </div></div>
+    </div>`;
 }
 
 window.FT.editOutlet = function(id) {
-  const o = getOutlets().find(x => x.id === id);
-  if (!o) return;
+  const o=getOutlets().find(x=>x.id===id);
+  if(!o) return;
+  const projectId=o.projectIds?.[0]||'';
+  const cat=projectId?getProjectStoreSettings(projectId):defaultStoreCatalog();
   openModal('Edit Outlet', `
-    <form data-pqt-onsubmit="FT.updateOutlet(event, ${jsArg(id)})">
+    <form data-outlet-form="1" data-pqt-onsubmit="FT.updateOutlet(event, ${jsArg(id)})">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(o.name)}" required></div>
-      ${entityScopeFields(o)}
-      <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${esc(o.address)}" required></div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="label">Tipe</label>
-          <select class="select" name="type">${['Toko Kelontong','Minimarket','Restoran','Warung Kopi','Apotek','Toko Bangunan','Toko Elektronik','Bakery','Toko Fashion'].map(t => `<option ${o.type===t?'selected':''}>${t}</option>`).join('')}</select>
-        </div>
-        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(o.area ?? '')}" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${esc(o.owner ?? '')}" required></div>
-        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(o.phone ?? '')}" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Lat</label><input class="input" type="number" step="0.0001" name="lat" value="${esc(o.lat ?? '')}" required></div>
-        <div class="form-group"><label class="label">Lng</label><input class="input" type="number" step="0.0001" name="lng" value="${esc(o.lng ?? '')}" required></div>
-      </div>
-      <div class="form-row">
-        <div class="form-group"><label class="label">Frekuensi</label><select class="select" name="visitFrequency"><option ${o.visitFrequency==='Mingguan'?'selected':''}>Mingguan</option><option ${o.visitFrequency==='Bulanan'?'selected':''}>Bulanan</option></select></div>
-        <div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${o.status==='active'?'selected':''}>Active</option><option value="inactive" ${o.status==='inactive'?'selected':''}>Inactive</option></select></div>
-      </div>
-      <div class="modal-footer" style="padding:0; margin-top:8px;">
-        <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-        <button type="submit" class="btn btn-primary">Simpan</button>
-      </div>
-    </form>
-  `);
+      ${entityScopeFields(o).replace('<select class="select" name="projectId" required>', '<select class="select" name="projectId" required data-pqt-onchange="FT.syncManagerOutletCatalog(this.value)">')}
+      <div class="form-group"><label class="label">Lokasi di peta</label><div class="filter-row" style="margin-bottom:8px"><input class="input search-input" id="outletMapSearch" placeholder="Cari alamat / nama jalan / tempat..."><button type="button" class="btn btn-secondary" data-pqt-onclick="FS.searchOutletMap()">Cari</button></div><div id="outletPickMap" style="height:240px;border-radius:14px;border:1px solid var(--gray-200);overflow:hidden"></div><div class="am-muted" id="outletMapHint" style="margin-top:6px">Titik saat ini akan ditampilkan. Klik peta untuk memindahkan lokasi.</div><input type="hidden" name="lat" id="outletLat" value="${esc(o.lat??'')}" required><input type="hidden" name="lng" id="outletLng" value="${esc(o.lng??'')}" required><input type="hidden" name="mapLabel" id="outletMapLabel"></div>
+      <div class="form-group"><label class="label">Alamat</label><textarea class="textarea" name="address" id="outletAddress" required>${esc(o.address||'')}</textarea></div>
+      <div class="form-row"><div class="form-group"><label class="label">Segment</label><select class="select" name="channel">${storeOptionList(cat.segments,o.channel)}</select></div><div class="form-group"><label class="label">Akun (ownership store)</label><select class="select" name="ownership">${storeOptionList(cat.ownerships,o.ownership)}</select></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Type</label><select class="select" name="type">${storeOptionList(cat.types,o.type)}</select></div><div class="form-group"><label class="label">Area</label><input class="input" name="area" id="outletArea" value="${esc(o.area??'')}" required></div></div>
+      <div class="form-row"><div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${esc(o.owner??'')}"></div><div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(o.phone??'')}"></div></div>
+      <div id="outletNotesWrap">${outletNotesField(cat,o.notes||'')}</div>
+      <div class="form-row"><div class="form-group"><label class="label">Frekuensi</label><select class="select" name="visitFrequency"><option ${o.visitFrequency==='Mingguan'?'selected':''}>Mingguan</option><option ${o.visitFrequency==='Bulanan'?'selected':''}>Bulanan</option></select></div><div class="form-group"><label class="label">Status</label><select class="select" name="status"><option value="active" ${o.status==='active'?'selected':''}>Active</option><option value="inactive" ${o.status==='inactive'?'selected':''}>Inactive</option><option value="archived" ${o.status==='archived'?'selected':''}>Archived</option></select></div></div>
+      <div class="modal-footer" style="padding:0;margin-top:8px"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div>
+    </form>`);
+  setTimeout(()=>window.FS?.initOutletMap?.(),80);
 };
 
-window.FT.updateOutlet = async function(e, id) {
+window.FT.updateOutlet = async function(e,id) {
   e.preventDefault();
-  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const form = e.target;
-  const submit = form.querySelector('button[type="submit"]');
-  const fd = new FormData(form);
-  const data = Object.fromEntries(fd);
-  try {
-    const coordinates = normalizeOutletFormCoordinates(data);
-    data.lat = coordinates.lat;
-    data.lng = coordinates.lng;
-    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
-    updateOutlet(id, data);
-    if (submit) submit.textContent = 'Sinkronisasi…';
+  if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
+  const form=e.target,submit=form.querySelector('button[type="submit"]'),data=Object.fromEntries(new FormData(form));
+  try{
+    Object.assign(data,normalizeOutletFormCoordinates(data));
+    if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}
+    updateOutlet(id,data);
+    if(submit)submit.textContent='Sinkronisasi…';
     await confirmOutletCloudSync();
-    closeModal();
-    showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud', 'success');
-    render();
-  } catch (error) {
-    restoreOperationalBaseline(getDB());
-    showToast(error.message || String(error), 'error');
-    render();
-  } finally {
-    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
-  }
+    closeModal();showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud','success');render();
+  }catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
+  finally{if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}}
 };
 
 function greetingNow() {
