@@ -3,7 +3,7 @@ import {
   getPriceObservations, getCompetitorIntel, getFieldPhotos, getFieldPhotosByEmployee,
   getAttendance, createAttendance, getAttendancePoints, createAttendancePoint,
   getVisitLocations, getVisitsOnDate, visitDay, FIELD_PHOTO_TYPES,
-  getOrganization, getCurrentOrgId, getDB,
+  getOrganization, getCurrentOrgId, getDB, getActor,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
   canEmployeeAddStore, storeCatalogForEmployee, formatOutletLabel,
   getAttendancePolicy, getEmployee,
@@ -14,6 +14,7 @@ import {
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
 import { locationFreshness, locationSourceLabel, visitLocationEvidence } from './lib/location-evidence.js';
+import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 
 function empId() {
   return window.FT?.state?.account?.employeeId || null;
@@ -335,17 +336,20 @@ function proposalStatusLabel(p) {
 export function renderOutletProposalForm() {
   const db = getDB();
   const projects = (db.projects || []).filter(p => ['active', 'planning'].includes(p.status));
+  const manualProjectIds = new Set(projects.filter(p => p.outletApprovalMode === 'manual').map(p => p.id));
   const mine = getOutletProposals();
   const role = window.FT?.state?.account?.role;
   const emp = getEmployees().find(e => e.id === empId());
   const canAdd = role !== 'employee' || canEmployeeAddStore(empId());
   const catalog = storeCatalogForEmployee(empId());
+  const autoApproved = catalog.approvalMode !== 'manual';
+  const reviewRows = role === 'employee' ? mine : getOutletProposals().filter(p => manualProjectIds.has(p.projectId));
   const opt = (rows) => (rows || []).map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
   return `
     ${role === 'employee' && canAdd ? `
     <div class="card">
-      <div class="card-title">Ajukan toko baru</div>
-      <div class="card-subtitle">Ambil lokasi dari perangkat. Alamat terisi otomatis. Project mengikuti assignment Anda.</div>
+      <div class="card-title">${autoApproved ? 'Tambah Outlet' : 'Ajukan toko baru'}</div>
+      <div class="card-subtitle">${autoApproved ? 'Outlet akan aktif otomatis setelah validasi.' : 'Project ini menggunakan Manual Approval.'} Ambil lokasi dari perangkat; project mengikuti assignment Anda.</div>
       <form data-pqt-onsubmit="FS.submitOutlet(event)">
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
         <div class="form-group">
@@ -377,17 +381,17 @@ export function renderOutletProposalForm() {
           <div class="form-group"><label class="label">Pemilik / PIC toko</label><input class="input" name="owner"></div>
         </div>
         ${outletNotesField(catalog)}
-        <button class="btn btn-primary" type="submit">Submit for approval</button>
+        <button class="btn btn-primary" type="submit">${autoApproved ? 'Tambah Outlet' : 'Submit for Approval'}</button>
       </form>
     </div>` : ''}
     <div class="card" style="margin-top:16px">
-      <div class="card-title">${role === 'employee' ? 'Status pengajuan saya' : 'Antrian persetujuan toko baru'}</div>
-      ${role !== 'employee' ? '<div class="card-subtitle">Sales mengajukan dari menu Toko Baru. Supervisor dan manager masing-masing harus menyetujui sebelum toko masuk master.</div>' : ''}
+      <div class="card-title">${role === 'employee' ? 'Outlet baru saya' : 'Antrian Manual Approval'}</div>
+      ${role !== 'employee' ? '<div class="card-subtitle">Hanya project yang secara eksplisit menggunakan Manual Approval yang tampil di sini.</div>' : ''}
       <div class="visits-table-wrapper">
         <table class="table">
           <thead><tr><th>Toko</th><th>Area</th><th>Diajukan</th><th>Status</th>${role !== 'employee' ? '<th></th>' : ''}</tr></thead>
           <tbody>
-            ${(role === 'employee' ? mine : getOutletProposals()).length ? (role === 'employee' ? mine : getOutletProposals()).map(p => `
+            ${reviewRows.length ? reviewRows.map(p => `
               <tr>
                 <td><strong>${esc(p.outletNumber || '')} ${esc(p.name)}</strong><div class="am-muted">${esc(p.address || '')}</div></td>
                 <td>${esc(p.area || p.city || '—')}</td>
@@ -395,7 +399,7 @@ export function renderOutletProposalForm() {
                 <td>${esc(proposalStatusLabel(p))}</td>
                 ${role !== 'employee' && p.status === 'pending' ? `<td>
                   <select class="select" id="proj-${p.id}" style="min-width:140px;margin-bottom:6px">
-                    ${projects.map(pr => `<option value="${pr.id}" ${p.projectId === pr.id ? 'selected' : ''}>${esc(pr.code || pr.name)}</option>`).join('')}
+                    ${projects.filter(pr => manualProjectIds.has(pr.id)).map(pr => `<option value="${pr.id}" ${p.projectId === pr.id ? 'selected' : ''}>${esc(pr.code || pr.name)}</option>`).join('')}
                   </select>
                   <button class="btn btn-primary btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','approved')">Setujui</button>
                   <button class="btn btn-danger btn-sm" data-pqt-onclick="FS.reviewOutlet('${p.id}','rejected')">Tolak</button>
@@ -407,30 +411,57 @@ export function renderOutletProposalForm() {
     </div>`;
 }
 
-window.FS.submitOutlet = function(e) {
+window.FS.submitOutlet = async function(e) {
   e.preventDefault();
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  let cloudCommitted = false;
   try {
-    const data = Object.fromEntries(new FormData(e.target).entries());
+    const data = Object.fromEntries(new FormData(form).entries());
     if (!data.lat || !data.lng) throw new Error('Ambil lokasi toko dulu.');
     if (data.notesKind === 'dropdown') data.notes = data.notesChoice || '';
     delete data.notesChoice;
+    const catalog = storeCatalogForEmployee(empId());
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     createOutletProposal(data);
-    window.showToast?.('Pengajuan toko terkirim. Menunggu supervisor dan manager.', 'success');
-    e.target.reset();
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await waitForOperationalSync();
+    cloudCommitted = true;
+    await refreshOperationalData(getDB(), getActor()).catch(() => null);
+    window.showToast?.(
+      catalog.approvalMode === 'manual'
+        ? 'Pengajuan outlet terkirim untuk approval.'
+        : 'Outlet berhasil ditambahkan dan aktif.',
+      'success'
+    );
+    form.reset();
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch (err) {
+    if (!cloudCommitted) restoreOperationalBaseline(getDB());
     window.showToast?.(err.message || err, 'error');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  } finally {
+    if (submit?.isConnected) {
+      submit.disabled = false;
+      submit.textContent = storeCatalogForEmployee(empId()).approvalMode === 'manual' ? 'Submit for Approval' : 'Tambah Outlet';
+    }
   }
 };
 
-window.FS.reviewOutlet = function(id, decision) {
+window.FS.reviewOutlet = async function(id, decision) {
+  let cloudCommitted = false;
   try {
     const projectId = document.getElementById('proj-' + id)?.value || null;
     const row = reviewOutletProposal(id, decision, '', projectId);
-    window.showToast?.(row.status === 'approved' ? 'Toko disetujui dan masuk master.' : decision === 'approved' ? 'Persetujuan Anda tercatat. Menunggu pihak lain.' : 'Pengajuan ditolak.', 'success');
+    await waitForOperationalSync();
+    cloudCommitted = true;
+    await refreshOperationalData(getDB(), getActor()).catch(() => null);
+    window.showToast?.(row.status === 'approved' ? 'Outlet disetujui dan aktif.' : decision === 'approved' ? 'Persetujuan Anda tercatat.' : 'Pengajuan ditolak.', 'success');
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   } catch (err) {
+    if (!cloudCommitted) restoreOperationalBaseline(getDB());
     window.showToast?.(err.message || err, 'error');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
   }
 };
 
