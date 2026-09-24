@@ -936,7 +936,7 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   return null;
 }
 
-async function validateProjectAssignmentMutation(env, organizationId, row, existing = null) {
+async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
   const employeeId = str(row.employeeId || existing?.employee_id);
@@ -971,8 +971,6 @@ async function validateProjectAssignmentMutation(env, organizationId, row, exist
     "SELECT id,auth_user_id,employment_status FROM core_employees WHERE organization_id=? AND id=? LIMIT 1"
   ).bind(organizationId,employeeId).first();
   if (!employee) return { error:'ASSIGNMENT_EMPLOYEE_NOT_FOUND', status:422 };
-  if (str(employee.employment_status) !== 'active') return { error:'ASSIGNMENT_EMPLOYEE_INACTIVE', status:409 };
-  if (!str(employee.auth_user_id)) return { error:'ASSIGNMENT_EMPLOYEE_LOGIN_REQUIRED', status:409 };
 
   if (existing) {
     if (str(existing.project_id) !== projectId || str(existing.employee_id) !== employeeId) {
@@ -981,11 +979,35 @@ async function validateProjectAssignmentMutation(env, organizationId, row, exist
     const currentStatus = str(existing.status);
     if (currentStatus === 'ended') return { error:'ASSIGNMENT_FINAL', status:409 };
     if (currentStatus === 'active' && !['active','ended'].includes(status)) return { error:'ASSIGNMENT_INVALID_TRANSITION', status:409 };
+
+    if (currentStatus === 'active' && status === 'ended' && roleOnProject === 'supervisor') {
+      const activeDependents = await allRows(env.DB.prepare(
+        "SELECT id,metadata_json FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND status='active' AND id<>?"
+      ).bind(organizationId,projectId,id));
+      const dependentIds = activeDependents
+        .filter(item => {
+          const meta = parseMetadata(item.metadata_json);
+          return ['sales','viewer'].includes(str(meta.roleOnProject || item.position_name))
+            && str(meta.supervisorId) === employeeId;
+        })
+        .map(item => str(item.id))
+        .filter(Boolean);
+      if (dependentIds.length) {
+        const closingIds = new Set((context.batchAssignments || [])
+          .filter(item => str(item.projectId || item.project_id) === projectId && str(item.status) === 'ended')
+          .map(item => str(item.id))
+          .filter(Boolean));
+        const remaining = dependentIds.filter(dependentId => !closingIds.has(dependentId));
+        if (remaining.length) return { error:'ASSIGNMENT_SUPERVISOR_HAS_ACTIVE_SUBORDINATES', status:409, remainingSubordinates:remaining.length };
+      }
+    }
   } else if (status !== 'active') {
     return { error:'ASSIGNMENT_MUST_START_ACTIVE', status:422 };
   }
 
   if (status === 'active') {
+    if (str(employee.employment_status) !== 'active') return { error:'ASSIGNMENT_EMPLOYEE_INACTIVE', status:409 };
+    if (!str(employee.auth_user_id)) return { error:'ASSIGNMENT_EMPLOYEE_LOGIN_REQUIRED', status:409 };
     const sameProject = await env.DB.prepare(
       "SELECT id FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active' AND id<>? LIMIT 1"
     ).bind(organizationId,projectId,employeeId,id).first();
@@ -1079,8 +1101,8 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
     }
     if (entity === 'projectAssignments' && op === 'upsert') {
-      const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing);
-      if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated }, assignmentError.status || 422);
+      const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
+      if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated, remainingSubordinates:assignmentError.remainingSubordinates }, assignmentError.status || 422);
     }
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);

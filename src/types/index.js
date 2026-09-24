@@ -1634,6 +1634,7 @@ window.PM = {
         REVISION_CONFLICT:'Data berubah di server. Muat ulang lalu coba kembali.',
         ASSIGNMENT_FINAL:'Assignment sudah berakhir dan tidak dapat diaktifkan kembali.',
         ASSIGNMENT_INVALID_TRANSITION:'Perubahan status assignment tidak diizinkan.',
+        ASSIGNMENT_SUPERVISOR_HAS_ACTIVE_SUBORDINATES:'Supervisor belum dapat diakhiri karena masih memiliki Sales/Viewer aktif. Akhiri atau pindahkan subordinate terlebih dahulu.',
         CHANGE_FORBIDDEN:'Anda tidak memiliki akses untuk mengubah assignment ini.',
         CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap.',
         CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba kembali.',

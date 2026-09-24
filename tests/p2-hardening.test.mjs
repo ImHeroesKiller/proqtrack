@@ -110,6 +110,6 @@ test('PWA precache is runtime-reachable instead of every source file', async () 
   assert.match(build, /runtimeGraph\("src\/entry\.js"\)/);
   assert.match(build, /localDependencies/);
   assert.match(build, /node_modules\/leaflet\/dist\/leaflet\.js/);
-  assert.match(sw, /proqtrack-v12\.33/);
+  assert.match(sw, /proqtrack-v12\.34/);
   assert.match(sw, /\.\/src\/entry\.js/);
 });

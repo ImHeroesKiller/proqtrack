@@ -60,5 +60,5 @@ test('Client P2 cleans orphan uploaded logo after failed commit', async () => {
 
 test('Client P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.33/);
+  assert.match(sw, /proqtrack-v12\.34/);
 });
