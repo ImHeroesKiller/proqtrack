@@ -2868,14 +2868,14 @@ function renderProducts() {
       <div class="visits-table-wrapper"><table class="table" id="productTable">
         <thead><tr><th>Produk</th><th>Project / Client</th><th>Brand / Kategori</th><th>Harga</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          ${models.map(model=>{const p=model.product;return `
+          ${models.map(model=>{const p=model.product,lifecycle=productLifecycleAction(p,productReferenceSummary(p.id).total);return `
             <tr data-search="${esc(model.search)}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}" data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
               <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
               <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
               <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
               <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
               <td>${statusBadge(p.status)}</td>
-              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">Hapus</button></td>
+              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">${esc(lifecycle.label)}</button></td>
             </tr>`;}).join('')}
         </tbody>
       </table></div>
