@@ -235,3 +235,27 @@ test('P1 stock and manual sales require explicit valid project scope in shared c
   assert.match(app,/name="projectId" required/);
   assert.match(app,/Project tidak sesuai dengan relasi outlet dan produk/);
 });
+
+
+test('stability chained correction preserves original available-sales basis', async () => {
+  const row = cycle({
+    id:'IC-CORR-2',
+    openingQty:7,
+    adjustmentQty:1,
+    closingQty:8,
+    adjustmentReason:'Second recount correction for stock balance',
+    correctionOfCycleId:'IC-CORR-1',
+  });
+  const result = await validateInventoryCycleMutation(cycleEnv({
+    sourceCycle:{
+      id:'IC-CORR-1',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1',
+      opening_qty:6,stock_in_qty:0,adjustment_qty:1,return_qty:0,damaged_qty:0,transfer_out_qty:0,
+      closing_qty:7,sell_out_qty:3,unit_price:10000,sales_amount:30000,sale_id:'SALE-CYCLE-IC-CORR-1',
+      metadata_json:JSON.stringify({correctionOfCycleId:'IC-BASE'}),
+    }
+  }),'ORG-1',row,null,{op:'upsert',claims:{role:'manager',sub:'USR-MGR'}});
+  assert.equal(result,null);
+  assert.equal(row.sellOutQty,2);
+  assert.equal(row.salesAmount,20000);
+  assert.equal(row.correctionSourceSaleId,'SALE-CYCLE-IC-CORR-1');
+});
