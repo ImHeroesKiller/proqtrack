@@ -47,7 +47,7 @@ import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
-import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation } from './lib/product-ui.js';
+import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation, productAvailableProjects, productFormModel, normalizeProductFormPayload, productStatusSummary, productLifecycleAction } from './lib/product-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -2776,65 +2776,54 @@ function renderMyVisits() {
 // ===== Products Page (Manager full CRUD) =====
 let productPage = 1;
 
-function productAvailableProjects() {
-  const db=getDB(), actor=getActor();
-  const allowed=new Set([...(actor?.projectIds||[]), ...(actor?.projectId?[actor.projectId]:[])].map(String));
-  return (db.projects||[]).filter(project =>
-    ['active','planning'].includes(project.status) &&
-    (isOrgAdminRole(actor?.role) || allowed.has(String(project.id)))
-  );
-}
-
-function productScopeFields(product = {}) {
-  const db=getDB();
-  const selected=new Set((product.projectIds||[]).map(String));
-  const projects=productAvailableProjects();
-  if (!projects.length) return '<div class="pm-empty">Tidak ada project aktif yang dapat digunakan.</div>';
+function productScopeFields(model) {
+  if (!model.hasAvailableProjects) return '<div class="pm-empty">Tidak ada project aktif yang dapat digunakan.</div>';
   return `
     <div class="form-group">
       <label class="label">Project / Klien</label>
-      <select class="select" name="projectIds" multiple size="${Math.min(6,Math.max(2,projects.length))}" required>
-        ${projects.map(project => {
-          const client=(db.clients||[]).find(client=>client.id===project.clientId);
-          return `<option value="${esc(project.id)}" ${selected.has(String(project.id))?'selected':''}>${esc(client?.name||'Tanpa klien')} — ${esc(project.code||project.id)} / ${esc(project.name||'')}</option>`;
-        }).join('')}
+      <select class="select" name="projectIds" multiple size="${Math.min(6,Math.max(2,model.projectOptions.length))}" required>
+        ${model.projectOptions.map(option => `<option value="${esc(option.id)}" ${option.selected?'selected':''}>${esc(option.label)}</option>`).join('')}
       </select>
       <div class="am-muted" style="margin-top:5px">Bisa memilih beberapa project, tetapi seluruh project harus berasal dari client yang sama.</div>
     </div>`;
 }
 
 function productFormFields(p = null) {
+  const db=getDB(), actor=getActor();
+  const model=productFormModel(p||{},{
+    projects:db.projects||[],
+    clients:db.clients||[],
+    actor,
+    isOrgAdmin:isOrgAdminRole(actor?.role),
+  });
   return `
-    <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${esc(p?.name || '')}" required></div>
-    ${productScopeFields(p || {})}
+    <div class="form-group"><label class="label">Nama Produk</label><input class="input" name="name" value="${esc(model.name)}" required></div>
+    ${productScopeFields(model)}
     <div class="form-row">
-      <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${esc(p?.brand || '')}" placeholder="Nestlé, Unilever..." required></div>
-      <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(p?.sku || '')}" placeholder="NST-XXX-001" required></div>
+      <div class="form-group"><label class="label">Brand / Merek</label><input class="input" name="brand" value="${esc(model.brand)}" placeholder="Nestlé, Unilever..." required></div>
+      <div class="form-group"><label class="label">SKU</label><input class="input" name="sku" value="${esc(model.sku)}" placeholder="NST-XXX-001" required></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(p?.category || '')}" placeholder="Minuman, Snack..." required list="catList"></div>
-      <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${esc(p?.unit || '')}" placeholder="pcs, dus, sak" required></div>
+      <div class="form-group"><label class="label">Kategori</label><input class="input" name="category" value="${esc(model.category)}" placeholder="Minuman, Snack..." required list="catList"></div>
+      <div class="form-group"><label class="label">Satuan</label><input class="input" name="unit" value="${esc(model.unit)}" placeholder="pcs, dus, sak" required></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="label">Harga Jual (Rp)</label><input class="input" type="number" name="price" value="${p?.price ?? ''}" required min="0"></div>
-      <div class="form-group"><label class="label">Cost / HPP (opsional)</label><input class="input" type="number" name="cost" value="${p?.cost ?? ''}" min="0"></div>
+      <div class="form-group"><label class="label">Harga Jual (Rp)</label><input class="input" type="number" name="price" value="${model.price}" required min="0"></div>
+      <div class="form-group"><label class="label">Cost / HPP (opsional)</label><input class="input" type="number" name="cost" value="${model.cost}" min="0"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label class="label">Margin % (opsional)</label><input class="input" type="number" name="margin" value="${p?.margin ?? ''}" min="0" max="100" step="0.1"></div>
+      <div class="form-group"><label class="label">Margin % (opsional)</label><input class="input" type="number" name="margin" value="${model.margin}" min="0" max="100" step="0.1"></div>
       <div class="form-group"><label class="label">Status</label><select class="select" name="status">
-        <option value="active" ${!p||p.status==='active'?'selected':''}>Active</option>
-        <option value="inactive" ${p?.status==='inactive'?'selected':''}>Inactive</option>
-        <option value="archived" ${p?.status==='archived'?'selected':''}>Archived</option>
+        <option value="active" ${model.status==='active'?'selected':''}>Active</option>
+        <option value="inactive" ${model.status==='inactive'?'selected':''}>Inactive</option>
+        <option value="archived" ${model.status==='archived'?'selected':''}>Archived</option>
       </select></div>
     </div>`;
 }
 
 function productFormData(form) {
   const fd=new FormData(form);
-  const data=Object.fromEntries(fd);
-  data.projectIds=fd.getAll('projectIds').map(String).filter(Boolean);
-  delete data.projectId;
-  return data;
+  return normalizeProductFormPayload(Object.fromEntries(fd),fd.getAll('projectIds'));
 }
 
 function productSyncLabel() {
@@ -2850,13 +2839,13 @@ function renderProducts() {
   const products=getProducts(), db=getDB();
   const models=products.map(product=>productOperationalModel(product,{projects:db.projects||[],clients:db.clients||[]}));
   const options=productFilterOptions(products,{projects:db.projects||[],clients:db.clients||[]});
-  const activeCount=products.filter(p=>p.status==='active').length;
+  const statusSummary=productStatusSummary(products);
   const sharedCount=models.filter(model=>model.shared).length;
   const rendered=`
     <div class="grid-4" style="margin-bottom:14px">
-      <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${products.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Aktif</div><div class="stat-value">${activeCount}</div></div>
-      <div class="stat-card"><div class="stat-label">Brand</div><div class="stat-value">${options.brands.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${statusSummary.total}</div></div>
+      <div class="stat-card"><div class="stat-label">Aktif</div><div class="stat-value">${statusSummary.active}</div></div>
+      <div class="stat-card"><div class="stat-label">Brand</div><div class="stat-value">${statusSummary.brands}</div></div>
       <div class="stat-card"><div class="stat-label">Shared Product</div><div class="stat-value">${sharedCount}</div></div>
     </div>
     <div class="card">
@@ -2966,8 +2955,9 @@ window.FT.updateProduct=async function(e,id){
 window.FT.deleteProductConfirm=async function(id){
   if(!isProjectAdmin()){showToast('Akses ditolak','error');return;}
   const references=productReferenceSummary(id);
-  const message=references.total>0?`Produk memiliki ${references.total} data operasional terkait. Produk akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`:'Hapus produk ini? Tindakan ini hanya berlaku jika produk belum memiliki histori operasional.';
-  if(!confirm(message))return;
+  const product=getProducts().find(row=>row.id===id)||{};
+  const lifecycle=productLifecycleAction(product,references.total);
+  if(!confirm(lifecycle.confirm))return;
   try{const result=deleteProduct(id);await waitForOperationalSync();showToast(result.deactivated?'Produk dinonaktifkan dan histori tetap dipertahankan':'Produk berhasil dihapus','success');render();}
   catch(error){restoreOperationalBaseline(getDB());showToast(error.message||String(error),'error');render();}
 };
