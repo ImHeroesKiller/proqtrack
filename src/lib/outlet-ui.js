@@ -51,7 +51,7 @@ export function outletFilterOptions(outlets = [], { projects = [], clients = [] 
   return {
     types:sortText(typeSet),
     areas:sortText(areaSet),
-    projects:projects.filter ? [] : projects.filter(project => projectIds.has(String(project.id))),
+    projects:projects.filter(project => projectIds.has(String(project.id))),
     clients:clients.filter(client => clientIds.has(String(client.id))),
   };
 }
