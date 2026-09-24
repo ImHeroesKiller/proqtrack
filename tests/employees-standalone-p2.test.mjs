@@ -27,12 +27,13 @@ test('Employees standalone P2 surfaces assignment and login state per employee',
 
 test('Employees standalone P2 improves operational actions and feedback', async () => {
   const app = await read('src/app.js');
+  const helper = await read('src/lib/team-employee-ui.js');
   assert.match(app, /refreshEmployees/);
   assert.match(app, /employeeRefreshBtn/);
   assert.match(app, /Memeriksa…/);
   assert.match(app, /Mengunggah…/);
   assert.match(app, /Menyimpan…/);
-  assert.match(app, /assignment aktif yang akan ditutup/);
+  assert.match(app + helper, /assignment aktif yang akan ditutup/);
   assert.match(app, /isProjectAdmin\(\) && e\.status === 'active'/);
 });
 
