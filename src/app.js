@@ -3281,7 +3281,7 @@ window.FT.viewStockHistory = function(id) {
     <div class="visits-table-wrapper"><table class="table">
       <thead><tr><th>Tanggal</th><th>Opening</th><th>Stock In</th><th>Adjustment</th><th>Closing</th><th>Sell-out</th><th>Status</th></tr></thead>
       <tbody>${cycles.length ? cycles.map(row=>`<tr>
-        <td>${formatDateShort(row.cycleDate)}</td><td>${Number(row.openingQty||0)}</td><td>${Number(row.stockInQty||0)}</td>
+        <td>${formatDateShort(row.cycleDate)}${row.correctionOfCycleId ? '<br><span class="am-muted">Correction</span>' : ''}</td><td>${Number(row.openingQty||0)}</td><td>${Number(row.stockInQty||0)}</td>
         <td>${Number(row.adjustmentQty||0)}</td><td>${Number(row.closingQty||0)}</td><td>${Number(row.sellOutQty||0)}</td><td>${statusBadge(row.status||'draft')}</td>
       </tr>`).join('') : '<tr><td colspan="7"><div class="empty-state"><p>Belum ada riwayat Inventory Cycle.</p></div></td></tr>'}</tbody>
     </table></div>
@@ -3353,8 +3353,11 @@ window.FT.editStock = function(id) {
   const pMap = Object.fromEntries(getProducts().map(p=>[p.id,p]));
   const oMap = Object.fromEntries(getOutlets().map(o=>[o.id,o]));
   const recorderRows=getEmployees().filter(row=>row.status==='active'||row.employmentStatus==='active');
+  const sourceCycle=getInventoryCycles()
+    .filter(row=>String(row.projectId||'')===String(s.projectId||'') && row.outletId===s.outletId && row.productId===s.productId && row.status==='finalized')
+    .sort((a,b)=>String(b.finalizedAt||b.cycleDate||'').localeCompare(String(a.finalizedAt||a.cycleDate||'')))[0] || null;
   openModal('Stock Adjustment', `
-    <form data-pqt-onsubmit="FT.updateStock(event,'${id}')">
+    <form data-pqt-onsubmit="FT.updateStock(event,'${id}',${jsArg(sourceCycle?.id||'')})">
       <div class="form-group"><label class="label">Outlet / Produk</label><div style="padding:10px 12px;background:var(--gray-50);border-radius:10px;font-size:14px">${esc(oMap[s.outletId]?.name||'-')} → ${esc(pMap[s.productId]?.name||'-')}</div></div>
       <div class="form-group"><label class="label">Pencatat</label><select class="select" name="employeeId" required><option value="">Pilih employee</option>${recorderRows.map(row=>`<option value="${row.id}" ${(myEmployeeId()||s.updatedBy)===row.id?'selected':''}>${esc(row.name)}</option>`).join('')}</select></div>
       <div class="form-row">
@@ -3363,6 +3366,7 @@ window.FT.editStock = function(id) {
       </div>
       <div class="form-group"><label class="label">Minimum stock</label><input class="input" type="number" name="minStock" value="${s.minStock}" min="0" step="1" required></div>
       <div class="form-group"><label class="label">Alasan adjustment</label><textarea class="textarea" name="adjustmentReason" minlength="10" required placeholder="Jelaskan penyebab koreksi stok..."></textarea></div>
+      ${sourceCycle ? `<div class="am-muted">Koreksi akan mereferensikan cycle ${esc(sourceCycle.id)} dan memperbarui derived sales secara kompensasi.</div>` : '<div class="am-muted">Belum ada finalized cycle sebelumnya; perubahan akan dibuat sebagai cycle baru.</div>'}
       <div class="modal-footer" style="padding:0;margin-top:8px">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Finalisasi Adjustment</button>
@@ -3371,7 +3375,7 @@ window.FT.editStock = function(id) {
   `);
 };
 
-window.FT.updateStock = async function(e, id) {
+window.FT.updateStock = async function(e, id, correctionOfCycleId = '') {
   e.preventDefault();
   const stock = getStocks().find(row => row.id === id);
   if (!stock) return;
@@ -3381,7 +3385,6 @@ window.FT.updateStock = async function(e, id) {
   const closingQty=Number(data.closingQty), openingQty=Number(stock.quantity), minStock=Number(data.minStock);
   const adjustmentQty=closingQty-openingQty;
   if (!employeeId) { showToast('Employee pencatat stok tidak tersedia.', 'error'); return; }
-  if (findInventoryCycleOnDate(getInventoryCycles(),stock.projectId,stock.outletId,stock.productId,todayISO())) { showToast('Cycle stok hari ini sudah ada. Adjustment kedua pada tanggal yang sama diblokir untuk menjaga ledger.', 'error'); return; }
   if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(minStock) || minStock < 0) { showToast('Nilai stok tidak valid.', 'error'); return; }
   if (adjustmentQty === 0 && minStock === Number(stock.minStock)) { showToast('Tidak ada perubahan stok.'); return; }
   try {
@@ -3389,9 +3392,9 @@ window.FT.updateStock = async function(e, id) {
     await runStockSalesMutation(() => createInventoryCycle({
       projectId:stock.projectId, outletId:stock.outletId, productId:stock.productId, employeeId,
       cycleDate:todayISO(), status:'finalized', openingQty, stockInQty:0, adjustmentQty,
-      adjustmentReason:data.adjustmentReason, returnQty:0, damagedQty:0, transferOutQty:0,
-      closingQty, minStock,
-      idempotencyKey:`stock-adjustment:${stock.id}:${todayISO()}:${Date.now()}`,
+      adjustmentReason:data.adjustmentReason, correctionOfCycleId:correctionOfCycleId || null,
+      returnQty:0, damagedQty:0, transferOutQty:0, closingQty, minStock,
+      idempotencyKey:`stock-adjustment:${stock.id}:${correctionOfCycleId||'base'}:${todayISO()}:${Date.now()}`,
     }), {
       successMessage:'Adjustment stok berhasil difinalisasi.',
       onSuccess:()=>{ closeModal(); render(); },
