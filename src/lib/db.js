@@ -1957,7 +1957,7 @@ export function getDashboardStats() {
 }
 
 export function getProductSales() {
-  const rows = scoped(getDB().productSales || []);
+  const rows = scoped(getDB().productSales || []).filter(row => String(row.lifecycleStatus || 'active') !== 'voided');
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
@@ -1965,23 +1965,38 @@ export function getProductSales() {
 }
 
 export function createProductSale(data) {
+  const actor = assertLoggedIn();
+  if (!(isOrgAdminRole(actor.role) || actor.role === 'manager')) {
+    throw new Error('Penjualan manual hanya untuk koreksi/exception oleh Manager/Admin.');
+  }
   assertCanAccessEmployee(data.employeeId);
-  const qty = Number(data.qty);
+  const qty = Number(data.qty ?? data.quantity);
   const unitPrice = Number(data.unitPrice);
+  const manualReason = sanitizePlainText(data.manualReason || data.reason || '');
   if (!data.productId) throw new Error('Product is required');
   if (!Number.isFinite(qty) || qty <= 0) throw new Error('Quantity must be greater than 0');
   if (!Number.isFinite(unitPrice) || unitPrice < 0) throw new Error('Unit price is required');
+  if (manualReason.length < 10) throw new Error('Alasan penjualan manual wajib diisi minimal 10 karakter.');
   const sale = {
     id: uid('SAL'),
     employeeId: data.employeeId,
     productId: data.productId,
     outletId: data.outletId || null,
+    quantity: qty,
     qty,
     unitPrice,
+    totalAmount: Math.round(qty * unitPrice),
     amount: Math.round(qty * unitPrice),
+    soldAt: data.soldAt || data.date || new Date().toISOString(),
     date: data.date || todayISO(),
+    manualReason,
+    provenance: 'manual_override',
+    lifecycleStatus: 'active',
+    idempotencyKey: data.idempotencyKey || uid('IDEMP-SALE'),
+    correctionOfSaleId: data.correctionOfSaleId || null,
     notes: sanitizePlainText(data.notes || ''),
     ...withOrg(data),
+    createdBy: actor.id,
     createdAt: new Date().toISOString(),
   };
   const db = getDB();
@@ -1991,14 +2006,8 @@ export function createProductSale(data) {
   return sale;
 }
 
-export function deleteProductSale(id) {
-  const db = getDB();
-  const idx = (db.productSales || []).findIndex(s => s.id === id);
-  if (idx === -1) return null;
-  assertCanAccessEmployee(db.productSales[idx].employeeId);
-  const [removed] = db.productSales.splice(idx, 1);
-  saveDB();
-  return removed;
+export function deleteProductSale() {
+  throw new Error('Penjualan tidak dapat dihapus. Gunakan correction/void agar audit trail tetap utuh.');
 }
 
 export function monthSalesAmount(employeeId, month = todayISO().slice(0, 7)) {
@@ -2227,40 +2236,16 @@ export function getStocksByProduct(productId) {
   return getStocks().filter(s => s.productId === productId);
 }
 
-export function createStock(data) {
-  assertLoggedIn();
-  assertOperationalContext(getDB(), data, { product: true });
-  const stock = { id: uid('STK'), lastUpdated: new Date().toISOString().slice(0,10), ...withOrg(data) };
-  getDB().stocks.push(stock);
-  saveDB();
-  return stock;
+export function createStock() {
+  throw new Error('Stok adalah read-model dari Inventory Cycle. Gunakan Stock In/Adjustment/Closing pada Inventory Cycle.');
 }
 
-export function updateStock(id, data) {
-  const actor = assertLoggedIn();
-  const db = getDB();
-  const current = getStocks().find(s => s.id === id);
-  if (!current) return null;
-  const idx = db.stocks.findIndex(s => s.id === id);
-  if (idx === -1) return null;
-  const owner = current.updatedBy || current.employeeId || current.recordedBy;
-  if (owner) assertCanAccessEmployee(owner);
-  else if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
-  db.stocks[idx] = {
-    ...db.stocks[idx],
-    ...data,
-    lastUpdated: new Date().toISOString().slice(0, 10),
-    updatedBy: actor.employeeId || actor.id,
-  };
-  saveDB();
-  return db.stocks[idx];
+export function updateStock() {
+  throw new Error('Stok tidak dapat diedit langsung. Gunakan Inventory Cycle agar penjualan dan saldo tetap konsisten.');
 }
 
-export function deleteStock(id) {
-  assertProjectAdmin();
-  const db = getDB();
-  db.stocks = db.stocks.filter(s => s.id !== id);
-  saveDB();
+export function deleteStock() {
+  throw new Error('Stok tidak dapat dihapus langsung. Koreksi dilakukan melalui Inventory Cycle.');
 }
 
 export function getInventoryCycles() {
@@ -2307,7 +2292,15 @@ export function updateInventoryCycle(id, data = {}) {
   const current = db.inventoryCycles[idx];
   if (current.status === 'finalized') throw new Error('Inventory cycle final tidak dapat diubah.');
   assertOperationalContext(db, { ...current, ...data }, { product:true });
-  db.inventoryCycles[idx] = { ...current, ...data };
+  const next = { ...current, ...data };
+  const adjustment = Number(next.adjustmentQty || 0);
+  if (adjustment !== 0 && sanitizePlainText(next.adjustmentReason || '').length < 10) {
+    throw new Error('Alasan adjustment stok wajib diisi minimal 10 karakter.');
+  }
+  if (next.correctionOfCycleId && adjustment === 0) {
+    throw new Error('Correction cycle wajib memiliki adjustment.');
+  }
+  db.inventoryCycles[idx] = next;
   saveDB();
   return db.inventoryCycles[idx];
 }
