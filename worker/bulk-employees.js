@@ -162,6 +162,9 @@ function validateRows(rows, ctx, claims) {
     )) {
       errors.push('EMPLOYEE_ROLE_CHANGE_REQUIRES_ASSIGNMENT_FLOW');
     }
+    if (existing && String(existing.employment_status || '') !== 'active' && row.status === 'active') {
+      errors.push('EMPLOYEE_REACTIVATION_REQUIRES_STAFFING_FLOW');
+    }
     if (!existing && !row.projectRef) errors.push('PROJECT_REQUIRED');
     const project = row.projectRef ? ctx.projectByRef.get(lower(row.projectRef)) : null;
     if (row.projectRef && !project) errors.push('PROJECT_NOT_FOUND');
