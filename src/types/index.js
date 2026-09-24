@@ -560,8 +560,9 @@ function accessibleProjectIds() {
   if (role() === "manager")
     return new Set((viewDB().projects || []).map((p) => p.id));
   if (role() === "project-manager") {
-    const pid = account()?.projectId;
-    return new Set(pid ? [pid] : []);
+    const projectIds = Array.isArray(account()?.projectIds) ? account().projectIds : [];
+    const ids = projectIds.length ? projectIds : (account()?.projectId ? [account().projectId] : []);
+    return new Set(ids.map(String).filter(Boolean));
   }
   return new Set(
     activeAssignments(account()?.employeeId).map((a) => a.projectId),
@@ -599,8 +600,8 @@ function scopedEmployees(projectId = null) {
     me = employee();
   if (r === "manager") return db.employees || [];
   if (r === "project-manager") {
-    const pid = account()?.projectId;
-    const ids = new Set((db.projectAssignments || []).filter((a) => a.projectId === pid && a.status === "active").map((a) => a.employeeId));
+    const projectIds = accessibleProjectIds();
+    const ids = new Set((db.projectAssignments || []).filter((a) => projectIds.has(a.projectId) && a.status === "active").map((a) => a.employeeId));
     return (db.employees || []).filter((e) => ids.has(e.id));
   }
   if (r === "supervisor")
@@ -1346,8 +1347,21 @@ window.PM = {
     if (submit) submit.disabled = true;
     try {
       const cloud = cloudDataStatus();
+      const closingAssignments = old && ['completed','cancelled'].includes(data.status) && old.status !== data.status
+        ? (db.projectAssignments || []).filter((assignment) => assignment.projectId === data.id && assignment.status === 'active').map((assignment) => ({
+            ...assignment,
+            status:'ended',
+            endedAt:now(),
+            endedBy:account()?.id || null,
+            updatedAt:now(),
+          }))
+        : [];
+      const authoritativeChanges = [
+        { entity:'projects', op:'upsert', row:data },
+        ...closingAssignments.map((row) => ({ entity:'projectAssignments', op:'upsert', row })),
+      ];
       if (cloud.cutoverMode === 'cloud') {
-        await commitOperationalChanges([{ entity:'projects', op:'upsert', row:data }]);
+        await commitOperationalChanges(authoritativeChanges);
       } else if (account()?.cloudIdentity) {
         throw Object.assign(new Error('CLOUD_SYNC_UNAVAILABLE'), { code:'CLOUD_SYNC_UNAVAILABLE' });
       }
@@ -1355,6 +1369,10 @@ window.PM = {
       const i = rows.findIndex((x) => x.id === id);
       i >= 0 ? (rows[i] = data) : rows.push(data);
       db.projects = rows;
+      if (closingAssignments.length) {
+        const closedById = new Map(closingAssignments.map((assignment) => [assignment.id, assignment]));
+        db.projectAssignments = (db.projectAssignments || []).map((assignment) => closedById.get(assignment.id) || assignment);
+      }
       if (!db.projectSettings.some((s) => s.projectId === data.id)) {
         db.projectSettings.push({
           projectId: data.id,
@@ -1367,7 +1385,7 @@ window.PM = {
       persistView(db);
       this.close();
       renderProjects(false);
-      window.showToast?.('Project tersimpan dan tersinkron.', 'success');
+      window.showToast?.(closingAssignments.length ? `Project tersimpan; ${closingAssignments.length} assignment aktif ditutup.` : 'Project tersimpan dan tersinkron.', 'success');
     } catch (error) {
       const message = {
         REVISION_CONFLICT:'Data berubah di server. Muat ulang data lalu coba simpan kembali.',
