@@ -11,7 +11,7 @@ Snapshot kondisi pada **23 September 2026**, setelah hardening P0–P3. Perbarui
 | D1 live | binding `DB` → `proqtrack-mvp` |
 | R2 live | binding `FILES` → `proqtrack-mvp-files` |
 | Milestone config | `M7` |
-| Service Worker | `proqtrack-v12.21` |
+| Service Worker | `proqtrack-v12.22` |
 | Migrasi terakhir | `0024_p2_operational_cloud_authority.sql` |
 | Test baseline | 214 tests pada baseline pasca hotfix superadmin |
 | Deploy | PR → merge `main` → GitHub Actions |
@@ -89,7 +89,7 @@ Baseline P0:
 - `src/m4-bootstrap.js` tetap memasang offline engine, evidence queue, offline login, dan registrasi service worker.
 - Report core, Phase 4 report extensions, serta M6 client dimuat dari bootstrap yang sama.
 - `window.__PROQTRACK_BOOT__` menyediakan status diagnostik `loading|ready|degraded` tanpa menampilkan istilah teknis ke UI.
-- PWA cache baseline saat ini `proqtrack-v12.21`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
+- PWA cache baseline saat ini `proqtrack-v12.22`; precache hanya memasukkan application shell yang runtime-reachable dan assets.
 - `assets/logo.js` tidak boleh lagi menjadi tempat import side-effect aplikasi.
 
 Regression guard berada di `tests/runtime-bootstrap.test.mjs`.
@@ -127,7 +127,7 @@ Empat kelompok maintainability debt ditutup pada baseline ini:
 1. Seluruh active UI template berpindah dari executable `on*=...` attributes ke `data-pqt-on*` + delegated dispatcher `src/lib/ui-events.js`. Dispatcher memakai grammar terbatas dan tidak memakai `eval` atau `new Function`.
 2. XLSX/DOCX/ZIP/PDF report export tidak lagi memuat JSZip/jsPDF dari CDN. Packaging dilakukan lokal melalui `src/lib/document-export.js`, sehingga executable CSP dapat menjadi self-only.
 3. Snapshot offline yang mengalami revision conflict diberi `requiresReview` dan tidak dapat auto-replay pada reconnect/login berikutnya. User dapat mempertahankan salinan untuk review atau memilih versi server secara eksplisit.
-4. Runtime bootstrap naik ke `p3-runtime-2026-09-23` dan service-worker cache ke `proqtrack-v12.21`.
+4. Runtime bootstrap naik ke `p3-runtime-2026-09-23` dan service-worker cache ke `proqtrack-v12.22`.
 
 CSP executable baseline: `script-src 'self'` dan `script-src-elem 'self'`; `script-src-attr 'unsafe-inline'` tidak lagi diperlukan.
 
@@ -142,3 +142,13 @@ Regression guard berada di `tests/p3-maintainability.test.mjs`. Baseline P3 awal
 - Home activity diurutkan terbaru, action queue Supervisor diberi konteks, dan Track membawa fokus employee ke Last Location.
 - Menu dashboard distandarkan menjadi Home dengan heading Organization/Project/Team Overview.
 - PWA cache v12.21.
+
+
+### Last Location P1 hardening — 24 Sep 2026
+- Self check-in menangkap GPS perangkat tervalidasi (lat/lng, accuracy, capturedAt, source=device_gps).
+- Check-in administratif tidak diklaim sebagai posisi perangkat karyawan.
+- Last Location membedakan GPS check-in, lokasi visit legacy, dan referensi outlet; outlet reference diberi label eksplisit bukan posisi perangkat.
+- Coordinate evidence wajib berupa pasangan latitude/longitude valid dan immutable setelah check-in untuk non-admin.
+- Status lokasi memakai freshness/evidence; istilah 'masih di lokasi' dihapus dan diganti 'belum check-out'.
+- Tracking cloud refresh setiap 30 detik, saat focus/visibility kembali, dan manual Refresh memakai guarded cloud refresh agar tidak menimpa local changes.
+- PWA cache v12.22.
