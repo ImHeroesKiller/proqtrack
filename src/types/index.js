@@ -602,19 +602,24 @@ function scopedEmployees(projectId = null) {
     const ids = new Set((db.projectAssignments || []).filter((a) => projectIds.has(a.projectId) && a.status === "active").map((a) => a.employeeId));
     return (db.employees || []).filter((e) => ids.has(e.id));
   }
-  if (r === "supervisor")
-    return (db.employees || [])
-      .filter((e) => e.id === me?.id || e.supervisorId === me?.id)
-      .filter(
-        (e) =>
-          !projectId ||
-          (db.projectAssignments || []).some(
-            (a) =>
-              a.projectId === projectId &&
-              a.employeeId === e.id &&
-              a.status === "active",
-          ),
-      );
+  if (r === "supervisor") {
+    const projectIds = accessibleProjectIds();
+    const subordinateIds = new Set(
+      (db.projectAssignments || [])
+        .filter((assignment) =>
+          assignment.status === "active" &&
+          projectIds.has(assignment.projectId) &&
+          (!projectId || assignment.projectId === projectId) &&
+          assignment.employeeId !== me?.id &&
+          (
+            String(assignment.supervisorId || "") === String(me?.id || "") ||
+            String(assignment.supervisorUserId || "") === String(account()?.id || "")
+          )
+        )
+        .map((assignment) => assignment.employeeId)
+    );
+    return (db.employees || []).filter((e) => e.id === me?.id || subordinateIds.has(e.id));
+  }
   return (db.employees || []).filter((e) => e.id === me?.id);
 }
 function injectStyles() {
@@ -925,9 +930,18 @@ function renderSupervisorCompare() {
       ),
     );
   const metric = (s) => {
-    const team = (db.employees || [])
-      .filter((e) => e.supervisorId === s.id)
-      .map((e) => e.id);
+    const team = [...new Set(
+      (db.projectAssignments || [])
+        .filter((assignment) =>
+          assignment.status === "active" &&
+          ids.has(assignment.projectId) &&
+          (
+            String(assignment.supervisorId || "") === String(s.id) ||
+            (s.authUserId && String(assignment.supervisorUserId || "") === String(s.authUserId))
+          )
+        )
+        .map((assignment) => assignment.employeeId)
+    )];
     const relevant = (arr, owner = "employeeId") =>
       (arr || []).filter(
         (x) =>
