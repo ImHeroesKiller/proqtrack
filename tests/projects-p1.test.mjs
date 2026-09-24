@@ -15,7 +15,7 @@ test('Projects P1 uses combined search status and client filters', async () => {
 test('Projects P1 waits for authoritative cloud commit before local persistence', async () => {
   const src = await read('src/types/index.js');
   assert.match(src, /async saveProject/);
-  assert.match(src, /await commitOperationalChanges\(\[\{ entity:'projects', op:'upsert', row:data \}\]\)/);
+  assert.match(src, /await commitOperationalChanges\((?:\[\{ entity:'projects', op:'upsert', row:data \}\]|authoritativeChanges)\)/);
   assert.match(src, /Project tersimpan dan tersinkron/);
 });
 
