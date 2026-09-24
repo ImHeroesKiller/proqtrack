@@ -622,7 +622,7 @@ function injectStyles() {
   if (document.getElementById("projectV7Styles")) return;
   const s = document.createElement("style");
   s.id = "projectV7Styles";
-  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}.pm-client-logo-img{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;border:1px solid #e8ebf1}.pm-subtext{font-size:11px;color:#94a3b8}.pm-sync{font-size:11px;color:#64748b;padding:5px 9px;border-radius:999px;background:#f1f5f9}.pm-sync-ok{color:#047857;background:#ecfdf5}.pm-sync-progress{color:#b45309;background:#fffbeb}.pm-sync-error{color:#b91c1c;background:#fef2f2}.pm-result-summary{font-size:12px;color:#64748b;margin:0 0 10px}.pm-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.pm-empty{text-align:center;padding:28px;color:#94a3b8}.pm-pic-list{display:grid;gap:8px}.pm-pic-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr auto;gap:8px;align-items:center}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}.pm-pic-row{grid-template-columns:1fr}.pm-client-table thead{display:none}.pm-client-table,.pm-client-table tbody,.pm-client-table tr,.pm-client-table td{display:block;width:100%}.pm-client-table tr{border:1px solid #e8ebf1;border-radius:14px;margin-bottom:10px;padding:10px}.pm-client-table td{border:0!important;padding:8px 4px!important;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.pm-client-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#94a3b8;min-width:82px}.pm-client-table td[data-label="Klien"]{display:block}.pm-client-table td[data-label="Klien"]::before{display:none}.pm-pager{justify-content:center}}`;
+  s.textContent = `.pm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}.pm-kpi,.pm-panel{background:rgba(255,255,255,.96);border:1px solid #e8ebf1;border-radius:18px;box-shadow:0 8px 28px rgba(24,31,45,.07);transition:.2s}.pm-kpi{padding:18px}.pm-kpi:hover,.pm-panel:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(24,31,45,.11)}.pm-kpi-label{font-size:12px;color:#7f8794}.pm-kpi-value{font-size:28px;font-weight:800;margin-top:4px}.pm-kpi-note{font-size:11px;color:#94a3b8;margin-top:6px}.pm-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}.pm-toolbar .input,.pm-toolbar .select{max-width:250px}.pm-client-cell{display:flex;align-items:center;gap:10px}.pm-client-logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ff6b20,#d94400);color:white;display:grid;place-items:center;font-weight:800;font-size:12px}.pm-badge{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:11px;font-weight:700;background:#eef2ff;color:#475569}.pm-badge.active{background:#e9fbf4;color:#07845d}.pm-badge.inactive,.pm-badge.cancelled,.pm-badge.removed{background:#fff0f0;color:#c2410c}.pm-badge.prospect,.pm-badge.draft,.pm-badge.on_hold{background:#fff7e6;color:#b45309}.pm-badge.completed{background:#eef2ff;color:#4338ca}.pm-actions{display:flex;gap:6px;flex-wrap:wrap}.pm-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.pm-detail-card{padding:17px;border:1px solid #edf0f4;border-radius:15px;background:#fbfcfe}.pm-detail-label{font-size:11px;color:#8a93a1}.pm-detail-value{font-size:13px;font-weight:600;margin-top:4px;white-space:pre-wrap}.pm-modules{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px}.pm-module{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border:1px solid #e8ebf1;border-radius:12px;background:#fff}.pm-module input{width:18px;height:18px;accent-color:#ef5000}.pm-modal{position:fixed;inset:0;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:18px;z-index:500}.pm-modal-card{width:min(720px,100%);max-height:92vh;overflow:auto;background:#fff;border-radius:22px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.pm-modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #edf0f4;position:sticky;top:0;background:#fff;z-index:2}.pm-modal-body{padding:20px}.pm-close{border:0;width:35px;height:35px;border-radius:50%;background:#f1f5f9;font-size:20px;cursor:pointer}.pm-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.pm-form .full{grid-column:1/-1}.pm-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pm-tab{padding:8px 12px;border:1px solid #e5e7eb;border-radius:999px;background:#fff;cursor:pointer;font-size:12px;font-weight:700}.pm-tab.active{background:#fff1e8;color:#c94300;border-color:#fed7aa}.pm-supervisor-row{display:grid;grid-template-columns:1.5fr repeat(4,1fr);gap:8px;align-items:center;padding:12px;border-bottom:1px solid #edf0f4}.pm-supervisor-row.head{font-size:11px;font-weight:700;color:#94a3b8}.pm-project-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border-radius:999px;background:#fff1e8;color:#c94300;font-size:11px;font-weight:700;margin:3px}.pm-project-selector{margin-bottom:12px;padding:12px;background:#fff8f3;border:1px solid #fed7aa;border-radius:12px}.pm-hidden{display:none!important}.pm-client-logo-img{width:38px;height:38px;border-radius:11px;object-fit:contain;background:#fff;border:1px solid #e8ebf1}.pm-subtext{font-size:11px;color:#94a3b8}.pm-sync{font-size:11px;color:#64748b;padding:5px 9px;border-radius:999px;background:#f1f5f9}.pm-sync-ok{color:#047857;background:#ecfdf5}.pm-sync-progress{color:#b45309;background:#fffbeb}.pm-sync-error{color:#b91c1c;background:#fef2f2}.pm-result-summary{font-size:12px;color:#64748b;margin:0 0 10px}.pm-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:12px}.pm-empty{text-align:center;padding:28px;color:#94a3b8}.pm-pic-list{display:grid;gap:8px}.pm-pic-row{display:grid;grid-template-columns:1.2fr 1fr 1fr 1.2fr auto;gap:8px;align-items:center}@media(max-width:700px){.pm-form,.pm-detail-grid{grid-template-columns:1fr}.pm-form .full{grid-column:auto}.pm-toolbar .input,.pm-toolbar .select{max-width:none;width:100%}.pm-supervisor-row{grid-template-columns:1.4fr repeat(2,1fr)}.pm-supervisor-row>*:nth-child(n+4){display:none}.pm-pic-row{grid-template-columns:1fr}.pm-client-table thead,.pm-project-table thead{display:none}.pm-client-table,.pm-client-table tbody,.pm-client-table tr,.pm-client-table td,.pm-project-table,.pm-project-table tbody,.pm-project-table tr,.pm-project-table td{display:block;width:100%}.pm-client-table tr,.pm-project-table tr{border:1px solid #e8ebf1;border-radius:14px;margin-bottom:10px;padding:10px}.pm-client-table td,.pm-project-table td{border:0!important;padding:8px 4px!important;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.pm-client-table td::before,.pm-project-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:#94a3b8;min-width:82px}.pm-client-table td[data-label="Klien"]{display:block}.pm-client-table td[data-label="Klien"]::before{display:none}.pm-pager{justify-content:center}}`;
   document.head.appendChild(s);
 }
 function ensureNav() {
@@ -753,14 +753,46 @@ function renderClients() {
   queueMicrotask(() => window.PM?.filterClients?.(clientPage));
   return rendered;
 }
+const PROJECT_PAGE_SIZE = 15;
+let projectPage = 1;
+function projectStatusLabel(value) {
+  return ({ draft:'Draft', active:'Aktif', on_hold:'Ditahan', completed:'Selesai', cancelled:'Dibatalkan' })[String(value || '')] || String(value || '-');
+}
+function projectSyncLabel() {
+  const cloud = cloudDataStatus();
+  if (cloud.error) return '<span class="pm-sync pm-sync-error">Sync bermasalah</span>';
+  if (cloud.syncing || cloud.queued) return '<span class="pm-sync pm-sync-progress">Menyinkronkan…</span>';
+  if (cloud.cutoverMode === 'cloud' && cloud.ready) return '<span class="pm-sync pm-sync-ok">Tersinkron cloud</span>';
+  return '<span class="pm-sync">Mode lokal</span>';
+}
+function projectManagerNames(db, projectId) {
+  return (db.accounts || [])
+    .filter((a) => a.role === 'manager' && a.status !== 'inactive')
+    .filter((a) => a.projectId === projectId || (Array.isArray(a.projectIds) && a.projectIds.includes(projectId)))
+    .map((a) => a.name || a.email || a.id)
+    .filter(Boolean);
+}
+function projectSupervisorNames(db, projectId) {
+  const employeeMap = Object.fromEntries((db.employees || []).map((e) => [e.id,e]));
+  return (db.projectAssignments || [])
+    .filter((a) => a.projectId === projectId && a.status === 'active' && a.roleOnProject === 'supervisor')
+    .map((a) => employeeMap[a.employeeId]?.name || a.employeeId)
+    .filter(Boolean);
+}
+function projectDependencies(db, projectId) {
+  const assignments = (db.projectAssignments || []).filter((a) => a.projectId === projectId && a.status === 'active').length;
+  const openVisits = (db.visits || []).filter((v) => v.projectId === projectId && ['planned','in_progress','checked-in'].includes(v.status)).length;
+  const draftSurveys = (db.surveyResponses || []).filter((r) => r.projectId === projectId && r.status === 'draft').length;
+  return { assignments, openVisits, draftSurveys, total:assignments + openVisits + draftSurveys };
+}
 function renderProjects(readOnly = false) {
   const db = viewDB(),
     cm = clientById(db),
     ids = accessibleProjectIds();
-  let rows = (db.projects || []).filter(
+  const rows = (db.projects || []).filter(
     (p) => role() === "manager" || ids.has(p.id),
   );
-  return shell(
+  const rendered = shell(
     readOnly ? "Project Saya" : "Project",
     readOnly
       ? "Informasi ringkas project yang ditugaskan kepada Anda"
@@ -768,34 +800,52 @@ function renderProjects(readOnly = false) {
     `${kpis([
       ["Total Project", rows.length],
       ["Aktif", rows.filter((x) => x.status === "active").length],
-      [
-        "Draft / Hold",
-        rows.filter((x) => ["draft", "on_hold"].includes(x.status)).length,
-      ],
-      [
-        "Assignment Aktif",
-        (db.projectAssignments || []).filter(
-          (x) =>
-            x.status === "active" && rows.some((p) => p.id === x.projectId),
-        ).length,
-      ],
-    ])}<div class="card"><div class="pm-toolbar">${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}<input class="input" id="projectSearch" placeholder="Cari project, kode, klien" aria-label="Cari project" data-pqt-oninput="PM.filterProjects()"><select class="select" id="projectStatusFilter" aria-label="Filter status project" data-pqt-onchange="PM.filterProjects()"><option value="">Semua status</option><option value="active">active</option><option value="draft">draft</option><option value="on_hold">on_hold</option><option value="completed">completed</option><option value="cancelled">cancelled</option></select><select class="select" id="projectClientFilter" aria-label="Filter klien project" data-pqt-onchange="PM.filterProjects()"><option value="">Semua klien</option>${(db.clients || []).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></div><div class="visits-table-wrapper"><table class="table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows
-      .map((p) => {
-        const c = cm[p.clientId] || {},
-          ass = (db.projectAssignments || []).filter(
-            (a) => a.projectId === p.id && a.status === "active",
-          );
-        const em = Object.fromEntries((db.employees || []).map((x) => [x.id, x]));
-        const sup = ass.find((a) => a.roleOnProject === "supervisor") || {};
-        const managerName = (db.accounts || []).find((a) => a.role === "manager" && a.status === "active")?.name || "—";
-        const search = esc(`${p.name} ${p.code} ${c.name || ""}`.toLowerCase());
+      ["Draft / Hold", rows.filter((x) => ["draft", "on_hold"].includes(x.status)).length],
+      ["Assignment Aktif", (db.projectAssignments || []).filter((x) => x.status === "active" && rows.some((p) => p.id === x.projectId)).length],
+    ])}<div class="card">
+      <div class="pm-toolbar">
+        ${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}
+        <input class="input" id="projectSearch" placeholder="Cari project, kode, klien" aria-label="Cari project" data-pqt-oninput="PM.filterProjects(1)">
+        <select class="select" id="projectStatusFilter" aria-label="Filter status project" data-pqt-onchange="PM.filterProjects(1)">
+          <option value="">Semua status</option><option value="active">Aktif</option><option value="draft">Draft</option><option value="on_hold">Ditahan</option><option value="completed">Selesai</option><option value="cancelled">Dibatalkan</option>
+        </select>
+        <select class="select" id="projectClientFilter" aria-label="Filter klien project" data-pqt-onchange="PM.filterProjects(1)"><option value="">Semua klien</option>${(db.clients || []).map((client) => `<option value="${client.id}">${esc(client.name)}</option>`).join("")}</select>
+        <span id="projectSyncState">${projectSyncLabel()}</span>
+      </div>
+      <div id="projectResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
+      <div class="visits-table-wrapper"><table class="table pm-project-table"><thead><tr><th>Project</th><th>Klien</th><th>Periode</th>${readOnly ? "<th>Supervisor</th><th>Manager</th><th>Status</th><th>Aksi</th>" : "<th>Target</th><th>Assignee</th><th>Status</th><th>Aksi</th>"}</tr></thead><tbody id="projectRows">${rows.map((p) => {
+        const client = cm[p.clientId] || {};
+        const assignments = (db.projectAssignments || []).filter((a) => a.projectId === p.id && a.status === "active");
+        const managers = projectManagerNames(db,p.id);
+        const supervisors = projectSupervisorNames(db,p.id);
+        const search = esc(`${p.name} ${p.code} ${client.name || ""} ${managers.join(" ")} ${supervisors.join(" ")}`.toLowerCase());
         if (readOnly) {
-          return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}"><td><strong>${esc(p.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code || "")}</div></td><td>${esc(c.name || "-")}</td><td>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td><td>${esc(em[sup.employeeId || p.supervisorId]?.name || "—")}</td><td>${esc(managerName)}</td></tr>`;
+          return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}">
+            <td data-label="Project"><strong>${esc(p.name)}</strong><div class="pm-subtext">${esc(p.code || "")}</div></td>
+            <td data-label="Klien">${esc(client.name || "-")}</td>
+            <td data-label="Periode">${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td>
+            <td data-label="Supervisor">${esc(supervisors.join(", ") || "—")}</td>
+            <td data-label="Manager">${esc(managers.join(", ") || "—")}</td>
+            <td data-label="Status"><span class="pm-badge ${esc(p.status)}">${esc(projectStatusLabel(p.status))}</span></td>
+            <td data-label="Aksi"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewProject('${p.id}')">${svg("eye")} Detail</button></td>
+          </tr>`;
         }
-        return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}"><td><strong>${esc(p.name)}</strong><div style="font-size:11px;color:#94a3b8">${esc(p.code)}</div></td><td>${esc(c.name || "-")}</td><td>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td><td>${p.targetVisits || "-"} visit<br><span style="font-size:11px;color:#94a3b8">${p.targetOutlets || "-"} outlet</span></td><td>${ass.length}</td><td>${statusBadge(p.status)}</td><td><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewProject('${p.id}')">${svg("eye")} Detail</button>${canManage() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.openProject('${p.id}')">${svg("edit")} Edit</button>` : ""}</div></td></tr>`;
-      })
-      .join("")}</tbody></table></div></div>`,
+        return `<tr data-status="${esc(p.status)}" data-client="${esc(p.clientId)}" data-search="${search}">
+          <td data-label="Project"><strong>${esc(p.name)}</strong><div class="pm-subtext">${esc(p.code || "")}</div></td>
+          <td data-label="Klien">${esc(client.name || "-")}</td>
+          <td data-label="Periode">${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</td>
+          <td data-label="Target">${p.targetVisits || "-"} visit<br><span class="pm-subtext">${p.targetOutlets || "-"} outlet</span></td>
+          <td data-label="Assignee">${assignments.length}</td>
+          <td data-label="Status"><span class="pm-badge ${esc(p.status)}">${esc(projectStatusLabel(p.status))}</span></td>
+          <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.viewProject('${p.id}')">${svg("eye")} Detail</button>${canManage() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.openProject('${p.id}')">${svg("edit")} Edit</button>` : ""}</div></td>
+        </tr>`;
+      }).join("")}</tbody></table></div>
+      <div id="projectEmpty" class="pm-empty" hidden>Tidak ada project yang sesuai dengan filter.</div>
+      <div id="projectPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.projectPage(-1)">Sebelumnya</button><span id="projectPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="PM.projectPage(1)">Berikutnya</button></div>
+    </div>`,
   );
+  queueMicrotask(() => window.PM?.filterProjects?.(projectPage));
+  return rendered;
 }
 function renderAssignments() {
   const db = viewDB(),
@@ -1007,16 +1057,36 @@ window.PM = {
     const sync = document.getElementById("clientSyncState");
     if (sync) sync.innerHTML = clientSyncLabel();
   },
-  filterProjects() {
+  projectPage(delta) {
+    projectPage = Math.max(1, projectPage + Number(delta || 0));
+    this.filterProjects(projectPage);
+  },
+  filterProjects(page = projectPage) {
     const q = String(document.getElementById("projectSearch")?.value || "").trim().toLowerCase();
     const status = String(document.getElementById("projectStatusFilter")?.value || "");
     const clientId = String(document.getElementById("projectClientFilter")?.value || "");
-    document.querySelectorAll("#projectRows tr").forEach((row) => {
+    const rows = [...document.querySelectorAll("#projectRows tr")];
+    const matched = rows.filter((row) => {
       const matchesSearch = !q || String(row.dataset.search || "").includes(q);
       const matchesStatus = !status || row.dataset.status === status;
       const matchesClient = !clientId || row.dataset.client === clientId;
-      row.style.display = matchesSearch && matchesStatus && matchesClient ? "" : "none";
+      return matchesSearch && matchesStatus && matchesClient;
     });
+    const pageCount = Math.max(1, Math.ceil(matched.length / PROJECT_PAGE_SIZE));
+    projectPage = Math.min(Math.max(1, Number(page) || 1), pageCount);
+    const start = (projectPage - 1) * PROJECT_PAGE_SIZE;
+    const visible = new Set(matched.slice(start, start + PROJECT_PAGE_SIZE));
+    rows.forEach((row) => { row.style.display = visible.has(row) ? "" : "none"; });
+    const summary = document.getElementById("projectResultSummary");
+    if (summary) summary.textContent = matched.length ? `Menampilkan ${start + 1}–${Math.min(start + PROJECT_PAGE_SIZE, matched.length)} dari ${matched.length} project` : "Tidak ada project yang sesuai dengan filter.";
+    const empty = document.getElementById("projectEmpty");
+    if (empty) empty.hidden = matched.length !== 0;
+    const pager = document.getElementById("projectPager");
+    if (pager) pager.hidden = matched.length <= PROJECT_PAGE_SIZE;
+    const label = document.getElementById("projectPageLabel");
+    if (label) label.textContent = `Halaman ${projectPage} / ${pageCount}`;
+    const sync = document.getElementById("projectSyncState");
+    if (sync) sync.innerHTML = projectSyncLabel();
   },
   filterStatus(id, v) {
     document
@@ -1211,7 +1281,7 @@ window.PM = {
     }
     modal(
       id ? "Edit Project" : "Tambah Project",
-      `<form class="pm-form" data-pqt-onsubmit="PM.saveProject(event,'${id}')"><div class="full"><label class="label">Nama Project</label><input class="input" name="name" value="${esc(p.name || "")}" required></div><div><label class="label">Klien</label>${canCreateProject() ? `<select class="select" name="clientId" required>${db.clients.map((c) => `<option value="${c.id}" ${p.clientId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : `<input type="hidden" name="clientId" value="${esc(p.clientId || "")}"><select class="select" disabled aria-label="Klien project">${db.clients.filter((c) => c.id === p.clientId).map((c) => `<option selected>${esc(c.name)}</option>`).join("")}</select>`}</div><div><label class="label">Kode Internal</label><input class="input" name="code" value="${esc(p.code || "")}" required></div><div class="full"><label class="label">Description / SoW</label><textarea class="textarea" style="min-height:130px" name="description" required>${esc(p.description || "")}</textarea></div><div><label class="label">Mulai</label><input class="input" type="date" name="startDate" value="${esc(p.startDate || "")}" required></div><div><label class="label">Selesai</label><input class="input" type="date" name="endDate" value="${esc(p.endDate || "")}" required></div><div><label class="label">Status</label><select class="select" name="status">${["draft", "active", "on_hold", "completed", "cancelled"].map((x) => `<option ${p.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div><div><label class="label">Nilai Kontrak</label><input class="input" type="number" min="0" name="contractValue" value="${p.contractValue || ""}"></div><div><label class="label">Target Visit</label><input class="input" type="number" min="0" name="targetVisits" value="${p.targetVisits || ""}"></div><div><label class="label">Target Outlet</label><input class="input" type="number" min="0" name="targetOutlets" value="${p.targetOutlets || ""}"></div><div class="full"><label class="label">Coverage Area</label><input class="input" name="region" value="${esc(p.region || "")}"></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(p.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Project</button></div></form>`,
+      `<form class="pm-form" data-pqt-onsubmit="PM.saveProject(event,'${id}')"><div class="full"><label class="label">Nama Project</label><input class="input" name="name" value="${esc(p.name || "")}" required></div><div><label class="label">Klien</label>${canCreateProject() ? `<select class="select" name="clientId" required>${db.clients.map((c) => `<option value="${c.id}" ${p.clientId === c.id ? "selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : `<input type="hidden" name="clientId" value="${esc(p.clientId || "")}"><select class="select" disabled aria-label="Klien project">${db.clients.filter((c) => c.id === p.clientId).map((c) => `<option selected>${esc(c.name)}</option>`).join("")}</select>`}</div><div><label class="label">Kode Internal</label><input class="input" name="code" value="${esc(p.code || "")}" required></div><div class="full"><label class="label">Description / SoW</label><textarea class="textarea" style="min-height:130px" name="description" required>${esc(p.description || "")}</textarea></div><div><label class="label">Mulai</label><input class="input" type="date" name="startDate" value="${esc(p.startDate || "")}" required></div><div><label class="label">Selesai</label><input class="input" type="date" name="endDate" value="${esc(p.endDate || "")}" required></div><div><label class="label">Status</label><select class="select" name="status">${["draft", "active", "on_hold", "completed", "cancelled"].map((x) => `<option value="${x}" ${p.status === x ? "selected" : ""}>${esc(projectStatusLabel(x))}</option>`).join("")}</select></div><div><label class="label">Nilai Kontrak</label><input class="input" type="number" min="0" name="contractValue" value="${p.contractValue || ""}"></div><div><label class="label">Target Visit</label><input class="input" type="number" min="0" name="targetVisits" value="${p.targetVisits || ""}"></div><div><label class="label">Target Outlet</label><input class="input" type="number" min="0" name="targetOutlets" value="${p.targetOutlets || ""}"></div><div class="full"><label class="label">Coverage Area</label><input class="input" name="region" value="${esc(p.region || "")}"></div><div class="full"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(p.notes || "")}</textarea></div><div class="full"><button class="btn btn-primary btn-block">Simpan Project</button></div></form>`,
     );
   },
   async saveProject(e, id) {
@@ -1232,6 +1302,18 @@ window.PM = {
     if (endDate < startDate) {
       alert("Tanggal selesai project tidak boleh sebelum tanggal mulai.");
       return;
+    }
+    const nextStatus = formValue(fd, "status");
+    if (old && ['completed','cancelled'].includes(nextStatus) && old.status !== nextStatus) {
+      const deps = projectDependencies(db, old.id);
+      if (deps.total > 0) {
+        const detail = [
+          deps.assignments ? `${deps.assignments} assignment aktif` : '',
+          deps.openVisits ? `${deps.openVisits} visit belum final` : '',
+          deps.draftSurveys ? `${deps.draftSurveys} survey draft` : '',
+        ].filter(Boolean).join(', ');
+        if (!window.confirm(`Project masih memiliki dependency: ${detail}. Lanjutkan perubahan status menjadi ${projectStatusLabel(nextStatus)}?`)) return;
+      }
     }
     if (
       rows.some(
@@ -1313,24 +1395,34 @@ window.PM = {
   viewProject(id) {
     const db = viewDB(),
       p = db.projects.find((x) => x.id === id),
-      c = db.clients.find((x) => x.id === p?.clientId),
-      ass = (db.projectAssignments || []).filter((a) => a.projectId === id),
-      set = {
-        modules: { ...defaultModules(), ...(p?.modules || db.projectSettings.find((s) => s.projectId === id)?.modules || {}) },
-      },
-      em = Object.fromEntries(db.employees.map((e) => [e.id, e]));
+      client = db.clients.find((x) => x.id === p?.clientId),
+      assignments = (db.projectAssignments || []).filter((a) => a.projectId === id),
+      set = { modules:{ ...defaultModules(), ...(p?.modules || db.projectSettings.find((s) => s.projectId === id)?.modules || {}) } },
+      employeeMap = Object.fromEntries((db.employees || []).map((e) => [e.id,e]));
     if (!p || (!canManage() && !accessibleProjectIds().has(id))) return;
+    const activeAssignments = assignments.filter((a) => a.status === 'active');
+    const managers = projectManagerNames(db,id);
+    const supervisors = projectSupervisorNames(db,id);
+    const deps = projectDependencies(db,id);
     modal(
       `${p.code} — ${p.name}`,
-      `<div class="pm-tabs"><button class="pm-tab active">Ringkasan</button>${canManage() ? `<button class="pm-tab" data-pqt-onclick="PM.openAssign('${id}')">Kelola Assignment</button>` : ""}</div><div class="pm-detail-grid"><div class="pm-detail-card"><div class="pm-detail-label">Klien</div><div class="pm-detail-value">${esc(c?.name || "-")}</div></div><div class="pm-detail-card"><div class="pm-detail-label">Status / Periode</div><div class="pm-detail-value">${statusBadge(p.status)}<br>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</div></div>${canManage() ? `<div class="pm-detail-card"><div class="pm-detail-label">Nilai Kontrak</div><div class="pm-detail-value">${money(p.contractValue)}</div></div>` : ""}<div class="pm-detail-card"><div class="pm-detail-label">Target</div><div class="pm-detail-value">${p.targetVisits || "-"} visit · ${p.targetOutlets || "-"} outlet</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Statement of Work</div><div class="pm-detail-value">${esc(p.description || "-")}</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Assignment</div><div class="pm-detail-value">${
-        ass
-          .filter((a) => a.status === "active")
-          .map(
-            (a) =>
-              `${esc(em[a.employeeId]?.name || a.employeeId)} ${statusBadge(a.roleOnProject)}`,
-          )
-          .join("<br>") || "-"
-      }</div></div><div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Modul Field Aktif</div><div class="pm-modules" style="margin-top:10px">${ALL_MODULES.map((m) => `<label class="pm-module"><span>${esc(MODULE_LABELS[m])}</span><input type="checkbox" ${set.modules?.[m] !== false ? "checked" : ""} ${canManage() ? "" : "disabled"} data-pqt-onchange="PM.setModule('${id}','${m}',this.checked)"></label>`).join("")}</div></div></div>`,
+      `<div class="pm-tabs"><button class="pm-tab active">Ringkasan</button>${canManage() ? `<button class="pm-tab" data-pqt-onclick="PM.openAssign('${id}')">Kelola Assignment</button>` : ""}</div>
+      <div class="pm-detail-grid">
+        <div class="pm-detail-card"><div class="pm-detail-label">Klien</div><div class="pm-detail-value">${esc(client?.name || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Status / Periode</div><div class="pm-detail-value"><span class="pm-badge ${esc(p.status)}">${esc(projectStatusLabel(p.status))}</span><br>${dateLabel(p.startDate)} – ${dateLabel(p.endDate)}</div></div>
+        ${canManage() ? `<div class="pm-detail-card"><div class="pm-detail-label">Nilai Kontrak</div><div class="pm-detail-value">${money(p.contractValue)}</div></div>` : ""}
+        <div class="pm-detail-card"><div class="pm-detail-label">Target</div><div class="pm-detail-value">${p.targetVisits || "-"} visit · ${p.targetOutlets || "-"} outlet</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Manager</div><div class="pm-detail-value">${esc(managers.join(", ") || "—")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Supervisor</div><div class="pm-detail-value">${esc(supervisors.join(", ") || "—")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Coverage Area</div><div class="pm-detail-value">${esc(p.region || "-")}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Dependency Aktif</div><div class="pm-detail-value">${deps.assignments} assignment · ${deps.openVisits} visit terbuka · ${deps.draftSurveys} survey draft</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Statement of Work</div><div class="pm-detail-value">${esc(p.description || "-")}</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Catatan</div><div class="pm-detail-value">${esc(p.notes || "-")}</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Assignment Aktif</div><div class="pm-detail-value">${activeAssignments.map((a) => `${esc(employeeMap[a.employeeId]?.name || a.employeeId)} ${statusBadge(a.roleOnProject)}`).join("<br>") || "-"}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Dibuat</div><div class="pm-detail-value">${dateLabel(p.createdAt)}</div></div>
+        <div class="pm-detail-card"><div class="pm-detail-label">Terakhir diperbarui</div><div class="pm-detail-value">${dateLabel(p.updatedAt)}</div></div>
+        <div class="pm-detail-card" style="grid-column:1/-1"><div class="pm-detail-label">Modul Field Aktif</div><div class="pm-modules" style="margin-top:10px">${ALL_MODULES.map((m) => `<label class="pm-module"><span>${esc(MODULE_LABELS[m])}</span><input type="checkbox" ${set.modules?.[m] !== false ? "checked" : ""} ${canManage() ? "" : "disabled"} data-pqt-onchange="PM.setModule('${id}','${m}',this.checked)"></label>`).join("")}</div></div>
+      </div>`,
     );
   },
   async setModule(projectId, module, value) {
@@ -1617,9 +1709,14 @@ new MutationObserver(() => {
 window.addEventListener("hashchange", () => setTimeout(sync));
 window.addEventListener("storage", sync);
 window.addEventListener("proqtrack:cloud-status", () => {
-  if (location.hash !== "#/clients") return;
-  const target = document.getElementById("clientSyncState");
-  if (target) target.innerHTML = clientSyncLabel();
+  if (location.hash === "#/clients") {
+    const target = document.getElementById("clientSyncState");
+    if (target) target.innerHTML = clientSyncLabel();
+  }
+  if (["#/projects","#/my-projects"].includes(location.hash)) {
+    const target = document.getElementById("projectSyncState");
+    if (target) target.innerHTML = projectSyncLabel();
+  }
 });
 migrateV7();
 sync();
