@@ -2263,6 +2263,55 @@ export function deleteStock(id) {
   saveDB();
 }
 
+export function getInventoryCycles() {
+  return scoped(getDB().inventoryCycles || []);
+}
+
+export function getInventoryCyclesByOutlet(outletId) {
+  return getInventoryCycles().filter(row => row.outletId === outletId);
+}
+
+export function getInventoryCyclesByProduct(productId) {
+  return getInventoryCycles().filter(row => row.productId === productId);
+}
+
+export function createInventoryCycle(data = {}) {
+  const actor = assertLoggedIn();
+  const db = getDB();
+  assertOperationalContext(db, data, { product:true });
+  const row = {
+    id:uid('IC'),
+    status:'draft',
+    openingQty:0,
+    stockInQty:0,
+    adjustmentQty:0,
+    returnQty:0,
+    damagedQty:0,
+    transferOutQty:0,
+    closingQty:0,
+    cycleDate:todayISO(),
+    employeeId:actor.employeeId || data.employeeId || '',
+    ...withOrg(data),
+  };
+  db.inventoryCycles = db.inventoryCycles || [];
+  db.inventoryCycles.push(row);
+  saveDB();
+  return row;
+}
+
+export function updateInventoryCycle(id, data = {}) {
+  assertLoggedIn();
+  const db = getDB();
+  const idx = (db.inventoryCycles || []).findIndex(row => row.id === id);
+  if (idx === -1) throw new Error('Inventory cycle tidak ditemukan.');
+  const current = db.inventoryCycles[idx];
+  if (current.status === 'finalized') throw new Error('Inventory cycle final tidak dapat diubah.');
+  assertOperationalContext(db, { ...current, ...data }, { product:true });
+  db.inventoryCycles[idx] = { ...current, ...data };
+  saveDB();
+  return db.inventoryCycles[idx];
+}
+
 export function getPriceObservations() {
   return scoped(getDB().priceObservations || []);
 }
