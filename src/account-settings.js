@@ -226,6 +226,8 @@ export function renderSettings() {
   const emp = linkedEmployee(acc);
   const settings = getAppSettings();
   const isOrgAdmin = ['head','admin','superadmin'].includes(acc.role);
+  if (isOrgAdmin) scheduleOrganizationProfileRefresh(acc);
+  const activeOrg = getOrganization(acc.organizationId || getCurrentOrgId()) || {};
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
@@ -292,12 +294,6 @@ export function renderSettings() {
             <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
             <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
             <label class="am-check"><input type="checkbox" name="notifyLowStock" ${settings.notifyLowStock !== false ? 'checked' : ''}> Tampilkan badge stok menipis</label>
-            <div class="form-group">
-              <label class="label">Zona waktu</label>
-              <select class="select" name="timezone">
-                ${TIMEZONES.map(([id, label]) => `<option value="${id}" ${settings.timezone === id ? 'selected' : ''}>${esc(label)}</option>`).join('')}
-              </select>
-            </div>
             <button class="btn btn-secondary" type="submit">Simpan preferensi</button>
           </form>
         </section>
@@ -558,7 +554,6 @@ window.AM = {
         compactTables: form.compactTables.checked,
         notifyLeave: form.notifyLeave.checked,
         notifyLowStock: form.notifyLowStock.checked,
-        timezone: form.timezone.value || 'Asia/Jakarta',
       });
       document.body.classList.toggle('am-compact', form.compactTables.checked);
       toast('Preferensi disimpan');
