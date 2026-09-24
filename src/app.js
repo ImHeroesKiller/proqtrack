@@ -37,6 +37,7 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, assetField } from './lib/uploads.js';
 import { defaultPortrait } from './lib/avatars.js';
+import { applyOrganizationBranding } from './lib/organization-branding.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
@@ -341,6 +342,8 @@ window.showToast = function(msg, type = '') {
 // ===== Main Render =====
 function render() {
   const app = document.getElementById('app');
+  const currentBrand = getOrganization(getCurrentOrgId()) || null;
+  applyOrganizationBranding(currentBrand);
   const sidebarScroll = document.querySelector('.sidebar-nav')?.scrollTop || state._sidebarScroll || 0;
   state._sidebarScroll = sidebarScroll;
 
@@ -653,11 +656,14 @@ function renderFieldDock(route) {
 
 // ===== Login =====
 function renderLogin() {
+  const brand = getOrganization(getCurrentOrgId()) || {};
+  const brandName = brand.name || 'ProQTrack';
+  const brandLogo = brand.logo || '';
   return `
     <div class="login-page">
       <div class="login-card">
-        <div class="login-logo">PQ</div>
-        <h1>ProQTrack</h1>
+        <div class="login-logo">${brandLogo ? `<img src="${esc(brandLogo)}" alt="Logo ${esc(brandName)}">` : 'PQ'}</div>
+        <h1>${esc(brandName)}</h1>
         <div class="subtitle">Field Team Real-time Monitoring System</div>
         <form data-pqt-onsubmit="FT.handleLogin(event)" data-pqt-onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
           <div class="form-group">
