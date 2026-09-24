@@ -1628,6 +1628,9 @@ export function createVisit(data) {
   assertCanAccessEmployee(data.employeeId);
   assertOperationalContext(getDB(), data);
   const visit = { id: uid('VIS'), rating: 0, notes: '', checkInTime: null, checkOutTime: null, status: 'planned', ...withOrg(data) };
+  if ((visit.checkInTime || visit.status !== 'planned') && !visit.locationSource) {
+    visit.locationSource = 'administrative_entry';
+  }
   getDB().visits.push(visit);
   saveDB();
   return visit;
