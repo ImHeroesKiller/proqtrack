@@ -86,10 +86,8 @@ function templatesPage() {
   const db = read();
   const settings = db.reportSettings || {};
   const form = `<div class="rpt-builder">
-    <div class="rpt-warning">Template dan identitas dokumen adalah preferensi presentasi pada perangkat ini. Approval dan jadwal bersumber dari server.</div>
+    <div class="rpt-warning">Nama dan logo perusahaan mengikuti Settings → Organization. Di sini hanya pengaturan format dokumen.</div>
     <form class="rpt-filters" data-pqt-onsubmit="ReportPhase4.saveSettings(event)">
-      <div><label class="label">Nama perusahaan</label><input class="input" name="companyName" value="${esc(settings.companyName)}"></div>
-      <div><label class="label">Logo perusahaan</label><input class="input" type="file" name="companyLogoFile" accept="image/jpeg,image/png,image/webp"><input class="input" name="companyLogo" value="${esc(settings.companyLogo || '')}" placeholder="Atau URL / path"></div>
       <div><label class="label">Prefix nomor dokumen</label><input class="input" name="documentPrefix" value="${esc(settings.documentPrefix)}"></div>
       <div><label class="label">Nomor berikutnya</label><input class="input" type="number" min="1" name="nextNumber" value="${Number(settings.nextNumber || 1)}"></div>
       <div><label class="label">Nama penandatangan</label><input class="input" name="signatureName" value="${esc(settings.signatureName)}"></div>
@@ -216,10 +214,6 @@ window.ReportPhase4 = {
     const fields = Object.fromEntries(new FormData(form));
     if (window.R2?.uploadAsset) {
       try {
-        if (form.companyLogoFile?.files?.[0]) {
-          const uploaded = await window.R2.uploadAsset(form.companyLogoFile.files[0], { category: 'company-logo', projectId: 'general' });
-          fields.companyLogo = uploaded.url;
-        }
         if (form.signatureImageFile?.files?.[0]) {
           const uploaded = await window.R2.uploadAsset(form.signatureImageFile.files[0], { category: 'signature', projectId: 'general' });
           fields.signatureImage = uploaded.url;
@@ -228,7 +222,6 @@ window.ReportPhase4 = {
         window.showToast?.('Unggah file gagal. Coba lagi.', 'error');
       }
     }
-    delete fields.companyLogoFile;
     delete fields.signatureImageFile;
     db.reportSettings = { ...db.reportSettings, ...fields, nextNumber: Math.max(1, Number(fields.nextNumber || 1)), updatedAt: now() };
     auditLocal(db, 'update', 'report_settings', 'primary', 'Memperbarui identitas dokumen lokal');
