@@ -19,7 +19,7 @@ export function employeeSearchDocument(employee = {}, projects = []) {
   return [
     employee.employeeCode, employee.code, employee.id, employee.name, employee.email, employee.area, employee.phone, employee.role,
     ...projects.flatMap(project => [project?.code, project?.name]),
-  ].map(value => String(value || '')).join(' ').toLowerCase();
+  ].map(value => String(value || '')).filter(Boolean).join(' ').toLowerCase();
 }
 
 export function employeeMatchesFilters(employee = {}, filters = {}) {
