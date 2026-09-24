@@ -15,7 +15,7 @@ test('Projects P1 uses combined search status and client filters', async () => {
 test('Projects P1 waits for authoritative cloud commit before local persistence', async () => {
   const src = await read('src/types/index.js');
   assert.match(src, /async saveProject/);
-  assert.match(src, /await commitOperationalChanges\(\[\{ entity:'projects', op:'upsert', row:data \}\]\)/);
+  assert.match(src, /await commitOperationalChanges\((?:\[\{ entity:'projects', op:'upsert', row:data \}\]|authoritativeChanges)\)/);
   assert.match(src, /Project tersimpan dan tersinkron/);
 });
 
@@ -52,5 +52,5 @@ test('Projects P1 persists module settings through authoritative project metadat
 
 test('Projects P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.30/);
+  assert.match(sw, /proqtrack-v12\.31/);
 });

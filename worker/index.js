@@ -326,7 +326,7 @@ async function handleLogin(request, env, id) {
     ok: true,
     token,
     exp: claims.exp,
-    account: { id: claims.sub, email: claims.email, role: claims.role },
+    account: { id: claims.sub, email: claims.email, role: claims.role, projectIds:claims.projectIds || [], clientIds:claims.clientIds || [] },
     requestId: id,
   });
 }
@@ -360,6 +360,8 @@ export async function handleApi(request, env, url = new URL(request.url)) {
         sub: claims.sub,
         role: claims.role,
         email: claims.email || '',
+        projectIds: claims.projectIds || [],
+        clientIds: claims.clientIds || [],
         exp: claims.exp || null,
         requestId: id,
       });
