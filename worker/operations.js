@@ -1268,6 +1268,148 @@ export async function validateProductMutation(env, organizationId, row, existing
   return null;
 }
 
+export async function validateInventoryCycleMutation(env, organizationId, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  if (op === 'delete') return { error:'INVENTORY_CYCLE_DELETE_FORBIDDEN', status:409 };
+
+  const id = str(row.id || existing?.id);
+  const projectId = str(row.projectId || row.project_id || existing?.project_id);
+  const outletId = str(row.outletId || row.outlet_id || existing?.outlet_id);
+  const productId = str(row.productId || row.product_id || existing?.product_id);
+  const employeeId = str(row.employeeId || row.recordedBy || existing?.employee_id);
+  const visitId = nullable(str(row.visitId || row.visit_id || existing?.visit_id));
+  const cycleDate = str(row.cycleDate || row.date || existing?.cycle_date || new Date().toISOString().slice(0,10));
+  const status = safeStatus(row.status || existing?.status, ['draft','finalized'], existing?.status || 'draft');
+
+  if (!id) return { error:'INVENTORY_CYCLE_ID_REQUIRED', status:400 };
+  if (!projectId) return { error:'INVENTORY_CYCLE_PROJECT_REQUIRED', status:422 };
+  if (!outletId) return { error:'INVENTORY_CYCLE_OUTLET_REQUIRED', status:422 };
+  if (!productId) return { error:'INVENTORY_CYCLE_PRODUCT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'INVENTORY_CYCLE_EMPLOYEE_REQUIRED', status:422 };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cycleDate)) return { error:'INVENTORY_CYCLE_DATE_INVALID', status:422 };
+
+  if (existing) {
+    if (str(existing.status) === 'finalized') return { error:'INVENTORY_CYCLE_FINAL', status:409 };
+    if (str(existing.project_id) !== projectId || str(existing.outlet_id) !== outletId || str(existing.product_id) !== productId || str(existing.employee_id) !== employeeId || str(existing.cycle_date) !== cycleDate) {
+      return { error:'INVENTORY_CYCLE_IDENTITY_IMMUTABLE', status:409 };
+    }
+  }
+
+  const outletLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_outlets WHERE organization_id=? AND project_id=? AND outlet_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,outletId).first();
+  if (!outletLink) return { error:'INVENTORY_CYCLE_OUTLET_PROJECT_MISMATCH', status:409 };
+
+  const productLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_products WHERE organization_id=? AND project_id=? AND product_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,productId).first();
+  if (!productLink) return { error:'INVENTORY_CYCLE_PRODUCT_PROJECT_MISMATCH', status:409 };
+
+  const employee = await env.DB.prepare(
+    "SELECT e.id FROM core_employees e JOIN core_employee_project_assignments a ON a.organization_id=e.organization_id AND a.employee_id=e.id WHERE e.organization_id=? AND e.id=? AND e.employment_status='active' AND a.project_id=? AND a.status='active' LIMIT 1"
+  ).bind(organizationId,employeeId,projectId).first();
+  if (!employee) return { error:'INVENTORY_CYCLE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+
+  if (visitId) {
+    const visit = await env.DB.prepare(
+      'SELECT id FROM core_visits WHERE organization_id=? AND id=? AND project_id=? AND outlet_id=? AND employee_id=? LIMIT 1'
+    ).bind(organizationId,visitId,projectId,outletId,employeeId).first();
+    if (!visit) return { error:'INVENTORY_CYCLE_VISIT_MISMATCH', status:409 };
+  }
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id FROM core_inventory_cycles WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=? AND cycle_date=? AND id<>? LIMIT 1'
+  ).bind(organizationId,projectId,outletId,productId,cycleDate,id).first();
+  if (duplicate) return { error:'INVENTORY_CYCLE_PERIOD_CONFLICT', status:409 };
+
+  const qtyFields = [
+    ['openingQty','INVENTORY_CYCLE_OPENING_INVALID',false],
+    ['stockInQty','INVENTORY_CYCLE_STOCK_IN_INVALID',false],
+    ['adjustmentQty','INVENTORY_CYCLE_ADJUSTMENT_INVALID',true],
+    ['returnQty','INVENTORY_CYCLE_RETURN_INVALID',false],
+    ['damagedQty','INVENTORY_CYCLE_DAMAGED_INVALID',false],
+    ['transferOutQty','INVENTORY_CYCLE_TRANSFER_INVALID',false],
+    ['closingQty','INVENTORY_CYCLE_CLOSING_INVALID',false],
+  ];
+  const values = {};
+  for (const [field,errorCode,signed] of qtyFields) {
+    const value = num(row[field] ?? parseMetadata(existing?.metadata_json)?.[field] ?? existing?.[field.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())] ?? 0);
+    if (value == null || (!signed && value < 0)) return { error:errorCode, status:422 };
+    values[field] = value;
+  }
+
+  const balances = await allRows(env.DB.prepare(
+    'SELECT id,quantity,min_stock FROM core_stocks WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=?'
+  ).bind(organizationId,projectId,outletId,productId));
+  if (balances.length > 1) return { error:'STOCK_BALANCE_AMBIGUOUS', status:409 };
+  const currentStock = balances[0] || null;
+  const authoritativeOpening = Number(currentStock?.quantity || 0);
+  if (Number(values.openingQty) !== authoritativeOpening) {
+    return { error:'INVENTORY_CYCLE_OPENING_MISMATCH', status:409, authoritativeOpening };
+  }
+
+  const availableQty = values.openingQty + values.stockInQty + values.adjustmentQty - values.returnQty - values.damagedQty - values.transferOutQty;
+  if (!Number.isFinite(availableQty) || availableQty < 0) return { error:'INVENTORY_CYCLE_AVAILABLE_NEGATIVE', status:422 };
+  if (values.closingQty > availableQty) return { error:'INVENTORY_CYCLE_CLOSING_EXCEEDS_AVAILABLE', status:422 };
+  const sellOutQty = availableQty - values.closingQty;
+
+  const product = await env.DB.prepare(
+    'SELECT id,metadata_json FROM core_products WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,productId).first();
+  if (!product) return { error:'INVENTORY_CYCLE_PRODUCT_NOT_FOUND', status:422 };
+  const productMeta = parseMetadata(product.metadata_json);
+  const unitPrice = num(productMeta.price);
+  if (status === 'finalized' && sellOutQty > 0 && (unitPrice == null || unitPrice < 0)) {
+    return { error:'INVENTORY_CYCLE_PRODUCT_PRICE_REQUIRED', status:409 };
+  }
+
+  row.id = id;
+  row.projectId = projectId;
+  row.outletId = outletId;
+  row.productId = productId;
+  row.employeeId = employeeId;
+  row.visitId = visitId;
+  row.cycleDate = cycleDate;
+  row.status = status;
+  Object.assign(row,values);
+  row.sellOutQty = sellOutQty;
+  row.unitPrice = unitPrice;
+  row.salesAmount = unitPrice == null ? null : sellOutQty * unitPrice;
+  row.saleId = status === 'finalized' ? `SALE-CYCLE-${id}` : null;
+  row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
+  row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
+  row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
+  row.minStock = Math.max(0, Number(currentStock?.min_stock || 0));
+  return null;
+}
+
+function inventoryCycleFinalizationStatements(env, organizationId, row) {
+  if (str(row.status) !== 'finalized') return [];
+  const p = (sql,args) => env.DB.prepare(sql).bind(...args);
+  const saleMeta = JSON.stringify({
+    provenance:'derived_stock',
+    source:'inventory_cycle',
+    inventoryCycleId:row.id,
+    formula:'opening + stockIn + adjustment - return - damaged - transferOut - closing',
+  });
+  const stockMeta = JSON.stringify({
+    provenance:'inventory_cycle',
+    inventoryCycleId:row.id,
+  });
+  return [
+    p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP
+       WHERE core_stocks.organization_id=excluded.organization_id AND core_stocks.project_id=excluded.project_id AND core_stocks.outlet_id=excluded.outlet_id AND core_stocks.product_id=excluded.product_id`,
+      [row.stockBalanceId,organizationId,row.projectId,row.outletId,row.productId,row.closingQty,row.minStock,row.employeeId,row.cycleDate,stockMeta]),
+    p(`INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity,unit_price,total_amount,sold_at,idempotency_key,metadata_json,row_version,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,unit_price=excluded.unit_price,total_amount=excluded.total_amount,sold_at=excluded.sold_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_product_sales.row_version+1,updated_at=CURRENT_TIMESTAMP
+       WHERE core_product_sales.organization_id=excluded.organization_id`,
+      [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
+  ];
+}
+
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
