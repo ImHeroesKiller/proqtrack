@@ -137,8 +137,21 @@ test('revision conflicts are recorded for manual resolution', async () => {
 
 test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {
   const [runtimeBootstrap, bootstrap] = await Promise.all([read('src/bootstrap.js'), read('src/m4-bootstrap.js')]);
-  assert.match(runtimeBootstrap, /m4-bootstrap\.js/);
+  assert.match(runtimeBootstrap, /m4BootstrapModule = await load\('\.\/m4-bootstrap\.js'/);
+  assert.match(runtimeBootstrap, /m4BootstrapModule\.installOfflineRuntime\?\.\(\)/);
   assert.match(bootstrap, /offline-engine\.js/);
   assert.match(bootstrap, /evidence-client\.js/);
-  assert.match(bootstrap, /offline-login\.js/);
+  assert.match(bootstrap, /installOfflineLogin/);
+  assert.match(bootstrap, /export function installOfflineRuntime\(\)/);
+});
+
+
+test('offline login only marks installed after FT hook is attached', async () => {
+  const source = await read('src/lib/offline-login.js');
+  const waitIndex = source.indexOf("if (!window.FT?.handleLogin || !window.FT?.state)");
+  const flagIndex = source.indexOf('window.FT.__m4OfflineLoginInstalled = true');
+  const installedIndex = source.indexOf('installed = true', flagIndex);
+  assert.ok(waitIndex >= 0 && flagIndex > waitIndex);
+  assert.ok(installedIndex > flagIndex);
+  assert.match(source, /retryScheduled/);
 });

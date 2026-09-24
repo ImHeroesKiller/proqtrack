@@ -4,6 +4,7 @@ import { clearApiToken } from './uploads.js';
 import { isCloudCutoverRemembered } from './cloud-data.js';
 
 let installed = false;
+let retryScheduled = false;
 
 const displayRole = account => {
   if (account?.role === 'superadmin') return 'Superadmin';
@@ -62,24 +63,31 @@ async function offlineLogin(event, original) {
 }
 
 export function installOfflineLogin() {
-  if (installed || typeof window === 'undefined') return false;
-  const attach = () => {
-    if (!window.FT?.handleLogin || !window.FT?.state) {
-      setTimeout(attach, 0);
-      return;
+  if (typeof window === 'undefined') return false;
+  if (installed || window.FT?.__m4OfflineLoginInstalled) {
+    installed = true;
+    return true;
+  }
+  if (!window.FT?.handleLogin || !window.FT?.state) {
+    if (!retryScheduled) {
+      retryScheduled = true;
+      setTimeout(() => {
+        retryScheduled = false;
+        installOfflineLogin();
+      }, 0);
     }
-    if (window.FT.__m4OfflineLoginInstalled) return;
-    const original = window.FT.handleLogin;
-    window.FT.handleLogin = event => offlineLogin(event, original);
-    window.FT.__m4OfflineLoginInstalled = true;
-    window.addEventListener('online', () => {
-      if (window.FT?.state?.account?.offlineSession) {
-        window.showToast?.('Koneksi kembali. Silakan login ulang untuk memperbarui data.', 'success');
-      }
-    });
-  };
+    return false;
+  }
+
+  const original = window.FT.handleLogin;
+  window.FT.handleLogin = event => offlineLogin(event, original);
+  window.FT.__m4OfflineLoginInstalled = true;
   installed = true;
-  setTimeout(attach, 0);
+  window.addEventListener('online', () => {
+    if (window.FT?.state?.account?.offlineSession) {
+      window.showToast?.('Koneksi kembali. Silakan login ulang untuk memperbarui data.', 'success');
+    }
+  });
   return true;
 }
 

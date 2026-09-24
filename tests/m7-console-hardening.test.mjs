@@ -92,7 +92,7 @@ test('stale tenant rejection is surfaced instead of hidden as a generic login fa
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.12/);
+  assert.match(serviceWorker, /proqtrack-v12\.13/);
 });
 
 test('global superadmin session stays global until explicit workspace selection', async () => {

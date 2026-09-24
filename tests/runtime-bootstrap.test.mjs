@@ -46,6 +46,8 @@ test('runtime bootstrap contains all P0 modules in deterministic order', async (
   assert.match(source, /__PROQTRACK_BOOT__/);
   assert.match(source, /cloudCutoverModule = await load\('\.\/cloud-cutover\.js'/);
   assert.match(source, /cloudCutoverModule\.installCloudCutover\?\.\(\)/);
+  assert.match(source, /m4BootstrapModule = await load\('\.\/m4-bootstrap\.js'/);
+  assert.match(source, /m4BootstrapModule\.installOfflineRuntime\?\.\(\)/);
   assert.match(source, /__m3CloudCutoverInstalled/);
   assert.match(source, /__m4OfflineLoginInstalled/);
   assert.match(source, /ReportPhase4/);
@@ -70,7 +72,8 @@ test('P0 runtime modules keep cloud, offline, evidence and reporting responsibil
   assert.match(m4, /offline-engine\.js/);
   assert.match(m4, /evidence-client\.js/);
   assert.match(m4, /field-photo-evidence\.js/);
-  assert.match(m4, /offline-login\.js/);
+  assert.match(m4, /installOfflineLogin/);
+  assert.match(m4, /export function installOfflineRuntime\(\)/);
   assert.match(m4, /navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
   assert.match(m4, /__PROQTRACK_M4_BOOTSTRAP_LOADED__/);
 
@@ -80,7 +83,7 @@ test('P0 runtime modules keep cloud, offline, evidence and reporting responsibil
 
 test('service worker advances cache and precaches the explicit bootstrap', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.12/);
+  assert.match(sw, /proqtrack-v12\.13/);
   assert.match(sw, /'\.\/src\/entry\.js'/);
   assert.match(sw, /'\.\/src\/bootstrap\.js'/);
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);

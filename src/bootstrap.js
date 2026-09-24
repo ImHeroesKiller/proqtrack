@@ -40,15 +40,16 @@ await load('./employee-avatars.js', 'employee-avatars');
 await load('./lib/uploads.js', 'uploads');
 await load('./organization.js', 'organization');
 const cloudCutoverModule = await load('./cloud-cutover.js', 'cloud-cutover');
-await load('./m4-bootstrap.js', 'm4-bootstrap');
+const m4BootstrapModule = await load('./m4-bootstrap.js', 'm4-bootstrap');
 await load('./lib/m6-client.js', 'm6-client');
 await load('./app.js', 'app');
 
 // cloud-cutover is imported before app.js for dependency ordering, but its
 // FT hook must be installed only after app.js has created window.FT.
 cloudCutoverModule.installCloudCutover?.();
+m4BootstrapModule.installOfflineRuntime?.();
 
-// offline-login and other deferred installers still attach on the next task.
+// Deferred fallbacks still get one task turn, but readiness no longer depends on them.
 await new Promise(resolve => setTimeout(resolve, 0));
 
 const checks = Object.freeze({
