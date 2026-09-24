@@ -1524,7 +1524,14 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   let sourceCycle = null;
   if (correctionOfCycleId) {
     sourceCycle = await env.DB.prepare(
-      "SELECT id,status,project_id,outlet_id,product_id,opening_qty,stock_in_qty,adjustment_qty,return_qty,damaged_qty,transfer_out_qty,closing_qty,sell_out_qty,unit_price,sales_amount,sale_id,metadata_json FROM core_inventory_cycles WHERE organization_id=? AND id=? LIMIT 1"
+      `SELECT c.id,c.status,c.project_id,c.outlet_id,c.product_id,c.cycle_date,c.finalized_at,
+              c.opening_qty,c.stock_in_qty,c.adjustment_qty,c.return_qty,c.damaged_qty,c.transfer_out_qty,
+              c.closing_qty,c.sell_out_qty,c.unit_price,c.sales_amount,c.sale_id,c.metadata_json,
+              s.sold_at AS source_sale_sold_at
+         FROM core_inventory_cycles c
+         LEFT JOIN core_product_sales s
+           ON s.organization_id=c.organization_id AND s.id=c.sale_id
+        WHERE c.organization_id=? AND c.id=? LIMIT 1`
     ).bind(organizationId,correctionOfCycleId).first();
     if (!sourceCycle || str(sourceCycle.status) !== 'finalized') return { error:'INVENTORY_CYCLE_CORRECTION_SOURCE_INVALID', status:422 };
     if (str(sourceCycle.id) === id || str(sourceCycle.project_id) !== projectId || str(sourceCycle.outlet_id) !== outletId || str(sourceCycle.product_id) !== productId) {
@@ -1568,6 +1575,9 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.salesAmount = unitPrice == null ? null : effectiveSellOutQty * unitPrice;
   row.saleId = status === 'finalized' && effectiveSellOutQty > 0 ? `SALE-CYCLE-${id}` : null;
   row.correctionSourceSaleId = sourceCycle ? nullable(str(sourceCycle.sale_id)) : null;
+  row.saleSoldAt = sourceCycle
+    ? str(sourceCycle.source_sale_sold_at || sourceCycle.finalized_at || (sourceCycle.cycle_date ? `${sourceCycle.cycle_date}T12:00:00.000Z` : row.finalizedAt))
+    : row.finalizedAt;
   row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
@@ -1649,7 +1659,7 @@ function inventoryCycleFinalizationStatements(env, organizationId, row) {
          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
          ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,unit_price=excluded.unit_price,total_amount=excluded.total_amount,sold_at=excluded.sold_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_product_sales.row_version+1,updated_at=CURRENT_TIMESTAMP
          WHERE core_product_sales.organization_id=excluded.organization_id`,
-        [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
+        [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.saleSoldAt || row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
     );
   }
   statements.push(
