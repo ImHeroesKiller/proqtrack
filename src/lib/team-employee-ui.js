@@ -64,6 +64,59 @@ export function employeeOperationalCounts(employees = [], assignments = [], acco
   };
 }
 
+export function employeeProjectOptions(employees = [], assignments = [], projects = []) {
+  const projectMap = new Map(projects.map(project => [String(project.id), project]));
+  const seen = new Set();
+  const output = [];
+  for (const employee of employees) {
+    for (const projectId of activeProjectIdsForEmployee(assignments, employee.id)) {
+      if (seen.has(projectId)) continue;
+      const project = projectMap.get(String(projectId));
+      if (!project) continue;
+      seen.add(projectId);
+      output.push(project);
+    }
+  }
+  return output;
+}
+
+export function employeeListModel(employee = {}, { assignments = [], accounts = [], projectMap = {} } = {}) {
+  const projectIds = activeProjectIdsForEmployee(assignments, employee.id);
+  const projects = projectIds.map(id => projectMap[id]).filter(Boolean);
+  const operational = employeeOperationalFlags(employee, assignments, accounts);
+  return {
+    employee,
+    projectIds,
+    projects,
+    search:employeeSearchDocument(employee, projects),
+    operational,
+    assignmentLabel:operational.assigned ? `${operational.assignmentCount} assignment` : 'Belum ditugaskan',
+    loginLabel:operational.loginLinked ? (operational.loginActive ? 'Login aktif' : 'Login nonaktif') : 'Login belum terhubung',
+  };
+}
+
+export function employeeFilterSnapshot(source = {}) {
+  const get = key => typeof source === 'function'
+    ? String(source(key) || '')
+    : String(source?.[key] || '');
+  return {
+    search:get('search'),
+    role:get('role'),
+    status:get('status'),
+    projectId:get('projectId'),
+    assignment:get('assignment'),
+    login:get('login'),
+  };
+}
+
+export function employeeDeactivationImpact(employeeId = '', assignments = []) {
+  const count = activeAssignmentsForEmployee(assignments, employeeId).length;
+  return {
+    activeAssignmentCount:count,
+    message:count ? ` Karyawan memiliki ${count} assignment aktif yang akan ditutup.` : '',
+  };
+}
+
 export function paginateEmployees(items = [], page = 1, pageSize = EMPLOYEE_PAGE_SIZE) {
   const total = items.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
