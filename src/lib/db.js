@@ -2010,6 +2010,30 @@ export function deleteProductSale() {
   throw new Error('Penjualan tidak dapat dihapus. Gunakan correction/void agar audit trail tetap utuh.');
 }
 
+export function voidProductSale(id, correctionReason = '') {
+  const actor = assertLoggedIn();
+  if (!(isOrgAdminRole(actor.role) || actor.role === 'manager')) {
+    throw new Error('Akses ditolak');
+  }
+  const db = getDB();
+  const idx = (db.productSales || []).findIndex(row => row.id === id);
+  if (idx === -1) throw new Error('Penjualan tidak ditemukan.');
+  const current = db.productSales[idx];
+  if (String(current.provenance || '') === 'derived_stock') throw new Error('Derived sale tidak dapat dikoreksi manual.');
+  if (String(current.lifecycleStatus || 'active') === 'voided') throw new Error('Penjualan sudah void.');
+  const reason = sanitizePlainText(correctionReason || '');
+  if (reason.length < 10) throw new Error('Alasan koreksi wajib diisi minimal 10 karakter.');
+  db.productSales[idx] = {
+    ...current,
+    lifecycleStatus:'voided',
+    correctionReason:reason,
+    voidedAt:new Date().toISOString(),
+    voidedBy:actor.id,
+  };
+  saveDB();
+  return db.productSales[idx];
+}
+
 export function monthSalesAmount(employeeId, month = todayISO().slice(0, 7)) {
   return getProductSales()
     .filter(s => s.employeeId === employeeId && String(s.soldAt || s.date || '').startsWith(month))
