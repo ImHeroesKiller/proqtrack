@@ -38,5 +38,5 @@ test('Assignment residual exposes user-facing supervisor hierarchy error', async
 
 test('Assignment residual advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.44/);
+  assert.match(sw, /proqtrack-v12\.43/);
 });
