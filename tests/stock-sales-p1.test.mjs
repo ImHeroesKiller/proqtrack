@@ -179,3 +179,18 @@ test('P1 sync authority blocks direct stock and reporting excludes voided manual
   assert.match(reports,/lifecycleStatus.*voided/);
   assert.match(analytics,/lifecycleStatus.*voided/);
 });
+
+
+test('P1 zero sell-out finalization does not create a fake sales transaction', async () => {
+  const row = cycle({ status:'finalized', closingQty:100 });
+  const result = await validateInventoryCycleMutation(cycleEnv(),'ORG-1',row,null,{op:'upsert'});
+  assert.equal(result,null);
+  assert.equal(row.sellOutQty,0);
+  assert.equal(row.saleId,null);
+  assert.match(worker,/if \(row\.saleId && Number\(row\.sellOutQty\) > 0\)/);
+});
+
+test('P1 monthly sales KPI accepts cloud-hydrated soldAt/totalAmount fields', () => {
+  assert.match(db,/s\.soldAt \|\| s\.date/);
+  assert.match(db,/s\.totalAmount \?\? s\.amount/);
+});
