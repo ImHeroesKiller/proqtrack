@@ -23,14 +23,16 @@ test('remaining operational records are tenant-scoped cloud authorities', async 
 });
 
 test('outlet proposals do not create master outlets before final approval', async () => {
-  const db = await read('src/lib/db.js');
+  const [db, worker] = await Promise.all([read('src/lib/db.js'), read('worker/operations.js')]);
   const createStart = db.indexOf('export function createOutletProposal');
   const reviewStart = db.indexOf('export function reviewOutletProposal', createStart);
   const createBody = db.slice(createStart, reviewStart);
   assert.doesNotMatch(createBody, /db\.outlets\.push\(outlet\)/);
   const reviewBody = db.slice(reviewStart, db.indexOf('export function getVisits', reviewStart));
-  assert.match(reviewBody, /id: row\.outletId \|\| uid\('OUT'\)/);
-  assert.match(reviewBody, /db\.outlets\.push\(outlet\)/);
+  assert.doesNotMatch(reviewBody, /db\.outlets\.push\(outlet\)/);
+  assert.match(reviewBody, /Master outlet is created atomically by the cloud authority/);
+  assert.match(worker, /approvedProposalOutlet\(env, organizationId, row, existing\)/);
+  assert.match(worker, /upsertStatements\(env, 'outlets', outletRow, organizationId\)/);
 });
 
 test('field photo metadata hydrates from authoritative evidence without becoming core sync data', async () => {
