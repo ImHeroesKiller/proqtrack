@@ -6,14 +6,16 @@ const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Team Employees P2 adds combined employee filters pagination and sync state', async () => {
   const app = await read('src/app.js');
-  assert.match(app, /EMPLOYEE_PAGE_SIZE = 15/);
+  const helper = await read('src/lib/team-employee-ui.js');
+  assert.match(helper, /EMPLOYEE_PAGE_SIZE = 15/);
   assert.match(app, /empRoleFilter/);
   assert.match(app, /empStatusFilter/);
   assert.match(app, /empProjectFilter/);
   assert.match(app, /employeeResultSummary/);
   assert.match(app, /employeePager/);
   assert.match(app, /employeeSyncState/);
-  assert.match(app, /cloudDataStatus/);
+  assert.match(app, /employeeSyncState/);
+  assert.match(helper, /function employeeSyncState/);
 });
 
 test('Team Employees P2 renames destructive action to Nonaktifkan and hides it for inactive rows', async () => {
@@ -60,5 +62,5 @@ test('Supervisor Compare P2 is project-aware and exposes team denominator', asyn
 
 test('Team Employees P2 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.40/);
+  assert.match(sw, /proqtrack-v12\.41/);
 });
