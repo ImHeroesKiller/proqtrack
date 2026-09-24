@@ -35,5 +35,5 @@ test('Visits P3 adds accessibility and PWA wiring', async () => {
   assert.match(app,/paginateVisits/);
   assert.match(html,/\.sr-only/);
   assert.match(sw,/src\/lib\/visit-ui\.js/);
-  assert.match(sw,/proqtrack-v12\.36/);
+  assert.match(sw,/proqtrack-v12\.37/);
 });
