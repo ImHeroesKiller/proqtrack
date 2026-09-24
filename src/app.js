@@ -47,7 +47,7 @@ import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
-import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation, productAvailableProjects, productFormModel, normalizeProductFormPayload, productStatusSummary, productLifecycleAction } from './lib/product-ui.js';
+import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation, productFormModel, normalizeProductFormPayload, productStatusSummary, productLifecycleAction } from './lib/product-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
