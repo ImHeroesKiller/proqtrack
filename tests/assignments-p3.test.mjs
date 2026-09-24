@@ -74,5 +74,5 @@ test('Assignment P3 helper is wired into runtime and PWA', async () => {
   assert.match(src,/eligibleSupervisors/);
   assert.match(src,/eligibleAssignmentEmployees/);
   assert.match(sw,/src\/lib\/assignment-ui\.js/);
-  assert.match(sw,/proqtrack-v12\.39/);
+  assert.match(sw,/proqtrack-v12\.40/);
 });
