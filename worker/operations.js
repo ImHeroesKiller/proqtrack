@@ -1436,6 +1436,8 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   const visitId = nullable(str(row.visitId || row.visit_id || existing?.visit_id));
   const cycleDate = str(row.cycleDate || row.date || existing?.cycle_date || new Date().toISOString().slice(0,10));
   const status = safeStatus(row.status || existing?.status, ['draft','finalized'], existing?.status || 'draft');
+  const existingMeta = parseMetadata(existing?.metadata_json);
+  const correctionOfCycleId = nullable(str(row.correctionOfCycleId || existingMeta?.correctionOfCycleId));
 
   if (!id) return { error:'INVENTORY_CYCLE_ID_REQUIRED', status:400 };
   if (!projectId) return { error:'INVENTORY_CYCLE_PROJECT_REQUIRED', status:422 };
@@ -1473,10 +1475,12 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
     if (!visit) return { error:'INVENTORY_CYCLE_VISIT_MISMATCH', status:409 };
   }
 
-  const duplicate = await env.DB.prepare(
-    'SELECT id FROM core_inventory_cycles WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=? AND cycle_date=? AND id<>? LIMIT 1'
-  ).bind(organizationId,projectId,outletId,productId,cycleDate,id).first();
-  if (duplicate) return { error:'INVENTORY_CYCLE_PERIOD_CONFLICT', status:409 };
+  if (!correctionOfCycleId) {
+    const duplicate = await env.DB.prepare(
+      "SELECT id FROM core_inventory_cycles WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=? AND cycle_date=? AND id<>? AND COALESCE(json_extract(metadata_json,'$.correctionOfCycleId'),'')='' LIMIT 1"
+    ).bind(organizationId,projectId,outletId,productId,cycleDate,id).first();
+    if (duplicate) return { error:'INVENTORY_CYCLE_PERIOD_CONFLICT', status:409 };
+  }
 
   const qtyFields = [
     ['openingQty','INVENTORY_CYCLE_OPENING_INVALID',false],
@@ -1509,8 +1513,7 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   if (values.closingQty > availableQty) return { error:'INVENTORY_CYCLE_CLOSING_EXCEEDS_AVAILABLE', status:422 };
   const sellOutQty = availableQty - values.closingQty;
 
-  const adjustmentReason = str(row.adjustmentReason || row.reason || parseMetadata(existing?.metadata_json)?.adjustmentReason);
-  const correctionOfCycleId = nullable(str(row.correctionOfCycleId || parseMetadata(existing?.metadata_json)?.correctionOfCycleId));
+  const adjustmentReason = str(row.adjustmentReason || row.reason || existingMeta?.adjustmentReason);
   const adjustmentRole = roleOf(context.claims);
   if ((values.adjustmentQty !== 0 || correctionOfCycleId) && !(BROAD_ROLES.has(adjustmentRole) || adjustmentRole === 'manager')) {
     return { error:'INVENTORY_CYCLE_ADJUSTMENT_FORBIDDEN', status:403 };
@@ -1518,15 +1521,19 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   if (values.adjustmentQty !== 0 && adjustmentReason.length < 10) {
     return { error:'INVENTORY_CYCLE_ADJUSTMENT_REASON_REQUIRED', status:422 };
   }
+  let sourceCycle = null;
   if (correctionOfCycleId) {
-    const sourceCycle = await env.DB.prepare(
-      "SELECT id,status,project_id,outlet_id,product_id FROM core_inventory_cycles WHERE organization_id=? AND id=? LIMIT 1"
+    sourceCycle = await env.DB.prepare(
+      "SELECT id,status,project_id,outlet_id,product_id,opening_qty,stock_in_qty,adjustment_qty,return_qty,damaged_qty,transfer_out_qty,closing_qty,sell_out_qty,unit_price,sales_amount,sale_id,metadata_json FROM core_inventory_cycles WHERE organization_id=? AND id=? LIMIT 1"
     ).bind(organizationId,correctionOfCycleId).first();
     if (!sourceCycle || str(sourceCycle.status) !== 'finalized') return { error:'INVENTORY_CYCLE_CORRECTION_SOURCE_INVALID', status:422 };
     if (str(sourceCycle.id) === id || str(sourceCycle.project_id) !== projectId || str(sourceCycle.outlet_id) !== outletId || str(sourceCycle.product_id) !== productId) {
       return { error:'INVENTORY_CYCLE_CORRECTION_SCOPE_MISMATCH', status:409 };
     }
-    if (values.adjustmentQty === 0) return { error:'INVENTORY_CYCLE_CORRECTION_ADJUSTMENT_REQUIRED', status:422 };
+    const priorCorrection = await env.DB.prepare(
+      "SELECT id FROM core_inventory_cycles WHERE organization_id=? AND COALESCE(json_extract(metadata_json,'$.correctionOfCycleId'),'')=? AND id<>? LIMIT 1"
+    ).bind(organizationId,correctionOfCycleId,id).first();
+    if (priorCorrection) return { error:'INVENTORY_CYCLE_CORRECTION_ALREADY_EXISTS', status:409 };
   }
 
   const product = await env.DB.prepare(
@@ -1534,8 +1541,17 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   ).bind(organizationId,productId).first();
   if (!product) return { error:'INVENTORY_CYCLE_PRODUCT_NOT_FOUND', status:422 };
   const productMeta = parseMetadata(product.metadata_json);
-  const unitPrice = num(productMeta.price);
-  if (status === 'finalized' && sellOutQty > 0 && (unitPrice == null || unitPrice < 0)) {
+  const sourceAvailableQty = sourceCycle
+    ? Number(sourceCycle.opening_qty || 0) + Number(sourceCycle.stock_in_qty || 0) + Number(sourceCycle.adjustment_qty || 0)
+      - Number(sourceCycle.return_qty || 0) - Number(sourceCycle.damaged_qty || 0) - Number(sourceCycle.transfer_out_qty || 0)
+    : null;
+  const correctedSellOutQty = sourceCycle ? sourceAvailableQty - values.closingQty : null;
+  if (sourceCycle && (!Number.isFinite(correctedSellOutQty) || correctedSellOutQty < 0)) {
+    return { error:'INVENTORY_CYCLE_CORRECTION_CLOSING_INVALID', status:422 };
+  }
+  const effectiveSellOutQty = sourceCycle ? correctedSellOutQty : sellOutQty;
+  const unitPrice = sourceCycle ? num(sourceCycle.unit_price) : num(productMeta.price);
+  if (status === 'finalized' && effectiveSellOutQty > 0 && (unitPrice == null || unitPrice < 0)) {
     return { error:'INVENTORY_CYCLE_PRODUCT_PRICE_REQUIRED', status:409 };
   }
 
@@ -1548,16 +1564,20 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.cycleDate = cycleDate;
   row.status = status;
   Object.assign(row,values);
-  row.sellOutQty = sellOutQty;
+  row.sellOutQty = effectiveSellOutQty;
   row.unitPrice = unitPrice;
-  row.salesAmount = unitPrice == null ? null : sellOutQty * unitPrice;
-  row.saleId = status === 'finalized' && sellOutQty > 0 ? `SALE-CYCLE-${id}` : null;
+  row.salesAmount = unitPrice == null ? null : effectiveSellOutQty * unitPrice;
+  row.saleId = status === 'finalized' && effectiveSellOutQty > 0 ? `SALE-CYCLE-${id}` : null;
+  row.correctionSourceSaleId = sourceCycle ? nullable(str(sourceCycle.sale_id)) : null;
   row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
   const requestedMinStock = num(row.minStock);
   if (requestedMinStock != null && requestedMinStock < 0) return { error:'INVENTORY_CYCLE_MIN_STOCK_INVALID', status:422 };
   row.minStock = requestedMinStock == null ? Math.max(0, Number(currentStock?.min_stock || 0)) : requestedMinStock;
+  if (correctionOfCycleId && values.adjustmentQty === 0 && row.minStock === Math.max(0, Number(currentStock?.min_stock || 0))) {
+    return { error:'INVENTORY_CYCLE_CORRECTION_NO_CHANGE', status:422 };
+  }
   row.adjustmentReason = adjustmentReason;
   row.correctionOfCycleId = correctionOfCycleId;
 
@@ -1594,19 +1614,36 @@ function inventoryCycleFinalizationStatements(env, organizationId, row) {
     provenance:'derived_stock',
     source:'inventory_cycle',
     inventoryCycleId:row.id,
-    formula:'opening + stockIn + adjustment - return - damaged - transferOut - closing',
+    correctionOfCycleId:row.correctionOfCycleId || null,
+    lifecycleStatus:'active',
+    formula:row.correctionOfCycleId
+      ? 'corrected source available - corrected closing'
+      : 'opening + stockIn + adjustment - return - damaged - transferOut - closing',
   });
   const stockMeta = JSON.stringify({
     provenance:'inventory_cycle',
     inventoryCycleId:row.id,
   });
-  const statements = [
+  const statements = [];
+  if (row.correctionOfCycleId && row.correctionSourceSaleId) {
+    statements.push(
+      p(`UPDATE core_product_sales
+         SET metadata_json=json_set(COALESCE(NULLIF(metadata_json,''),'{}'),
+           '$.lifecycleStatus','voided',
+           '$.voidReason','inventory_cycle_correction',
+           '$.correctedByCycleId',?),
+           row_version=row_version+1,updated_at=CURRENT_TIMESTAMP
+         WHERE organization_id=? AND id=?`,
+        [row.id,organizationId,row.correctionSourceSaleId]),
+    );
+  }
+  statements.push(
     p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at)
        VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
        ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP
        WHERE core_stocks.organization_id=excluded.organization_id AND core_stocks.project_id=excluded.project_id AND core_stocks.outlet_id=excluded.outlet_id AND core_stocks.product_id=excluded.product_id`,
       [row.stockBalanceId,organizationId,row.projectId,row.outletId,row.productId,row.closingQty,row.minStock,row.employeeId,row.cycleDate,stockMeta]),
-  ];
+  );
   if (row.saleId && Number(row.sellOutQty) > 0) {
     statements.push(
       p(`INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity,unit_price,total_amount,sold_at,idempotency_key,metadata_json,row_version,updated_at)
