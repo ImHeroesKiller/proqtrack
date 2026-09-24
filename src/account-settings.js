@@ -638,25 +638,51 @@ window.AM = {
   previewLogo(input) {
     const file = input.files?.[0];
     const preview = input.closest('.emp-photo-field')?.querySelector('.employee-photo-preview');
-    if (file && preview) preview.src = URL.createObjectURL(file);
+    if (!file) return;
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+      input.value = '';
+      toast('Logo harus JPG, PNG, atau WebP dan maksimum 1 MB.', 'error');
+      return;
+    }
+    if (preview) preview.src = URL.createObjectURL(file);
   },
   async saveOrg(event) {
     event.preventDefault();
+    if (organizationSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    organizationSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const form = event.target;
       const data = Object.fromEntries(new FormData(form).entries());
       const file = form.logoFile?.files?.[0];
-      let companyLogo = data.companyLogo || '';
+      let logo = data.logo || '';
       if (file) {
-        companyLogo = file.type === 'image/svg+xml'
-          ? await file.text().then(t => `data:image/svg+xml;utf8,${encodeURIComponent(t)}`)
-          : await compressImage(file, { maxPx: 512, quality: 0.88 });
+        if (!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size > 1024 * 1024) {
+          throw Object.assign(new Error('ORGANIZATION_LOGO_INVALID'), { code:'ORGANIZATION_LOGO_INVALID' });
+        }
+        logo = await compressImage(file, { maxPx: 512, quality: 0.82 });
+        if (!logo || dataUrlBytes(logo) > 192 * 1024) {
+          throw Object.assign(new Error('ORGANIZATION_LOGO_TOO_LARGE'), { code:'ORGANIZATION_LOGO_TOO_LARGE' });
+        }
       }
-      updateAppSettings({ companyName: data.companyName, companyLogo });
-      toast('Identitas organisasi disimpan');
+      await updateCurrentOrganizationProfile({
+        name:data.name,
+        legalName:data.legalName,
+        industry:data.industry,
+        city:data.city,
+        timezone:data.timezone,
+        notes:data.notes,
+        logo,
+      });
+      organizationProfileSyncedOrg = String(account()?.organizationId || getCurrentOrgId() || '');
+      toast('Profil organisasi tersimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(organizationErrorMessage(error), 'error');
+    } finally {
+      organizationSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   filterAccounts(value) {
