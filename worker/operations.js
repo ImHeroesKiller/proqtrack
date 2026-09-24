@@ -399,11 +399,24 @@ export async function applyOutletProposalAuthority(env, claims, organizationId, 
   if (!existing) {
     if (role !== 'employee') return { error:'OUTLET_PROPOSAL_CREATE_FORBIDDEN', status:403 };
     if (!actorEmployeeId) return { error:'OUTLET_PROPOSAL_ACTOR_EMPLOYEE_REQUIRED', status:403 };
+    const projectId = str(row.projectId || row.project_id);
+    if (!projectId || !projectAllowed(claims, projectId)) return { error:'OUTLET_PROPOSAL_PROJECT_FORBIDDEN', status:403 };
+    const project = await env.DB.prepare(
+      'SELECT id,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,projectId).first();
+    if (!project) return { error:'OUTLET_PROPOSAL_PROJECT_NOT_FOUND', status:422 };
+    const projectMeta = parseMetadata(project.metadata_json);
+    const approvalMode = str(projectMeta.outletApprovalMode) === 'manual' ? 'manual' : 'auto';
     row.submittedBy = actorEmployeeId;
     row.employeeId = actorEmployeeId;
-    row.status = 'pending';
-    row.supervisorStatus = 'pending';
-    row.managerStatus = 'pending';
+    row.approvalMode = approvalMode;
+    row.status = approvalMode === 'auto' ? 'approved' : 'pending';
+    row.supervisorStatus = approvalMode === 'auto' ? 'approved' : 'pending';
+    row.managerStatus = approvalMode === 'auto' ? 'approved' : 'pending';
+    if (approvalMode === 'auto') {
+      row.approvedAt = new Date().toISOString();
+      row.approvedBy = 'system:auto';
+    }
     return null;
   }
 
@@ -440,8 +453,8 @@ export async function applyOutletProposalAuthority(env, claims, organizationId, 
 
 async function approvedProposalOutlet(env, organizationId, row, existing) {
   if (str(row.status) !== 'approved') return { statements:[] };
-  const meta = parseMetadata(existing?.metadata_json);
-  const projectId = str(existing?.project_id || row.projectId);
+  const meta = existing ? parseMetadata(existing.metadata_json) : { ...row };
+  const projectId = str(existing?.project_id || row.projectId || row.project_id);
   const project = await env.DB.prepare(
     'SELECT id,client_id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
   ).bind(organizationId,projectId).first();
@@ -449,7 +462,7 @@ async function approvedProposalOutlet(env, organizationId, row, existing) {
 
   const outletRow = {
     ...meta,
-    id:str(existing?.outlet_id || row.outletId || meta.outletId),
+    id:str(existing?.outlet_id || row.outletId || row.outlet_id || meta.outletId),
     outletNumber:str(meta.outletNumber || meta.code || existing?.outlet_id || row.outletId),
     code:str(meta.outletNumber || meta.code || existing?.outlet_id || row.outletId),
     name:str(existing?.name || row.name || meta.name),
@@ -1358,7 +1371,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         extras = { authUserId: user?.id || null };
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
-      if (entity === 'outletProposals' && existing && str(row.status) === 'approved') {
+      if (entity === 'outletProposals' && str(row.status) === 'approved') {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
         statements.push(...finalization.statements);
