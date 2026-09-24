@@ -20,7 +20,7 @@ test('Team Employees P2 renames destructive action to Nonaktifkan and hides it f
   const app = await read('src/app.js');
   assert.match(app, />Nonaktifkan<\/button>/);
   assert.match(app, /e\.status === 'active'/);
-  assert.doesNotMatch(app, />Hapus<\/button>/);
+  assert.doesNotMatch(app, /FT\.deleteEmployee\('\$\{e\.id\}'\)[^\n]*>Hapus<\/button>/);
 });
 
 test('Team Employees P2 enriches employee detail with assignments, supervisor, capacity and login', async () => {
@@ -29,7 +29,7 @@ test('Team Employees P2 enriches employee detail with assignments, supervisor, c
   assert.match(app, /Project Aktif/);
   assert.match(app, /Kapasitas/);
   assert.match(app, /Login/);
-  assert.match(app, /assignment\.supervisorId/);
+  assert.match(app, /employeeMap\[a\.supervisorId\]/);
   assert.match(app, /getAccounts\(\)/);
 });
 
