@@ -1094,13 +1094,13 @@ function lastKnownLocation(empId) {
   const visits = getVisits()
     .filter(v => v.employeeId === empId && v.checkInTime)
     .sort((a, b) => `${visitDay(b)} ${b.checkInTime || ''}`.localeCompare(`${visitDay(a)} ${a.checkInTime || ''}`));
-  const visit = visits[0];
-  if (!visit) return null;
-  const outlet = getOutlets().find(o => o.id === visit.outletId);
-  const lat = Number(visit.lat ?? visit.checkInLat ?? outlet?.lat);
-  const lng = Number(visit.lng ?? visit.checkInLng ?? outlet?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  return { visit, outlet, lat, lng };
+  for (const visit of visits) {
+    const outlet = getOutlets().find(o => o.id === visit.outletId);
+    const evidence = trackingLocationEvidence(visit,outlet);
+    if (!evidence) continue;
+    return { visit, outlet, ...evidence };
+  }
+  return null;
 }
 
 function trackingEmployees() {
