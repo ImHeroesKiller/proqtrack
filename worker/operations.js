@@ -869,7 +869,7 @@ function projectTransitionAllowed(current, next) {
   return !!allowed[current]?.has(next);
 }
 
-async function validateProjectMutation(env, organizationId, row, existing = null) {
+async function validateProjectMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const name = str(row.name);
   const code = str(row.code || existing?.code || id);
@@ -907,6 +907,19 @@ async function validateProjectMutation(env, organizationId, row, existing = null
     const currentStatus = projectUiStatus({}, existing);
     if (!projectTransitionAllowed(currentStatus, nextStatus)) {
       return { error:'PROJECT_INVALID_TRANSITION', status:409, currentStatus, nextStatus };
+    }
+    if (['completed','cancelled'].includes(nextStatus) && currentStatus !== nextStatus) {
+      const activeAssignments = await allRows(env.DB.prepare(
+        "SELECT id FROM core_project_assignments WHERE organization_id=? AND project_id=? AND status='active'"
+      ).bind(organizationId,id));
+      if (activeAssignments.length) {
+        const closingIds = new Set((context.batchAssignments || [])
+          .filter(item => str(item.projectId || item.project_id) === id && str(item.status) !== 'active')
+          .map(item => str(item.id))
+          .filter(Boolean));
+        const remaining = activeAssignments.filter(item => !closingIds.has(str(item.id)));
+        if (remaining.length) return { error:'PROJECT_ACTIVE_ASSIGNMENTS_REMAIN', status:409, remainingAssignments:remaining.length };
+      }
     }
   }
   return null;
@@ -955,7 +968,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       if (clientError) return json({ error:clientError.error, entity, id:row.id || null }, clientError.status || 422);
     }
     if (entity === 'projects' && op === 'upsert') {
-      const projectError = await validateProjectMutation(env, organizationId, row, existing);
+      const projectError = await validateProjectMutation(env, organizationId, row, existing, { batchAssignments });
       if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
     }
     if (entity === 'visits' && op === 'upsert') {
