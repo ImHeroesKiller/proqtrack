@@ -99,7 +99,7 @@ test('stale tenant rejection is surfaced and retried without the cached tenant h
 
 test('superadmin login hotfix forces a fresh service-worker cache', async () => {
   const serviceWorker = await read('sw.js');
-  assert.match(serviceWorker, /proqtrack-v12\.15/);
+  assert.match(serviceWorker, /proqtrack-v12\.16/);
 });
 
 test('global superadmin session stays global until explicit workspace selection', async () => {
@@ -122,4 +122,13 @@ test('successful cloud login refreshes only the hashed offline credential', asyn
   assert.match(bridge, /next\.password = hashPassword\(verifiedPassword\)/);
   assert.match(cutover, /ensureCloudIdentity\(db, cloudAccount, localAccount \|\| localCandidate, password\)/);
   assert.doesNotMatch(bridge, /next\.password = verifiedPassword/);
+});
+
+
+test('evidence bootstrap hydration keeps the restored bearer token stable', async () => {
+  const bridge = await read('src/lib/cloud-data.js');
+  assert.match(bridge, /const bootstrapToken = getApiToken\(\)/);
+  assert.match(bridge, /getApiToken\(\) === bootstrapToken/);
+  assert.match(bridge, /fetchCloudFieldPhotos\(bootstrapToken\)/);
+  assert.match(bridge, /authorization: `Bearer \${sessionToken}`/);
 });

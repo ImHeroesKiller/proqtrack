@@ -243,11 +243,14 @@ function evidencePhotoType(type = '') {
   })[String(type)] || String(type || 'location');
 }
 
-async function fetchCloudFieldPhotos() {
+async function fetchCloudFieldPhotos(sessionToken = '') {
   const rows = [];
   let offset = 0;
   for (let page = 0; page < 40; page += 1) {
-    const payload = await apiJson('/api/evidence?limit=250&offset=' + offset);
+    if (!sessionToken || getApiToken() !== sessionToken) break;
+    const payload = await apiJson('/api/evidence?limit=250&offset=' + offset, {
+      headers: { authorization: `Bearer ${sessionToken}` },
+    });
     for (const item of payload.evidence || []) {
       const type = evidencePhotoType(item.evidenceType);
       rows.push({
@@ -567,7 +570,8 @@ export async function importLegacySnapshotForAdmin(localDb) {
 }
 
 export async function bootstrapOperationalData(localDb, account = {}) {
-  if (!getApiToken()) return { mode: 'local', data: null };
+  const bootstrapToken = getApiToken();
+  if (!bootstrapToken) return { mode: 'local', data: null };
   if (String(account?.role || '').toLowerCase() === 'superadmin' && !account?.organizationId) {
     ready = false;
     syncing = false;
@@ -602,10 +606,14 @@ export async function bootstrapOperationalData(localDb, account = {}) {
     remote = await migrateP2OperationalCollections(localDb, remote, account);
     revision = Number(remote.revision || revision);
     remote.data = remote.data || {};
-    try {
-      remote.data.fieldPhotos = await fetchCloudFieldPhotos();
-    } catch (error) {
-      console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
+    if (getApiToken() === bootstrapToken) {
+      try {
+        remote.data.fieldPhotos = await fetchCloudFieldPhotos(bootstrapToken);
+      } catch (error) {
+        if (![401, 403].includes(Number(error?.status || 0))) {
+          console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
+        }
+      }
     }
   } catch (error) {
     ready = false;
