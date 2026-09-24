@@ -426,6 +426,15 @@
     .employee-table tbody tr td:first-child { align-items:center; }
     .employee-table tbody tr td:last-child { padding-top:10px; border-top:1px solid var(--gray-100); justify-content:flex-end; }
     .employee-table tbody tr td:last-child::before { content:''; flex:0; }
+    .pm-team-table { min-width:0; }
+    .pm-team-table thead { display:none; }
+    .pm-team-table, .pm-team-table tbody, .pm-team-table tr, .pm-team-table td { display:block; width:100%; }
+    .pm-team-table tbody { display:flex; flex-direction:column; gap:10px; }
+    .pm-team-table tbody tr { border:1px solid var(--gray-200); border-radius:12px; padding:12px; background:white; box-shadow:var(--shadow); }
+    .pm-team-table tbody tr td { border:0; padding:7px 0; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; text-align:right; }
+    .pm-team-table tbody tr td::before { content:attr(data-label); color:var(--gray-400); font-size:11px; font-weight:600; text-align:left; flex:0 0 90px; }
+    .pm-team-table tbody tr td:last-child { padding-top:10px; border-top:1px solid var(--gray-100); justify-content:flex-end; }
+    .pm-team-table tbody tr td:last-child::before { content:''; flex:0; }
     .visit-responsive-table { overflow:visible; }
     .visit-responsive-table table, .visit-responsive-table tbody { display:block; width:100%; }
     .visit-responsive-table thead { display:none; }
