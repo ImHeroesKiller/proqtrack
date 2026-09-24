@@ -3941,7 +3941,7 @@ window.FT.openVisitStockInput = function(visitId, outletId) {
       📍 Update stok produk di outlet ini berdasarkan pengamatan lapangan
     </div>
     <form data-pqt-onsubmit="FT.saveVisitStock(event, '${visitId}', '${outletId}')">
-      ${productPickerRows('stock', outletId)}
+      ${productPickerRows('stock', outletId, visit?.projectId || '')}
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Stok</button>
@@ -4026,7 +4026,7 @@ window.FT.openVisitPriceInput = function(visitId, outletId) {
       💰 Catat harga jual dan diskon yang teramati di outlet ini
     </div>
     <form data-pqt-onsubmit="FT.saveVisitPrice(event, '${visitId}', '${outletId}')">
-      ${productPickerRows('price', outletId)}
+      ${productPickerRows('price', outletId, visit?.projectId || '')}
       <div class="form-group">
         <label class="label">Catatan</label>
         <textarea class="textarea" name="notes" placeholder="Promo, kompetitor, perubahan harga, dll..."></textarea>
