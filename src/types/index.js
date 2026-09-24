@@ -569,12 +569,19 @@ function accessibleProjectIds() {
 }
 function projectModules() {
   const db = viewDB(),
-    ids = accessibleProjectIds();
-  const settings = (db.projectSettings || []).filter((s) =>
-    ids.has(s.projectId),
+    ids = accessibleProjectIds(),
+    projects = (db.projects || []).filter((p) => ids.has(p.id));
+  const legacySettings = Object.fromEntries(
+    (db.projectSettings || []).map((s) => [s.projectId, s]),
   );
   return Object.fromEntries(
-    ALL_MODULES.map((m) => [m, settings.some((s) => s.modules?.[m] !== false)]),
+    ALL_MODULES.map((m) => [
+      m,
+      projects.some((p) => {
+        const modules = p.modules || legacySettings[p.id]?.modules || defaultModules();
+        return modules?.[m] !== false;
+      }),
+    ]),
   );
 }
 function canManage() {
