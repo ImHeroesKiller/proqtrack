@@ -1,6 +1,5 @@
 import {
   authenticate,
-  getCurrentOrgId,
   getDB,
   registerTestDevice,
   pairCloudAuthenticatedSalesDevice,
