@@ -70,8 +70,8 @@ test('Products P1 UI escapes stored product output and form values', () => {
     'value="${esc(p?.sku || \'\')}"',
     '${esc(p.sku)}',
     '${esc(p.name)}',
-    "${esc(p.brand || '—')}",
-    '${esc(p.category)}',
+    "${esc(p.brand||'—')}",
+    "${esc(p.category||'—')}",
   ]) assert.ok(app.includes(marker), marker);
   assert.match(app,/FT\.editProduct\(\$\{jsArg\(p\.id\)\}\)/);
   assert.match(app,/FT\.deleteProductConfirm\(\$\{jsArg\(p\.id\)\}\)/);
