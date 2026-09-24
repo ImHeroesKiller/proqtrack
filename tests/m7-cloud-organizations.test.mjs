@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { __test as orgServer } from '../worker/organizations.js';
+import { normalizeThemeColor, organizationTheme } from '../src/lib/organization-branding.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -95,4 +96,50 @@ test('organization lifecycle UI blocks active-tenant disable and duplicate mutat
   assert.match(ui, /organizationSwitchInFlight/);
   assert.match(ui, /const db = getDB\(\)/);
   assert.doesNotMatch(ui, /JSON\.parse\(localStorage\.getItem\('proqtrack_db_v6'\)/);
+});
+
+
+test('organization theme color is validated and derives a full tenant palette', () => {
+  assert.equal(orgServer.normalizedThemeColor('#2563EB'), '#2563eb');
+  assert.throws(() => orgServer.normalizedThemeColor('orange'), /ORGANIZATION_THEME_INVALID/);
+  assert.equal(normalizeThemeColor('#0F766E'), '#0f766e');
+  const theme = organizationTheme({ themeColor:'#2563eb' });
+  assert.equal(theme.brand, '#2563eb');
+  assert.match(theme.dark, /^#[0-9a-f]{6}$/);
+  assert.match(theme.bright, /^#[0-9a-f]{6}$/);
+  assert.equal(theme.rgb, '37, 99, 235');
+});
+
+test('full application branding follows the active organization profile', async () => {
+  const [settings, app, cutover, entry, logo, themeCss, worker] = await Promise.all([
+    read('src/account-settings.js'),
+    read('src/app.js'),
+    read('src/cloud-cutover.js'),
+    read('src/entry.js'),
+    read('assets/logo.js'),
+    read('assets/org-theme.css'),
+    read('worker/organizations.js'),
+  ]);
+  assert.match(settings, /name="themeColor"/);
+  assert.match(settings, /type="color"/);
+  assert.match(settings, /previewThemeColor/);
+  assert.match(settings, /selectThemeColor/);
+  assert.match(settings, /themeColor:normalizeThemeColor/);
+  assert.match(app, /applyOrganizationBranding\(currentBrand\)/);
+  assert.match(app, /brand\.name \|\| 'ProQTrack'/);
+  assert.match(cutover, /syncCurrentOrganizationProfile/);
+  assert.match(entry, /dataset\.orgBranding === '1'/);
+  assert.match(logo, /assets\/org-theme\.css/);
+  assert.match(themeCss, /--brand-rgb/);
+  assert.match(themeCss, /html\[data-org-branding="1"\] \.btn-primary/);
+  assert.match(themeCss, /html\[data-org-branding="1"\] \.sidebar-logo img/);
+  assert.match(worker, /themeColor:/);
+});
+
+
+test('report preview inherits organization theme color', async () => {
+  const preview = await read('src/reports/phase4-preview.js');
+  assert.match(preview, /--r4-brand:/);
+  assert.match(preview, /org\.themeColor/);
+  assert.match(preview, /var\(--r4-brand/);
 });

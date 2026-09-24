@@ -19,11 +19,14 @@ ensureLink('stylesheet', './assets/sidebar-collapse.css');
 ensureLink('stylesheet', './assets/field-mobile.css');
 ensureLink('stylesheet', './assets/ui-2026.css');
 ensureLink('stylesheet', './assets/mobile-sales.css');
+ensureLink('stylesheet', './assets/org-theme.css');
 ensureLink('manifest', './manifest.webmanifest');
 ensureLink('icon', PWA_ICON, { type: 'image/svg+xml' });
 ensureLink('apple-touch-icon', PWA_ICON);
-document.querySelector('meta[name="theme-color"]')?.remove();
-const theme = document.createElement('meta');
-theme.name = 'theme-color';
+let theme = document.querySelector('meta[name="theme-color"]');
+if (!theme) {
+  theme = document.createElement('meta');
+  theme.name = 'theme-color';
+  document.head.appendChild(theme);
+}
 theme.content = '#ef5000';
-document.head.appendChild(theme);

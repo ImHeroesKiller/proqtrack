@@ -55,6 +55,7 @@ function organizationErrorMessage(error) {
     ORGANIZATION_NAME_REQUIRED: 'Nama organisasi wajib diisi.',
     ORGANIZATION_CODE_REQUIRED: 'Kode organisasi wajib diisi.',
     ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
+    ORGANIZATION_THEME_INVALID: 'Warna tema organisasi tidak valid.',
     ACTIVE_ORGANIZATION_CANNOT_BE_DISABLED: 'Workspace yang sedang aktif tidak dapat dinonaktifkan.',
     ORGANIZATION_ADMIN_FORBIDDEN: 'Hanya Superadmin yang dapat mengelola lifecycle organisasi.',
   };
@@ -165,12 +166,23 @@ function form(existing) {
     </div>
     <div class="form-row">
       <div class="form-group"><label class="label">Kota</label><input class="input" name="city" value="${esc(existing?.city || '')}"></div>
+      <div class="form-group"><label class="label">Warna tema</label><input class="am-theme-color" type="color" name="themeColor" value="${esc(existing?.themeColor || '#ef5000')}"></div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label class="label">Status</label>
         <select class="select" name="status" ${isCurrent ? 'disabled' : ''}>
           <option value="active" ${existing?.status !== 'inactive' ? 'selected' : ''}>Aktif</option>
           <option value="inactive" ${existing?.status === 'inactive' ? 'selected' : ''}>Nonaktif</option>
         </select>
         ${isCurrent ? '<div class="am-muted">Workspace aktif tidak dapat dinonaktifkan.</div>' : ''}
+      </div>
+      <div class="form-group"><label class="label">Zona waktu</label>
+        <select class="select" name="timezone">
+          <option value="Asia/Jakarta" ${(existing?.timezone || 'Asia/Jakarta') === 'Asia/Jakarta' ? 'selected' : ''}>WIB — Jakarta</option>
+          <option value="Asia/Makassar" ${existing?.timezone === 'Asia/Makassar' ? 'selected' : ''}>WITA — Makassar</option>
+          <option value="Asia/Jayapura" ${existing?.timezone === 'Asia/Jayapura' ? 'selected' : ''}>WIT — Jayapura</option>
+          <option value="UTC" ${existing?.timezone === 'UTC' ? 'selected' : ''}>UTC</option>
+        </select>
       </div>
     </div>
     <div class="form-group"><label class="label">Catatan</label><textarea class="textarea" name="notes">${esc(existing?.notes || '')}</textarea></div>
