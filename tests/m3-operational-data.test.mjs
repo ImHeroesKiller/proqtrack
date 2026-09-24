@@ -66,6 +66,39 @@ test('manager and field roles cannot escape normalized project and employee scop
   assert.equal(authorizeOperationalChange(employee, 'products', { row: { id: 'P-1', projectIds: ['PRJ-1'] } }, context), false);
 });
 
+test('manager cannot take over an existing product outside current project scope', () => {
+  const manager = { role:'manager', projectIds:['PRJ-1'], clientIds:['CL-1'] };
+  const baseContext = { accessibleEmployeeIds:new Set(), batchAssignments:[] };
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'products',
+    { op:'upsert', row:{ id:'PRD-FOREIGN', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'PRD-FOREIGN' }, existingProjectIds:['PRJ-2'] },
+  ), false);
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'products',
+    { op:'upsert', row:{ id:'PRD-OWN', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'PRD-OWN' }, existingProjectIds:['PRJ-1'] },
+  ), true);
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'products',
+    { op:'upsert', row:{ id:'PRD-SHARED', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'PRD-SHARED' }, existingProjectIds:['PRJ-1','PRJ-2'] },
+  ), false);
+
+  assert.equal(authorizeOperationalChange(
+    manager,
+    'products',
+    { op:'upsert', row:{ id:'PRD-UNSCOPED', projectIds:['PRJ-1'] } },
+    { ...baseContext, existing:{ id:'PRD-UNSCOPED' }, existingProjectIds:[] },
+  ), false);
+});
+
 test('manager cannot take over an existing outlet outside current project scope', () => {
   const manager = { role: 'manager', projectIds: ['PRJ-1'], clientIds: ['CL-1'] };
   const baseContext = { accessibleEmployeeIds: new Set(), batchAssignments: [] };
