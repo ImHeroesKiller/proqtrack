@@ -4,7 +4,7 @@
 import {
   getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee,
   resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee,
-  createOutlet, updateOutlet, deleteEmployee, deleteOutlet, deleteVisit, getDB, getAccounts,
+  createOutlet, updateOutlet, deleteEmployee, deleteOutlet, outletReferenceSummary, deleteVisit, getDB, getAccounts,
   getProducts, createProduct, updateProduct, deleteProduct,
   getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
   getStocks, getStocksByOutlet, getStocksByProduct, createStock, updateStock, deleteStock,
@@ -36,7 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData, cloudDataStatus } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -2294,15 +2294,15 @@ function renderOutlets() {
             outlets.map(o => `
               <tr>
                 <td><div style="font-weight:600; color:var(--gray-800);">${outletIcon(o.type)} ${esc(o.name)}</div><div style="font-size:12px; color:var(--gray-400);">${esc(o.address)}</div></td>
-                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${o.type}</span></td>
+                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${esc(displayValue(o.type))}</span></td>
                 <td>${esc(displayValue(o.area))}</td>
                 <td>${esc(displayValue(o.owner))}</td>
                 <td>${esc(displayValue(o.phone))}</td>
                 <td>${esc(displayValue(o.visitFrequency))}</td>
                 <td>${statusBadge(o.status)}</td>
                 <td>
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/${o.id}'">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet('${o.id}')">Hapus</button>
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
+                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">Hapus</button>
                 </td>
               </tr>
             `).join('')}
@@ -2399,24 +2399,63 @@ window.FT.openOutletModal = function() {
   setTimeout(() => window.FS?.initOutletMap?.(), 80);
 };
 
-window.FT.createOutlet = function(e) {
+function normalizeOutletFormCoordinates(data) {
+  const lat = Number(data.lat);
+  const lng = Number(data.lng);
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error('Latitude outlet tidak valid.');
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Longitude outlet tidak valid.');
+  return { lat, lng };
+}
+
+async function confirmOutletCloudSync() {
+  await waitForOperationalSync();
+}
+
+window.FT.createOutlet = async function(e) {
   e.preventDefault();
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  const fd = new FormData(e.target);
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const fd = new FormData(form);
   const data = Object.fromEntries(fd);
-  if (!data.lat || !data.lng) { showToast('Tandai titik toko di peta atau cari lokasi dulu.', 'error'); return; }
-  data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
   try {
+    if (!data.lat || !data.lng) throw new Error('Tandai titik toko di peta atau cari lokasi dulu.');
+    const coordinates = normalizeOutletFormCoordinates(data);
+    data.lat = coordinates.lat;
+    data.lng = coordinates.lng;
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     createOutlet(data);
-    closeModal(); showToast('Outlet berhasil ditambahkan ke project', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await confirmOutletCloudSync();
+    closeModal();
+    showToast('Outlet berhasil disimpan dan tersinkron ke cloud', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
+  }
 };
 
-window.FT.deleteOutlet = function(id) {
+window.FT.deleteOutlet = async function(id) {
   if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
-  if (!confirm('Hapus outlet ini?')) return;
-  deleteOutlet(id);
-  showToast('Outlet dihapus', 'success'); render();
+  const references = outletReferenceSummary(id);
+  const message = references.total > 0
+    ? `Outlet memiliki ${references.total} data operasional terkait. Outlet akan dinonaktifkan agar histori tetap utuh. Lanjutkan?`
+    : 'Hapus outlet ini? Tindakan ini hanya berlaku bila outlet belum memiliki data operasional terkait.';
+  if (!confirm(message)) return;
+  try {
+    const result = deleteOutlet(id);
+    await confirmOutletCloudSync();
+    showToast(result.deactivated ? 'Outlet dinonaktifkan dan histori tetap dipertahankan' : 'Outlet berhasil dihapus', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  }
 };
 
 // ===== Outlet Detail =====
@@ -2435,18 +2474,18 @@ function renderOutletDetail(id) {
           <div style="margin-top:4px;">${statusBadge(o.status)}</div>
         </div>
         <div class="detail-grid">
-          <div class="detail-label">ID</div><div class="detail-value">${o.id}</div>
-          <div class="detail-label">Tipe</div><div class="detail-value">${o.type}</div>
+          <div class="detail-label">ID</div><div class="detail-value">${esc(displayValue(o.id))}</div>
+          <div class="detail-label">Tipe</div><div class="detail-value">${esc(displayValue(o.type))}</div>
           <div class="detail-label">Alamat</div><div class="detail-value full">${esc(o.address)}</div>
-          <div class="detail-label">Pemilik</div><div class="detail-value">${o.owner}</div>
-          <div class="detail-label">Telepon</div><div class="detail-value">${o.phone}</div>
-          <div class="detail-label">Area</div><div class="detail-value">${o.area}</div>
-          <div class="detail-label">Lokasi</div><div class="detail-value">${o.lat.toFixed(4)}, ${o.lng.toFixed(4)}</div>
-          <div class="detail-label">Frekuensi</div><div class="detail-value">${o.visitFrequency}</div>
+          <div class="detail-label">Pemilik</div><div class="detail-value">${esc(displayValue(o.owner))}</div>
+          <div class="detail-label">Telepon</div><div class="detail-value">${esc(displayValue(o.phone))}</div>
+          <div class="detail-label">Area</div><div class="detail-value">${esc(displayValue(o.area))}</div>
+          <div class="detail-label">Lokasi</div><div class="detail-value">${Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lng)) ? `${Number(o.lat).toFixed(4)}, ${Number(o.lng).toFixed(4)}` : '—'}</div>
+          <div class="detail-label">Frekuensi</div><div class="detail-value">${esc(displayValue(o.visitFrequency))}</div>
         </div>
         <div style="display:flex; gap:8px; margin-top:20px;">
           <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlets'">← Kembali</button>
-          <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editOutlet('${o.id}')">Edit</button>
+          <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.editOutlet(${jsArg(o.id)})">Edit</button>
         </div>
       </div>
       <div style="flex:1; min-width:300px;">
@@ -2460,8 +2499,8 @@ function renderOutletDetail(id) {
               ${visits.map(v => { const emp = empMap[v.employeeId]; return `
                 <tr>
                   <td>${formatDateShort(v.date)}</td>
-                  <td>${emp ? emp.name : '-'}</td>
-                  <td>${v.checkInTime || '-'}</td>
+                  <td>${esc(emp ? emp.name : '-')}</td>
+                  <td>${esc(v.checkInTime || '-')}</td>
                   <td>${statusBadge(v.status)}</td>
                 </tr>
               `; }).join('')}
@@ -2478,7 +2517,7 @@ window.FT.editOutlet = function(id) {
   const o = getOutlets().find(x => x.id === id);
   if (!o) return;
   openModal('Edit Outlet', `
-    <form data-pqt-onsubmit="FT.updateOutlet(event, '${id}')">
+    <form data-pqt-onsubmit="FT.updateOutlet(event, ${jsArg(id)})">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(o.name)}" required></div>
       ${entityScopeFields(o)}
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address" value="${esc(o.address)}" required></div>
@@ -2487,15 +2526,15 @@ window.FT.editOutlet = function(id) {
           <label class="label">Tipe</label>
           <select class="select" name="type">${['Toko Kelontong','Minimarket','Restoran','Warung Kopi','Apotek','Toko Bangunan','Toko Elektronik','Bakery','Toko Fashion'].map(t => `<option ${o.type===t?'selected':''}>${t}</option>`).join('')}</select>
         </div>
-        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${o.area}" required></div>
+        <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(o.area ?? '')}" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${o.owner}" required></div>
-        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${o.phone}" required></div>
+        <div class="form-group"><label class="label">Pemilik</label><input class="input" name="owner" value="${esc(o.owner ?? '')}" required></div>
+        <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(o.phone ?? '')}" required></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="label">Lat</label><input class="input" type="number" step="0.0001" name="lat" value="${o.lat}" required></div>
-        <div class="form-group"><label class="label">Lng</label><input class="input" type="number" step="0.0001" name="lng" value="${o.lng}" required></div>
+        <div class="form-group"><label class="label">Lat</label><input class="input" type="number" step="0.0001" name="lat" value="${esc(o.lat ?? '')}" required></div>
+        <div class="form-group"><label class="label">Lng</label><input class="input" type="number" step="0.0001" name="lng" value="${esc(o.lng ?? '')}" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="label">Frekuensi</label><select class="select" name="visitFrequency"><option ${o.visitFrequency==='Mingguan'?'selected':''}>Mingguan</option><option ${o.visitFrequency==='Bulanan'?'selected':''}>Bulanan</option></select></div>
@@ -2509,15 +2548,31 @@ window.FT.editOutlet = function(id) {
   `);
 };
 
-window.FT.updateOutlet = function(e, id) {
+window.FT.updateOutlet = async function(e, id) {
   e.preventDefault();
-  const fd = new FormData(e.target);
+  if (!isProjectAdmin()) { showToast('Akses ditolak', 'error'); return; }
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const fd = new FormData(form);
   const data = Object.fromEntries(fd);
-  data.lat = parseFloat(data.lat); data.lng = parseFloat(data.lng);
   try {
+    const coordinates = normalizeOutletFormCoordinates(data);
+    data.lat = coordinates.lat;
+    data.lng = coordinates.lng;
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
     updateOutlet(id, data);
-    closeModal(); showToast('Data outlet dan relasi project diperbarui', 'success'); render();
-  } catch (error) { showToast(error.message, 'error'); }
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await confirmOutletCloudSync();
+    closeModal();
+    showToast('Data outlet berhasil diperbarui dan tersinkron ke cloud', 'success');
+    render();
+  } catch (error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error.message || String(error), 'error');
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan'; }
+  }
 };
 
 function greetingNow() {

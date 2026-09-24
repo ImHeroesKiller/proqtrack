@@ -773,6 +773,40 @@ export function scheduleOperationalSync(db) {
   return true;
 }
 
+export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
+  if (!getApiToken() || cutoverMode !== 'cloud' || !ready) {
+    const error = new Error('CLOUD_SYNC_UNAVAILABLE');
+    error.code = 'CLOUD_SYNC_UNAVAILABLE';
+    throw error;
+  }
+  const startedAt = Date.now();
+  while (true) {
+    if (lastError) {
+      const error = new Error(lastError);
+      error.code = lastError;
+      throw error;
+    }
+    if (!syncing && !queuedSnapshot) return { ok:true, revision };
+    if (Date.now() - startedAt >= timeoutMs) {
+      const error = new Error('CLOUD_SYNC_TIMEOUT');
+      error.code = 'CLOUD_SYNC_TIMEOUT';
+      throw error;
+    }
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+}
+export function restoreOperationalBaseline(localDb) {
+  clearTimeout(timer);
+  timer = null;
+  queuedSnapshot = null;
+  syncing = false;
+  if (localDb && baseline && typeof baseline === 'object') applyRemoteDataToLocal(localDb, baseline);
+  lastError = null;
+  emitStatus('rollback', { source:'mutation-recovery' });
+  return localDb;
+}
+
+
 export function cloudDataStatus() {
   return { ready, syncing, queued:!!queuedSnapshot, revision, cutoverMode, error: lastError };
 }
