@@ -25,6 +25,7 @@ export const ENTITY_COLLECTIONS = Object.freeze({
   attendancePoints: 'attendancePoints',
   leaves: 'leaves',
   stocks: 'stocks',
+  inventoryCycles: 'inventoryCycles',
   priceObservations: 'priceObservations',
   competitorIntel: 'competitorIntel',
   outletProposals: 'outletProposals',
@@ -48,13 +49,14 @@ const ENTITY_TABLES = Object.freeze({
   attendancePoints: 'core_attendance_points',
   leaves: 'core_leaves',
   stocks: 'core_stocks',
+  inventoryCycles: 'core_inventory_cycles',
   priceObservations: 'core_price_observations',
   competitorIntel: 'core_competitor_intel',
   outletProposals: 'core_outlet_proposals',
 });
 
 const ADMIN_ENTITIES = new Set(['clients', 'projects', 'employees', 'projectAssignments', 'outlets', 'products', 'surveyTemplates', 'projectProducts', 'competitors', 'competitorProducts', 'attendancePoints']);
-const FIELD_ENTITIES = new Set(['visits', 'attendance', 'productSales', 'surveyResponses', 'leaves', 'stocks', 'priceObservations', 'competitorIntel', 'outletProposals']);
+const FIELD_ENTITIES = new Set(['visits', 'attendance', 'productSales', 'surveyResponses', 'leaves', 'stocks', 'inventoryCycles', 'priceObservations', 'competitorIntel', 'outletProposals']);
 const BROAD_ROLES = new Set(['superadmin', 'head', 'admin']);
 const MAX_CHANGES = 250;
 const MAX_IMPORT_ROWS = 10000;
@@ -336,6 +338,22 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return currentStatus === 'active' && ['active','ended'].includes(nextStatus);
   }
 
+  if (entity === 'inventoryCycles') {
+    if (op === 'delete') return false;
+    if (!existing) return op === 'upsert' && ['draft','finalized'].includes(str(row.status || 'draft'));
+    if (str(existing.status) === 'finalized') return false;
+    for (const pair of [
+      [['projectId','project_id'],['project_id','projectId']],
+      [['outletId','outlet_id'],['outlet_id','outletId']],
+      [['productId','product_id'],['product_id','productId']],
+      [['employeeId','employee_id'],['employee_id','employeeId']],
+      [['cycleDate','cycle_date'],['cycle_date','cycleDate']],
+    ]) {
+      if (!unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+    }
+    return ['draft','finalized'].includes(str(row.status || existing.status || 'draft'));
+  }
+
   if (BROAD_ROLES.has(role)) return true;
   if (!existing) return op === 'upsert';
   if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
@@ -597,6 +615,30 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'attendancePoints': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Attendance Point'), type: safeStatus(row.type, ['office','meeting','store','point'], 'point'), outletId: nullable(str(row.outletId)), latitude: num(row.latitude ?? row.lat), longitude: num(row.longitude ?? row.lng), radiusM: num(row.radiusM), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'leaves': return { ...base, id: str(row.id), employeeId: str(row.employeeId), type: str(row.type || 'Cuti Tahunan'), startDate: str(row.startDate), endDate: str(row.endDate), days: Math.max(1, Number(row.days) || 1), reason: str(row.reason), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), approverId: nullable(str(row.approverId)), submittedAt: str(row.submittedAt || new Date().toISOString().slice(0,10)), approvedAt: nullable(str(row.approvedAt)) };
     case 'stocks': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), quantity: Math.max(0, Number(row.quantity) || 0), minStock: Math.max(0, Number(row.minStock) || 0), updatedBy: nullable(str(row.updatedBy)), lastUpdated: str(row.lastUpdated || new Date().toISOString().slice(0,10)) };
+    case 'inventoryCycles': return {
+      ...base,
+      id:str(row.id),
+      projectId:str(row.projectId),
+      outletId:str(row.outletId),
+      productId:str(row.productId),
+      employeeId:str(row.employeeId || row.recordedBy),
+      visitId:nullable(str(row.visitId)),
+      cycleDate:str(row.cycleDate || row.date || new Date().toISOString().slice(0,10)),
+      status:safeStatus(row.status,['draft','finalized'],'draft'),
+      openingQty:num(row.openingQty) ?? 0,
+      stockInQty:num(row.stockInQty) ?? 0,
+      adjustmentQty:num(row.adjustmentQty) ?? 0,
+      returnQty:num(row.returnQty) ?? 0,
+      damagedQty:num(row.damagedQty) ?? 0,
+      transferOutQty:num(row.transferOutQty) ?? 0,
+      closingQty:num(row.closingQty) ?? 0,
+      sellOutQty:num(row.sellOutQty) ?? 0,
+      unitPrice:num(row.unitPrice),
+      salesAmount:num(row.salesAmount),
+      saleId:nullable(str(row.saleId)),
+      idempotencyKey:nullable(str(row.idempotencyKey)),
+      finalizedAt:nullable(str(row.finalizedAt)),
+    };
     case 'priceObservations': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), observedPrice: Math.max(0, Number(row.observedPrice) || 0), discountPercent: Math.min(100, Math.max(0, Number(row.discountPercent) || 0)), discountAmount: Math.max(0, Number(row.discountAmount) || 0), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
     case 'competitorIntel': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: nullable(str(row.productId)), competitorProductId: nullable(str(row.competitorProductId)), employeeId: str(row.employeeId || row.recordedBy), visitId: nullable(str(row.visitId)), ourPrice: Math.max(0, Number(row.ourPrice) || 0), competitorPrice: Math.max(0, Number(row.competitorPrice) || 0), shelfShare: Math.min(100, Math.max(0, Number(row.shelfShare) || 0)), visibility: safeStatus(row.visibility, ['high','medium','low'], 'medium'), hasPromo: !!row.hasPromo, promoType: str(row.promoType), promoNotes: str(row.promoNotes || row.promoNote), notes: str(row.notes), recordedAt: str(row.recordedAt || new Date().toISOString()) };
     case 'outletProposals': {
@@ -645,6 +687,7 @@ function upsertStatements(env, entity, rawRow, organizationId, extras = {}) {
     case 'attendancePoints': return [p(`INSERT INTO core_attendance_points(id,organization_id,code,name,type,address,outlet_id,latitude,longitude,radius_m,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,type=excluded.type,address=excluded.address,outlet_id=excluded.outlet_id,latitude=excluded.latitude,longitude=excluded.longitude,radius_m=excluded.radius_m,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_attendance_points.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_attendance_points.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.type,nullable(row.address),nullable(row.outletId),num(row.latitude),num(row.longitude),num(row.radiusM),row.status,m])];
     case 'leaves': return [p(`INSERT INTO core_leaves(id,organization_id,employee_id,type,start_date,end_date,days,reason,status,approver_id,submitted_at,approved_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET employee_id=excluded.employee_id,type=excluded.type,start_date=excluded.start_date,end_date=excluded.end_date,days=excluded.days,reason=excluded.reason,status=excluded.status,approver_id=excluded.approver_id,submitted_at=excluded.submitted_at,approved_at=excluded.approved_at,metadata_json=excluded.metadata_json,row_version=core_leaves.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_leaves.organization_id=excluded.organization_id`, [row.id,organizationId,row.employeeId,row.type,row.startDate,row.endDate,row.days,nullable(row.reason),row.status,row.approverId,row.submittedAt,row.approvedAt,m])];
     case 'stocks': return [p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_stocks.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.quantity,row.minStock,row.updatedBy,row.lastUpdated,m])];
+    case 'inventoryCycles': return [p(`INSERT INTO core_inventory_cycles(id,organization_id,project_id,outlet_id,product_id,employee_id,visit_id,cycle_date,status,opening_qty,stock_in_qty,adjustment_qty,return_qty,damaged_qty,transfer_out_qty,closing_qty,sell_out_qty,unit_price,sales_amount,sale_id,idempotency_key,finalized_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,cycle_date=excluded.cycle_date,status=excluded.status,opening_qty=excluded.opening_qty,stock_in_qty=excluded.stock_in_qty,adjustment_qty=excluded.adjustment_qty,return_qty=excluded.return_qty,damaged_qty=excluded.damaged_qty,transfer_out_qty=excluded.transfer_out_qty,closing_qty=excluded.closing_qty,sell_out_qty=excluded.sell_out_qty,unit_price=excluded.unit_price,sales_amount=excluded.sales_amount,sale_id=excluded.sale_id,idempotency_key=excluded.idempotency_key,finalized_at=excluded.finalized_at,metadata_json=excluded.metadata_json,row_version=core_inventory_cycles.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_inventory_cycles.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.employeeId,row.visitId,row.cycleDate,row.status,row.openingQty,row.stockInQty,row.adjustmentQty,row.returnQty,row.damagedQty,row.transferOutQty,row.closingQty,row.sellOutQty,row.unitPrice,row.salesAmount,null,row.idempotencyKey,row.finalizedAt,m])];
     case 'priceObservations': return [p(`INSERT INTO core_price_observations(id,organization_id,project_id,outlet_id,product_id,employee_id,visit_id,observed_price,discount_percent,discount_amount,notes,recorded_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,observed_price=excluded.observed_price,discount_percent=excluded.discount_percent,discount_amount=excluded.discount_amount,notes=excluded.notes,recorded_at=excluded.recorded_at,metadata_json=excluded.metadata_json,row_version=core_price_observations.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_price_observations.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.employeeId,row.visitId,row.observedPrice,row.discountPercent,row.discountAmount,nullable(row.notes),row.recordedAt,m])];
     case 'competitorIntel': return [p(`INSERT INTO core_competitor_intel(id,organization_id,project_id,outlet_id,product_id,competitor_product_id,employee_id,visit_id,our_price,competitor_price,shelf_share,visibility,has_promo,promo_type,promo_notes,notes,recorded_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,competitor_product_id=excluded.competitor_product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,our_price=excluded.our_price,competitor_price=excluded.competitor_price,shelf_share=excluded.shelf_share,visibility=excluded.visibility,has_promo=excluded.has_promo,promo_type=excluded.promo_type,promo_notes=excluded.promo_notes,notes=excluded.notes,recorded_at=excluded.recorded_at,metadata_json=excluded.metadata_json,row_version=core_competitor_intel.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitor_intel.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.competitorProductId,row.employeeId,row.visitId,row.ourPrice,row.competitorPrice,row.shelfShare,row.visibility,row.hasPromo?1:0,nullable(row.promoType),nullable(row.promoNotes),nullable(row.notes),row.recordedAt,m])];
     case 'outletProposals': return [p(`INSERT INTO core_outlet_proposals(id,organization_id,project_id,outlet_id,submitted_by,name,address,status,supervisor_status,manager_status,submitted_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,submitted_by=excluded.submitted_by,name=excluded.name,address=excluded.address,status=excluded.status,supervisor_status=excluded.supervisor_status,manager_status=excluded.manager_status,submitted_at=excluded.submitted_at,metadata_json=excluded.metadata_json,row_version=core_outlet_proposals.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_outlet_proposals.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.submittedBy,row.name,nullable(row.address),row.status,row.supervisorStatus,row.managerStatus,row.submittedAt,m])];
@@ -756,6 +799,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
       case 'attendancePoints': return { ...common, code: dbRow.code, name: dbRow.name, type: dbRow.type, address: dbRow.address, outletId: dbRow.outlet_id, lat: dbRow.latitude, lng: dbRow.longitude, radiusM: dbRow.radius_m, status: dbRow.status };
       case 'leaves': return { ...common, employeeId: dbRow.employee_id, type: dbRow.type, startDate: dbRow.start_date, endDate: dbRow.end_date, days: dbRow.days, reason: dbRow.reason, status: dbRow.status, approverId: dbRow.approver_id, submittedAt: dbRow.submitted_at, approvedAt: dbRow.approved_at };
       case 'stocks': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, quantity: dbRow.quantity, minStock: dbRow.min_stock, updatedBy: dbRow.updated_by, lastUpdated: dbRow.last_updated };
+      case 'inventoryCycles': return { ...common, projectId:dbRow.project_id, outletId:dbRow.outlet_id, productId:dbRow.product_id, employeeId:dbRow.employee_id, visitId:dbRow.visit_id, cycleDate:dbRow.cycle_date, status:dbRow.status, openingQty:dbRow.opening_qty, stockInQty:dbRow.stock_in_qty, adjustmentQty:dbRow.adjustment_qty, returnQty:dbRow.return_qty, damagedQty:dbRow.damaged_qty, transferOutQty:dbRow.transfer_out_qty, closingQty:dbRow.closing_qty, sellOutQty:dbRow.sell_out_qty, unitPrice:dbRow.unit_price, salesAmount:dbRow.sales_amount, saleId:dbRow.sale_id, idempotencyKey:dbRow.idempotency_key, finalizedAt:dbRow.finalized_at };
       case 'priceObservations': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, employeeId: dbRow.employee_id, recordedBy: dbRow.employee_id, visitId: dbRow.visit_id, observedPrice: dbRow.observed_price, discountPercent: dbRow.discount_percent, discountAmount: dbRow.discount_amount, notes: dbRow.notes || '', recordedAt: dbRow.recorded_at };
       case 'competitorIntel': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, competitorProductId: dbRow.competitor_product_id, employeeId: dbRow.employee_id, recordedBy: dbRow.employee_id, visitId: dbRow.visit_id, ourPrice: dbRow.our_price, competitorPrice: dbRow.competitor_price, shelfShare: dbRow.shelf_share, visibility: dbRow.visibility, hasPromo: !!dbRow.has_promo, promoType: dbRow.promo_type || '', promoNotes: dbRow.promo_notes || '', notes: dbRow.notes || '', recordedAt: dbRow.recorded_at };
       case 'outletProposals': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, employeeId: dbRow.submitted_by, submittedBy: dbRow.submitted_by, name: dbRow.name, address: dbRow.address || '', status: dbRow.status, supervisorStatus: dbRow.supervisor_status, managerStatus: dbRow.manager_status, submittedAt: dbRow.submitted_at };
@@ -766,7 +810,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
 
 async function bootstrapData(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,priceObservations,competitorIntel,outletProposals] = await Promise.all([
+  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles,priceObservations,competitorIntel,outletProposals] = await Promise.all([
     allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
@@ -785,6 +829,7 @@ async function bootstrapData(env, claims) {
     allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_leaves WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_stocks WHERE organization_id=?').bind(org)),
+    allRows(env.DB.prepare('SELECT * FROM core_inventory_cycles WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_price_observations WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_competitor_intel WHERE organization_id=?').bind(org)),
     allRows(env.DB.prepare('SELECT * FROM core_outlet_proposals WHERE organization_id=?').bind(org)),
@@ -810,6 +855,7 @@ async function bootstrapData(env, claims) {
     attendancePoints: decodeRows('attendancePoints', attendancePoints),
     leaves: decodeRows('leaves', leaves),
     stocks: decodeRows('stocks', stocks),
+    inventoryCycles: decodeRows('inventoryCycles', inventoryCycles),
     priceObservations: decodeRows('priceObservations', priceObservations),
     competitorIntel: decodeRows('competitorIntel', competitorIntel),
     outletProposals: decodeRows('outletProposals', outletProposals),
@@ -831,6 +877,7 @@ async function bootstrapData(env, claims) {
     for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
     data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
+    data.inventoryCycles = data.inventoryCycles.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
   }
   return data;
@@ -900,7 +947,7 @@ async function handleImport(request, env, claims) {
 
   const { statements: authStatements, userIdByEmployee } = await importAuthStatements(env, canonical, claims, organizationId);
   const statements = [...authStatements];
-  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','priceObservations','competitorIntel','outletProposals','surveyTemplates','surveyResponses','leaves','stocks'];
+  const order = ['clients','projects','employees','projectAssignments','outlets','products','projectProducts','competitors','competitorProducts','attendancePoints','visits','attendance','productSales','priceObservations','competitorIntel','outletProposals','surveyTemplates','surveyResponses','leaves','stocks','inventoryCycles'];
   for (const entity of order) {
     for (const row of canonical[entity] || []) {
       const extras = entity === 'employees' ? { authUserId: userIdByEmployee.get(str(row.id)) || null } : {};
@@ -1240,6 +1287,192 @@ export async function validateProductMutation(env, organizationId, row, existing
   return null;
 }
 
+async function validateStockAuthorityMutation(existing = null, op = 'upsert') {
+  if (!existing) return null;
+  const meta = parseMetadata(existing.metadata_json);
+  if (str(meta.provenance) === 'inventory_cycle') {
+    return { error:'STOCK_LEDGER_MANAGED', status:409 };
+  }
+  return null;
+}
+
+async function validateProductSaleAuthorityMutation(existing = null, row = {}, op = 'upsert') {
+  const existingMeta = parseMetadata(existing?.metadata_json);
+  const incomingProvenance = str(row.provenance || row.source || row.metadata?.provenance);
+  if (str(existingMeta.provenance) === 'derived_stock') {
+    return { error:'DERIVED_SALE_IMMUTABLE', status:409 };
+  }
+  if (!existing && ['derived_stock','inventory_cycle'].includes(incomingProvenance)) {
+    return { error:'DERIVED_SALE_SERVER_ONLY', status:403 };
+  }
+  return null;
+}
+
+export async function validateInventoryCycleMutation(env, organizationId, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  if (op === 'delete') return { error:'INVENTORY_CYCLE_DELETE_FORBIDDEN', status:409 };
+
+  const id = str(row.id || existing?.id);
+  const projectId = str(row.projectId || row.project_id || existing?.project_id);
+  const outletId = str(row.outletId || row.outlet_id || existing?.outlet_id);
+  const productId = str(row.productId || row.product_id || existing?.product_id);
+  const employeeId = str(row.employeeId || row.recordedBy || existing?.employee_id);
+  const visitId = nullable(str(row.visitId || row.visit_id || existing?.visit_id));
+  const cycleDate = str(row.cycleDate || row.date || existing?.cycle_date || new Date().toISOString().slice(0,10));
+  const status = safeStatus(row.status || existing?.status, ['draft','finalized'], existing?.status || 'draft');
+
+  if (!id) return { error:'INVENTORY_CYCLE_ID_REQUIRED', status:400 };
+  if (!projectId) return { error:'INVENTORY_CYCLE_PROJECT_REQUIRED', status:422 };
+  if (!outletId) return { error:'INVENTORY_CYCLE_OUTLET_REQUIRED', status:422 };
+  if (!productId) return { error:'INVENTORY_CYCLE_PRODUCT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'INVENTORY_CYCLE_EMPLOYEE_REQUIRED', status:422 };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cycleDate)) return { error:'INVENTORY_CYCLE_DATE_INVALID', status:422 };
+
+  if (existing) {
+    if (str(existing.status) === 'finalized') return { error:'INVENTORY_CYCLE_FINAL', status:409 };
+    if (str(existing.project_id) !== projectId || str(existing.outlet_id) !== outletId || str(existing.product_id) !== productId || str(existing.employee_id) !== employeeId || str(existing.cycle_date) !== cycleDate) {
+      return { error:'INVENTORY_CYCLE_IDENTITY_IMMUTABLE', status:409 };
+    }
+  }
+
+  const outletLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_outlets WHERE organization_id=? AND project_id=? AND outlet_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,outletId).first();
+  if (!outletLink) return { error:'INVENTORY_CYCLE_OUTLET_PROJECT_MISMATCH', status:409 };
+
+  const productLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_products WHERE organization_id=? AND project_id=? AND product_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,productId).first();
+  if (!productLink) return { error:'INVENTORY_CYCLE_PRODUCT_PROJECT_MISMATCH', status:409 };
+
+  const employee = await env.DB.prepare(
+    "SELECT e.id FROM core_employees e JOIN core_employee_project_assignments a ON a.organization_id=e.organization_id AND a.employee_id=e.id WHERE e.organization_id=? AND e.id=? AND e.employment_status='active' AND a.project_id=? AND a.status='active' LIMIT 1"
+  ).bind(organizationId,employeeId,projectId).first();
+  if (!employee) return { error:'INVENTORY_CYCLE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+
+  if (visitId) {
+    const visit = await env.DB.prepare(
+      'SELECT id FROM core_visits WHERE organization_id=? AND id=? AND project_id=? AND outlet_id=? AND employee_id=? LIMIT 1'
+    ).bind(organizationId,visitId,projectId,outletId,employeeId).first();
+    if (!visit) return { error:'INVENTORY_CYCLE_VISIT_MISMATCH', status:409 };
+  }
+
+  const duplicate = await env.DB.prepare(
+    'SELECT id FROM core_inventory_cycles WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=? AND cycle_date=? AND id<>? LIMIT 1'
+  ).bind(organizationId,projectId,outletId,productId,cycleDate,id).first();
+  if (duplicate) return { error:'INVENTORY_CYCLE_PERIOD_CONFLICT', status:409 };
+
+  const qtyFields = [
+    ['openingQty','INVENTORY_CYCLE_OPENING_INVALID',false],
+    ['stockInQty','INVENTORY_CYCLE_STOCK_IN_INVALID',false],
+    ['adjustmentQty','INVENTORY_CYCLE_ADJUSTMENT_INVALID',true],
+    ['returnQty','INVENTORY_CYCLE_RETURN_INVALID',false],
+    ['damagedQty','INVENTORY_CYCLE_DAMAGED_INVALID',false],
+    ['transferOutQty','INVENTORY_CYCLE_TRANSFER_INVALID',false],
+    ['closingQty','INVENTORY_CYCLE_CLOSING_INVALID',false],
+  ];
+  const values = {};
+  for (const [field,errorCode,signed] of qtyFields) {
+    const value = num(row[field] ?? parseMetadata(existing?.metadata_json)?.[field] ?? existing?.[field.replace(/[A-Z]/g,m=>'_'+m.toLowerCase())] ?? 0);
+    if (value == null || (!signed && value < 0)) return { error:errorCode, status:422 };
+    values[field] = value;
+  }
+
+  const balances = await allRows(env.DB.prepare(
+    'SELECT id,quantity,min_stock FROM core_stocks WHERE organization_id=? AND project_id=? AND outlet_id=? AND product_id=?'
+  ).bind(organizationId,projectId,outletId,productId));
+  if (balances.length > 1) return { error:'STOCK_BALANCE_AMBIGUOUS', status:409 };
+  const currentStock = balances[0] || null;
+  const authoritativeOpening = Number(currentStock?.quantity || 0);
+  if (Number(values.openingQty) !== authoritativeOpening) {
+    return { error:'INVENTORY_CYCLE_OPENING_MISMATCH', status:409, authoritativeOpening };
+  }
+
+  const availableQty = values.openingQty + values.stockInQty + values.adjustmentQty - values.returnQty - values.damagedQty - values.transferOutQty;
+  if (!Number.isFinite(availableQty) || availableQty < 0) return { error:'INVENTORY_CYCLE_AVAILABLE_NEGATIVE', status:422 };
+  if (values.closingQty > availableQty) return { error:'INVENTORY_CYCLE_CLOSING_EXCEEDS_AVAILABLE', status:422 };
+  const sellOutQty = availableQty - values.closingQty;
+
+  const product = await env.DB.prepare(
+    'SELECT id,metadata_json FROM core_products WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,productId).first();
+  if (!product) return { error:'INVENTORY_CYCLE_PRODUCT_NOT_FOUND', status:422 };
+  const productMeta = parseMetadata(product.metadata_json);
+  const unitPrice = num(productMeta.price);
+  if (status === 'finalized' && sellOutQty > 0 && (unitPrice == null || unitPrice < 0)) {
+    return { error:'INVENTORY_CYCLE_PRODUCT_PRICE_REQUIRED', status:409 };
+  }
+
+  row.id = id;
+  row.projectId = projectId;
+  row.outletId = outletId;
+  row.productId = productId;
+  row.employeeId = employeeId;
+  row.visitId = visitId;
+  row.cycleDate = cycleDate;
+  row.status = status;
+  Object.assign(row,values);
+  row.sellOutQty = sellOutQty;
+  row.unitPrice = unitPrice;
+  row.salesAmount = unitPrice == null ? null : sellOutQty * unitPrice;
+  row.saleId = status === 'finalized' ? `SALE-CYCLE-${id}` : null;
+  row.idempotencyKey = str(row.idempotencyKey || `inventory-cycle:${id}`);
+  row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
+  row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
+  row.minStock = Math.max(0, Number(currentStock?.min_stock || 0));
+
+  if (status === 'finalized') {
+    const saleCollision = await env.DB.prepare(
+      'SELECT id,project_id,outlet_id,product_id,metadata_json FROM core_product_sales WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,row.saleId).first();
+    if (saleCollision) {
+      const saleMeta = parseMetadata(saleCollision.metadata_json);
+      if (str(saleMeta.provenance) !== 'derived_stock' || str(saleMeta.inventoryCycleId) !== id) {
+        return { error:'INVENTORY_CYCLE_SALE_ID_CONFLICT', status:409 };
+      }
+    }
+    if (!currentStock) {
+      const stockCollision = await env.DB.prepare(
+        'SELECT id,project_id,outlet_id,product_id FROM core_stocks WHERE organization_id=? AND id=? LIMIT 1'
+      ).bind(organizationId,row.stockBalanceId).first();
+      if (stockCollision && (
+        str(stockCollision.project_id) !== projectId ||
+        str(stockCollision.outlet_id) !== outletId ||
+        str(stockCollision.product_id) !== productId
+      )) return { error:'INVENTORY_CYCLE_STOCK_ID_CONFLICT', status:409 };
+    }
+  }
+  return null;
+}
+
+function inventoryCycleFinalizationStatements(env, organizationId, row) {
+  if (str(row.status) !== 'finalized') return [];
+  const p = (sql,args) => env.DB.prepare(sql).bind(...args);
+  const saleMeta = JSON.stringify({
+    provenance:'derived_stock',
+    source:'inventory_cycle',
+    inventoryCycleId:row.id,
+    formula:'opening + stockIn + adjustment - return - damaged - transferOut - closing',
+  });
+  const stockMeta = JSON.stringify({
+    provenance:'inventory_cycle',
+    inventoryCycleId:row.id,
+  });
+  return [
+    p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP
+       WHERE core_stocks.organization_id=excluded.organization_id AND core_stocks.project_id=excluded.project_id AND core_stocks.outlet_id=excluded.outlet_id AND core_stocks.product_id=excluded.product_id`,
+      [row.stockBalanceId,organizationId,row.projectId,row.outletId,row.productId,row.closingQty,row.minStock,row.employeeId,row.cycleDate,stockMeta]),
+    p(`INSERT INTO core_product_sales(id,organization_id,project_id,outlet_id,employee_id,product_id,quantity,unit_price,total_amount,sold_at,idempotency_key,metadata_json,row_version,updated_at)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+       ON CONFLICT(id) DO UPDATE SET quantity=excluded.quantity,unit_price=excluded.unit_price,total_amount=excluded.total_amount,sold_at=excluded.sold_at,idempotency_key=excluded.idempotency_key,metadata_json=excluded.metadata_json,row_version=core_product_sales.row_version+1,updated_at=CURRENT_TIMESTAMP
+       WHERE core_product_sales.organization_id=excluded.organization_id`,
+      [row.saleId,organizationId,row.projectId,row.outletId,row.employeeId,row.productId,row.sellOutQty,row.unitPrice,row.salesAmount,row.finalizedAt,`inventory-cycle:${row.id}`,saleMeta]),
+    p('UPDATE core_inventory_cycles SET sale_id=?,updated_at=CURRENT_TIMESTAMP WHERE organization_id=? AND id=?', [row.saleId,organizationId,row.id]),
+  ];
+}
+
 async function validateProjectAssignmentMutation(env, organizationId, row, existing = null, context = {}) {
   const id = str(row.id);
   const projectId = str(row.projectId || existing?.project_id);
@@ -1432,6 +1665,23 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       const productError = await validateProductMutation(env, organizationId, row, existing, { op, existingProjectIds });
       if (productError) return json({ error:productError.error, entity, id:row.id || null, referenceCount:productError.referenceCount }, productError.status || 422);
     }
+    if (entity === 'stocks') {
+      const stockError = await validateStockAuthorityMutation(existing, op);
+      if (stockError) return json({ error:stockError.error, entity, id:row.id || null }, stockError.status || 409);
+    }
+    if (entity === 'productSales') {
+      const saleError = await validateProductSaleAuthorityMutation(existing, row, op);
+      if (saleError) return json({ error:saleError.error, entity, id:row.id || null }, saleError.status || 409);
+    }
+    if (entity === 'inventoryCycles') {
+      const cycleError = await validateInventoryCycleMutation(env, organizationId, row, existing, { op });
+      if (cycleError) return json({
+        error:cycleError.error,
+        entity,
+        id:row.id || null,
+        ...(cycleError.authoritativeOpening != null ? { authoritativeOpening:cycleError.authoritativeOpening } : {}),
+      }, cycleError.status || 422);
+    }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
       if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated, remainingSubordinates:assignmentError.remainingSubordinates }, assignmentError.status || 422);
@@ -1462,6 +1712,9 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
         statements.push(...finalization.statements);
+      }
+      if (entity === 'inventoryCycles' && str(row.status) === 'finalized') {
+        statements.push(...inventoryCycleFinalizationStatements(env, organizationId, row));
       }
     }
     if (entity === 'projectAssignments') statements.push(membershipRefreshStatement(env, organizationId, str(row.employeeId || existing?.employee_id), str(row.projectId || existing?.project_id)));

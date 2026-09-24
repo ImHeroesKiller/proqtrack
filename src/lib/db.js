@@ -34,7 +34,7 @@ export const SCHEMA = {
   mirrorKey: 'proqtrack_db_v7',
   tenantCollections: [
     'employees', 'outlets', 'visits', 'attendance', 'accounts', 'products',
-    'leaves', 'stocks', 'priceObservations', 'competitors', 'competitorProducts',
+    'leaves', 'stocks', 'inventoryCycles', 'priceObservations', 'competitors', 'competitorProducts',
     'competitorIntel', 'fieldPhotos', 'productSales', 'clients', 'projects',
     'projectAssignments', 'outletProposals', 'attendancePoints',
   ],
@@ -47,7 +47,7 @@ export const SCHEMA = {
 };
 
 const SEEDED_EMPTY_ARRAYS = [
-  'productSales', 'clients', 'projects', 'projectAssignments', 'projectSettings',
+  'productSales', 'inventoryCycles', 'clients', 'projects', 'projectAssignments', 'projectSettings',
   'outletProposals', 'attendancePoints', 'projectProducts',
   'reportTemplates', 'reportJobs', 'reportExports', 'reportFilters',
   'reportApprovals', 'reportSchedules', 'auditLogs',
@@ -194,6 +194,7 @@ function rawDefaultDB() {
     leaveTypes: JSON.parse(JSON.stringify(seedLeaveTypes)),
     leaves:     JSON.parse(JSON.stringify(seedLeaves)),
     stocks:     JSON.parse(JSON.stringify(seedStocks)),
+    inventoryCycles: [],
     priceObservations: JSON.parse(JSON.stringify(seedPriceObservations)),
     competitors: JSON.parse(JSON.stringify(seedCompetitors)),
     competitorProducts: JSON.parse(JSON.stringify(seedCompetitorProducts)),
@@ -2260,6 +2261,55 @@ export function deleteStock(id) {
   const db = getDB();
   db.stocks = db.stocks.filter(s => s.id !== id);
   saveDB();
+}
+
+export function getInventoryCycles() {
+  return scoped(getDB().inventoryCycles || []);
+}
+
+export function getInventoryCyclesByOutlet(outletId) {
+  return getInventoryCycles().filter(row => row.outletId === outletId);
+}
+
+export function getInventoryCyclesByProduct(productId) {
+  return getInventoryCycles().filter(row => row.productId === productId);
+}
+
+export function createInventoryCycle(data = {}) {
+  const actor = assertLoggedIn();
+  const db = getDB();
+  assertOperationalContext(db, data, { product:true });
+  const row = {
+    id:uid('IC'),
+    status:'draft',
+    openingQty:0,
+    stockInQty:0,
+    adjustmentQty:0,
+    returnQty:0,
+    damagedQty:0,
+    transferOutQty:0,
+    closingQty:0,
+    cycleDate:todayISO(),
+    employeeId:actor.employeeId || data.employeeId || '',
+    ...withOrg(data),
+  };
+  db.inventoryCycles = db.inventoryCycles || [];
+  db.inventoryCycles.push(row);
+  saveDB();
+  return row;
+}
+
+export function updateInventoryCycle(id, data = {}) {
+  assertLoggedIn();
+  const db = getDB();
+  const idx = (db.inventoryCycles || []).findIndex(row => row.id === id);
+  if (idx === -1) throw new Error('Inventory cycle tidak ditemukan.');
+  const current = db.inventoryCycles[idx];
+  if (current.status === 'finalized') throw new Error('Inventory cycle final tidak dapat diubah.');
+  assertOperationalContext(db, { ...current, ...data }, { product:true });
+  db.inventoryCycles[idx] = { ...current, ...data };
+  saveDB();
+  return db.inventoryCycles[idx];
 }
 
 export function getPriceObservations() {

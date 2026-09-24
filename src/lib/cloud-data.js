@@ -19,6 +19,7 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'attendancePoints',
   'leaves',
   'stocks',
+  'inventoryCycles',
   'priceObservations',
   'competitorIntel',
   'outletProposals',
