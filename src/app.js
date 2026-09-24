@@ -1884,7 +1884,13 @@ async function photoFromEmployeeForm(form, fallback = '') {
 window.FT.openEmployeeModal = function() {
   const actor = getActor();
   let projects = (getDB().projects || []).filter(p => !['completed','cancelled','closed','archived'].includes(p.status));
-  if (actor?.role === 'manager' && actor.projectId) projects = projects.filter(p => p.id === actor.projectId);
+  if (actor?.role === 'manager') {
+    const managerProjects = new Set(
+      (Array.isArray(actor.projectIds) && actor.projectIds.length ? actor.projectIds : (actor.projectId ? [actor.projectId] : []))
+        .map(String)
+    );
+    projects = projects.filter(p => managerProjects.has(String(p.id)));
+  }
   openModal('Tambah Karyawan', `
     <form data-pqt-onsubmit="FT.createEmployee(event)">
       ${employeePhotoField(defaultPortrait({ name: 'Karyawan Baru' }))}
@@ -1954,9 +1960,6 @@ window.FT.deleteEmployee = async function(id) {
   if (!current) return;
   if (!confirm('Nonaktifkan karyawan ini? Akses login aktif akan dicabut.')) return;
   try {
-    const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
-    const projectId = assignment?.projectId || getActor()?.projectId || '';
-    if (!projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
     await window.BulkEmployees.updateSingleEmployee({
       employeeCode: current.employeeCode || current.code || id,
       name: current.name,
@@ -1965,7 +1968,7 @@ window.FT.deleteEmployee = async function(id) {
       role: current.role,
       area: current.area,
       position: current.position || current.role,
-      projectId,
+      projectId: '',
       status: 'inactive',
       salesTargetAmount: current.salesTargetAmount || 0,
       attendancePointId: current.attendancePointId || '',
@@ -2087,10 +2090,8 @@ window.FT.updateEmployee = async function(e, id) {
   try {
     data.photo = await photoFromEmployeeForm(form, current?.photo || '');
     delete data.photoFile;
-    const assignment = (getDB().projectAssignments || []).find(a => a.employeeId === id && a.status === 'active');
     data.employeeCode = current?.employeeCode || current?.code || id;
-    data.projectId = assignment?.projectId || getActor()?.projectId || '';
-    if (!data.projectId) throw new Error('Project aktif karyawan tidak ditemukan.');
+    data.projectId = '';
     data.joinDate = current?.joinDate || '';
     await window.BulkEmployees.updateSingleEmployee(data);
     closeModal(); showToast('Data operasional karyawan berhasil diperbarui', 'success'); render();
