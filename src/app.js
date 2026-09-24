@@ -3002,15 +3002,11 @@ function renderProductSales({ mine = false } = {}) {
     .sort((a,b) => String(b.soldAt || b.date || '').localeCompare(String(a.soldAt || a.date || '')));
   const manualAllowed = !mine && isProjectAdmin();
   const auditRows = getProductSalesAudit();
-  const replacementSources = new Set(auditRows.filter(row => String(row.lifecycleStatus||'active')!=='voided' && row.correctionOfSaleId).map(row=>String(row.correctionOfSaleId)));
-  const pendingCorrections = manualAllowed ? auditRows.filter(row =>
-    String(row.lifecycleStatus||'active')==='voided'
-    && !['derived_stock','inventory_cycle'].includes(String(row.provenance||'manual_legacy'))
-    && !replacementSources.has(String(row.id))
-  ) : [];
-  const totalQty = rows.reduce((sum,row)=>sum+Number(row.quantity ?? row.qty ?? 0),0);
-  const totalAmount = rows.reduce((sum,row)=>sum+Number(row.totalAmount ?? row.amount ?? 0),0);
-  const manualCount = rows.filter(row => !['derived_stock','inventory_cycle'].includes(String(row.provenance||'manual_legacy'))).length;
+  const pendingCorrections = manualAllowed ? pendingManualCorrections(auditRows) : [];
+  const salesTotals = salesSummary(rows);
+  const totalQty = salesTotals.quantity;
+  const totalAmount = salesTotals.amount;
+  const manualCount = salesTotals.manual;
   const thisMonth = todayISO().slice(0,7);
   queueMicrotask(()=>window.FT?.filterProductSales?.());
   return `
@@ -3064,33 +3060,33 @@ function renderProductSales({ mine = false } = {}) {
 }
 
 window.FT.filterProductSales = function() {
-  const search=(document.getElementById('salesSearch')?.value||'').trim().toLowerCase();
-  const source=document.getElementById('salesSourceFilter')?.value||'';
-  const from=document.getElementById('salesFromFilter')?.value||'';
-  const to=document.getElementById('salesToFilter')?.value||'';
+  const filters=salesFilterSnapshot(key=>({
+    search:document.getElementById('salesSearch')?.value,
+    source:document.getElementById('salesSourceFilter')?.value,
+    from:document.getElementById('salesFromFilter')?.value,
+    to:document.getElementById('salesToFilter')?.value,
+  })[key]||'');
   const rows=[...document.querySelectorAll('#productSalesTable tbody tr[data-search]')];
-  let visible=0, visibleQty=0, visibleAmount=0, visibleManual=0;
+  const visibleRows=[];
   rows.forEach(row=>{
-    const show=(!search || String(row.dataset.search||'').includes(search))
-      && (!source || row.dataset.source===source)
-      && (!from || String(row.dataset.date||'')>=from)
-      && (!to || String(row.dataset.date||'')<=to);
+    const model={
+      search:row.dataset.search||'', source:row.dataset.source||'', date:row.dataset.date||'',
+      quantity:Number(row.dataset.qty||0), totalAmount:Number(row.dataset.amount||0),
+      provenance:row.dataset.source==='manual'?'manual_override':'derived_stock',
+    };
+    const show=salesMatchesFilters(model,filters);
     row.style.display=show?'':'none';
-    if(show) {
-      visible++;
-      visibleQty += Number(row.dataset.qty || 0);
-      visibleAmount += Number(row.dataset.amount || 0);
-      if(row.dataset.source==='manual') visibleManual++;
-    }
+    if(show) visibleRows.push(model);
   });
-  const tx=document.getElementById('salesKpiTransactions'); if(tx) tx.textContent=String(visible);
-  const qty=document.getElementById('salesKpiQty'); if(qty) qty.textContent=String(visibleQty);
-  const amount=document.getElementById('salesKpiAmount'); if(amount) amount.textContent=formatCurrency(visibleAmount);
-  const manual=document.getElementById('salesKpiManual'); if(manual) manual.textContent=`${visibleManual} manual exception`;
+  const totals=salesSummary(visibleRows);
+  const tx=document.getElementById('salesKpiTransactions'); if(tx) tx.textContent=String(totals.transactions);
+  const qty=document.getElementById('salesKpiQty'); if(qty) qty.textContent=String(totals.quantity);
+  const amount=document.getElementById('salesKpiAmount'); if(amount) amount.textContent=formatCurrency(totals.amount);
+  const manual=document.getElementById('salesKpiManual'); if(manual) manual.textContent=`${totals.manual} manual exception`;
   const summary=document.getElementById('salesResultSummary');
-  if(summary) summary.textContent=`${visible} dari ${rows.length} transaksi`;
+  if(summary) summary.textContent=`${totals.transactions} dari ${rows.length} transaksi`;
   const empty=document.getElementById('salesEmptyFilter');
-  if(empty) empty.hidden=visible!==0 || rows.length===0;
+  if(empty) empty.hidden=totals.transactions!==0 || rows.length===0;
 };
 
 window.FT.openManualSaleModal = function(correctionOfSaleId = '') {
@@ -3173,15 +3169,15 @@ function renderStocks() {
   const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const stocks = getStocks().filter(s => productMap[s.productId] && outletMap[s.outletId]);
-  const lowStocks = stocks.filter(s => s.quantity <= s.minStock);
-  const outOfStock = stocks.filter(s => Number(s.quantity) <= 0);
+  const stockTotals = stockSummary(stocks);
+  const lowStocks = stocks.filter(s => Number(s.quantity||0) <= Number(s.minStock||0));
   const projectRows = stockProjectRows();
 
   return `
     <div class="grid-3" style="margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Saldo stok</div><div class="stat-value">${stocks.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Stok menipis</div><div class="stat-value">${lowStocks.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Stok habis</div><div class="stat-value">${outOfStock.length}</div></div>
+      <div class="stat-card"><div class="stat-label">Saldo stok</div><div class="stat-value">${stockTotals.total}</div></div>
+      <div class="stat-card"><div class="stat-label">Stok menipis</div><div class="stat-value">${stockTotals.low}</div></div>
+      <div class="stat-card"><div class="stat-label">Stok habis</div><div class="stat-value">${stockTotals.empty}</div></div>
     </div>
     ${lowStocks.length > 0 ? `
       <div class="card" style="margin-bottom:20px; border-color:var(--red-500); background:var(--red-50);">
@@ -3245,15 +3241,16 @@ function renderStocks() {
 }
 
 window.FT.filterStocks = function() {
-  const search = (document.getElementById('stockSearch')?.value || '').toLowerCase();
-  const project = document.getElementById('stockProjectFilter')?.value || '';
-  const outlet = document.getElementById('stockOutletFilter')?.value || '';
-  const statusF = document.getElementById('stockStatusFilter')?.value || '';
+  const filters=stockFilterSnapshot(key=>({
+    search:document.getElementById('stockSearch')?.value,
+    projectId:document.getElementById('stockProjectFilter')?.value,
+    outletId:document.getElementById('stockOutletFilter')?.value,
+    status:document.getElementById('stockStatusFilter')?.value,
+  })[key]||'');
   document.querySelectorAll('#stockTable tbody tr[data-outlet]').forEach(row => {
-    const show = (!search || row.textContent.toLowerCase().includes(search))
-      && (!project || row.dataset.project === project)
-      && (!outlet || row.dataset.outlet === outlet)
-      && (!statusF || row.dataset.status === statusF);
+    const show=stockMatchesFilters({
+      search:row.textContent||'', projectId:row.dataset.project||'', outletId:row.dataset.outlet||'', status:row.dataset.status||'',
+    },filters);
     row.style.display = show ? '' : 'none';
   });
 };
@@ -3320,15 +3317,13 @@ window.FT.createStock = async function(e) {
   const existingCycle = findInventoryCycleOnDate(getInventoryCycles(),projectId,data.outletId,data.productId,todayISO());
   if (existingCycle) { showToast('Cycle stok hari ini untuk outlet/produk tersebut sudah ada. Tidak dibuat duplikat.', 'error'); return; }
   const openingQty = Number(current?.quantity || 0);
-  const stockInQty = Number(data.stockInQty);
-  const closingQty = Number(data.closingQty);
-  const minStock = Number(data.minStock);
-  if (![stockInQty,closingQty,minStock].every(Number.isFinite) || stockInQty < 0 || closingQty < 0 || minStock < 0) {
-    showToast('Nilai stok tidak valid.', 'error'); return;
+  const validation=validateStockMovementInput({ openingQty, stockInQty:data.stockInQty, closingQty:data.closingQty, minStock:data.minStock });
+  if (!validation.ok) {
+    showToast(validation.error==='STOCK_CLOSING_EXCEEDS_AVAILABLE'
+      ? `Closing stock (${data.closingQty}) tidak boleh melebihi stok tersedia (${validation.available}).`
+      : 'Nilai stok tidak valid.', 'error'); return;
   }
-  if (closingQty > openingQty + stockInQty) {
-    showToast(`Closing stock (${closingQty}) tidak boleh melebihi stok tersedia (${openingQty + stockInQty}).`, 'error'); return;
-  }
+  const { stockInQty, closingQty, minStock }=validation;
   try {
     if (submit) { submit.disabled=true; submit.textContent='Finalisasi…'; }
     createInventoryCycle({
@@ -3981,12 +3976,14 @@ window.FT.saveVisitStock = async function(e, visitId, outletId) {
       if (!productId) continue;
       if (seen.has(productId)) throw new Error('Produk yang sama tidak boleh dicatat dua kali dalam satu kunjungan.');
       seen.add(productId);
-      if (!Number.isFinite(closingQty) || closingQty < 0 || !Number.isFinite(stockInQty) || stockInQty < 0 || !Number.isFinite(minStock) || minStock < 0) throw new Error('Nilai stok tidak valid.');
       if (findInventoryCycleOnDate(getInventoryCycles(),visit.projectId,outletId,productId,todayISO())) throw new Error('Cycle stok hari ini untuk salah satu produk sudah ada. Tidak dibuat duplikat.');
       const existing = getStocksByOutlet(outletId).find(s => s.productId === productId && (!s.projectId || s.projectId === visit.projectId));
       const openingQty = Number(existing?.quantity || 0);
-      if (closingQty > openingQty + stockInQty) throw new Error(`Closing stock produk melebihi stok tersedia (${openingQty + stockInQty}).`);
-      entries.push({ productId, closingQty, stockInQty, minStock, openingQty });
+      const validation=validateStockMovementInput({ openingQty, stockInQty, closingQty, minStock });
+      if (!validation.ok) throw new Error(validation.error==='STOCK_CLOSING_EXCEEDS_AVAILABLE'
+        ? `Closing stock produk melebihi stok tersedia (${validation.available}).`
+        : 'Nilai stok tidak valid.');
+      entries.push({ productId, openingQty:validation.openingQty, closingQty:validation.closingQty, stockInQty:validation.stockInQty, minStock:validation.minStock });
     }
     if (!entries.length) throw new Error('Pilih minimal satu produk untuk dicatat.');
     if (submit) submit.textContent='Finalisasi…';
