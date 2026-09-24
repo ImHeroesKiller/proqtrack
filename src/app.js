@@ -904,7 +904,9 @@ window.FT.logout = function() {
   state.route = '#/login';
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
   if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
+  if (state.trackingRefreshTimer) { clearInterval(state.trackingRefreshTimer); state.trackingRefreshTimer = null; }
   state.homeRefreshedAt = null;
+  state.trackingRefreshedAt = null;
   render();
 };
 
@@ -1395,6 +1397,7 @@ window.FT.createVisit = function(e) {
   const data = Object.fromEntries(fd);
   if (data.checkInTime === '') data.checkInTime = null;
   if (data.checkOutTime === '') data.checkOutTime = null;
+  if (data.status !== 'planned' || data.checkInTime) data.locationSource = 'administrative_entry';
   try {
     createVisit(data);
     closeModal();
@@ -4647,10 +4650,13 @@ function init() {
   getDB();
   state.route = getRoute();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && isHomeRoute()) refreshHomeData().catch(() => {});
+    if (document.visibilityState !== 'visible') return;
+    if (isHomeRoute()) refreshHomeData().catch(() => {});
+    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
   });
   window.addEventListener('focus', () => {
     if (isHomeRoute()) refreshHomeData().catch(() => {});
+    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
   });
   render();
 }
