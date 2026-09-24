@@ -1,7 +1,7 @@
 import './lib/offline-engine.js';
 import './lib/evidence-client.js';
 import './lib/field-photo-evidence.js';
-import './lib/offline-login.js';
+import { installOfflineLogin } from './lib/offline-login.js';
 
 let activeConflictOrganizationId = '';
 
@@ -109,4 +109,8 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(error => {
     console.warn('m4_service_worker_register_failed', error?.message || error);
   });
+}
+
+export function installOfflineRuntime() {
+  return installOfflineLogin();
 }
