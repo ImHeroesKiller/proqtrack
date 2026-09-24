@@ -6,7 +6,7 @@ import {
 } from './lib/db.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { clearApiToken, getApiToken } from './lib/uploads.js';
-import { syncCloudOrganizations } from './lib/cloud-organizations.js';
+import { syncCloudOrganizations, syncCurrentOrganizationProfile } from './lib/cloud-organizations.js';
 import {
   applyRemoteDataToLocal,
   bootstrapOperationalData,
@@ -108,6 +108,11 @@ async function cloudFirstLogin(event) {
       if (bootstrap.mode === 'cloud' && bootstrap.data) {
         applyRemoteDataToLocal(db, bootstrap.data);
       }
+      if (cloudAccount.organizationId) {
+        await syncCurrentOrganizationProfile().catch(error => {
+          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+        });
+      }
       localAccount = ensureCloudIdentity(db, cloudAccount, localAccount || localCandidate, password);
       if (localAccount?.role === 'employee') {
         localAccount = pairCloudAuthenticatedSalesDevice(localAccount.id, device);
@@ -157,6 +162,11 @@ async function restoreCloudSessionOnReload() {
     const restored = await restoreCloudSession(getDB());
     const account = restored?.account;
     if (!account) return false;
+    if (account.organizationId) {
+      await syncCurrentOrganizationProfile().catch(error => {
+        console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+      });
+    }
 
     state.loggedIn = true;
     state.account = account;
