@@ -606,7 +606,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     }
     case 'attendance': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), workDate: str(row.workDate || row.date), status: safeStatus(str(row.status).toLowerCase(), ['present','late','absent','leave','rejected'], 'present') };
     case 'products': return { ...base, id: str(row.id), clientId: str(row.clientId), sku: str(row.sku || row.id), name: str(row.name || 'Product'), projectIds: unique(row.projectIds?.length ? row.projectIds : (row.projectId ? [row.projectId] : [])), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
-    case 'productSales': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId), productId: str(row.productId), quantity: num(row.quantity ?? row.qty) ?? 0, unitPrice: num(row.unitPrice ?? row.price), totalAmount: num(row.totalAmount ?? row.amount), soldAt: str(row.soldAt || row.date || row.createdAt || new Date().toISOString()) };
+    case 'productSales': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId), productId: str(row.productId), quantity: num(row.quantity ?? row.qty) ?? 0, unitPrice: num(row.unitPrice ?? row.price), totalAmount: num(row.totalAmount ?? row.amount), soldAt: str(row.soldAt || row.date || row.createdAt || new Date().toISOString()), idempotencyKey:nullable(str(row.idempotencyKey)), provenance:str(row.provenance || 'manual_override'), lifecycleStatus:safeStatus(row.lifecycleStatus || row.status,['active','voided'],'active'), manualReason:str(row.manualReason), correctionReason:str(row.correctionReason), correctionOfSaleId:nullable(str(row.correctionOfSaleId)), voidedAt:nullable(str(row.voidedAt)), voidedBy:nullable(str(row.voidedBy)), createdBy:nullable(str(row.createdBy)) };
     case 'surveyTemplates': return { ...base, id: str(row.id), clientId: str(row.clientId), projectId: nullable(str(row.projectId)), name: str(row.name || row.title || 'Survey'), status: safeStatus(row.status, ['draft','active','closed','archived'], 'draft') };
     case 'surveyResponses': return { ...base, id: str(row.id), templateId: str(row.templateId), projectId: str(row.projectId), outletId: nullable(str(row.outletId)), employeeId: str(row.employeeId), visitId: nullable(str(row.visitId)), status: safeStatus(row.status, ['draft','submitted','rejected'], 'submitted') };
     case 'projectProducts': return { ...base, projectId: str(row.projectId), productId: str(row.productId), status: safeStatus(row.status, ['active','inactive'], 'active') };
@@ -1288,23 +1288,139 @@ export async function validateProductMutation(env, organizationId, row, existing
 }
 
 async function validateStockAuthorityMutation(existing = null, op = 'upsert') {
-  if (!existing) return null;
-  const meta = parseMetadata(existing.metadata_json);
-  if (str(meta.provenance) === 'inventory_cycle') {
-    return { error:'STOCK_LEDGER_MANAGED', status:409 };
-  }
-  return null;
+  const meta = parseMetadata(existing?.metadata_json);
+  return {
+    error: str(meta.provenance) === 'inventory_cycle' ? 'STOCK_LEDGER_MANAGED' : 'STOCK_DIRECT_MUTATION_DISABLED',
+    status: 409,
+  };
 }
 
-async function validateProductSaleAuthorityMutation(existing = null, row = {}, op = 'upsert') {
+export async function validateProductSaleAuthorityMutation(env, organizationId, claims, existing = null, row = {}, op = 'upsert') {
   const existingMeta = parseMetadata(existing?.metadata_json);
   const incomingProvenance = str(row.provenance || row.source || row.metadata?.provenance);
+  const role = roleOf(claims);
+  const canGovernManualSales = BROAD_ROLES.has(role) || role === 'manager';
+
   if (str(existingMeta.provenance) === 'derived_stock') {
     return { error:'DERIVED_SALE_IMMUTABLE', status:409 };
   }
   if (!existing && ['derived_stock','inventory_cycle'].includes(incomingProvenance)) {
     return { error:'DERIVED_SALE_SERVER_ONLY', status:403 };
   }
+  if (!canGovernManualSales) return { error:'MANUAL_SALE_GOVERNANCE_REQUIRED', status:403 };
+
+  if (existing) {
+    if (op === 'delete') return { error:'MANUAL_SALE_DELETE_FORBIDDEN', status:409 };
+    const currentLifecycle = str(existingMeta.lifecycleStatus || 'active');
+    const nextLifecycle = str(row.lifecycleStatus || row.status || currentLifecycle);
+    if (currentLifecycle === 'voided') return { error:'MANUAL_SALE_FINAL', status:409 };
+    if (nextLifecycle !== 'voided') return { error:'MANUAL_SALE_IMMUTABLE', status:409 };
+    const correctionReason = str(row.correctionReason || row.reason);
+    if (correctionReason.length < 10) return { error:'MANUAL_SALE_CORRECTION_REASON_REQUIRED', status:422 };
+
+    for (const [incomingKeys, currentKeys] of [
+      [['projectId','project_id'],['project_id']],
+      [['outletId','outlet_id'],['outlet_id']],
+      [['employeeId','employee_id'],['employee_id']],
+      [['productId','product_id'],['product_id']],
+      [['quantity','qty'],['quantity']],
+      [['unitPrice','price'],['unit_price']],
+      [['totalAmount','amount'],['total_amount']],
+      [['soldAt','date'],['sold_at']],
+    ]) {
+      if (!unchangedIfProvided(row, existing, incomingKeys, currentKeys)) return { error:'MANUAL_SALE_IDENTITY_IMMUTABLE', status:409 };
+    }
+    Object.assign(row, {
+      id:existing.id,
+      projectId:existing.project_id,
+      outletId:existing.outlet_id,
+      employeeId:existing.employee_id,
+      productId:existing.product_id,
+      quantity:Number(existing.quantity),
+      unitPrice:existing.unit_price == null ? null : Number(existing.unit_price),
+      totalAmount:existing.total_amount == null ? null : Number(existing.total_amount),
+      soldAt:existing.sold_at,
+      idempotencyKey:existing.idempotency_key,
+      provenance:str(existingMeta.provenance || 'manual_override'),
+      lifecycleStatus:'voided',
+      manualReason:str(existingMeta.manualReason),
+      correctionReason,
+      voidedAt:new Date().toISOString(),
+      voidedBy:str(claims?.sub),
+      correctionOfSaleId:nullable(str(existingMeta.correctionOfSaleId)),
+    });
+    return null;
+  }
+
+  if (op !== 'upsert') return { error:'MANUAL_SALE_CREATE_REQUIRED', status:409 };
+  const id = str(row.id);
+  const projectId = str(row.projectId || row.project_id);
+  const outletId = str(row.outletId || row.outlet_id);
+  const employeeId = str(row.employeeId || row.employee_id);
+  const productId = str(row.productId || row.product_id);
+  const quantity = num(row.quantity ?? row.qty);
+  const unitPrice = num(row.unitPrice ?? row.price);
+  const soldAt = str(row.soldAt || row.date);
+  const idempotencyKey = str(row.idempotencyKey);
+  const manualReason = str(row.manualReason || row.reason);
+  const correctionOfSaleId = nullable(str(row.correctionOfSaleId));
+
+  if (!id) return { error:'MANUAL_SALE_ID_REQUIRED', status:400 };
+  if (!projectId || !outletId || !employeeId || !productId) return { error:'MANUAL_SALE_SCOPE_REQUIRED', status:422 };
+  if (quantity == null || quantity <= 0) return { error:'MANUAL_SALE_QUANTITY_INVALID', status:422 };
+  if (unitPrice == null || unitPrice < 0) return { error:'MANUAL_SALE_PRICE_INVALID', status:422 };
+  if (!soldAt || Number.isNaN(Date.parse(soldAt))) return { error:'MANUAL_SALE_DATE_INVALID', status:422 };
+  if (!idempotencyKey) return { error:'MANUAL_SALE_IDEMPOTENCY_REQUIRED', status:422 };
+  if (manualReason.length < 10) return { error:'MANUAL_SALE_REASON_REQUIRED', status:422 };
+
+  const outletLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_outlets WHERE organization_id=? AND project_id=? AND outlet_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,outletId).first();
+  if (!outletLink) return { error:'MANUAL_SALE_OUTLET_PROJECT_MISMATCH', status:409 };
+  const productLink = await env.DB.prepare(
+    "SELECT 1 AS ok FROM core_project_products WHERE organization_id=? AND project_id=? AND product_id=? AND status='active' LIMIT 1"
+  ).bind(organizationId,projectId,productId).first();
+  if (!productLink) return { error:'MANUAL_SALE_PRODUCT_PROJECT_MISMATCH', status:409 };
+  const employee = await env.DB.prepare(
+    "SELECT e.id FROM core_employees e JOIN core_employee_project_assignments a ON a.organization_id=e.organization_id AND a.employee_id=e.id WHERE e.organization_id=? AND e.id=? AND e.employment_status='active' AND a.project_id=? AND a.status='active' LIMIT 1"
+  ).bind(organizationId,employeeId,projectId).first();
+  if (!employee) return { error:'MANUAL_SALE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+
+  const duplicateKey = await env.DB.prepare(
+    'SELECT id FROM core_product_sales WHERE organization_id=? AND idempotency_key=? AND id<>? LIMIT 1'
+  ).bind(organizationId,idempotencyKey,id).first();
+  if (duplicateKey) return { error:'MANUAL_SALE_IDEMPOTENCY_CONFLICT', status:409 };
+
+  if (correctionOfSaleId) {
+    const original = await env.DB.prepare(
+      'SELECT id,project_id,outlet_id,product_id,metadata_json FROM core_product_sales WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,correctionOfSaleId).first();
+    if (!original) return { error:'MANUAL_SALE_CORRECTION_SOURCE_NOT_FOUND', status:422 };
+    const originalMeta = parseMetadata(original.metadata_json);
+    if (str(originalMeta.provenance) === 'derived_stock') return { error:'DERIVED_SALE_CORRECTION_FORBIDDEN', status:409 };
+    if (str(originalMeta.lifecycleStatus || 'active') !== 'voided') return { error:'MANUAL_SALE_CORRECTION_SOURCE_NOT_VOIDED', status:409 };
+    if (str(original.project_id) !== projectId || str(original.outlet_id) !== outletId || str(original.product_id) !== productId) {
+      return { error:'MANUAL_SALE_CORRECTION_SCOPE_MISMATCH', status:409 };
+    }
+  }
+
+  Object.assign(row, {
+    id,
+    projectId,
+    outletId,
+    employeeId,
+    productId,
+    quantity,
+    unitPrice,
+    totalAmount:quantity * unitPrice,
+    soldAt:new Date(soldAt).toISOString(),
+    idempotencyKey,
+    provenance:'manual_override',
+    lifecycleStatus:'active',
+    manualReason,
+    correctionOfSaleId,
+    createdBy:str(claims?.sub),
+  });
   return null;
 }
 
@@ -1393,6 +1509,22 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   if (values.closingQty > availableQty) return { error:'INVENTORY_CYCLE_CLOSING_EXCEEDS_AVAILABLE', status:422 };
   const sellOutQty = availableQty - values.closingQty;
 
+  const adjustmentReason = str(row.adjustmentReason || row.reason || parseMetadata(existing?.metadata_json)?.adjustmentReason);
+  const correctionOfCycleId = nullable(str(row.correctionOfCycleId || parseMetadata(existing?.metadata_json)?.correctionOfCycleId));
+  if (values.adjustmentQty !== 0 && adjustmentReason.length < 10) {
+    return { error:'INVENTORY_CYCLE_ADJUSTMENT_REASON_REQUIRED', status:422 };
+  }
+  if (correctionOfCycleId) {
+    const sourceCycle = await env.DB.prepare(
+      "SELECT id,status,project_id,outlet_id,product_id FROM core_inventory_cycles WHERE organization_id=? AND id=? LIMIT 1"
+    ).bind(organizationId,correctionOfCycleId).first();
+    if (!sourceCycle || str(sourceCycle.status) !== 'finalized') return { error:'INVENTORY_CYCLE_CORRECTION_SOURCE_INVALID', status:422 };
+    if (str(sourceCycle.id) === id || str(sourceCycle.project_id) !== projectId || str(sourceCycle.outlet_id) !== outletId || str(sourceCycle.product_id) !== productId) {
+      return { error:'INVENTORY_CYCLE_CORRECTION_SCOPE_MISMATCH', status:409 };
+    }
+    if (values.adjustmentQty === 0) return { error:'INVENTORY_CYCLE_CORRECTION_ADJUSTMENT_REQUIRED', status:422 };
+  }
+
   const product = await env.DB.prepare(
     'SELECT id,metadata_json FROM core_products WHERE organization_id=? AND id=? LIMIT 1'
   ).bind(organizationId,productId).first();
@@ -1420,6 +1552,8 @@ export async function validateInventoryCycleMutation(env, organizationId, row, e
   row.finalizedAt = status === 'finalized' ? new Date().toISOString() : null;
   row.stockBalanceId = str(currentStock?.id || `STK-CYCLE-${id}`);
   row.minStock = Math.max(0, Number(currentStock?.min_stock || 0));
+  row.adjustmentReason = adjustmentReason;
+  row.correctionOfCycleId = correctionOfCycleId;
 
   if (status === 'finalized') {
     const saleCollision = await env.DB.prepare(
@@ -1670,7 +1804,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       if (stockError) return json({ error:stockError.error, entity, id:row.id || null }, stockError.status || 409);
     }
     if (entity === 'productSales') {
-      const saleError = await validateProductSaleAuthorityMutation(existing, row, op);
+      const saleError = await validateProductSaleAuthorityMutation(env, organizationId, claims, existing, row, op);
       if (saleError) return json({ error:saleError.error, entity, id:row.id || null }, saleError.status || 409);
     }
     if (entity === 'inventoryCycles') {
