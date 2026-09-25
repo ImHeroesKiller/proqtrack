@@ -32,10 +32,10 @@ test('Client P1 fails closed when logo upload fails', async () => {
 });
 
 test('Client P1 blocks legacy demo seed on production hosts', async () => {
-  const src = await read('src/types/index.js');
-  assert.match(src, /allowLegacyDemoSeed/);
-  assert.match(src, /\["localhost", "127\.0\.0\.1"\]\.includes\(location\.hostname\)/);
-  assert.match(src, /allowLegacyDemoSeed && !db\.clients\.length/);
+  const migration = await read('src/types/project-management-migration.js');
+  assert.match(migration, /allowLegacyDemoSeed/);
+  assert.match(migration, /\["localhost", "127\.0\.0\.1"\]\.includes\(location\.hostname\)/);
+  assert.match(migration, /allowLegacyDemoSeed && !db\.clients\.length/);
 });
 
 test('Client P1 enforces canonical validation and uniqueness in Worker', async () => {
