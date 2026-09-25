@@ -391,8 +391,8 @@ async function validateLeaveMutation(env, organizationId, row, existing, op) {
   return null;
 }
 
-function visitAttendanceStatements(env, organizationId, row, existing) {
-  if (!existing) return [];
+function visitAttendanceStatements(env, organizationId, row, existing, attendanceSource = 'manual') {
+  if (!existing || attendanceSource !== 'visit') return [];
   const currentStatus=canonicalVisitStatus(existing.status);
   const nextStatus=canonicalVisitStatus(row.status || existing.status);
   const isCheckIn=currentStatus==='planned' && nextStatus==='in_progress';
@@ -2002,7 +2002,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       ).bind(organizationId,str(existing.id || row.id)));
       existingProjectIds = unique(links.map(link => link.project_id));
     }
-    if ((entity === 'visits' || entity === 'outletProposals') && !actorEmployeeResolved) {
+    if ((entity === 'visits' || entity === 'outletProposals' || entity === 'attendance') && !actorEmployeeResolved) {
       actorEmployeeResolved = true;
       const actorEmployee = await env.DB.prepare(
         "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
@@ -2051,10 +2051,26 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(cycleError.authoritativeOpening != null ? { authoritativeOpening:cycleError.authoritativeOpening } : {}),
       }, cycleError.status || 422);
     }
+    if (entity === 'attendance') {
+      const attendanceError = await validateAttendanceMutation(env, organizationId, claims, row, existing, op);
+      if (attendanceError) return json({
+        error:attendanceError.error, entity, id:row.id || null,
+        ...(attendanceError.distanceM != null ? { distanceM:attendanceError.distanceM } : {}),
+        ...(attendanceError.radiusM != null ? { radiusM:attendanceError.radiusM } : {}),
+      }, attendanceError.status || 422);
+      if (roleOf(claims) === 'employee' && actorEmployeeId && str(row.employeeId || existing?.employee_id) !== actorEmployeeId) {
+        return json({ error:'ATTENDANCE_SELF_ONLY', entity, id:row.id || null }, 403);
+      }
+    }
+    if (entity === 'leaves') {
+      const leaveError = await validateLeaveMutation(env, organizationId, row, existing, op);
+      if (leaveError) return json({ error:leaveError.error, entity, id:row.id || null }, leaveError.status || 422);
+    }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
       if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated, remainingSubordinates:assignmentError.remainingSubordinates }, assignmentError.status || 422);
     }
+    let visitAttendanceSource = 'manual';
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
       if (geofenceError) return json({
@@ -2064,6 +2080,8 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(geofenceError.distanceM != null ? { distanceM:geofenceError.distanceM } : {}),
         ...(geofenceError.radiusM != null ? { radiusM:geofenceError.radiusM } : {}),
       }, geofenceError.status || 422);
+      const attendancePolicy = await projectAttendancePolicy(env, organizationId, str(row.projectId || existing?.project_id));
+      visitAttendanceSource = attendancePolicy?.source || 'manual';
     }
     if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
       row.approverId = claims.sub;
@@ -2077,6 +2095,9 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         extras = { authUserId: user?.id || null };
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
+      if (entity === 'visits') {
+        statements.push(...visitAttendanceStatements(env, organizationId, row, existing, visitAttendanceSource));
+      }
       if (entity === 'outletProposals' && str(row.status) === 'approved') {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
