@@ -202,6 +202,9 @@ jobs:
       - name: Run Attendance Leave final production UAT
         run: node scripts/attendance-leave-production-uat.mjs
 
+      - name: Run final full-production module-role UAT
+        run: node scripts/final-full-production-uat.mjs
+
       - name: Verify security headers and auth boundaries
         shell: bash
         run: |
