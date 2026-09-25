@@ -537,7 +537,7 @@ export function applyRemoteDataToLocal(localDb, remoteData = {}) {
   return localDb;
 }
 
-export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = null, verifiedPassword = '') {
+export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = null, verifiedPassword = '', { persist = true } = {}) {
   if (!localDb || !cloudAccount?.sub && !cloudAccount?.id) return localAccount;
   const id = String(cloudAccount.sub || cloudAccount.id);
   const email = String(cloudAccount.email || '').toLowerCase();
@@ -578,7 +578,7 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
   else if (!next.password && existing.password) next.password = existing.password;
   if (existingIndex >= 0) accounts[existingIndex] = next;
   else accounts.push(next);
-  persistLocalCache(localDb);
+  if (persist) persistLocalCache(localDb);
   return next;
 }
 
@@ -652,7 +652,7 @@ async function apiJson(path, options = {}) {
   }
 }
 
-export async function restoreCloudSession(localDb) {
+export async function restoreCloudSession(localDb, { onValidated = null } = {}) {
   if (!getApiToken()) return null;
   try {
     const meta = getApiTokenMeta();
@@ -663,6 +663,16 @@ export async function restoreCloudSession(localDb) {
     const sessionPromise = apiJson('/api/auth/session');
     const bootstrapPromise = hasTenantHint ? apiJson('/api/core/bootstrap') : null;
     const session = await sessionPromise;
+
+    // P0 performance: once the server has validated the token, expose only the
+    // authoritative identity to the UI before operational bootstrap/migrations.
+    // Persistence is deferred because serializing a large local snapshot can
+    // block the first authenticated paint.
+    const provisionalAccount = ensureCloudIdentity(localDb, session, null, '', { persist:false });
+    if (!provisionalAccount) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
+    if (typeof onValidated === 'function') {
+      await onValidated({ account:provisionalAccount, session });
+    }
 
     const bootstrap = await bootstrapOperationalData(localDb, session, {
       prefetchedRemote: bootstrapPromise ? await bootstrapPromise : null,
@@ -675,7 +685,7 @@ export async function restoreCloudSession(localDb) {
       throw error;
     }
     if (bootstrap.mode === 'global') localDb.currentOrganizationId = null;
-    const account = ensureCloudIdentity(localDb, session, null, '');
+    const account = ensureCloudIdentity(localDb, session, provisionalAccount, '');
     if (!account) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
     return { account, session, bootstrap };
   } catch (error) {
