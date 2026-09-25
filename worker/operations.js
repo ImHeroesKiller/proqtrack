@@ -936,7 +936,10 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
   if (entity === 'leaves' && ['manager','supervisor','employee'].includes(role)) {
     if (!employeeId || !context.accessibleEmployeeIds?.has(employeeId)) return false;
     if (role === 'employee' && context.existing) {
-      return str(row.status || context.existing.status) === str(context.existing.status);
+      const currentStatus = str(context.existing.status);
+      const nextStatus = str(row.status || currentStatus);
+      if (nextStatus === currentStatus) return true;
+      return currentStatus === 'pending' && nextStatus === 'rejected' && str(row.decisionKind) === 'withdrawn';
     }
     return true;
   }
