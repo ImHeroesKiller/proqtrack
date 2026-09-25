@@ -97,7 +97,7 @@ export function renderFieldPhotosGallery({ managerView }) {
             const emp = empMap[p.recordedBy || p.employeeId];
             const prod = p.productId ? productMap[p.productId] : null;
             const comp = p.competitorId ? compMap[p.competitorId] : null;
-            const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
+            const imageSrc = safePhotoUrl(p.photoUrl || p.dataUrl);
             const thumb = imageSrc
               ? `<img src="${imageSrc}" alt="" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
               : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
