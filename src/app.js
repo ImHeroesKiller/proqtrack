@@ -3419,7 +3419,7 @@ function renderAttendanceManager() {
           <option>hadir</option><option>terlambat</option><option>tidak hadir</option>
         </select>
         <div class="spacer"></div>
-        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
+        ${isProjectAdmin() ? '<button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>' : ''}
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
