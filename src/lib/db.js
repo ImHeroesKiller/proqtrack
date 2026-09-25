@@ -121,6 +121,20 @@ function visibleEmployeeIds(actor = getActor(), db = getDB()) {
   return new Set(actor.employeeId ? [actor.employeeId] : []);
 }
 
+function visibleProjectIds(actor = getActor(), db = getDB()) {
+  if (!actor || isOrgAdminRole(actor.role)) return null;
+  const ids=new Set([
+    ...(Array.isArray(actor.projectIds) ? actor.projectIds : []),
+    ...(actor.projectId ? [actor.projectId] : []),
+  ].map(String).filter(Boolean));
+  if (actor.employeeId) {
+    (db.projectAssignments || []).forEach(row => {
+      if (String(row.employeeId)===String(actor.employeeId) && row.status==='active' && row.projectId) ids.add(String(row.projectId));
+    });
+  }
+  return ids;
+}
+
 function canAccessEmployee(employeeId, actor = getActor()) {
   if (!actor) return false;
   if (isOrgAdminRole(actor.role)) return true;
@@ -1895,8 +1909,12 @@ export function getAttendance() {
   const rows = scoped(getDB().attendance);
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
-  const ids = visibleEmployeeIds(actor);
-  return rows.filter(a => ids.has(a.employeeId));
+  const employeeIds = visibleEmployeeIds(actor);
+  const projectIds = visibleProjectIds(actor);
+  return rows.filter(a =>
+    employeeIds.has(a.employeeId)
+    && (!projectIds || projectIds.has(String(a.projectId || '')))
+  );
 }
 
 export function getAttendanceByDate(date) {
@@ -2248,7 +2266,11 @@ export function getLeaves() {
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
-  return rows.filter(l => ids.has(l.employeeId));
+  const projectIds = visibleProjectIds(actor);
+  return rows.filter(l =>
+    ids.has(l.employeeId)
+    && (!projectIds || projectIds.has(String(l.projectId || '')))
+  );
 }
 
 export function getLeavesByEmployee(empId) {
