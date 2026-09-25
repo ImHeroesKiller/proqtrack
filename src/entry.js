@@ -14,9 +14,26 @@ function applyBrand() {
   document.querySelectorAll('.sidebar-logo-text').forEach(t => { t.style.display = 'none'; });
 }
 
-const observer = new MutationObserver(applyBrand);
+let brandQueued = false;
+function scheduleBrand() {
+  if (brandQueued) return;
+  brandQueued = true;
+  requestAnimationFrame(() => {
+    brandQueued = false;
+    applyBrand();
+  });
+}
+
+const observer = new MutationObserver(scheduleBrand);
 observer.observe(document.documentElement, { childList: true, subtree: true });
 applyBrand();
 
-await import('./bootstrap.js');
-applyBrand();
+try {
+  await import('./bootstrap.js');
+} finally {
+  observer.disconnect();
+}
+
+scheduleBrand();
+window.addEventListener('hashchange', scheduleBrand);
+window.addEventListener('proqtrack:organization-updated', scheduleBrand);
