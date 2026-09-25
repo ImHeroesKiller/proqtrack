@@ -2300,6 +2300,8 @@ function outletSyncLabel() {
   return `<span class="status-badge ${presentation.className}">${esc(presentation.label)}</span>`;
 }
 
+let outletRowsCache = [];
+
 function renderOutlets() {
   const db = getDB();
   const outlets = getOutlets();
@@ -2308,7 +2310,47 @@ function renderOutlets() {
   const visits = getVisits();
   const options = outletFilterOptions(outlets, { projects, clients });
   const summary = outletStatusSummary(outlets);
-  const models = outlets.map(outlet => outletOperationalModel(outlet, { projects, clients, visits }));
+  const projectMap = new Map(projects.map(project => [String(project.id), project]));
+  const clientMap = new Map(clients.map(client => [String(client.id), client]));
+  const visitStats = new Map();
+  for (const visit of visits) {
+    const key = String(visit.outletId || '');
+    if (!key) continue;
+    const date = String(visit.date || visit.visitDate || visit.scheduledAt || '').slice(0,10);
+    const current = visitStats.get(key) || { count:0, lastVisitDate:'' };
+    current.count += 1;
+    if (date && date > current.lastVisitDate) current.lastVisitDate = date;
+    visitStats.set(key, current);
+  }
+  const models = outlets.map(outlet => outletOperationalModel(outlet, {
+    projects, clients, visits, projectMap, clientMap, visitStats,
+  }));
+  outletRowsCache = models.map(model => {
+    const o = model.outlet;
+    return {
+      model,
+      html:`
+        <tr>
+          <td>
+            <div style="font-weight:700;color:var(--gray-800)">${outletIcon(o.type)} ${esc(o.name)}</div>
+            <div class="am-muted">${esc(o.outletNumber || o.code || o.id)} · ${esc(displayValue(o.address))}</div>
+          </td>
+          <td>
+            <div style="font-weight:600">${esc(model.projectLabel || 'Belum terhubung')}</div>
+            <div class="am-muted">${esc(model.clientLabel || 'Tanpa client')}${model.shared ? ' · Shared outlet' : ''}</div>
+          </td>
+          <td><div>${esc(displayValue(o.type))}</div><div class="am-muted">${esc(displayValue(o.area))} · ${esc(displayValue(o.channel))}</div></td>
+          <td><div>${model.visitCount} kunjungan</div><div class="am-muted">Terakhir: ${model.lastVisitDate ? esc(formatDateShort(model.lastVisitDate)) : 'Belum ada'}</div></td>
+          <td>${statusBadge(o.status)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
+            <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${outletLifecycleAction(o, model.visitCount).label}</button>
+          </td>
+        </tr>`,
+    };
+  });
+  const initialPage = paginateOutlets(outletRowsCache, outletPage, OUTLET_PAGE_SIZE);
+  outletPage = initialPage.currentPage;
   const rendered = `
     <div class="pm-kpis">
       <div class="pm-kpi"><span>Total Outlet</span><strong>${summary.total}</strong></div>
@@ -2319,23 +2361,11 @@ function renderOutlets() {
     <div class="card">
       <div class="filter-row" style="gap:8px;flex-wrap:wrap">
         <input class="input search-input" id="outletSearch" placeholder="🔍 Nama, kode, alamat, PIC, project..." data-pqt-oninput="FT.filterOutlets(1)">
-        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Project</option>
-          ${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}
-        </select>
-        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Client</option>
-          ${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}
-        </select>
-        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option>
-        </select>
-        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Tipe</option>${storeOptionList(options.types)}
-        </select>
-        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Area</option>${storeOptionList(options.areas)}
-        </select>
+        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Project</option>${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}</select>
+        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Client</option>${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}</select>
+        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option></select>
+        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Tipe</option>${storeOptionList(options.types)}</select>
+        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Area</option>${storeOptionList(options.areas)}</select>
         <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetOutletFilters()">Reset</button>
         <div class="spacer"></div>
         <span id="outletSyncState">${outletSyncLabel()}</span>
@@ -2346,38 +2376,8 @@ function renderOutlets() {
       <div id="outletResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper">
         <table class="table" id="outletTable">
-          <thead>
-            <tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr>
-          </thead>
-          <tbody>
-            ${models.map(model => {
-              const o = model.outlet;
-              return `
-              <tr data-search="${esc(model.search)}" data-type="${esc(o.type || '')}" data-area="${esc(o.area || '')}" data-status="${esc(o.status || '')}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}">
-                <td>
-                  <div style="font-weight:700;color:var(--gray-800)">${outletIcon(o.type)} ${esc(o.name)}</div>
-                  <div class="am-muted">${esc(o.outletNumber || o.code || o.id)} · ${esc(displayValue(o.address))}</div>
-                </td>
-                <td>
-                  <div style="font-weight:600">${esc(model.projectLabel || 'Belum terhubung')}</div>
-                  <div class="am-muted">${esc(model.clientLabel || 'Tanpa client')}${model.shared ? ' · Shared outlet' : ''}</div>
-                </td>
-                <td>
-                  <div>${esc(displayValue(o.type))}</div>
-                  <div class="am-muted">${esc(displayValue(o.area))} · ${esc(displayValue(o.channel))}</div>
-                </td>
-                <td>
-                  <div>${model.visitCount} kunjungan</div>
-                  <div class="am-muted">Terakhir: ${model.lastVisitDate ? esc(formatDateShort(model.lastVisitDate)) : 'Belum ada'}</div>
-                </td>
-                <td>${statusBadge(o.status)}</td>
-                <td style="white-space:nowrap">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${outletLifecycleAction(o, model.visitCount).label}</button>
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <thead><tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr></thead>
+          <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
         </table>
       </div>
       <div id="outletEmpty" class="pm-empty" hidden>Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.</div>
@@ -2393,24 +2393,24 @@ window.FT.outletPage = function(delta) {
   window.FT.filterOutlets(outletPage);
 };
 
+window.FT.filterOutlets(outletPage);
+};
+
 window.FT.filterOutlets = function(page = outletPage) {
   const ids = { search:'outletSearch', projectId:'outletProjectFilter', clientId:'outletClientFilter', status:'outletStatusFilter', type:'outletTypeFilter', area:'outletAreaFilter' };
   const filters = outletFilterSnapshot(key => document.getElementById(ids[key])?.value || '');
-  const rows = [...document.querySelectorAll('#outletTable tbody tr')];
-  const matched = rows.filter(row => outletMatchesFilters({
-    search:row.dataset.search || '',
-    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
-    clientId:row.dataset.client || '',
-    outlet:{ type:row.dataset.type || '', area:row.dataset.area || '', status:row.dataset.status || '' },
-  }, filters));
+  const matched = outletRowsCache.filter(row => outletMatchesFilters(row.model, filters));
   const pageState = paginateOutlets(matched, page, OUTLET_PAGE_SIZE);
   outletPage = pageState.currentPage;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const tbody = document.querySelector('#outletTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.map(row => row.html).join('');
   const summary = document.getElementById('outletResultSummary');
-  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} outlet` : (rows.length ? 'Tidak ada outlet yang sesuai filter.' : 'Belum ada outlet.');
+  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} outlet` : (outletRowsCache.length ? 'Tidak ada outlet yang sesuai filter.' : 'Belum ada outlet.');
   const empty = document.getElementById('outletEmpty');
-  if (empty) { empty.hidden = pageState.total !== 0; empty.textContent = rows.length ? 'Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.' : 'Belum ada outlet. Tambahkan outlet atau gunakan Bulk Upload.'; }
+  if (empty) {
+    empty.hidden = pageState.total !== 0;
+    empty.textContent = outletRowsCache.length ? 'Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.' : 'Belum ada outlet. Tambahkan outlet atau gunakan Bulk Upload.';
+  }
   const pager = document.getElementById('outletPager');
   if (pager) pager.hidden = pageState.total <= OUTLET_PAGE_SIZE;
   const label = document.getElementById('outletPageLabel');
