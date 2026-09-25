@@ -24,12 +24,13 @@ test('MKB launch reset clears operational, security, report and device state', a
     'core_clients','core_projects','core_employees','core_outlets','core_products',
     'core_competitors','core_visits','core_attendance','core_leaves','core_stocks',
     'core_product_sales','core_survey_templates','core_survey_responses','core_field_evidence',
-    'core_inventory_cycles','core_inventory_cycles_v2','core_outlet_proposals',
+    'core_inventory_cycles','core_outlet_proposals',
     'report_generation_jobs','core_report_schedules','core_workflow_requests',
     'core_bulk_import_runs','core_master_bulk_receipts','core_auth_sessions','core_auth_devices'
   ]) {
     assert.match(script, new RegExp(`DELETE FROM ${table}`));
   }
+  assert.doesNotMatch(script, /core_inventory_cycles_v2/);
   assert.match(script, /DELETE FROM core_organization_users[\s\S]*user_id <>/);
   assert.match(script, /DELETE FROM auth_users[\s\S]*NOT EXISTS/);
   assert.match(script, /UPDATE core_sync_state[\s\S]*revision=0[\s\S]*cutover_mode='cloud'/);
