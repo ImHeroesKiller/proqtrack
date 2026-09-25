@@ -679,19 +679,36 @@ export async function bootstrapOperationalData(localDb, account = {}) {
     return { mode: 'pending', data: null, revision, cutoverMode };
   }
 
-  try {
-    remote = await migrateLegacyMasterCollections(localDb, remote, account);
-    revision = Number(remote.revision || revision);
-    remote = await migrateP2OperationalCollections(localDb, remote, account);
-    revision = Number(remote.revision || revision);
+  // An authoritative empty cloud tenant is intentional (new launch/reset state).
+  // Never repopulate it from stale browser cache or pending legacy catalog data.
+  // Legacy migration must be an explicit admin action for an empty tenant.
+  if (remote.empty === true) {
+    const organizationId = String(account?.organizationId || account?.organization?.id || localDb?.currentOrganizationId || '');
+    if (organizationId && typeof localStorage !== 'undefined') {
+      try { localStorage.removeItem(`proqtrack_pending_catalog_${organizationId}`); } catch { /* best effort */ }
+    }
     remote.data = remote.data || {};
-  } catch (error) {
-    ready = false;
-    lastError = error.code || error.message || String(error);
-    emitStatus('legacy-master-migration-error');
-    throw error;
+  } else {
+    try {
+      remote = await migrateLegacyMasterCollections(localDb, remote, account);
+      revision = Number(remote.revision || revision);
+      remote = await migrateP2OperationalCollections(localDb, remote, account);
+      revision = Number(remote.revision || revision);
+      remote.data = remote.data || {};
+    } catch (error) {
+      ready = false;
+      lastError = error.code || error.message || String(error);
+      emitStatus('legacy-master-migration-error');
+      throw error;
+    }
   }
 
+  // Clear any queued snapshot from a previous tenant/session before accepting
+  // this server snapshot as the write-through baseline.
+  clearTimeout(timer);
+  timer = null;
+  queuedSnapshot = null;
+  syncing = false;
   baseline = snapshotCollections(remote.data || {});
   ready = true;
   lastError = null;
