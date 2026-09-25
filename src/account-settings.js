@@ -339,7 +339,7 @@ export function renderSettings() {
     ['sesi', 'Sesi'],
   ];
   const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
-  const pane = id => `class="am-pane ${tab === id ? 'active' : ''}"`;
+  const pane = id => `id="settings-pane-${id}" class="am-pane ${tab === id ? 'active' : ''}" role="tabpanel" aria-labelledby="settings-tab-${id}"`;
 
   return `
     <div class="am-settings">
@@ -348,8 +348,8 @@ export function renderSettings() {
         <div class="card-title">Wajib ganti password</div>
         <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
-      <nav class="am-tabs" aria-label="Pengaturan">
-        ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" data-pqt-onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
+      <nav class="am-tabs" role="tablist" aria-label="Pengaturan">
+        ${tabs.map(([id, label]) => `<button id="settings-tab-${id}" type="button" role="tab" aria-controls="settings-pane-${id}" aria-selected="${tab === id ? 'true' : 'false'}" tabindex="${tab === id ? '0' : '-1'}" class="am-tab ${tab === id ? 'active' : ''}" data-pqt-onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
       </nav>
       <div class="card am-tab-body">
         <section ${pane('profil')}>
@@ -389,6 +389,7 @@ export function renderSettings() {
 
         <section ${pane('tampilan')}>
           <div class="card-title">Preferensi tampilan</div>
+          <div class="card-subtitle">Preferensi ini berlaku pada browser/perangkat yang sedang digunakan dan tidak mengubah data operasional.</div>
           <form class="am-form" data-pqt-onsubmit="AM.savePrefs(event)">
             <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
             <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
@@ -401,6 +402,16 @@ export function renderSettings() {
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
           <div class="card-subtitle">Profil tenant aktif. Perubahan berlaku untuk seluruh pengguna organisasi ini.</div>
+          <div class="am-sync-row ${organizationProfileSyncError ? 'is-error' : ''}" aria-live="polite">
+            <span>${organizationProfileSyncInFlight
+              ? 'Menyegarkan profil organisasi…'
+              : organizationProfileSyncError
+                ? `Gagal menyegarkan: ${esc(organizationProfileSyncError)}`
+                : organizationProfileLastSyncedAt
+                  ? `Terakhir disegarkan ${esc(formatDate(organizationProfileLastSyncedAt))}`
+                  : 'Profil organisasi menggunakan data cloud.'}</span>
+            <button type="button" class="btn btn-secondary btn-sm" ${organizationProfileSyncInFlight ? 'disabled' : ''} data-pqt-onclick="AM.refreshOrganizationProfile()">Segarkan</button>
+          </div>
           <form class="am-form" data-pqt-onsubmit="AM.saveOrg(event)">
             <div class="form-row">
               <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(activeOrg.name || '')}" required></div>
