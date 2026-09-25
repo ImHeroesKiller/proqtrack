@@ -52,9 +52,11 @@ async function loadReportRuntime() {
 }
 
 async function ensureRouteRuntime(route = location.hash) {
+  if (!window.FT?.state?.loggedIn) return false;
   const current = String(route || '#/');
   if (PROJECT_ROUTES.has(current)) await loadProjectRuntime();
   if (isReportRoute(current)) await loadReportRuntime();
+  return true;
 }
 
 function yieldToMain() {
@@ -104,10 +106,17 @@ window.addEventListener('hashchange', () => {
   ensureRouteRuntime(location.hash).catch(error => {
     console.warn('proqtrack_route_runtime_failed', error?.message || error);
   });
+  if (window.FT?.state?.loggedIn) scheduleIdleRuntime();
+});
+window.addEventListener('proqtrack:cloud-status', event => {
+  if (window.FT?.state?.loggedIn && ['ready','synced'].includes(event.detail?.status)) {
+    scheduleIdleRuntime();
+    ensureRouteRuntime(location.hash).catch(() => {});
+  }
 });
 
 await ensureRouteRuntime(location.hash);
-scheduleIdleRuntime();
+if (window.FT?.state?.loggedIn) scheduleIdleRuntime();
 
 // Deferred fallbacks still get one task turn, but readiness only measures critical runtime.
 await yieldToMain();
