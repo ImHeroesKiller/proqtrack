@@ -285,7 +285,11 @@ async function fetchCloudFieldPhotos(sessionToken = '') {
 
 export function ensureEvidenceMetadataHydrated(localDb, sessionToken = getApiToken(), { force = false } = {}) {
   const token = String(sessionToken || '');
-  const organizationId = String(localDb?.currentOrganizationId || '');
+  const organizationId = String(
+    (typeof window !== 'undefined' ? window.FT?.state?.account?.organizationId : '')
+    || localDb?.currentOrganizationId
+    || '',
+  );
   if (!token || !organizationId) return Promise.resolve(false);
 
   const fresh = token === evidenceHydrationToken
@@ -302,7 +306,12 @@ export function ensureEvidenceMetadataHydrated(localDb, sessionToken = getApiTok
   evidenceHydrationOrganizationId = organizationId;
   evidenceHydrationPromise = fetchCloudFieldPhotos(token)
     .then(rows => {
-      if (getApiToken() !== token || String(localDb?.currentOrganizationId || '') !== organizationId) return false;
+      const activeOrganizationId = String(
+        (typeof window !== 'undefined' ? window.FT?.state?.account?.organizationId : '')
+        || localDb?.currentOrganizationId
+        || '',
+      );
+      if (getApiToken() !== token || activeOrganizationId !== organizationId) return false;
       applyRemoteDataToLocal(localDb, { fieldPhotos: rows });
       evidenceHydratedAt = Date.now();
       if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
