@@ -1404,6 +1404,7 @@ function renderVisits() {
                 </tr>
               `;
             }).join('')}
+            ${attendance.length ? '<tr id="attFilteredEmpty" hidden><td colspan="8"><div class="empty-state"><h3>Tidak ada data sesuai filter</h3><p>Ubah atau reset filter Attendance.</p></div></td></tr>' : ''}
           </tbody>
         </table>
       </div>
@@ -3710,6 +3711,7 @@ function renderLeavesManager() {
                 </div></td>
               </tr>`;
             }).join('')}
+            ${leaves.length ? '<tr id="leaveFilteredEmpty" hidden><td colspan="8"><div class="empty-state"><h3>Tidak ada pengajuan sesuai filter</h3><p>Ubah atau reset filter Leave.</p></div></td></tr>' : ''}
           </tbody>
         </table>
       </div>
@@ -3736,6 +3738,8 @@ window.FT.filterLeaves = function() {
   });
   const count = document.getElementById('leaveResultCount');
   if (count) count.textContent = `${visible} pengajuan`;
+  const empty = document.getElementById('leaveFilteredEmpty');
+  if (empty) empty.hidden = visible !== 0;
 };
 
 window.FT.resetLeaveFilters = function() {
