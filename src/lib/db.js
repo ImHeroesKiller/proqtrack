@@ -2481,6 +2481,7 @@ export function withdrawLeave(id, note = '') {
 }
 
 export function deleteLeave() {
+  assertLoggedIn();
   throw new Error('Pengajuan ijin/cuti tidak dapat dihapus. Gunakan withdrawal atau keputusan approval agar audit trail tetap utuh.');
 }
 
