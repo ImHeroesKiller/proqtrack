@@ -25,6 +25,59 @@ function defaultRange() {
   return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
 }
 
+function addUtcDays(dateOnlyValue, days = 1) {
+  const [year, month, day] = String(dateOnlyValue).split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+function zonedParts(timestampMs, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit',
+    hourCycle:'h23',
+  }).formatToParts(new Date(timestampMs));
+  const values = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  return {
+    year:Number(values.year), month:Number(values.month), day:Number(values.day),
+    hour:Number(values.hour), minute:Number(values.minute), second:Number(values.second),
+  };
+}
+
+function zonedMidnightUtc(dateOnlyValue, timeZone = 'Asia/Jakarta') {
+  const [year, month, day] = String(dateOnlyValue).split('-').map(Number);
+  const desiredLocalUtc = Date.UTC(year, month - 1, day, 0, 0, 0);
+  let guess = desiredLocalUtc;
+  for (let i = 0; i < 3; i += 1) {
+    const parts = zonedParts(guess, timeZone);
+    const representedLocalUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+    const offsetMs = representedLocalUtc - guess;
+    const next = desiredLocalUtc - offsetMs;
+    if (Math.abs(next - guess) < 1000) return new Date(next).toISOString();
+    guess = next;
+  }
+  return new Date(guess).toISOString();
+}
+
+function timezoneOffsetMinutes(timestampIso, timeZone = 'Asia/Jakarta') {
+  const timestampMs = Date.parse(timestampIso);
+  const parts = zonedParts(timestampMs, timeZone);
+  const localAsUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return Math.round((localAsUtc - timestampMs) / 60000);
+}
+
+function sqlTimezoneModifier(offsetMinutes = 0) {
+  const minutes = Math.trunc(Number(offsetMinutes) || 0);
+  return `${minutes >= 0 ? '+' : ''}${minutes} minutes`;
+}
+
+export const __analyticsTime = Object.freeze({
+  addUtcDays,
+  zonedMidnightUtc,
+  timezoneOffsetMinutes,
+  sqlTimezoneModifier,
+});
+
 function scopedProjects(claims, requestedProjectId) {
   const requested = normalize(requestedProjectId);
   if (broadRole(roleOf(claims))) return requested ? [requested] : null;
@@ -79,6 +132,23 @@ export async function analyticsOverview(env, claims, url, requestId) {
   const projects = scopedProjects(claims, url.searchParams.get('projectId'));
   if (projects != null && !projects.length) return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
   const p = projectClause(projects);
+
+  const organization = await env.DB.prepare(
+    'SELECT timezone FROM core_organizations WHERE id=? LIMIT 1'
+  ).bind(organizationId).first();
+  const timeZone = normalize(organization?.timezone) || 'Asia/Jakarta';
+  let fromUtc;
+  let toExclusiveUtc;
+  let timezoneModifier;
+  try {
+    fromUtc = zonedMidnightUtc(from, timeZone);
+    toExclusiveUtc = zonedMidnightUtc(addUtcDays(to, 1), timeZone);
+    timezoneModifier = sqlTimezoneModifier(timezoneOffsetMinutes(fromUtc, timeZone));
+  } catch {
+    fromUtc = `${from}T00:00:00.000Z`;
+    toExclusiveUtc = `${addUtcDays(to, 1)}T00:00:00.000Z`;
+    timezoneModifier = '+0 minutes';
+  }
   const binds = values => [organizationId, ...p.binds, ...values];
 
   const [visits, attendance, sales, surveys, employees, outlets, dailySales, dailyVisits, topProducts] = await Promise.all([
@@ -88,8 +158,9 @@ export async function analyticsOverview(env, claims, url, requestId) {
         SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled,
         SUM(CASE WHEN status='rejected' THEN 1 ELSE 0 END) AS rejected
       FROM core_visits WHERE organization_id=?${p.sql}
-        AND date(COALESCE(completed_at,started_at,scheduled_at,created_at)) BETWEEN date(?) AND date(?)
-    `).bind(...binds([from, to])).first(),
+        AND datetime(COALESCE(completed_at,started_at,scheduled_at,created_at)) >= datetime(?)
+        AND datetime(COALESCE(completed_at,started_at,scheduled_at,created_at)) < datetime(?)
+    `).bind(...binds([fromUtc, toExclusiveUtc])).first(),
     env.DB.prepare(`
       SELECT COUNT(*) AS total,
         SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) AS present,
@@ -103,13 +174,14 @@ export async function analyticsOverview(env, claims, url, requestId) {
       SELECT COUNT(*) AS transactions,COALESCE(SUM(quantity),0) AS quantity,COALESCE(SUM(total_amount),0) AS amount
       FROM core_product_sales WHERE organization_id=?${p.sql}
         AND COALESCE(json_extract(metadata_json,'$.lifecycleStatus'),'active')<>'voided'
-        AND date(sold_at) BETWEEN date(?) AND date(?)
-    `).bind(...binds([from, to])).first(),
+        AND datetime(sold_at) >= datetime(?) AND datetime(sold_at) < datetime(?)
+    `).bind(...binds([fromUtc, toExclusiveUtc])).first(),
     env.DB.prepare(`
       SELECT COUNT(*) AS responses,SUM(CASE WHEN status='submitted' THEN 1 ELSE 0 END) AS submitted
       FROM core_survey_responses WHERE organization_id=?${p.sql}
-        AND date(COALESCE(submitted_at,created_at)) BETWEEN date(?) AND date(?)
-    `).bind(...binds([from, to])).first(),
+        AND datetime(COALESCE(submitted_at,created_at)) >= datetime(?)
+        AND datetime(COALESCE(submitted_at,created_at)) < datetime(?)
+    `).bind(...binds([fromUtc, toExclusiveUtc])).first(),
     env.DB.prepare(projects == null
       ? `SELECT COUNT(*) AS count FROM core_employees WHERE organization_id=? AND employment_status='active'`
       : `SELECT COUNT(DISTINCT a.employee_id) AS count FROM core_employee_project_assignments a WHERE a.organization_id=? AND a.status='active'${projectClause(projects, 'a.project_id').sql}`
@@ -119,19 +191,20 @@ export async function analyticsOverview(env, claims, url, requestId) {
       : `SELECT COUNT(DISTINCT po.outlet_id) AS count FROM core_project_outlets po WHERE po.organization_id=? AND po.status='active'${projectClause(projects, 'po.project_id').sql}`
     ).bind(...(projects == null ? [organizationId] : [organizationId, ...projects])).first(),
     allRows(env.DB.prepare(`
-      SELECT date(sold_at) AS day,COUNT(*) AS transactions,COALESCE(SUM(total_amount),0) AS amount
+      SELECT date(sold_at, '${timezoneModifier}') AS day,COUNT(*) AS transactions,COALESCE(SUM(total_amount),0) AS amount
       FROM core_product_sales WHERE organization_id=?${p.sql}
         AND COALESCE(json_extract(metadata_json,'$.lifecycleStatus'),'active')<>'voided'
-        AND date(sold_at) BETWEEN date(?) AND date(?)
-      GROUP BY date(sold_at) ORDER BY day
-    `).bind(...binds([from, to]))),
+        AND datetime(sold_at) >= datetime(?) AND datetime(sold_at) < datetime(?)
+      GROUP BY date(sold_at, '${timezoneModifier}') ORDER BY day
+    `).bind(...binds([fromUtc, toExclusiveUtc]))),
     allRows(env.DB.prepare(`
-      SELECT date(COALESCE(completed_at,started_at,scheduled_at,created_at)) AS day,
+      SELECT date(COALESCE(completed_at,started_at,scheduled_at,created_at), '${timezoneModifier}') AS day,
         COUNT(*) AS total,SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed
       FROM core_visits WHERE organization_id=?${p.sql}
-        AND date(COALESCE(completed_at,started_at,scheduled_at,created_at)) BETWEEN date(?) AND date(?)
+        AND datetime(COALESCE(completed_at,started_at,scheduled_at,created_at)) >= datetime(?)
+        AND datetime(COALESCE(completed_at,started_at,scheduled_at,created_at)) < datetime(?)
       GROUP BY day ORDER BY day
-    `).bind(...binds([from, to]))),
+    `).bind(...binds([fromUtc, toExclusiveUtc]))),
     allRows(env.DB.prepare(`
       SELECT s.product_id,pd.sku,pd.name,COALESCE(SUM(s.quantity),0) AS quantity,COALESCE(SUM(s.total_amount),0) AS amount
       FROM core_product_sales s JOIN core_products pd ON pd.id=s.product_id AND pd.organization_id=s.organization_id
@@ -139,7 +212,7 @@ export async function analyticsOverview(env, claims, url, requestId) {
         AND COALESCE(json_extract(s.metadata_json,'$.lifecycleStatus'),'active')<>'voided'
         AND date(s.sold_at) BETWEEN date(?) AND date(?)
       GROUP BY s.product_id,pd.sku,pd.name ORDER BY amount DESC,quantity DESC LIMIT 10
-    `).bind(organizationId, ...(projects == null ? [] : projects), from, to)),
+    `).bind(organizationId, ...(projects == null ? [] : projects), fromUtc, toExclusiveUtc)),
   ]);
 
   const visitTotal = Number(visits?.total || 0);
