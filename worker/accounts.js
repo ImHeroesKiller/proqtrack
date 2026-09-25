@@ -75,7 +75,7 @@ async function writeAudit(env, requestId, claims, action, resourceId, detail = {
 
 async function findTarget(env, organizationId, userId) {
   return env.DB.prepare(`
-    SELECT u.id,u.email,u.status AS global_status,ou.role,ou.status,
+    SELECT u.id,u.email,u.display_name,u.status AS global_status,ou.role,ou.status,
       (
         SELECT e.id FROM core_employees e
         WHERE e.organization_id=ou.organization_id AND e.auth_user_id=ou.user_id
@@ -135,7 +135,7 @@ async function accountList(env, claims, requestId) {
   const organizationId = claims.organizationId;
   const list = await rows(env.DB.prepare(`
     SELECT
-      u.id,u.email,ou.role,ou.status,
+      u.id,u.email,u.display_name,ou.role,ou.status,
       e.id AS employee_id,e.full_name,
       d.status AS device_status,d.device_label,d.paired_at,d.last_seen_at,
       (
@@ -169,7 +169,7 @@ async function accountList(env, claims, requestId) {
       id: row.id,
       organizationId,
       email: row.email,
-      name: row.full_name || row.email,
+      name: row.full_name || row.display_name || row.email,
       role: row.role,
       status: row.status,
       employeeId: row.employee_id || null,
@@ -196,7 +196,7 @@ async function createAccount(env, claims, request, requestId) {
   if (!permittedRole(claims.role,role)) return json({ error:'ACCOUNT_ROLE_FORBIDDEN', requestId },403);
 
   const existingUser = await env.DB.prepare(
-    'SELECT id,email,role,status FROM auth_users WHERE lower(email)=? LIMIT 1',
+    'SELECT id,email,display_name,role,status FROM auth_users WHERE lower(email)=? LIMIT 1',
   ).bind(email).first();
 
   if (existingUser) {
@@ -255,7 +255,7 @@ async function createAccount(env, claims, request, requestId) {
       passwordUnchanged:true,
       account:{
         id:existingUser.id,organizationId:claims.organizationId,email,
-        name:employee?.full_name || clean(body.name) || email,
+        name:employee?.full_name || existingUser.display_name || email,
         role,status,employeeId:employee?.id || null,projectId:role === 'manager' ? projectId : null,
         deviceBound:false,
       },
@@ -271,9 +271,9 @@ async function createAccount(env, claims, request, requestId) {
   const passwordHash = await hashPassword(password);
   const statements = [
     env.DB.prepare(`
-      INSERT INTO auth_users(id,email,password_hash,role,status,project_ids,client_ids,created_at)
-      VALUES(?,?,?,?, 'active','[]','[]',CURRENT_TIMESTAMP)
-    `).bind(userId,email,passwordHash,role),
+      INSERT INTO auth_users(id,email,display_name,password_hash,role,status,project_ids,client_ids,created_at)
+      VALUES(?,?,?,?,?, 'active','[]','[]',CURRENT_TIMESTAMP)
+    `).bind(userId,email,clean(body.name) || email,passwordHash,role),
     env.DB.prepare(`
       INSERT INTO core_organization_users(
         organization_id,user_id,role,status,created_at,updated_at
@@ -376,11 +376,9 @@ async function updateAccount(env, claims, request, userId, requestId) {
   if (employee) {
     statements.push(env.DB.prepare(`
       UPDATE core_employees
-      SET auth_user_id=?,email=?,
-          full_name=CASE WHEN ?<>'' THEN ? ELSE full_name END,
-          updated_at=CURRENT_TIMESTAMP
+      SET auth_user_id=?,email=?,updated_at=CURRENT_TIMESTAMP
       WHERE organization_id=? AND id=?
-    `).bind(userId,email,clean(body.name),clean(body.name),claims.organizationId,employee.id));
+    `).bind(userId,email,claims.organizationId,employee.id));
   }
 
   let projects = [];
@@ -411,7 +409,7 @@ async function updateAccount(env, claims, request, userId, requestId) {
     ok:true,
     account:{
       id:userId,organizationId:claims.organizationId,email,
-      name:employee?.full_name || clean(body.name) || email,
+      name:employee?.full_name || target.display_name || email,
       role:nextRole,status:nextStatus,employeeId:employee?.id || null,
       projectId:nextRole === 'manager' ? projectId : null,
     },

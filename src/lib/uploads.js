@@ -166,10 +166,18 @@ export async function revokeApiSession({ all = false } = {}) {
     return true;
   }
   try {
-    await fetch(all ? '/api/auth/logout-all' : '/api/auth/logout', {
+    const res = await fetch(all ? '/api/auth/logout-all' : '/api/auth/logout', {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
     });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const error = new Error(data.message || data.error || `HTTP ${res.status}`);
+      error.code = data.error || 'SESSION_REVOKE_FAILED';
+      error.status = res.status;
+      error.payload = data;
+      throw error;
+    }
   } finally {
     clearApiToken();
   }

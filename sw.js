@@ -126,3 +126,5 @@ self.addEventListener('fetch', event => {
 });
 
 // Settings P0 authority refresh
+
+// Settings P1 operational security refresh

@@ -239,3 +239,16 @@ Empat P0 Settings ditutup dengan invariant production berikut:
 - Settings → Outlet Catalog disimpan dalam metadata project cloud (`modules.newOutlet` + `storeCatalog`). Browser `projectSettings` hanya legacy fallback untuk data lama dan bukan authority baru.
 - Worker project mutation mempertahankan metadata existing saat patch parsial agar module/catalog/attendance settings tidak terhapus oleh update project lain.
 - Regression guard: `tests/settings-p0.test.mjs`.
+
+
+## Settings P1 operational/security hardening — 25 September 2026
+
+P1 Settings menutup lima area setelah P0 authority:
+
+- Profile cloud completeness: `auth_users.display_name` menjadi profile name authority global; self-service Profile menyimpan email, display name, phone, dan area. Phone/area untuk employee disimpan pada `core_employees` (area di metadata) dan response server menjadi sumber local mirror.
+- Device authority: login/session/switch response membawa status binding server (`deviceBound`, label, paired/last-seen). Device tab tidak lagi memakai Device ID/fingerprint lokal sebagai authority, dan cloud-authenticated employee tidak dapat ditolak ulang oleh verifier device lokal.
+- Display preferences: `compactTables`, badge Leave, dan badge Low Stock adalah preference UI lokal dan tidak lagi diblok oleh role ACL admin-only.
+- Session controls: Settings menyediakan current-device logout dan logout-all; client memverifikasi response revoke server sebelum menyatakan sukses.
+- Account UX/security: Account Management tidak mengubah credential global atau employee full name pada edit existing account; nama/email/password existing dikunci di form dengan arahan ke Profile/Security/Employee authority.
+- Profile/password/session actions memiliki duplicate-submit guard dan error mapping yang lebih operasional.
+- Migration: `0028_settings_p1_profile_identity.sql`; regression guard: `tests/settings-p1.test.mjs`.

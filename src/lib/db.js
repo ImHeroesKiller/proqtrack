@@ -929,6 +929,12 @@ export function pairCloudAuthenticatedSalesDevice(accountId, device) {
   const acc = (db.accounts || []).find(row => row.id === accountId);
   if (!acc) throw new Error('Akun cloud lokal tidak ditemukan.');
   if (acc.role !== 'employee') return publicAccount(acc);
+  if (acc.cloudIdentity) {
+    // Cloud login already enforced the authoritative device binding.
+    // Local device fields are compatibility cache only and must never veto it.
+    saveDB();
+    return publicAccount(acc);
+  }
   assertSalesDevice(db, acc, device);
   saveDB();
   return publicAccount(acc);
@@ -1080,7 +1086,7 @@ export function updateAppSettings(partial) {
   const actor = assertLoggedIn();
   const privileged = [
     'companyName', 'companyLogo', 'timezone', 'attendanceMode', 'attendanceRadiusM',
-    'officeLat', 'officeLng', 'officeName', 'testDevices', 'notifyLeave', 'notifyLowStock',
+    'officeLat', 'officeLng', 'officeName', 'testDevices',
   ];
   if (privileged.some(key => Object.prototype.hasOwnProperty.call(partial, key))) {
     if (!isOrgAdminRole(actor.role)) {
