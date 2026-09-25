@@ -110,8 +110,8 @@ test('legacy compatibility modules are retired from runtime and repository', asy
 
 test('PWA precache is runtime-reachable instead of every source file', async () => {
   const [build, sw] = await Promise.all([read('scripts/build.mjs'), read('sw.js')]);
-  assert.match(build, /runtimeGraph\("src\/entry\.js"\)/);
-  assert.match(build, /localDependencies/);
+  assert.match(build, /runtimeGraph\(criticalRuntimeEntries\)/);
+  assert.match(build, /staticLocalDependencies/);
   assert.match(build, /node_modules\/leaflet\/dist\/leaflet\.js/);
   assert.match(sw, /proqtrack-v12\.44/);
   assert.match(sw, /\.\/src\/entry\.js/);
