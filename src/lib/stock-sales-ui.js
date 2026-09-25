@@ -5,9 +5,9 @@ export function stockSalesFriendlyErrorMessage(error = '') {
   return ({
     INVENTORY_CYCLE_PERIOD_CONFLICT:'Cycle stok untuk outlet/produk ini sudah ada pada tanggal yang sama. Gunakan data cycle yang sudah difinalisasi atau lakukan koreksi pada cycle berikutnya.',
     INVENTORY_CYCLE_OPENING_MISMATCH:'Saldo opening berubah karena ada update terbaru. Data akan dimuat ulang; periksa saldo lalu submit kembali.',
-    REVISION_CONFLICT:'Data cloud berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
+    REVISION_CONFLICT:'Data terbaru berubah dari perangkat lain. Versi terbaru akan dimuat ulang.',
     CLOUD_SYNC_TIMEOUT:'Sinkronisasi belum selesai. Periksa koneksi lalu coba kembali.',
-    CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Muat ulang aplikasi lalu coba kembali.',
+    CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi online belum siap. Muat ulang aplikasi lalu coba kembali.',
     MANUAL_SALE_IDEMPOTENCY_CONFLICT:'Transaksi manual yang sama sudah pernah tersimpan.',
     MANUAL_SALE_CORRECTION_SOURCE_NOT_VOIDED:'Transaksi sumber harus di-void terlebih dahulu sebelum replacement dibuat.',
   })[code] || error?.message || String(error || '');

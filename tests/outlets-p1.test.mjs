@@ -57,7 +57,7 @@ test('Outlets P1 enforces canonical outlet validation in Worker', () => {
 test('Outlets P1 waits for cloud authority before success and rolls back rejection', () => {
   assert.match(cloud, /export async function waitForOperationalSync/);
   assert.match(cloud, /export function restoreOperationalBaseline/);
-  assert.match(app, /await confirmOutletCloudSync\(\)/);
+  assert.match(app, /await confirmAuthoritativeSync\(\)/);
   assert.match(app, /restoreOperationalBaseline\(getDB\(\)\)/);
-  assert.match(app, /tersinkron ke cloud/);
+  assert.match(app, /Outlet berhasil disimpan\.|Data outlet berhasil diperbarui\./);
 });

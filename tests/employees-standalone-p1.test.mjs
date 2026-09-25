@@ -52,5 +52,5 @@ test('Employees standalone P1 makes password conditional on account preflight', 
 
 test('Employees standalone P1 advances PWA cache', async () => {
   const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.43/);
+  assert.match(sw, /proqtrack-v12\.44/);
 });

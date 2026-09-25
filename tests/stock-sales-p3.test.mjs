@@ -71,7 +71,7 @@ test('P3 inventory cycle lookup is scope exact', () => {
 });
 
 test('P3 friendly errors retain domain-specific operator guidance', () => {
-  assert.match(stockSalesFriendlyErrorMessage({code:'REVISION_CONFLICT'}),/Data cloud berubah/);
+  assert.match(stockSalesFriendlyErrorMessage({code:'REVISION_CONFLICT'}),/Data terbaru berubah/);
 });
 
 test('P3 app delegates stock-sales domain logic and mutation lifecycle', () => {

@@ -110,7 +110,7 @@ test('P1 derived sale remains immutable and manual correction is void-not-delete
   assert.equal(deleted.error,'MANUAL_SALE_DELETE_FORBIDDEN');
 });
 
-function cycleEnv({ sourceCycle=null }={}) {
+function cycleEnv({ sourceCycle=null, currentStockQuantity=100 }={}) {
   return {
     DB:{
       prepare(sql){
@@ -121,14 +121,14 @@ function cycleEnv({ sourceCycle=null }={}) {
                 if (/core_project_outlets/.test(sql)) return { ok:1 };
                 if (/core_project_products/.test(sql)) return { ok:1 };
                 if (/JOIN core_employee_project_assignments/.test(sql)) return { id:'EMP-1' };
-                if (/FROM core_inventory_cycles/.test(sql) && /AND id=\? LIMIT 1/.test(sql)) return sourceCycle;
+                if (/FROM core_inventory_cycles/.test(sql) && /(?:AND|WHERE) (?:c\.)?id=\? LIMIT 1/.test(sql)) return sourceCycle;
                 if (/FROM core_inventory_cycles/.test(sql)) return null;
                 if (/FROM core_products/.test(sql)) return { id:'PRD-1', metadata_json:JSON.stringify({price:10000}) };
                 if (/FROM core_product_sales/.test(sql)) return null;
                 return null;
               },
               async all(){
-                if (/FROM core_stocks/.test(sql)) return { results:[{id:'STK-1',quantity:100,min_stock:5}] };
+                if (/FROM core_stocks/.test(sql)) return { results:[{id:'STK-1',quantity:currentStockQuantity,min_stock:5}] };
                 return { results:[] };
               },
             };
@@ -234,4 +234,32 @@ test('P1 stock and manual sales require explicit valid project scope in shared c
   assert.match(app,/function stockCommonProjectIds\(/);
   assert.match(app,/name="projectId" required/);
   assert.match(app,/Project tidak sesuai dengan relasi outlet dan produk/);
+});
+
+
+test('stability chained correction preserves original available-sales basis', async () => {
+  const row = cycle({
+    id:'IC-CORR-2',
+    openingQty:7,
+    adjustmentQty:1,
+    closingQty:8,
+    adjustmentReason:'Second recount correction for stock balance',
+    correctionOfCycleId:'IC-CORR-1',
+  });
+  const result = await validateInventoryCycleMutation(cycleEnv({
+    currentStockQuantity:7,
+    sourceCycle:{
+      id:'IC-CORR-1',status:'finalized',project_id:'PRJ-1',outlet_id:'OUT-1',product_id:'PRD-1',
+      opening_qty:6,stock_in_qty:0,adjustment_qty:1,return_qty:0,damaged_qty:0,transfer_out_qty:0,
+      cycle_date:'2026-09-24',finalized_at:'2026-09-24T10:00:00.000Z',
+      closing_qty:7,sell_out_qty:3,unit_price:10000,sales_amount:30000,sale_id:'SALE-CYCLE-IC-CORR-1',
+      source_sale_sold_at:'2026-09-24T09:15:00.000Z',
+      metadata_json:JSON.stringify({correctionOfCycleId:'IC-BASE'}),
+    }
+  }),'ORG-1',row,null,{op:'upsert',claims:{role:'manager',sub:'USR-MGR'}});
+  assert.equal(result,null);
+  assert.equal(row.sellOutQty,2);
+  assert.equal(row.salesAmount,20000);
+  assert.equal(row.correctionSourceSaleId,'SALE-CYCLE-IC-CORR-1');
+  assert.equal(row.saleSoldAt,'2026-09-24T09:15:00.000Z');
 });
