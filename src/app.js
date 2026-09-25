@@ -1893,9 +1893,6 @@ window.FT.employeePage = function(delta) {
   window.FT.filterEmployees(employeePage);
 };
 
-window.FT.filterEmployees(employeePage);
-};
-
 window.FT.filterEmployees = function(page = employeePage) {
   const filters = employeeFilterSnapshot(key => {
     const ids = {
