@@ -22,6 +22,8 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       PROQTRACK_BASE_URL: https://proqtrack.arywibowo.workers.dev
       PROQTRACK_HEALTH_URL: https://proqtrack.arywibowo.workers.dev/api/health
+      PROQTRACK_CUSTOM_BASE_URL: https://proqtrack.msg-os.com
+      PROQTRACK_CUSTOM_HEALTH_URL: https://proqtrack.msg-os.com/api/health
     steps:
       - uses: actions/checkout@v7
 
@@ -64,6 +66,22 @@ jobs:
             echo "API_AUTH_SECRET missing — generating and storing (value not logged)"
             openssl rand -base64 48 | tr -d '\n' | npx wrangler secret put API_AUTH_SECRET --env=""
           fi
+
+      - name: Verify custom domain pre-deploy baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors "$PROQTRACK_CUSTOM_BASE_URL/" >/dev/null
+          body="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors "$PROQTRACK_CUSTOM_HEALTH_URL")"
+          printf '%s' "$body" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const data = JSON.parse(raw);
+            if (data.ok !== true || data.service !== "ProQTrack") {
+              console.error("Custom domain baseline health failed", data);
+              process.exit(1);
+            }
+            console.log(`Custom domain pre-deploy baseline PASS: service=${data.service} milestone=${data.milestone || "unknown"}`);
+          '
 
       - name: Record pre-deploy D1 Time Travel bookmark
         id: recovery
@@ -210,6 +228,198 @@ jobs:
             }
             console.log(`Health check PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
           '
+
+      - name: Verify custom domain post-deploy health and security
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors "$PROQTRACK_CUSTOM_HEALTH_URL")"
+          printf '%s' "$body" | node -e '
+            const raw = require("fs").readFileSync(0, "utf8");
+            const data = JSON.parse(raw);
+            if (data.ok !== true || data.service !== "ProQTrack" || data.milestone !== "M7") {
+              console.error("Custom domain health check failed", data);
+              process.exit(1);
+            }
+            if (data.dependencies?.d1 !== true || data.dependencies?.hardeningSchema !== true || data.dependencies?.reportingSchema !== true || data.dependencies?.uatSchema !== true) {
+              console.error("Custom domain dependency check failed", data.dependencies);
+              process.exit(1);
+            }
+            console.log(`Custom domain health PASS: service=${data.service} environment=${data.environment || "unknown"} milestone=${data.milestone}`);
+          '
+
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_CUSTOM_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff
+        shell: bash
+        run: bash scripts/production-superadmin-smoke.sh
+
+      - name: Run Attendance Leave final production UAT
+        run: node scripts/attendance-leave-production-uat.mjs
+
+      - name: Run final full-production module-role UAT
+        run: node scripts/final-full-production-uat.mjs
+
+      - name: Verify security headers and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$api_headers" | grep -qi '^content-security-policy-report-only:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+
+          evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
+          test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
+
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/bulk/master/preview /api/admin/accounts /api/admin/organizations; do
+            status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
+          done
+
+          echo "Security and M7 auth-boundary smoke checks PASS"
+
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY
+        shell: bash
+        run: bash scripts/production-superadmin-smoke.sh
+
+      - name: Run Attendance Leave final production UAT
+        run: node scripts/attendance-leave-production-uat.mjs
+
+      - name: Run final full-production module-role UAT
+        run: node scripts/final-full-production-uat.mjs
+
+      - name: Verify security headers and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$api_headers" | grep -qi '^content-security-policy-report-only:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+
+          evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
+          test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
+
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/bulk/master/preview /api/admin/accounts /api/admin/organizations; do
+            status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
+          done
+
+          echo "Security and M7 auth-boundary smoke checks PASS"
+
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_CUSTOM_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosn
+        shell: bash
+        run: bash scripts/production-superadmin-smoke.sh
+
+      - name: Run Attendance Leave final production UAT
+        run: node scripts/attendance-leave-production-uat.mjs
+
+      - name: Run final full-production module-role UAT
+        run: node scripts/final-full-production-uat.mjs
+
+      - name: Verify security headers and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$api_headers" | grep -qi '^content-security-policy-report-only:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+
+          evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
+          test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
+
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/bulk/master/preview /api/admin/accounts /api/admin/organizations; do
+            status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
+          done
+
+          echo "Security and M7 auth-boundary smoke checks PASS"
+
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY
+        shell: bash
+        run: bash scripts/production-superadmin-smoke.sh
+
+      - name: Run Attendance Leave final production UAT
+        run: node scripts/attendance-leave-production-uat.mjs
+
+      - name: Run final full-production module-role UAT
+        run: node scripts/final-full-production-uat.mjs
+
+      - name: Verify security headers and auth boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_HEALTH_URL" | tr -d '\r')"
+          printf '%s\n' "$api_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$api_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$api_headers" | grep -qi '^strict-transport-security:'
+          printf '%s\n' "$api_headers" | grep -qi '^x-request-id:'
+          printf '%s\n' "$api_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$api_headers" | grep -qi '^content-security-policy-report-only:'
+
+          static_headers="$(curl --silent --show-error --retry 3 --dump-header - --output /dev/null "$PROQTRACK_BASE_URL/" | tr -d '\r')"
+          printf '%s\n' "$static_headers" | grep -qi '^x-content-type-options: nosniff$'
+          printf '%s\n' "$static_headers" | grep -qi '^x-frame-options: DENY$'
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+          ! printf '%s\n' "$static_headers" | grep -qi '^content-security-policy-report-only:'
+
+          evidence_status="$(curl --silent --show-error --output /tmp/evidence-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL/api/evidence")"
+          test "$evidence_status" = "401" || { echo "::error::Unauthenticated evidence endpoint returned HTTP $evidence_status"; cat /tmp/evidence-body; exit 1; }
+
+          for path in /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/query/visits /api/bulk/employees/preview /api/bulk/master/preview /api/admin/accounts /api/admin/organizations; do
+            status="$(curl --silent --show-error --output /tmp/auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Unauthenticated $path returned HTTP $status"; cat /tmp/auth-boundary-body; exit 1; }
+          done
+
+          echo "Security and M7 auth-boundary smoke checks PASS"
+
+          printf '%s\n' "$static_headers" | grep -qi '^content-security-policy:'
+
+          for path in /api/evidence /api/monitoring/summary /api/reports /api/workflows /api/analytics/overview /api/admin/accounts /api/admin/organizations; do
+            status="$(curl --silent --show-error --output /tmp/custom-auth-boundary-body --write-out '%{http_code}' "$PROQTRACK_CUSTOM_BASE_URL$path")"
+            test "$status" = "401" || { echo "::error::Custom domain unauthenticated $path returned HTTP $status"; cat /tmp/custom-auth-boundary-body; exit 1; }
+          done
+
+          echo "Custom domain health/security/auth-boundary checks PASS"
+
+      - name: Verify superadmin login through custom domain
+        shell: bash
+        env:
+          PROQTRACK_BASE_URL: https://proqtrack.msg-os.com
+        run: bash scripts/production-superadmin-smoke.sh
 
       - name: Verify superadmin production login
         shell: bash
