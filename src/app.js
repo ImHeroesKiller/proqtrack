@@ -1013,6 +1013,10 @@ window.FT.resetDB = function() {
 window.FT.logout = function() {
   closeModal();
   clearApiToken();
+  if (renderFrame) {
+    cancelAnimationFrame(renderFrame);
+    renderFrame = 0;
+  }
   state.loggedIn = false;
   state.account = null;
   state.route = '#/login';
@@ -5808,6 +5812,7 @@ window.FT.mobileCheckOut = async function(visitId) {
 
 // ===== Modal Helper =====
 function openModal(title, content) {
+  window.FS?.disposeOutletMap?.();
   const root = document.getElementById('modalRoot');
   root.innerHTML = `
     <div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()">
