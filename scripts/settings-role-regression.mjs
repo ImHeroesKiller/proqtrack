@@ -264,3 +264,120 @@ try {
   expect(employeeSession.phone === '081234567890','employee phone missing after profile save');
   expect(employeeSession.area === 'Jakarta UAT','employee area missing after profile save');
 
+
+  for (const role of Object.keys(actors)) {
+    await expectApi('/api/organization/profile',{ token:actors[role].token },200,`organization profile GET ${role}`);
+  }
+
+  for (const role of ['superadmin','head','admin']) {
+    const data = await expectApi('/api/organization/profile',{
+      method:'PATCH',
+      token:actors[role].token,
+      body:{
+        name:'Settings Final UAT',
+        timezone:'Asia/Jakarta',
+        notes:`Updated by ${role} during Settings final UAT`,
+        themeColor:'#ef5000',
+      },
+    },200,`organization profile PATCH ${role}`);
+    expect(data.organization?.name === 'Settings Final UAT',`organization patch ${role}: name mismatch`);
+  }
+
+  for (const role of ['manager','supervisor','employee']) {
+    await expectApi('/api/organization/profile',{
+      method:'PATCH',
+      token:actors[role].token,
+      body:{ name:'Forbidden Settings UAT', timezone:'Asia/Jakarta' },
+    },403,`organization profile denied ${role}`,'ORGANIZATION_PROFILE_FORBIDDEN');
+  }
+
+  const saAccounts = await expectApi('/api/admin/accounts',{ token:actors.superadmin.token },200,'accounts superadmin');
+  const headAccounts = await expectApi('/api/admin/accounts',{ token:actors.head.token },200,'accounts head');
+  const adminAccounts = await expectApi('/api/admin/accounts',{ token:actors.admin.token },200,'accounts admin');
+  for (const role of ['manager','supervisor','employee']) {
+    await expectApi('/api/admin/accounts',{ token:actors[role].token },403,`accounts denied ${role}`);
+  }
+
+  const saIds = new Set((saAccounts.accounts || []).map(row => row.id));
+  expect(
+    saIds.has(actors.head.id)
+      && saIds.has(actors.admin.id)
+      && saIds.has(actors.manager.id)
+      && saIds.has(actors.supervisor.id)
+      && saIds.has(actors.employee.id),
+    'superadmin account scope incomplete',
+  );
+
+  const headIds = new Set((headAccounts.accounts || []).map(row => row.id));
+  expect(!headIds.has(actors.head.id) && headIds.has(actors.admin.id) && headIds.has(actors.employee.id),
+    'head account scope incorrect');
+
+  const adminIds = new Set((adminAccounts.accounts || []).map(row => row.id));
+  expect(
+    adminIds.has(actors.admin.id)
+      && adminIds.has(actors.manager.id)
+      && adminIds.has(actors.employee.id)
+      && !adminIds.has(actors.head.id),
+    'admin account scope incorrect',
+  );
+
+  await expectApi(`/api/admin/accounts/${actors.employee.id}`,{
+    method:'PATCH',
+    token:actors.admin.token,
+    body:{ email:`changed.${runKey}@proqtrack.id` },
+  },403,'admin global email boundary','ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN');
+
+  await expectApi(`/api/admin/accounts/${actors.employee.id}`,{
+    method:'PATCH',
+    token:actors.admin.token,
+    body:{ password:actors.employee.pass + '-change' },
+  },403,'admin global password boundary','ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN');
+
+  await expectApi(`/api/admin/accounts/${actors.manager.id}`,{
+    method:'PATCH',
+    token:actors.admin.token,
+    body:{ role:'head' },
+  },403,'admin role escalation boundary','ACCOUNT_ROLE_FORBIDDEN');
+
+  await expectApi(`/api/admin/accounts/${actors.admin.id}`,{
+    method:'PATCH',
+    token:actors.admin.token,
+    body:{ status:'suspended' },
+  },403,'admin self disable boundary','SELF_DISABLE_FORBIDDEN');
+
+  await projectSync('manager','manager-catalog-update',project => ({
+    ...project,
+    modules:{ ...(project.modules || {}), newOutlet:false },
+    storeCatalog:{
+      ...(project.storeCatalog || {}),
+      allowNewOutlet:false,
+      segments:['General','Modern Trade'],
+    },
+  }));
+
+  await projectSync('manager','manager-attendance-policy-denied',project => ({
+    ...project,
+    attendanceSourceMode:'visit',
+  }),403,'CHANGE_FORBIDDEN');
+
+  await projectSync('supervisor','supervisor-project-settings-denied',project => ({
+    ...project,
+    storeCatalog:{ ...(project.storeCatalog || {}), allowNewOutlet:true },
+  }),403,'CHANGE_FORBIDDEN');
+
+  await projectSync('employee','employee-project-settings-denied',project => ({
+    ...project,
+    storeCatalog:{ ...(project.storeCatalog || {}), allowNewOutlet:true },
+  }),403,'CHANGE_FORBIDDEN');
+
+  await projectSync('admin','admin-attendance-cutoff-update',project => ({
+    ...project,
+    attendanceLateAfter:'09:15',
+  }));
+
+  const managerBootstrap = await bootstrap('manager');
+  const managerProject = managerBootstrap.data?.projects?.find(row => row.id === ids.project);
+  expect(managerProject?.storeCatalog?.allowNewOutlet === false,'manager catalog update not persisted');
+  expect(managerProject?.attendanceSourceMode === 'manual','manager changed attendance source unexpectedly');
+  expect(managerProject?.attendanceLateAfter === '09:15','admin attendance cutoff update not persisted');
+
