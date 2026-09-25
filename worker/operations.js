@@ -322,6 +322,15 @@ export async function validateAttendanceMutation(env, organizationId, claims, ro
   const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,workDate);
   if (!assignment) return { error:'ATTENDANCE_ASSIGNMENT_REQUIRED', status:403 };
 
+  if (!existing && !BROAD_ROLES.has(roleOf(claims))) {
+    const targetEmployee=await env.DB.prepare(
+      'SELECT auth_user_id FROM core_employees WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,employeeId).first();
+    if (!targetEmployee?.auth_user_id || str(targetEmployee.auth_user_id) !== str(claims?.sub)) {
+      return { error:'ATTENDANCE_SELF_ONLY', status:403 };
+    }
+  }
+
   if (!existing) {
     const duplicate=await env.DB.prepare(
       'SELECT id FROM core_attendance WHERE organization_id=? AND project_id=? AND employee_id=? AND work_date=? LIMIT 1'
