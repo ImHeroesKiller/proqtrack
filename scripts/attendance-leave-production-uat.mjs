@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { randomBytes, pbkdf2Sync } from 'node:crypto';
 
 const BASE = process.env.PROQTRACK_BASE_URL || 'https://proqtrack.arywibowo.workers.dev';
-const runKey = ${process.env.GITHUB_RUN_ID || 'local'}-${process.env.GITHUB_RUN_ATTEMPT || '1'};
+const runKey = `${process.env.GITHUB_RUN_ID || 'local'}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`;
 const ids = {
   org:`ORG-UAT-AL-${runKey}`, client:`CL-UAT-AL-${runKey}`,
   manual:`PRJ-UAT-AL-MANUAL-${runKey}`, visit:`PRJ-UAT-AL-VISIT-${runKey}`,
