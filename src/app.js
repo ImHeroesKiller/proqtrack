@@ -1520,6 +1520,7 @@ window.FT.openVisitModal = function() {
         <textarea class="textarea" name="notes" placeholder="Catatan kunjungan..."></textarea>
       </div>
       <div class="tracking-evidence-note">Kunjungan baru selalu dibuat sebagai Direncanakan. Check-in dan check-out dilakukan oleh karyawan yang ditugaskan dengan bukti GPS perangkat.</div>
+      <div class="ops-inline-note">Pastikan periode tidak bertabrakan dengan pengajuan pending/approved lain.</div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
         <button type="submit" class="btn btn-primary">Simpan Jadwal</button>
@@ -3868,7 +3869,8 @@ window.FT.viewLeave = function(id) {
 function renderMyAttendance() {
   const empId = myEmployeeId();
   const emp = getEmployees().find(e => e.id === empId);
-  const records = getAttendance().filter(a => a.employeeId === empId).sort((a,b) => b.date.localeCompare(a.date));
+  const records = getAttendance().filter(a => a.employeeId === empId).sort((a,b) => String(b.date || b.workDate || '').localeCompare(String(a.date || a.workDate || '')));
+  const projectMap = Object.fromEntries((getDB().projects || []).map(project => [String(project.id),project]));
   const summary = {
     hadir: records.filter(r => normalizeAttendanceStatus(r.status) === 'hadir').length,
     terlambat: records.filter(r => normalizeAttendanceStatus(r.status) === 'terlambat').length,
@@ -3891,7 +3893,7 @@ function renderMyAttendance() {
             records.map(a => `
               <tr>
                 <td>${formatDateShort(a.date || a.workDate)}</td>
-                <td>${esc(a.projectId || '-')}</td>
+                <td><strong>${esc(projectMap[String(a.projectId)]?.code || a.projectId || '-')}</strong><div class="am-muted">${esc(projectMap[String(a.projectId)]?.name || '')}</div></td>
                 <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
                 <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
                 <td>${esc(a.attendanceSource === 'visit' ? 'Visit' : 'Manual')}</td>
@@ -3932,14 +3934,18 @@ function renderMyLeaves() {
             ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
             leaves.map(l => `
               <tr>
-                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
+                <td><span class="ops-chip">${esc(l.type || '-')}</span></td>
                 <td>${formatDateShort(l.startDate)}</td>
                 <td>${formatDateShort(l.endDate)}</td>
                 <td style="text-align:center; font-weight:600;">${l.days}</td>
-                <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${l.reason}</td>
+                <td style="max-width:240px; font-size:13px; color:var(--gray-500);">${esc(l.reason || '-')}</td>
                 <td>${leaveStatusHtml(l)}</td>
                 <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(l.submittedAt)}</td>
-                <td>${l.status === 'pending' ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.withdrawMyLeave('${l.id}')">Batalkan</button>` : ''}</td>
+                <td><div class="ops-row-actions">
+                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
+                  ${l.status === 'pending' && String(l.startDate || '') > todayISO() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openEditMyLeave('${l.id}')">Edit</button>` : ''}
+                  ${l.status === 'pending' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.openWithdrawMyLeave('${l.id}')">Batalkan</button>` : ''}
+                </div></td>
               </tr>
             `).join('')}
           </tbody>
@@ -3948,6 +3954,78 @@ function renderMyLeaves() {
     </div>
   `;
 }
+
+const leaveEditInFlight = new Set();
+
+window.FT.openEditMyLeave = function(id) {
+  const leave = getLeaves().find(row => String(row.id) === String(id));
+  if (!leave || leave.status !== 'pending') return;
+  if (String(leave.startDate || '') <= todayISO()) {
+    showToast('Pengajuan yang sudah mulai tidak dapat diedit.', 'error');
+    return;
+  }
+  const leaveTypes = getLeaveTypes();
+  openModal('Edit Pengajuan Ijin / Cuti', `
+    <form data-pqt-onsubmit="FT.saveMyLeaveEdit(event,'${id}')">
+      <div class="form-group"><label class="label">Tipe</label>
+        <select class="select" name="type" required>${leaveTypes.map(t => `<option ${String(t.name) === String(leave.type) ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Tanggal Mulai</label><input class="input" type="date" name="startDate" id="leaveEditStart" value="${esc(leave.startDate || '')}" required data-pqt-onchange="FT.calcLeaveEditDays()"></div>
+        <div class="form-group"><label class="label">Tanggal Selesai</label><input class="input" type="date" name="endDate" id="leaveEditEnd" value="${esc(leave.endDate || '')}" required data-pqt-onchange="FT.calcLeaveEditDays()"></div>
+      </div>
+      <div class="form-group"><label class="label">Durasi (hari)</label><input class="input" type="number" id="leaveEditDays" value="${Number(leave.days || 1)}" readonly></div>
+      <div class="form-group"><label class="label">Alasan</label><textarea class="textarea" name="reason" minlength="5" required>${esc(leave.reason || '')}</textarea></div>
+      <div class="ops-inline-note">Edit hanya tersedia selama pengajuan masih pending dan periodenya belum dimulai.</div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan Perubahan</button></div>
+    </form>`);
+};
+
+window.FT.calcLeaveEditDays = function() {
+  const start = document.getElementById('leaveEditStart')?.value || '';
+  const end = document.getElementById('leaveEditEnd')?.value || '';
+  const output = document.getElementById('leaveEditDays');
+  if (!output || !start || !end) return;
+  const diff = Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1;
+  output.value = diff > 0 ? diff : 1;
+};
+
+window.FT.saveMyLeaveEdit = async function(e,id) {
+  e.preventDefault();
+  const key = String(id || '');
+  if (!key || leaveEditInFlight.has(key)) return;
+  leaveEditInFlight.add(key);
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
+  let cloudCommitted = false;
+  try {
+    if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
+    updateLeave(id, { type:data.type, startDate:data.startDate, endDate:data.endDate, reason:data.reason, status:'pending' });
+    await waitForOperationalSync();
+    cloudCommitted = true;
+    await refreshOperationalData(getDB(), getActor());
+    closeModal();
+    showToast('Pengajuan diperbarui.', 'success');
+    render();
+  } catch (error) {
+    if (!cloudCommitted) restoreOperationalBaseline(getDB());
+    const message = {
+      LEAVE_EDIT_AFTER_START_FORBIDDEN:'Pengajuan yang sudah mulai tidak dapat diedit.',
+      LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
+      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
+      LEAVE_REASON_REQUIRED:'Alasan ijin/cuti wajib minimal 5 karakter.',
+      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
+      REVISION_CONFLICT:'Data berubah dari perangkat lain. Muat ulang lalu coba kembali.',
+    }[error?.code || error?.message] || error?.message || 'Pengajuan gagal diperbarui.';
+    showToast(message, 'error');
+    await refreshOperationalData(getDB(), getActor()).catch(() => null);
+    render();
+  } finally {
+    leaveEditInFlight.delete(key);
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Simpan Perubahan'; }
+  }
+};
 
 window.FT.openMyLeaveModal = function() {
   const leaveTypes = getLeaveTypes();
