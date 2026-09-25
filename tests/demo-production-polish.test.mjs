@@ -31,7 +31,7 @@ test('login supports password visibility and keyboard submission', async () => {
 test('login page avoids render-blocking font and map resources', async () => {
   const html = await read('index.html');
   assert.doesNotMatch(html, /fonts\.googleapis\.com/);
-  assert.match(html, /<script defer src="\.\/assets\/vendor\/leaflet\/leaflet\.js"><\/script>/);
+  assert.doesNotMatch(html, /assets\/vendor\/leaflet\/leaflet\.js/);
   assert.doesNotMatch(html, /https:\/\/unpkg\.com/);
 });
 
