@@ -322,3 +322,17 @@ P3 menutup performance hardening dengan observability lokal, resource budget, da
 - `scripts/performance-budget.mjs` dijalankan sesudah build dan menulis `dist/performance-budget-report.json`; pelanggaran budget membuat CI/deploy gagal.
 - Performance budget diwajibkan di PR CI, `npm run check`, deploy scripts, dan workflow produksi Cloudflare sebelum deploy.
 - Regression guard utama: `tests/performance-p3.test.mjs`, sambil mempertahankan guard P0–P2.
+
+
+## Final Full-Production Stabilization / UAT — 25 September 2026
+
+Release-candidate gate production ditambah setelah Performance P0–P3:
+
+- `scripts/final-full-production-uat.mjs` membuat tenant sintetis terisolasi per run dengan credential acak dan guaranteed cleanup; tidak menggunakan tenant MKB atau credential manusia.
+- Role matrix live: Head, Admin, Manager, Supervisor, Employee. Global Superadmin tetap diverifikasi oleh `production-superadmin-smoke.sh` pada workflow yang sama.
+- Module chain live: Clients, Projects, Employees/Assignments, Outlets termasuk Auto Approved acquisition, Products, Competitors, Visits + GPS, Stock Ledger + Derived Sales, Surveys, Analytics, Reports + Report Schedules, Account/Settings authority boundary.
+- Negative authority live: cross-tenant login, second field device, Manager client/competitor mutation, Employee direct stock/manual sales, Employee analytics/report, dan account-management boundary.
+- Stock/Sales invariant live memastikan Inventory Cycle finalization atomik menghasilkan closing stock 12 dan derived sell-out 8 pada skenario sintetis, tanpa direct stock write.
+- Final D1 invariants diverifikasi sebelum cleanup, lalu residual organization/user/visit/sales/report harus nol.
+- Workflow production menjalankan UAT ini sesudah Attendance + Leave integrated production UAT dan sebelum final security-header/auth-boundary gate.
+- Regression guard: `tests/final-full-production-uat.test.mjs`.
