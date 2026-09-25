@@ -36,7 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -795,6 +795,13 @@ function render() {
   attachPageHandlers();
   bindAssetFields(document);
   if (route === '#/tracking') initMap();
+  if (route === '#/field-photos' || route === '#/myphotos') {
+    ensureEvidenceMetadataHydrated(getDB()).then(changed => {
+      if (changed && state.loggedIn && state.route === route) render();
+    }).catch(error => {
+      console.warn('evidence_metadata_route_hydrate_failed', error?.message || error);
+    });
+  }
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
   configureHomeRefresh(route);
   configureTrackingRefresh(route);
