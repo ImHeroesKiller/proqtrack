@@ -124,28 +124,19 @@ async function putRuntimeCache(request, response) {
   await trimRuntimeCache(cache);
 }
 
-async function staticResponse(request, event) {
+async function staticResponse(request) {
   const shell = await caches.open(CACHE);
   const shellHit = await shell.match(request);
   if (shellHit) return shellHit;
 
   const runtime = await caches.open(RUNTIME_CACHE);
   const runtimeHit = await runtime.match(request);
-  if (runtimeHit) {
-    if (isRuntimeCacheable(new URL(request.url))) {
-      event.waitUntil(
-        fetch(request)
-          .then(response => putRuntimeCache(request, response))
-          .catch(() => {}),
-      );
-    }
-    return runtimeHit;
-  }
+  if (runtimeHit) return runtimeHit;
 
   try {
     const response = await fetch(request);
     if (isRuntimeCacheable(new URL(request.url))) {
-      event.waitUntil(putRuntimeCache(request, response).catch(() => {}));
+      await putRuntimeCache(request, response).catch(() => {});
     }
     return response;
   } catch {
@@ -161,7 +152,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(navigationResponse(event.request));
     return;
   }
-  event.respondWith(staticResponse(event.request, event));
+  event.respondWith(staticResponse(event.request));
 });
 
 // Settings P0 authority refresh
