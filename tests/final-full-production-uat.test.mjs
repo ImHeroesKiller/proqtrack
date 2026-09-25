@@ -44,6 +44,9 @@ test('final UAT covers full operational module chain and authority boundaries', 
   assert.match(script, /employee report create must be forbidden/);
   assert.match(script, /report schedule create failed/);
   assert.match(script, /account management expected 403/);
+  assert.match(script, /roleOnProject:'sales'/);
+  assert.match(script, /supervisorId:ids\.supervisorEmp/);
+  assert.match(script, /position_name='sales'/);
 });
 
 test('final UAT validates live analytics reports and cleanup invariants', async () => {
