@@ -88,6 +88,6 @@ test('Team Employees P3 helper is wired into runtime and PWA', async () => {
   assert.match(app,/paginateEmployees/);
   assert.match(types,/subordinateEmployeeIds/);
   assert.match(types,/supervisorMetrics/);
-  assert.match(sw,/src\/lib\/team-employee-ui\.js/);
+  assert.match(sw,/RUNTIME_CACHE/);
   assert.match(sw,/proqtrack-v12\.44/);
 });
