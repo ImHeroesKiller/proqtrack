@@ -491,20 +491,27 @@ export function renderSettings() {
 
 let accountSyncInFlight = false;
 let accountSyncedOrg = '';
+let accountSyncAttemptedOrg = '';
+let accountSyncError = '';
+let accountSyncLastAt = null;
+let accountFilterTimer = null;
 
 function scheduleAccountRefresh(acc) {
   const orgId = String(acc?.organizationId || getDB().currentOrganizationId || '');
-  if (!getApiToken() || !orgId || accountSyncInFlight || accountSyncedOrg === orgId) return;
+  if (!getApiToken() || !orgId || accountSyncInFlight || accountSyncedOrg === orgId || accountSyncAttemptedOrg === orgId) return;
   accountSyncInFlight = true;
+  accountSyncAttemptedOrg = orgId;
   queueMicrotask(async () => {
     try {
       await syncCloudAccounts();
       accountSyncedOrg = orgId;
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      accountSyncError = '';
+      accountSyncLastAt = new Date();
     } catch (error) {
-      toast(`Sinkronisasi akun gagal: ${error.message || error}`, 'error');
+      accountSyncError = accountErrorMessage(error);
     } finally {
       accountSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   });
 }
@@ -513,63 +520,87 @@ export function renderAccounts() {
   const acc = account();
   scheduleAccountRefresh(acc);
   if (!['head','admin','superadmin'].includes(acc?.role)) {
-    return '<div class="card"><p>Only Superadmin, Head, and Admin can manage organization accounts.</p></div>';
+    return '<div class="card"><div class="empty-state"><h3>Akses dibatasi</h3><p>Hanya Superadmin, Head, dan Admin yang dapat mengelola akun organisasi.</p></div></div>';
   }
-  const q = (window.FT.state._accountQuery || '').toLowerCase();
+  const queryRaw = String(window.FT.state._accountQuery || '');
+  const q = queryRaw.toLowerCase();
   const roleFilter = window.FT.state._accountRole || '';
   const statusFilter = window.FT.state._accountStatus || '';
   const employees = getEmployees();
-  let rows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
+  const allRows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
+  let rows = allRows.slice();
   if (q) rows = rows.filter(a => `${a.name} ${a.email} ${a.role}`.toLowerCase().includes(q));
   if (roleFilter) rows = rows.filter(a => a.role === roleFilter);
   if (statusFilter) rows = rows.filter(a => a.status === statusFilter);
+  const filtered = !!(q || roleFilter || statusFilter);
 
   return `
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" data-pqt-oninput="AM.filterAccounts(this.value)">
-        <select class="select" style="width:auto" data-pqt-onchange="AM.filterRole(this.value)">
+    <div class="card am-accounts-card">
+      <div class="am-section-head">
+        <div>
+          <div class="card-title">Manajemen Akun</div>
+          <div class="card-subtitle">Kelola role, status, relasi karyawan, project Manager, dan binding perangkat untuk tenant aktif.</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" type="button" ${accountSyncInFlight ? 'disabled' : ''} data-pqt-onclick="AM.refreshAccounts()">${accountSyncInFlight ? 'Menyegarkan…' : 'Segarkan'}</button>
+      </div>
+      <div class="am-sync-row ${accountSyncError ? 'is-error' : ''}" aria-live="polite">
+        <span>${accountSyncInFlight
+          ? 'Menyinkronkan daftar akun dari cloud…'
+          : accountSyncError
+            ? `Sinkronisasi gagal: ${esc(accountSyncError)}`
+            : accountSyncLastAt
+              ? `Data cloud disegarkan ${esc(formatDate(accountSyncLastAt))}`
+              : 'Daftar akun menggunakan authority cloud.'}</span>
+      </div>
+      <div class="am-account-filters">
+        <input class="input search-input" aria-label="Cari akun" placeholder="Cari nama, email, atau role" value="${esc(queryRaw)}" data-pqt-oninput="AM.filterAccounts(this.value)">
+        <select class="select" aria-label="Filter role" data-pqt-onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
           <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
-          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>\n          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
+          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>
+          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
         </select>
-        <select class="select" style="width:auto" data-pqt-onchange="AM.filterStatus(this.value)">
+        <select class="select" aria-label="Filter status" data-pqt-onchange="AM.filterStatus(this.value)">
           <option value="">Semua status</option>
           <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Aktif</option>
           <option value="suspended" ${statusFilter === 'suspended' ? 'selected' : ''}>Ditangguhkan</option>
           <option value="inactive" ${statusFilter === 'inactive' ? 'selected' : ''}>Nonaktif</option>
         </select>
-        <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="AM.openAccount()">+ Tambah Akun</button>
+        <button class="btn btn-secondary" type="button" ${filtered ? '' : 'disabled'} data-pqt-onclick="AM.clearAccountFilters()">Reset filter</button>
+        <button class="btn btn-primary am-account-add" type="button" data-pqt-onclick="AM.openAccount()">+ Tambah Akun</button>
       </div>
-      <div class="visits-table-wrapper">
-        <table class="table">
-          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Perangkat pertama</th><th></th></tr></thead>
+      <div class="am-result-row" aria-live="polite">
+        <span><strong>${rows.length}</strong> dari ${allRows.length} akun</span>
+        ${filtered ? '<span>Filter aktif</span>' : ''}
+      </div>
+      <div class="visits-table-wrapper am-account-table-wrap">
+        <table class="table am-account-table">
+          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Perangkat</th><th>Aksi</th></tr></thead>
           <tbody>
             ${rows.length ? rows.map(a => {
               const emp = employees.find(e => e.id === a.employeeId);
               const device = a.role === 'employee'
-                ? ((a.deviceBound || a.deviceId) ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
+                ? (a.deviceBound ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : 'waktu pairing tidak tersedia'}</div>` : '<span class="am-muted">Belum pairing</span>')
                 : '—';
               const manageable = canManageAccount(acc,a);
               const statusManageable = canChangeAccountStatus(acc,a);
               return `<tr>
-                <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
-                <td>${esc(roleLabel(a.role))}</td>
-                <td>${emp ? esc(emp.name) : '—'}</td>
-                <td>${statusBadge(a.status)}</td>
-                <td>${device}</td>
-                <td>
-                  ${manageable ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>` : ''}
-                  ${manageable && a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
+                <td data-label="Akun"><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
+                <td data-label="Role">${esc(roleLabel(a.role))}</td>
+                <td data-label="Karyawan">${emp ? esc(emp.name) : '—'}</td>
+                <td data-label="Status">${statusBadge(a.status)}</td>
+                <td data-label="Perangkat">${device}</td>
+                <td data-label="Aksi"><div class="am-account-actions">
+                  ${manageable ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>` : ''}
+                  ${manageable && a.role === 'employee' && a.deviceBound ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
                   ${statusManageable ? (a.status === 'active'
-                    ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
-                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`) : ''}
-                </td>
+                    ? `<button class="btn btn-danger btn-sm" type="button" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
+                    : `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`) : ''}
+                </div></td>
               </tr>`;
-            }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Tidak ada akun</h3></div></td></tr>'}
+            }).join('') : `<tr><td colspan="6"><div class="empty-state"><h3>${filtered ? 'Tidak ada akun sesuai filter' : 'Belum ada akun'}</h3><p>${filtered ? 'Ubah atau reset filter untuk melihat akun lain.' : 'Tambahkan akun organisasi untuk memulai.'}</p>${filtered ? '<button type="button" class="btn btn-secondary" data-pqt-onclick="AM.clearAccountFilters()">Reset filter</button>' : ''}</div></td></tr>`}
           </tbody>
         </table>
       </div>
