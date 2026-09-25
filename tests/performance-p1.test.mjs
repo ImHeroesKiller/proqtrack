@@ -42,6 +42,18 @@ test('P1 route-heavy and evidence modules are lazy instead of startup blocking',
   assert.match(m4, /scheduleEvidenceRuntime/);
 });
 
+test('P1 cloud readiness does not wait for full evidence metadata pagination', async () => {
+  const source = await read('src/lib/cloud-data.js');
+  const start = source.indexOf('export async function bootstrapOperationalData');
+  const end = source.indexOf('export async function refreshOperationalData', start);
+  const bootstrap = source.slice(start, end);
+  assert.doesNotMatch(bootstrap, /await fetchCloudFieldPhotos/);
+  assert.match(bootstrap, /scheduleEvidenceMetadataHydration\(localDb, bootstrapToken\)/);
+  assert.match(source, /export function ensureEvidenceMetadataHydrated/);
+  assert.match(source, /requestIdleCallback/);
+  assert.match(source, /proqtrack:evidence-metadata-hydrated/);
+});
+
 test('P1 evidence queue uses IndexedDB indexes for scoped rows and counts', async () => {
   const source = await read('src/lib/offline-store.js');
   assert.match(source, /index\('organization_status'\)/);
