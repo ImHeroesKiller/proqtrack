@@ -817,12 +817,11 @@ window.AM = {
       toast('Project tidak ditemukan.', 'error');
       return;
     }
-    const submit = form.querySelector('button[type="submit"]');
     const sourceMode = form.sourceMode.value === 'visit' ? 'visit' : 'manual';
     const lateAfter = String(form.lateAfter.value || '');
     const nextProject = { ...project, attendanceSourceMode:sourceMode, attendanceLateAfter:lateAfter };
     settingsProjectSaveInFlight.add(key);
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
       saveProjectAttendanceSettings(projectId,{ sourceMode, lateAfter });
@@ -838,14 +837,13 @@ window.AM = {
       toast(messages[error?.code || error?.message] || error?.message || String(error), 'error');
     } finally {
       settingsProjectSaveInFlight.delete(key);
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async addAttendancePoint(event) {
     event.preventDefault();
     if (settingsPointSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     const fd = Object.fromEntries(new FormData(form).entries());
     const row = {
       id:`APT-${crypto.randomUUID()}`,
@@ -857,7 +855,7 @@ window.AM = {
       status:'active',
     };
     settingsPointSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menambahkan…');
     try {
       await commitOperationalChanges([{ entity:'attendancePoints', op:'upsert', row }]);
       createAttendancePoint(row);
@@ -868,7 +866,7 @@ window.AM = {
       toast(error?.message || String(error),'error');
     } finally {
       settingsPointSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   pickStoreProject(id) {
@@ -900,9 +898,8 @@ window.AM = {
       modules:{ ...(project.modules || {}), newOutlet:catalog.allowNewOutlet },
       storeCatalog:catalog,
     };
-    const submit = form.querySelector('button[type="submit"]');
     settingsProjectSaveInFlight.add(key);
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
       saveProjectStoreSettings(projectId,catalog);
@@ -915,7 +912,7 @@ window.AM = {
       toast(message,'error');
     } finally {
       settingsProjectSaveInFlight.delete(key);
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   previewThemeColor(input) {
@@ -947,9 +944,8 @@ window.AM = {
     event.preventDefault();
     if (organizationSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     organizationSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan organisasi…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const file = form.logoFile?.files?.[0];
@@ -975,13 +971,16 @@ window.AM = {
       });
       applyOrganizationBranding(updatedOrganization);
       organizationProfileSyncedOrg = String(account()?.organizationId || getCurrentOrgId() || '');
+      organizationProfileAttemptedOrg = organizationProfileSyncedOrg;
+      organizationProfileSyncError = '';
+      organizationProfileLastSyncedAt = new Date();
       toast('Profil organisasi tersimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(organizationErrorMessage(error), 'error');
     } finally {
       organizationSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   filterAccounts(value) {
@@ -1024,9 +1023,8 @@ window.AM = {
     event.preventDefault();
     if (accountSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     accountSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,id ? 'Menyimpan…' : 'Membuat akun…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const current = id ? getAccounts().find(a => String(a.id) === String(id)) : null;
@@ -1046,6 +1044,8 @@ window.AM = {
       const saved = id ? await updateCloudAccount(id, data) : await createCloudAccount(data);
       window.FT.closeModal?.();
       accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
+      accountSyncError = '';
       toast(id
         ? 'Akun cloud diperbarui'
         : saved?.attachedExisting
@@ -1056,7 +1056,7 @@ window.AM = {
       toast(accountErrorMessage(error), 'error');
     } finally {
       accountSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async resetDevice(id) {
