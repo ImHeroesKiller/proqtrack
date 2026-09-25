@@ -645,11 +645,10 @@ async function visitAttendanceStatements(env, organizationId, row) {
     checkInLocation:str(row.outletId),
   });
   const statements = [env.DB.prepare(
-    `INSERT INTO core_attendance(
+    `INSERT OR IGNORE INTO core_attendance(
       id,organization_id,project_id,employee_id,work_date,status,check_in_at,
       check_in_latitude,check_in_longitude,idempotency_key,metadata_json,row_version,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
-    ON CONFLICT(organization_id,project_id,employee_id,work_date) DO NOTHING`
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)`
   ).bind(
     id,organizationId,projectId,employeeId,workDate,
     attendanceStatusAt(checkInAt,policy.lateAfter),checkInAt,
