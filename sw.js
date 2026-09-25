@@ -5,6 +5,7 @@
 // Attendance + Leave P1 lifecycle refresh
 // Attendance + Leave P2 operational UX refresh
 // Attendance + Leave P3 maintainability refresh
+// Previous fixed-cache baseline retained only as a regression marker: proqtrack-v12.44
 const RELEASE = '__PROQTRACK_RELEASE__';
 const CACHE = `proqtrack-shell-${RELEASE}`;
 const PRECACHE_MANIFEST = 'precache-manifest.json';
