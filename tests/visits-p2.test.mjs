@@ -5,11 +5,14 @@ import { readFile } from 'node:fs/promises';
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Visits P2 adds project outlet date filters and bounded pagination', async () => {
-  const app = await read('src/app.js');
-  assert.match(app, /id="visitProjectFilter"/);
-  assert.match(app, /id="visitOutletFilter"/);
-  assert.match(app, /id="visitDateFrom"/);
-  assert.match(app, /id="visitDateTo"/);
+  const [app, visitsPage] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/visits-page.js'),
+  ]);
+  assert.match(visitsPage, /id="visitProjectFilter"/);
+  assert.match(visitsPage, /id="visitOutletFilter"/);
+  assert.match(visitsPage, /id="visitDateFrom"/);
+  assert.match(visitsPage, /id="visitDateTo"/);
   assert.match(app, /VISITS_PAGE_SIZE/);
   assert.match(app, /paginateVisits\(matched, page, VISITS_PAGE_SIZE\)/);
 });
