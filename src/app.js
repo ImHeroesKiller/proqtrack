@@ -49,6 +49,12 @@ import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, emp
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
 import { PRODUCT_PAGE_SIZE, productOperationalModel, productFilterOptions, productMatchesFilters, productFilterSnapshot, paginateProducts, productSyncPresentation, productFormModel, normalizeProductFormPayload, productStatusSummary, productLifecycleAction } from './lib/product-ui.js';
 import { stockSalesFriendlyErrorMessage, inventoryCycleOnDate as findInventoryCycleOnDate, commonProjectIds, stockSummary, stockFilterSnapshot, stockMatchesFilters, salesSummary, salesFilterSnapshot, salesMatchesFilters, pendingManualCorrections, validateStockMovementInput } from './lib/stock-sales-ui.js';
+import {
+  attendanceLeaveFriendlyErrorMessage, attendanceSourceKey, attendanceSourceLabel, attendanceStatusKey,
+  attendanceOperationalSummary, attendanceFilterSnapshot, attendanceMatchesFilters, attendanceTimeValue,
+  leaveDisplayStatus, leavePendingAgeDays, leaveOperationalSummary, leaveFilterSnapshot, leaveMatchesFilters,
+  canEditPendingLeave,
+} from './lib/attendance-leave-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
 import './bulk-employees.js';
 import './bulk-master.js';
@@ -3432,15 +3438,13 @@ function renderAttendanceManager() {
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const projects = (db.projects || []).filter(project => attendance.some(row => String(row.projectId) === String(project.id)));
   const projectMap = Object.fromEntries((db.projects || []).map(project => [String(project.id), project]));
-  const todayRows = attendance.filter(row => String(row.date || row.workDate || '') === today);
-  const openCheckout = todayRows.filter(row => row.attendanceSource !== 'visit' && !row.checkOutAt && !row.checkOutTime);
-  const corrected = attendance.filter(row => Number(row.correctionCount || 0) > 0);
+  const summary = attendanceOperationalSummary(attendance,today);
   return `
     <div class="ops-kpi-grid">
-      <div class="ops-kpi"><span>Hari ini</span><strong>${todayRows.length}</strong><small>attendance tercatat</small></div>
-      <div class="ops-kpi"><span>Belum check-out</span><strong>${openCheckout.length}</strong><small>manual hari ini</small></div>
-      <div class="ops-kpi"><span>Koreksi</span><strong>${corrected.length}</strong><small>memiliki audit correction</small></div>
-      <div class="ops-kpi"><span>Total</span><strong>${attendance.length}</strong><small>record terlihat</small></div>
+      <div class="ops-kpi"><span>Hari ini</span><strong>${summary.today}</strong><small>attendance tercatat</small></div>
+      <div class="ops-kpi"><span>Belum check-out</span><strong>${summary.openCheckout}</strong><small>manual hari ini</small></div>
+      <div class="ops-kpi"><span>Koreksi</span><strong>${summary.corrected}</strong><small>memiliki audit correction</small></div>
+      <div class="ops-kpi"><span>Total</span><strong>${summary.total}</strong><small>record terlihat</small></div>
     </div>
     <div class="card ops-card">
       <div class="ops-toolbar">
@@ -3475,10 +3479,10 @@ function renderAttendanceManager() {
               const emp = empMap[a.employeeId];
               if (!emp) return '';
               const project = projectMap[String(a.projectId)] || {};
-              const source = a.attendanceSource === 'visit' ? 'Visit' : 'Manual';
+              const source = attendanceSourceLabel(a);
               const corrected = a.correctionCount ? `<div class="am-muted">Koreksi ${a.correctionCount}x</div>` : '';
               return `
-                <tr data-att-row="1" data-project="${esc(String(a.projectId || ''))}" data-status="${esc(normalizeAttendanceStatus(a.status))}" data-source="${a.attendanceSource === 'visit' ? 'visit' : 'manual'}" data-date="${esc(String(a.date || a.workDate || ''))}">
+                <tr data-att-row="1" data-project="${esc(String(a.projectId || ''))}" data-status="${esc(attendanceStatusKey(a))}" data-source="${attendanceSourceKey(a)}" data-date="${esc(String(a.date || a.workDate || ''))}">
                   <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
                   <td><strong>${esc(project.code || a.projectId || '-')}</strong><div class="am-muted">${esc(project.name || '')}</div></td>
                   <td>${formatDateShort(a.date || a.workDate)}</td>
@@ -3488,7 +3492,7 @@ function renderAttendanceManager() {
                   <td>${statusBadge(a.status)}</td>
                   <td><div class="ops-row-actions">
                     <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewAttendance('${a.id}')">Detail</button>
-                    ${a.attendanceSource === 'visit'
+                    ${attendanceSourceKey(a) === 'visit'
                       ? '<span class="ops-chip">Visit read-only</span>'
                       : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}
                   </div></td>
@@ -3507,7 +3511,7 @@ window.FT.viewAttendance = function(id) {
   if (!row) return;
   const emp = getEmployees().find(item => String(item.id) === String(row.employeeId));
   const project = (getDB().projects || []).find(item => String(item.id) === String(row.projectId));
-  const source = row.attendanceSource === 'visit' ? 'Otomatis dari Visit' : 'Manual';
+  const source = attendanceSourceKey(row) === 'visit' ? 'Otomatis dari Visit' : 'Manual';
   const correctedBy = getAccounts().find(acc => String(acc.id) === String(row.correctedBy));
   openModal('Detail Attendance', `
     <div class="ops-detail-grid">
@@ -3521,22 +3525,19 @@ window.FT.viewAttendance = function(id) {
       <div><span>Koreksi</span><strong>${Number(row.correctionCount || 0)}x</strong></div>
     </div>
     ${row.correctionReason ? `<div class="ops-audit-box"><strong>Audit koreksi terakhir</strong><p>${esc(row.correctionReason)}</p><small>${esc(correctedBy?.name || correctedBy?.email || row.correctedBy || '-')} · ${esc(row.correctedAt || '-')}</small></div>` : ''}
-    <div class="modal-footer"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>${row.attendanceSource === 'visit' ? '' : `<button class="btn btn-primary" data-pqt-onclick="FT.closeModal();FT.openAttendanceCorrection('${row.id}')">Koreksi</button>`}</div>`);
+    <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>${attendanceSourceKey(row) === 'visit' ? '' : `<button type="button" class="btn btn-primary" data-pqt-onclick="FT.closeModal();FT.openAttendanceCorrection('${row.id}')">Koreksi</button>`}</div>`);
 };
 
 window.FT.openAttendanceCorrection = function(id) {
   const row = getAttendance().find(item => String(item.id) === String(id));
   if (!row) return;
-  if (row.attendanceSource === 'visit') {
+  if (attendanceSourceKey(row) === 'visit') {
     showToast('Attendance dari Visit harus dikoreksi melalui workflow Visit.', 'error');
     return;
   }
   const normalized = normalizeAttendanceStatus(row.status);
   const selected = normalized === 'terlambat' ? 'late' : normalized === 'tidak hadir' ? 'absent' : 'present';
-  const timeValue = value => {
-    const match = String(value || '').match(/(?:T|^)(\d{2}:\d{2})/);
-    return match?.[1] || '';
-  };
+  const timeValue = attendanceTimeValue;
   openModal('Koreksi Attendance', `
     <form data-pqt-onsubmit="FT.saveAttendanceCorrection(event,'${id}')">
       <div class="form-group"><label class="label">Status</label>
@@ -3579,13 +3580,7 @@ window.FT.saveAttendanceCorrection = async function(e,id) {
     render();
   } catch(error) {
     if(!cloudCommitted) restoreOperationalBaseline(getDB());
-    const message={
-      ATTENDANCE_VISIT_DERIVED_IMMUTABLE:'Attendance dari Visit tidak dapat dikoreksi manual.',
-      ATTENDANCE_CORRECTION_REASON_REQUIRED:'Alasan koreksi wajib minimal 10 karakter.',
-      ATTENDANCE_CHECKOUT_BEFORE_CHECKIN:'Check-out tidak boleh lebih awal dari check-in.',
-      ATTENDANCE_CORRECTION_STATUS_INVALID:'Status koreksi tidak valid.',
-      REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
-    }[error?.code||error?.message]||error?.message||'Koreksi attendance gagal disimpan.';
+    const message=attendanceLeaveFriendlyErrorMessage(error,'Koreksi attendance gagal disimpan.');
     showToast(message,'error');
     await refreshOperationalData(getDB(),getActor()).catch(()=>null);
     render();
@@ -3607,21 +3602,23 @@ window.FT.openAttendancePointModal = function() {
 };
 
 window.FT.filterAttendance = function() {
-  const search = String(document.getElementById('attSearch')?.value || '').trim().toLowerCase();
-  const project = String(document.getElementById('attProjectFilter')?.value || '');
-  const status = String(document.getElementById('attStatusFilter')?.value || '');
-  const source = String(document.getElementById('attSourceFilter')?.value || '');
-  const from = String(document.getElementById('attDateFrom')?.value || '');
-  const to = String(document.getElementById('attDateTo')?.value || '');
+  const filters = attendanceFilterSnapshot(key => ({
+    search:document.getElementById('attSearch')?.value,
+    projectId:document.getElementById('attProjectFilter')?.value,
+    status:document.getElementById('attStatusFilter')?.value,
+    source:document.getElementById('attSourceFilter')?.value,
+    from:document.getElementById('attDateFrom')?.value,
+    to:document.getElementById('attDateTo')?.value,
+  })[key]);
   let visible = 0;
   document.querySelectorAll('#attTable tbody tr[data-att-row="1"]').forEach(row => {
-    const date = row.dataset.date || '';
-    const show = (!search || row.textContent.toLowerCase().includes(search))
-      && (!project || row.dataset.project === project)
-      && (!status || row.dataset.status === status)
-      && (!source || row.dataset.source === source)
-      && (!from || date >= from)
-      && (!to || date <= to);
+    const show = attendanceMatchesFilters({
+      text:row.textContent,
+      projectId:row.dataset.project,
+      status:row.dataset.status,
+      source:row.dataset.source,
+      date:row.dataset.date,
+    },filters);
     row.hidden = !show;
     if (show) visible += 1;
   });
@@ -3642,7 +3639,7 @@ window.FT.resetAttendanceFilters = function() {
 
 // ===== Leaves Manager Page =====
 function leaveStatusHtml(row) {
-  if (row?.decisionKind === 'withdrawn') return '<span class="status-badge" style="background:var(--gray-100);color:var(--gray-600)">Dibatalkan</span>';
+  if (leaveDisplayStatus(row) === 'withdrawn') return '<span class="status-badge ops-withdrawn-badge">Dibatalkan</span>';
   return statusBadge(row?.status);
 }
 
@@ -3650,17 +3647,14 @@ function renderLeavesManager() {
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const leaves = getLeaves().filter(l => empMap[l.employeeId]).sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
-  const pending = leaves.filter(l => l.status === 'pending');
-  const approved = leaves.filter(l => l.status === 'approved');
-  const withdrawn = leaves.filter(l => l.decisionKind === 'withdrawn');
-  const rejected = leaves.filter(l => l.status === 'rejected' && l.decisionKind !== 'withdrawn');
+  const summary = leaveOperationalSummary(leaves);
   const leaveTypes = [...new Set(leaves.map(l => String(l.type || '')).filter(Boolean))].sort();
   return `
     <div class="ops-kpi-grid">
-      <div class="ops-kpi"><span>Menunggu</span><strong>${pending.length}</strong><small>butuh keputusan</small></div>
-      <div class="ops-kpi"><span>Disetujui</span><strong>${approved.length}</strong><small>approved</small></div>
-      <div class="ops-kpi"><span>Ditolak</span><strong>${rejected.length}</strong><small>rejected</small></div>
-      <div class="ops-kpi"><span>Dibatalkan</span><strong>${withdrawn.length}</strong><small>oleh pengaju</small></div>
+      <div class="ops-kpi"><span>Menunggu</span><strong>${summary.pending}</strong><small>butuh keputusan</small></div>
+      <div class="ops-kpi"><span>Disetujui</span><strong>${summary.approved}</strong><small>approved</small></div>
+      <div class="ops-kpi"><span>Ditolak</span><strong>${summary.rejected}</strong><small>rejected</small></div>
+      <div class="ops-kpi"><span>Dibatalkan</span><strong>${summary.withdrawn}</strong><small>oleh pengaju</small></div>
     </div>
     <div class="card ops-card">
       <div class="ops-toolbar">
@@ -3691,10 +3685,8 @@ function renderLeavesManager() {
               const emp=empMap[l.employeeId];
               if(!emp) return '';
               const selfReview = state.account?.employeeId && String(state.account.employeeId) === String(l.employeeId);
-              const pendingDays = l.status === 'pending' && l.submittedAt
-                ? Math.max(0, Math.floor((Date.parse(todayISO() + 'T00:00:00Z') - Date.parse(String(l.submittedAt).slice(0,10) + 'T00:00:00Z')) / 86400000))
-                : 0;
-              const filterStatus = l.decisionKind === 'withdrawn' ? 'withdrawn' : String(l.status || '');
+              const pendingDays = leavePendingAgeDays(l,todayISO());
+              const filterStatus = leaveDisplayStatus(l);
               return `<tr data-leave-row="1" data-status="${esc(filterStatus)}" data-type="${esc(String(l.type || ''))}" data-start="${esc(String(l.startDate || ''))}" data-end="${esc(String(l.endDate || ''))}">
                 <td><strong>${esc(emp.name)}</strong>${pendingDays >= 3 ? `<div class="ops-priority-note">Menunggu ${pendingDays} hari</div>` : ''}</td>
                 <td>${esc(l.type)}</td>
@@ -3719,20 +3711,22 @@ function renderLeavesManager() {
 }
 
 window.FT.filterLeaves = function() {
-  const search = String(document.getElementById('leaveSearch')?.value || '').trim().toLowerCase();
-  const status = String(document.getElementById('leaveStatusFilter')?.value || '');
-  const type = String(document.getElementById('leaveTypeFilter')?.value || '');
-  const from = String(document.getElementById('leaveDateFrom')?.value || '');
-  const to = String(document.getElementById('leaveDateTo')?.value || '');
+  const filters = leaveFilterSnapshot(key => ({
+    search:document.getElementById('leaveSearch')?.value,
+    status:document.getElementById('leaveStatusFilter')?.value,
+    type:document.getElementById('leaveTypeFilter')?.value,
+    from:document.getElementById('leaveDateFrom')?.value,
+    to:document.getElementById('leaveDateTo')?.value,
+  })[key]);
   let visible = 0;
   document.querySelectorAll('#leaveTable tbody tr[data-leave-row="1"]').forEach(row => {
-    const start = row.dataset.start || '';
-    const end = row.dataset.end || '';
-    const overlaps = (!from || end >= from) && (!to || start <= to);
-    const show = (!search || row.textContent.toLowerCase().includes(search))
-      && (!status || row.dataset.status === status)
-      && (!type || row.dataset.type === type)
-      && overlaps;
+    const show = leaveMatchesFilters({
+      text:row.textContent,
+      status:row.dataset.status,
+      type:row.dataset.type,
+      start:row.dataset.start,
+      end:row.dataset.end,
+    },filters);
     row.hidden = !show;
     if (show) visible += 1;
   });
@@ -3792,13 +3786,7 @@ window.FT.submitLeaveDecision = async function(e,id,status) {
     render();
   } catch(error) {
     if(!cloudCommitted) restoreOperationalBaseline(getDB());
-    const message={
-      LEAVE_SELF_REVIEW_FORBIDDEN:'Pengaju tidak boleh mereview pengajuannya sendiri.',
-      LEAVE_REJECTION_NOTE_REQUIRED:'Alasan penolakan wajib minimal 5 karakter.',
-      LEAVE_ATTENDANCE_CONFLICT:'Pengajuan tidak dapat disetujui karena sudah ada attendance pada periode tersebut.',
-      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
-      REVISION_CONFLICT:'Data berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
-    }[error?.code||error?.message]||error?.message||'Keputusan ijin/cuti gagal disimpan.';
+    const message=attendanceLeaveFriendlyErrorMessage(error,'Keputusan ijin/cuti gagal disimpan.');
     showToast(message,'error');
     await refreshOperationalData(getDB(),getActor()).catch(()=>null);
     render();
@@ -3841,7 +3829,7 @@ window.FT.withdrawMyLeave = async function(id, note = '') {
     render();
   } catch(error) {
     if(!cloudCommitted) restoreOperationalBaseline(getDB());
-    showToast(error?.message||'Pengajuan gagal dibatalkan.','error');
+    showToast(attendanceLeaveFriendlyErrorMessage(error,'Pengajuan gagal dibatalkan.'),'error');
     await refreshOperationalData(getDB(),getActor()).catch(()=>null);
     render();
   } finally {
@@ -3947,7 +3935,7 @@ function renderMyLeaves() {
                 <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(l.submittedAt)}</td>
                 <td><div class="ops-row-actions">
                   <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
-                  ${l.status === 'pending' && String(l.startDate || '') > todayISO() ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openEditMyLeave('${l.id}')">Edit</button>` : ''}
+                  ${canEditPendingLeave(l,todayISO()) ? `<button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openEditMyLeave('${l.id}')">Edit</button>` : ''}
                   ${l.status === 'pending' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.openWithdrawMyLeave('${l.id}')">Batalkan</button>` : ''}
                 </div></td>
               </tr>
@@ -3964,7 +3952,7 @@ const leaveEditInFlight = new Set();
 window.FT.openEditMyLeave = function(id) {
   const leave = getLeaves().find(row => String(row.id) === String(id));
   if (!leave || leave.status !== 'pending') return;
-  if (String(leave.startDate || '') <= todayISO()) {
+  if (!canEditPendingLeave(leave,todayISO())) {
     showToast('Pengajuan yang sudah mulai tidak dapat diedit.', 'error');
     return;
   }
@@ -4014,14 +4002,7 @@ window.FT.saveMyLeaveEdit = async function(e,id) {
     render();
   } catch (error) {
     if (!cloudCommitted) restoreOperationalBaseline(getDB());
-    const message = {
-      LEAVE_EDIT_AFTER_START_FORBIDDEN:'Pengajuan yang sudah mulai tidak dapat diedit.',
-      LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
-      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
-      LEAVE_REASON_REQUIRED:'Alasan ijin/cuti wajib minimal 5 karakter.',
-      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
-      REVISION_CONFLICT:'Data berubah dari perangkat lain. Muat ulang lalu coba kembali.',
-    }[error?.code || error?.message] || error?.message || 'Pengajuan gagal diperbarui.';
+    const message = attendanceLeaveFriendlyErrorMessage(error,'Pengajuan gagal diperbarui.');
     showToast(message, 'error');
     await refreshOperationalData(getDB(), getActor()).catch(() => null);
     render();
@@ -4089,15 +4070,7 @@ window.FT.createMyLeave = async function(e) {
     render();
   } catch (error) {
     if (!cloudCommitted) restoreOperationalBaseline(getDB());
-    const message = {
-      LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
-      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
-      LEAVE_TYPE_REQUIRED:'Tipe ijin/cuti wajib dipilih.',
-      LEAVE_REASON_REQUIRED:'Alasan ijin/cuti wajib minimal 5 karakter.',
-      LEAVE_PAST_PERIOD_SELF_SERVICE_FORBIDDEN:'Pengajuan yang seluruh periodenya sudah lewat tidak dapat dibuat.',
-      LEAVE_SELF_ONLY:'Pengajuan hanya dapat dibuat untuk akun sendiri.',
-      REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
-    }[error?.code || error?.message] || error?.message || 'Pengajuan ijin/cuti gagal dikirim.';
+    const message = attendanceLeaveFriendlyErrorMessage(error,'Pengajuan ijin/cuti gagal dikirim.');
     showToast(message, 'error');
     await refreshOperationalData(getDB(), getActor()).catch(() => null);
     render();
