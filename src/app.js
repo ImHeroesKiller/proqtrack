@@ -64,6 +64,12 @@ const jsArg = value => esc(JSON.stringify(String(value ?? '')));
 
 let competitorPagesChunk = null;
 let competitorPagesPromise = null;
+let employeesPageChunk = null;
+let employeesPagePromise = null;
+let visitsPageChunk = null;
+let visitsPagePromise = null;
+let stockSalesChunk = null;
+let stockSalesPromise = null;
 let attendanceLeaveChunk = null;
 let attendanceLeavePromise = null;
 let fieldPhotosChunk = null;
@@ -125,6 +131,58 @@ function loadAttendanceLeaveChunk() {
       });
   }
   return attendanceLeavePromise;
+}
+
+
+function loadEmployeesPageChunk() {
+  if (employeesPageChunk) return Promise.resolve(employeesPageChunk);
+  if (!employeesPagePromise) {
+    employeesPagePromise = import('./routes/employees-page.js').then(module => {
+      employeesPageChunk = module;
+      employeesPagePromise = null;
+      if (state.loggedIn && state.route === '#/employees') scheduleRender();
+      return module;
+    }).catch(error => {
+      employeesPagePromise = null;
+      console.warn('employees_page_chunk_failed', error?.message || error);
+      throw error;
+    });
+  }
+  return employeesPagePromise;
+}
+
+function loadVisitsPageChunk() {
+  if (visitsPageChunk) return Promise.resolve(visitsPageChunk);
+  if (!visitsPagePromise) {
+    visitsPagePromise = import('./routes/visits-page.js').then(module => {
+      visitsPageChunk = module;
+      visitsPagePromise = null;
+      if (state.loggedIn && state.route === '#/visits') scheduleRender();
+      return module;
+    }).catch(error => {
+      visitsPagePromise = null;
+      console.warn('visits_page_chunk_failed', error?.message || error);
+      throw error;
+    });
+  }
+  return visitsPagePromise;
+}
+
+function loadStockSalesChunk() {
+  if (stockSalesChunk) return Promise.resolve(stockSalesChunk);
+  if (!stockSalesPromise) {
+    stockSalesPromise = import('./routes/stock-sales-pages.js').then(module => {
+      stockSalesChunk = module;
+      stockSalesPromise = null;
+      if (state.loggedIn && ['#/stocks','#/sales','#/mysales'].includes(state.route)) scheduleRender();
+      return module;
+    }).catch(error => {
+      stockSalesPromise = null;
+      console.warn('stock_sales_chunk_failed', error?.message || error);
+      throw error;
+    });
+  }
+  return stockSalesPromise;
 }
 
 function routeChunkLoading(label) {
@@ -1870,50 +1928,17 @@ function visitRowEntry(visit, emp, outlet) {
 }
 
 function renderVisits() {
-  const visits = getVisits().sort((a,b) => String(visitDay(b)).localeCompare(String(visitDay(a))) || (b.checkInTime||'').localeCompare(a.checkInTime||''));
-  const employees = getEmployees();
-  const outlets = getOutlets();
-  const empMap = new Map(employees.map(e => [String(e.id), e]));
-  const outletMap = new Map(outlets.map(o => [String(o.id), o]));
-  visitRowsCache = visits
-    .map(v => visitRowEntry(v, empMap.get(String(v.employeeId)), outletMap.get(String(v.outletId))))
-    .filter(Boolean);
-  const initialPage = paginateVisits(visitRowsCache, visitPage, VISITS_PAGE_SIZE);
-  visitPage = initialPage.currentPage;
-
-  setTimeout(() => window.FT?.initVisitFilters?.(), 0);
-  return `
-    <div class="card">
-      <div class="filter-row">
-        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits(1)">
-        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits(1)">
-          <option value="">Semua Status</option>
-          <option value="completed">Selesai</option>
-          <option value="checked-in">Sedang Berlangsung</option>
-          <option value="planned">Direncanakan</option>
-        </select>
-        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits(1)">
-          <option value="">Semua Karyawan</option>
-          ${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
-        </select>
-        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Project</option></select>
-        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Outlet</option></select>
-        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
-        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
-        <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetVisitFilters()">Reset</button>
-        <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
-      </div>
-      <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;" role="status" aria-live="polite"></div>
-      <div class="visits-table-wrapper visit-responsive-table">
-        <table class="table" id="visitsTable">
-          <thead><tr><th>Tanggal</th><th>Karyawan</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th>Rating</th><th></th></tr></thead>
-          <tbody>${initialPage.items.length ? initialPage.items.map(row => row.html).join('') : '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>'}</tbody>
-        </table>
-      </div>
-      <div id="visitPager" class="visit-pager"></div>
-    </div>
-  `;
+  if (!visitsPageChunk) {
+    loadVisitsPageChunk().catch(() => {});
+    return routeChunkLoading('visits');
+  }
+  const result = visitsPageChunk.renderVisits({
+    getVisits, visitDay, getEmployees, getOutlets, visitRowEntry, paginateVisits,
+    VISITS_PAGE_SIZE, esc, visitPage,
+  });
+  visitRowsCache = result.visitRowsCache;
+  visitPage = result.visitPage;
+  return result.html;
 }
 
 window.FT.initVisitFilters = function() {
@@ -2309,85 +2334,19 @@ function employeeProjectIds(employeeId) {
 let employeeRowsCache = [];
 
 function renderEmployees() {
-  const employees = getEmployees();
-  const db = getDB();
-  const accounts = getAccounts() || [];
-  const assignments = db.projectAssignments || [];
-  const operationalCounts = employeeOperationalCounts(employees, assignments, accounts);
-  const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
-  const projectOptions = employeeProjectOptions(employees, assignments, db.projects || []);
-  const currentMonth = todayISO().slice(0, 7);
-  const salesByEmployee = new Map();
-  for (const sale of getProductSales()) {
-    if (!String(sale.soldAt || sale.date || '').startsWith(currentMonth)) continue;
-    const key = String(sale.employeeId || '');
-    salesByEmployee.set(key, (salesByEmployee.get(key) || 0) + (Number(sale.totalAmount ?? sale.amount) || 0));
+  if (!employeesPageChunk) {
+    loadEmployeesPageChunk().catch(() => {});
+    return routeChunkLoading('employees');
   }
-  employeeRowsCache = employees.map(e => {
-    const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
-    const cIdx = e.name.charCodeAt(0) % colors.length;
-    const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
-    const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
-    const model = {
-      search,
-      role:e.role || '',
-      status:e.status || '',
-      projectIds,
-      assigned:flags.assigned,
-      loginLinked:flags.loginLinked,
-    };
-    return {
-      model,
-      html:`<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
-        <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
-        <td data-label="Role">${roleBadge(e.role)}</td>
-        <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
-        <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
-        <td data-label="Area">${esc(e.area || '—')}</td>
-        <td data-label="Telepon">${esc(e.phone || '—')}</td>
-        <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(salesByEmployee.get(String(e.id)) || 0)}</span> / ${formatCurrency(salesTargetOf(e))}</td>
-        <td data-label="Kunjungan">${e.totalVisits}</td>
-        <td data-label="Status">${statusBadge(e.status)}</td>
-        <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
-      </tr>`,
-    };
+  const result = employeesPageChunk.renderEmployees({
+    getEmployees, getDB, getAccounts, employeeOperationalCounts, employeeProjectOptions, todayISO,
+    getProductSales, employeeListModel, esc, safePhotoUrl, getInitials, roleBadge, formatCurrency,
+    salesTargetOf, statusBadge, isProjectAdmin, paginateEmployees, EMPLOYEE_PAGE_SIZE, employeeSyncLabel,
+    employeePage,
   });
-  const initialPage = paginateEmployees(employeeRowsCache, employeePage, EMPLOYEE_PAGE_SIZE);
-  employeePage = initialPage.currentPage;
-  const rendered = `
-    <div class="card">
-      <div class="pm-kpi-grid" style="margin-bottom:14px;">
-        <div class="pm-kpi"><span>Total Karyawan</span><strong>${operationalCounts.total}</strong></div>
-        <div class="pm-kpi"><span>Aktif</span><strong>${operationalCounts.active}</strong></div>
-        <div class="pm-kpi"><span>Belum Ditugaskan</span><strong>${operationalCounts.unassigned}</strong></div>
-        <div class="pm-kpi"><span>Login Belum Terhubung</span><strong>${operationalCounts.loginMissing}</strong></div>
-      </div>
-      <div class="filter-row">
-        <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, kode, area, project..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
-        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Role</option><option value="Field Sales">Field Sales</option><option value="Supervisor">Supervisor</option></select>
-        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="terminated">Berakhir</option></select>
-        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Project</option>${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}</select>
-        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option></select>
-        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option></select>
-        <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetEmployeeFilters()">Reset</button>
-        <div class="spacer"></div>
-        <span id="employeeSyncState">${employeeSyncLabel()}</span>
-        <button class="btn btn-secondary" id="employeeRefreshBtn" type="button" data-pqt-onclick="FT.refreshEmployees()">Refresh</button>
-        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="FT.openBulkEmployees()">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>` : ``}
-      </div>
-      <div id="employeeResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
-      <div class="visits-table-wrapper">
-        <table class="table employee-table" id="empTable">
-          <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Operational</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
-        </table>
-      </div>
-      <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter. Gunakan Reset untuk menampilkan seluruh data.</div>
-      <div id="employeePager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(-1)">Sebelumnya</button><span id="employeePageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.employeePage(1)">Berikutnya</button></div>
-    </div>
-  `;
-  queueMicrotask(() => window.FT?.filterEmployees?.(employeePage));
-  return rendered;
+  employeeRowsCache = result.employeeRowsCache;
+  employeePage = result.employeePage;
+  return result.html;
 }
 
 window.FT.employeePage = function(delta) {
@@ -3539,70 +3498,15 @@ async function runStockSalesMutation(execute, { successMessage = '', onSuccess =
 
 // ===== Product Sales =====
 function renderProductSales({ mine = false } = {}) {
-  const employeeId = myEmployeeId();
-  const products = Object.fromEntries(getProducts().map(row => [row.id,row]));
-  const outlets = Object.fromEntries(getOutlets().map(row => [row.id,row]));
-  const employees = Object.fromEntries(getEmployees().map(row => [row.id,row]));
-  const rows = getProductSales()
-    .filter(row => !mine || String(row.employeeId || '') === String(employeeId || ''))
-    .sort((a,b) => String(b.soldAt || b.date || '').localeCompare(String(a.soldAt || a.date || '')));
-  const manualAllowed = !mine && isProjectAdmin();
-  const auditRows = getProductSalesAudit();
-  const pendingCorrections = manualAllowed ? pendingManualCorrections(auditRows) : [];
-  const salesTotals = salesSummary(rows);
-  const totalQty = salesTotals.quantity;
-  const totalAmount = salesTotals.amount;
-  const manualCount = salesTotals.manual;
-  const thisMonth = todayISO().slice(0,7);
-  queueMicrotask(()=>window.FT?.filterProductSales?.());
-  return `
-    ${pendingCorrections.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--amber-300);background:var(--amber-50)">
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <div><strong>${pendingCorrections.length} koreksi manual belum memiliki replacement</strong><div class="am-muted">Sumber sudah di-void dan tetap tersimpan di audit trail.</div></div>
-        <div class="spacer"></div>
-        ${pendingCorrections.slice(0,3).map(row=>`<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openManualSaleModal(${jsArg(row.id)})">Lanjut ${esc(row.id)}</button>`).join('')}
-      </div>
-    </div>` : ''}
-    <div class="grid-3" style="margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Transaksi aktif</div><div class="stat-value" id="salesKpiTransactions">${rows.length}</div></div>
-      <div class="stat-card"><div class="stat-label">Qty terjual</div><div class="stat-value" id="salesKpiQty">${totalQty}</div></div>
-      <div class="stat-card"><div class="stat-label">Nilai penjualan</div><div class="stat-value" id="salesKpiAmount" style="font-size:20px">${formatCurrency(totalAmount)}</div><div class="am-muted" id="salesKpiManual">${manualCount} manual exception</div></div>
-    </div>
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" id="salesSearch" placeholder="Cari employee, outlet, produk..." data-pqt-oninput="FT.filterProductSales()">
-        <select class="select" id="salesSourceFilter" style="width:170px" data-pqt-onchange="FT.filterProductSales()">
-          <option value="">Semua sumber</option><option value="derived">Derived Stock</option><option value="manual">Manual Exception</option>
-        </select>
-        <input class="input" id="salesFromFilter" type="date" value="${thisMonth}-01" data-pqt-onchange="FT.filterProductSales()" style="width:155px">
-        <input class="input" id="salesToFilter" type="date" value="${todayISO()}" data-pqt-onchange="FT.filterProductSales()" style="width:155px">
-        <div class="spacer"></div>
-        <span id="salesResultSummary" class="am-muted"></span>
-        ${manualAllowed ? '<button class="btn btn-primary" data-pqt-onclick="FT.openManualSaleModal()">+ Manual Exception</button>' : ''}
-      </div>
-      <div class="card-subtitle" style="margin-bottom:12px">Penjualan otomatis berasal dari pergerakan stok yang sudah difinalisasi. Transaksi manual hanya dipakai untuk pengecualian atau koreksi dan tetap memiliki jejak audit.</div>
-      <div class="visits-table-wrapper">
-        <table class="table" id="productSalesTable"><thead><tr><th>Tanggal</th><th>Employee</th><th>Outlet</th><th>Produk</th><th>Qty</th><th>Nilai</th><th>Sumber</th><th></th></tr></thead>
-          <tbody>${rows.length ? rows.map(row => {
-            const provenance=String(row.provenance || 'manual_legacy');
-            const manual=!['derived_stock','inventory_cycle'].includes(provenance);
-            const date=String(row.soldAt || row.date || '').slice(0,10);
-            const search=[employees[row.employeeId]?.name,row.employeeId,outlets[row.outletId]?.name,row.outletId,products[row.productId]?.name,products[row.productId]?.sku].filter(Boolean).join(' ').toLowerCase();
-            return `<tr data-search="${esc(search)}" data-source="${manual?'manual':'derived'}" data-date="${esc(date)}" data-qty="${Number(row.quantity ?? row.qty ?? 0)}" data-amount="${Number(row.totalAmount ?? row.amount ?? 0)}">
-              <td>${formatDateShort(date)}</td>
-              <td>${esc(employees[row.employeeId]?.name || row.employeeId || '-')}</td>
-              <td>${esc(outlets[row.outletId]?.name || row.outletId || '-')}</td>
-              <td>${esc(products[row.productId]?.name || row.productId || '-')}</td>
-              <td>${Number(row.quantity ?? row.qty ?? 0)}</td>
-              <td>${formatCurrency(Number(row.totalAmount ?? row.amount ?? 0))}</td>
-              <td>${manual ? '<span class="badge badge-warning">Manual Exception</span>' : '<span class="badge badge-success">Derived Stock</span>'}</td>
-              <td>${manualAllowed && manual ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.correctManualSale(${jsArg(row.id)})">Koreksi</button>` : ''}</td>
-            </tr>`;
-          }).join('') : '<tr><td colspan="8"><div class="empty-state"><h3>Belum ada penjualan</h3><p>Penjualan akan muncul setelah Inventory Cycle difinalisasi.</p></div></td></tr>'}</tbody>
-        </table>
-      </div>
-      <div id="salesEmptyFilter" class="empty-state" hidden><h3>Tidak ada transaksi sesuai filter</h3><p>Ubah periode, sumber, atau kata pencarian.</p></div>
-    </div>`;
+  if (!stockSalesChunk) {
+    loadStockSalesChunk().catch(() => {});
+    return routeChunkLoading('product sales');
+  }
+  return stockSalesChunk.renderProductSales({
+    myEmployeeId, getProducts, getOutlets, getEmployees, getProductSales, isProjectAdmin,
+    getProductSalesAudit, pendingManualCorrections, salesSummary, todayISO, formatCurrency,
+    jsArg, esc, formatDateShort,
+  }, { mine });
 }
 
 window.FT.filterProductSales = function() {
@@ -3708,78 +3612,14 @@ window.FT.confirmManualSaleCorrection = async function(e,id) {
 
 // ===== Stocks Page (Manager) =====
 function renderStocks() {
-  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const stocks = getStocks().filter(s => productMap[s.productId] && outletMap[s.outletId]);
-  const stockTotals = stockSummary(stocks);
-  const lowStocks = stocks.filter(s => Number(s.quantity||0) <= Number(s.minStock||0));
-  const projectRows = stockProjectRows();
-
-  return `
-    <div class="grid-3" style="margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Saldo stok</div><div class="stat-value">${stockTotals.total}</div></div>
-      <div class="stat-card"><div class="stat-label">Stok menipis</div><div class="stat-value">${stockTotals.low}</div></div>
-      <div class="stat-card"><div class="stat-label">Stok habis</div><div class="stat-value">${stockTotals.empty}</div></div>
-    </div>
-    ${lowStocks.length > 0 ? `
-      <div class="card" style="margin-bottom:20px; border-color:var(--red-500); background:var(--red-50);">
-        <div style="display:flex; align-items:center; gap:12px;">
-          <div style="font-size:32px;">⚠️</div>
-          <div>
-            <div style="font-size:16px; font-weight:700; color:var(--red-700);">${lowStocks.length} Produk Stok Menipis</div>
-            <div style="font-size:13px; color:var(--red-500);">Segera lakukan restock ke outlet berikut</div>
-          </div>
-        </div>
-      </div>
-    ` : ''}
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" id="stockSearch" placeholder="🔍 Cari stok..." data-pqt-oninput="FT.filterStocks()">
-        <select class="select" id="stockProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterStocks()">
-          <option value="">Semua Project</option>
-          ${projectRows.map(p=>`<option value="${p.id}">${esc(p.name||p.code||p.id)}</option>`).join('')}
-        </select>
-        <select class="select" id="stockOutletFilter" style="width:200px;" data-pqt-onchange="FT.filterStocks()">
-          <option value="">Semua Outlet</option>
-          ${getOutlets().map(o => `<option value="${o.id}">${esc(formatOutletLabel(o))}</option>`).join('')}
-        </select>
-        <select class="select" id="stockStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterStocks()">
-          <option value="">Semua Status</option>
-          <option value="low">Stok Menipis</option>
-          <option value="ok">Stok Aman</option>
-        </select>
-        <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openStockModal()">+ Stock Movement</button>
-      </div>
-      <div class="visits-table-wrapper">
-        <table class="table" id="stockTable">
-          <thead><tr><th>Outlet</th><th>Produk</th><th>Qty</th><th>Min. Stok</th><th>Status</th><th>Update</th><th></th></tr></thead>
-          <tbody>
-            ${stocks.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📊</div><h3>Belum ada data stok</h3></div></td></tr>` :
-            stocks.map(s => {
-              const p = productMap[s.productId]; const o = outletMap[s.outletId];
-              if (!p || !o) return '';
-              const isLow = s.quantity <= s.minStock;
-              return `
-                <tr data-project="${esc(s.projectId||'')}" data-outlet="${esc(s.outletId||'')}" data-status="${isLow?'low':'ok'}">
-                  <td>${outletIcon(o.type)} ${esc(o.name)}</td>
-                  <td><span style="font-weight:600;">${esc(p.name)}</span><br><span style="font-size:11px; color:var(--gray-400);">${esc(p.sku||'-')}</span></td>
-                  <td style="font-weight:700; color:${isLow?'var(--red-500)':'var(--gray-800)'};">${s.quantity} ${p.unit}</td>
-                  <td style="color:var(--gray-400);">${s.minStock}</td>
-                  <td>${isLow ? '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-700 border-red-200">⚠️ Menipis</span>' : '<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-emerald-100 text-emerald-700 border-emerald-200">✓ Aman</span>'}</td>
-                  <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(s.lastUpdated)}</td>
-                  <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewStockHistory('${s.id}')">Riwayat</button>
-                    <button class="btn btn-secondary btn-sm" style="margin-left:4px" data-pqt-onclick="FT.editStock('${s.id}')">Adjustment</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+  if (!stockSalesChunk) {
+    loadStockSalesChunk().catch(() => {});
+    return routeChunkLoading('stocks');
+  }
+  return stockSalesChunk.renderStocks({
+    getProducts, getOutlets, getStocks, stockSummary, stockProjectRows, esc,
+    formatOutletLabel, outletIcon, formatDateShort,
+  });
 }
 
 window.FT.filterStocks = function() {
