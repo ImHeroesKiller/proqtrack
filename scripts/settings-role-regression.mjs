@@ -160,3 +160,107 @@ function cleanup() {
 process.on('SIGINT',()=>{ cleanup(); process.exit(130); });
 process.on('SIGTERM',()=>{ cleanup(); process.exit(143); });
 
+
+try {
+  cleanup();
+  cleaned = false;
+
+  const home = await fetch(BASE + '/');
+  const html = await home.text();
+  expect(home.status === 200,'production shell HTTP failure');
+  expect(html.includes('./assets/settings.css'),'production shell missing Settings stylesheet');
+  const css = await fetch(BASE + '/assets/settings.css');
+  const cssText = await css.text();
+  expect(css.status === 200 && cssText.includes('.am-settings'),'Settings stylesheet production asset missing');
+
+  for (const role of Object.keys(actors)) {
+    const tabs = settingsTabsFor({ role }).map(([id]) => id);
+    expect(JSON.stringify(tabs) === JSON.stringify(expectedTabs(role)),
+      `Settings tab matrix mismatch for ${role}: ${tabs.join(',')}`);
+  }
+
+  d1(`
+    INSERT INTO core_organizations(id,code,name,status,timezone,metadata_json,created_at,updated_at)
+    VALUES(
+      '${ids.org}','UATSET-${runKey}','Settings Final UAT','active','Asia/Jakarta',
+      '{"synthetic":true,"settingsFinalUat":true,"themeColor":"#ef5000"}',
+      CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    );
+    INSERT INTO core_sync_state(organization_id,revision,cutover_mode,updated_at)
+      VALUES('${ids.org}',0,'cloud',CURRENT_TIMESTAMP);
+    INSERT INTO core_clients(id,organization_id,code,name,status,metadata_json,created_at,updated_at)
+      VALUES('${ids.client}','${ids.org}','UAT-SETTINGS','Settings UAT Client','active','{"synthetic":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+    INSERT INTO core_projects(id,organization_id,client_id,code,name,status,starts_on,ends_on,metadata_json,created_at,updated_at)
+      VALUES(
+        '${ids.project}','${ids.org}','${ids.client}','UAT-SETTINGS','Settings UAT Project','active',
+        '2026-09-01','2027-09-30',
+        '{"synthetic":true,"attendanceSourceMode":"manual","attendanceLateAfter":"09:00","modules":{"newOutlet":true},"storeCatalog":{"allowNewOutlet":true,"notesMode":"freetext","notesOptions":[],"segments":["General"],"types":["Retail"],"ownerships":["Independent"]}}',
+        CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+      );
+    INSERT INTO auth_users(id,email,display_name,password_hash,role,status,project_ids,client_ids,created_at) VALUES
+      ('${actors.superadmin.id}','${actors.superadmin.email}','Settings UAT Superadmin','${actors.superadmin.hash}','superadmin','active','[]','[]',CURRENT_TIMESTAMP),
+      ('${actors.head.id}','${actors.head.email}','Settings UAT Head','${actors.head.hash}','head','active','[]','[]',CURRENT_TIMESTAMP),
+      ('${actors.admin.id}','${actors.admin.email}','Settings UAT Admin','${actors.admin.hash}','admin','active','[]','[]',CURRENT_TIMESTAMP),
+      ('${actors.manager.id}','${actors.manager.email}','Settings UAT Manager','${actors.manager.hash}','manager','active','[]','[]',CURRENT_TIMESTAMP),
+      ('${actors.supervisor.id}','${actors.supervisor.email}','Settings UAT Supervisor','${actors.supervisor.hash}','supervisor','active','[]','[]',CURRENT_TIMESTAMP),
+      ('${actors.employee.id}','${actors.employee.email}','Settings UAT Employee','${actors.employee.hash}','employee','active','[]','[]',CURRENT_TIMESTAMP);
+    INSERT INTO core_organization_users(organization_id,user_id,role,status,created_at,updated_at) VALUES
+      ('${ids.org}','${actors.head.id}','head','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${actors.admin.id}','admin','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${actors.manager.id}','manager','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${actors.supervisor.id}','supervisor','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${actors.employee.id}','employee','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+    INSERT INTO core_project_memberships(organization_id,project_id,user_id,role,status,created_at,updated_at) VALUES
+      ('${ids.org}','${ids.project}','${actors.manager.id}','manager','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${ids.project}','${actors.supervisor.id}','supervisor','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('${ids.org}','${ids.project}','${actors.employee.id}','employee','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+    INSERT INTO core_employees(
+      id,organization_id,auth_user_id,employee_code,full_name,email,phone,employment_status,metadata_json,created_at,updated_at
+    ) VALUES(
+      '${ids.employee}','${ids.org}','${actors.employee.id}','UAT-SETTINGS-EMP',
+      'Settings UAT Employee','${actors.employee.email}','','active',
+      '{"synthetic":true,"area":""}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    );
+    INSERT INTO core_employee_project_assignments(
+      id,organization_id,project_id,employee_id,position_name,status,starts_on,ends_on,metadata_json,created_at,updated_at
+    ) VALUES(
+      '${ids.assignment}','${ids.org}','${ids.project}','${ids.employee}',
+      'Field Sales','active','2026-09-01','2027-09-30','{"synthetic":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP
+    );
+  `);
+
+  await login('superadmin');
+  await login('head');
+  await login('admin');
+  await login('manager');
+  await login('supervisor');
+  const employeeLogin = await login('employee','A');
+  expect(employeeLogin.account?.deviceBound === true,'employee login did not return deviceBound=true');
+
+  for (const role of Object.keys(actors)) {
+    const data = await session(role);
+    if (role === 'employee') {
+      expect(data.deviceBound === true,'employee session deviceBound=false');
+      expect(data.deviceLabel === 'Settings UAT A','employee session device label mismatch');
+    }
+  }
+
+  for (const role of Object.keys(actors)) {
+    const actor = actors[role];
+    const payload = {
+      email:actor.email,
+      name:`Settings Final ${role}`,
+      ...(role === 'employee'
+        ? { phone:'081234567890', area:'Jakarta UAT' }
+        : { phone:'', area:'' }),
+    };
+    const data = await expectApi('/api/auth/profile',{
+      method:'PATCH', token:actor.token, body:payload,
+    },200,`profile ${role}`);
+    expect(data.account?.name === payload.name,`profile ${role}: display name not persisted`);
+  }
+
+  const employeeSession = await session('employee');
+  expect(employeeSession.phone === '081234567890','employee phone missing after profile save');
+  expect(employeeSession.area === 'Jakarta UAT','employee area missing after profile save');
+
