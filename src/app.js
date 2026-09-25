@@ -973,7 +973,7 @@ function renderLogin() {
 
             <div class="login-capability-grid" aria-label="Kapabilitas utama">
               <div class="login-capability">
-                <span class="login-capability-icon" aria-hidden="true">${iconSvg('location')}</span>
+                <span class="login-capability-icon" aria-hidden="true">${iconSvg('pin')}</span>
                 <strong>Live Visibility</strong>
                 <small>Aktivitas dan lokasi kerja sesuai scope project.</small>
               </div>
