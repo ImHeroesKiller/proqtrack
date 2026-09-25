@@ -44,7 +44,7 @@ jobs:
           test -s "$bookmark"
           echo "path=$bookmark" >> "$GITHUB_OUTPUT"
       - name: Upload non-sensitive recovery metadata
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proqtrack-d1-recovery-${{ github.run_id }}
           path: ${{ steps.recovery.outputs.path }}
