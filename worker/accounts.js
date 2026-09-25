@@ -52,6 +52,8 @@ function mutationErrorResponse(error, requestId) {
     ACCOUNT_ALREADY_IN_ORGANIZATION: 409,
     ACCOUNT_IS_GLOBAL_SUPERADMIN: 409,
     EXISTING_ACCOUNT_DISABLED: 409,
+    ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN: 403,
+    ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN: 403,
   }[code] || 409;
   return json({ error:code, requestId },status);
 }
@@ -326,6 +328,14 @@ async function updateAccount(env, claims, request, userId, requestId) {
   }
 
   const body = await request.json().catch(() => ({}));
+  const requestedEmail = body.email == null ? target.email : validEmail(body.email);
+  if (body.email != null && !requestedEmail) return json({ error:'EMAIL_INVALID', requestId },400);
+  if (body.email != null && requestedEmail !== lower(target.email)) {
+    return json({ error:'ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN', requestId },403);
+  }
+  if (body.password) {
+    return json({ error:'ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN', requestId },403);
+  }
   const nextRole = lower(body.role || target.role);
   if (String(userId) !== String(claims.sub) && !permittedRole(claims.role,nextRole)) {
     return json({ error:'ACCOUNT_ROLE_FORBIDDEN', requestId },403);
@@ -338,12 +348,7 @@ async function updateAccount(env, claims, request, userId, requestId) {
   if (String(userId) === String(claims.sub) && nextStatus !== 'active') {
     return json({ error:'SELF_DISABLE_FORBIDDEN', requestId },403);
   }
-  const email = body.email == null ? target.email : validEmail(body.email);
-  if (!email) return json({ error:'EMAIL_INVALID', requestId },400);
-  const conflict = await env.DB.prepare(
-    'SELECT id FROM auth_users WHERE lower(email)=? AND id<>? LIMIT 1',
-  ).bind(email,userId).first();
-  if (conflict) return json({ error:'EMAIL_ALREADY_USED', requestId },409);
+  const email = lower(target.email);
 
   const employeeId = body.employeeId === undefined ? clean(target.employee_id,120) : clean(body.employeeId,120);
   const employee = await employeeForLink(env,claims.organizationId,employeeId,userId);
@@ -351,7 +356,6 @@ async function updateAccount(env, claims, request, userId, requestId) {
   if (nextRole === 'manager') await projectForManager(env,claims.organizationId,projectId);
 
   const statements = [
-    env.DB.prepare('UPDATE auth_users SET email=? WHERE id=?').bind(email,userId),
     env.DB.prepare(`
       UPDATE core_organization_users
       SET role=?,status=?,updated_at=CURRENT_TIMESTAMP
@@ -368,14 +372,6 @@ async function updateAccount(env, claims, request, userId, requestId) {
       WHERE organization_id=? AND auth_user_id=? AND id<>?
     `).bind(claims.organizationId,userId,employee?.id || ''),
   ];
-
-  if (body.password) {
-    if (String(body.password).length < 8) return json({ error:'PASSWORD_TOO_SHORT', requestId },400);
-    statements.push(
-      env.DB.prepare('UPDATE auth_users SET password_hash=? WHERE id=?')
-        .bind(await hashPassword(String(body.password)),userId),
-    );
-  }
 
   if (employee) {
     statements.push(env.DB.prepare(`
@@ -402,12 +398,12 @@ async function updateAccount(env, claims, request, userId, requestId) {
     `).bind(claims.organizationId,project.project_id,userId,nextRole === 'manager' ? 'manager' : nextRole));
   }
 
-  if (body.password || nextStatus !== target.status || nextRole !== target.role) {
+  if (nextStatus !== target.status || nextRole !== target.role) {
     statements.push(env.DB.prepare(`
       UPDATE core_auth_sessions
       SET status='revoked',revoked_at=CURRENT_TIMESTAMP
-      WHERE user_id=? AND id<>? AND status='active'
-    `).bind(userId,String(userId) === String(claims.sub) ? claims.sid : ''));
+      WHERE user_id=? AND organization_id=? AND id<>? AND status='active'
+    `).bind(userId,claims.organizationId,String(userId) === String(claims.sub) ? claims.sid : ''));
   }
   await env.DB.batch(statements);
   await writeAudit(env,requestId,claims,'update_account',userId,{ role:nextRole,status:nextStatus,employeeId:employee?.id || null });
@@ -438,8 +434,8 @@ async function resetDevice(env, claims, userId, requestId) {
     env.DB.prepare(`
       UPDATE core_auth_sessions
       SET status='revoked',revoked_at=CURRENT_TIMESTAMP
-      WHERE user_id=? AND status='active'
-    `).bind(userId),
+      WHERE user_id=? AND organization_id=? AND status='active'
+    `).bind(userId,claims.organizationId),
   ]);
   await writeAudit(env,requestId,claims,'reset_device',userId);
   return json({ ok:true, requestId });

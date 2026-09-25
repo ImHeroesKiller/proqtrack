@@ -124,3 +124,5 @@ self.addEventListener('fetch', event => {
   }
   event.respondWith(staticResponse(event.request));
 });
+
+// Settings P0 authority refresh

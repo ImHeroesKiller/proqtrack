@@ -347,10 +347,16 @@ function nextOutletNumber(db) {
 
 export function getProjectStoreSettings(projectId) {
   const db = getDB();
-  const row = (db.projectSettings || []).find(s => s.projectId === projectId) || {};
+  const legacy = (db.projectSettings || []).find(s => s.projectId === projectId) || {};
   const project = (db.projects || []).find(p => p.id === projectId) || {};
-  const catalog = { ...defaultStoreCatalog(), ...(row.storeCatalog || {}) };
-  const allow = row.modules?.newOutlet !== false && catalog.allowNewOutlet !== false;
+  const authoritativeCatalog = project.storeCatalog && typeof project.storeCatalog === 'object'
+    ? project.storeCatalog
+    : (legacy.storeCatalog || {});
+  const authoritativeModules = project.modules && typeof project.modules === 'object'
+    ? project.modules
+    : (legacy.modules || {});
+  const catalog = { ...defaultStoreCatalog(), ...authoritativeCatalog };
+  const allow = authoritativeModules.newOutlet !== false && catalog.allowNewOutlet !== false;
   const approvalMode = project.outletApprovalMode === 'manual' ? 'manual' : 'auto';
   return { ...catalog, allowNewOutlet: allow, approvalMode, projectId };
 }
@@ -359,15 +365,10 @@ export function saveProjectStoreSettings(projectId, data) {
   const actor = assertProjectAdmin();
   if (actor.role === 'manager' && actor.projectId !== projectId) throw new Error('Akses ditolak');
   const db = getDB();
-  db.projectSettings = db.projectSettings || [];
-  let row = db.projectSettings.find(s => s.projectId === projectId);
-  if (!row) {
-    row = { projectId, organizationId: withOrg({}).organizationId, modules: { newOutlet: true } };
-    db.projectSettings.push(row);
-  }
-  if (!row.organizationId) row.organizationId = withOrg({}).organizationId;
-  row.modules = { ...(row.modules || {}), newOutlet: data.allowNewOutlet !== false };
-  row.storeCatalog = {
+  const project = (db.projects || []).find(p => String(p.id) === String(projectId));
+  if (!project) throw new Error('Project tidak ditemukan.');
+  project.modules = { ...(project.modules || {}), newOutlet: data.allowNewOutlet !== false };
+  project.storeCatalog = {
     allowNewOutlet: data.allowNewOutlet !== false,
     notesMode: data.notesMode === 'dropdown' ? 'dropdown' : 'freetext',
     notesOptions: (data.notesOptions || []).map(sanitizePlainText).filter(Boolean),
@@ -375,10 +376,28 @@ export function saveProjectStoreSettings(projectId, data) {
     types: (data.types || []).map(sanitizePlainText).filter(Boolean),
     ownerships: (data.ownerships || []).map(sanitizePlainText).filter(Boolean),
   };
-  row.updatedAt = new Date().toISOString();
-  row.updatedBy = actor.id;
+  project.settingsUpdatedAt = new Date().toISOString();
+  project.settingsUpdatedBy = actor.id;
   saveDB();
   return getProjectStoreSettings(projectId);
+}
+
+export function saveProjectAttendanceSettings(projectId, data = {}) {
+  const actor = assertProjectAdmin();
+  if (actor.role === 'manager' && actor.projectId !== projectId) throw new Error('Akses ditolak');
+  const db = getDB();
+  const project = (db.projects || []).find(p => String(p.id) === String(projectId));
+  if (!project) throw new Error('Project tidak ditemukan.');
+  const sourceMode = data.sourceMode === 'visit' ? 'visit' : data.sourceMode === 'manual' ? 'manual' : '';
+  const lateAfter = String(data.lateAfter || '').trim();
+  if (!sourceMode) throw new Error('Sumber attendance project tidak valid.');
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(lateAfter)) throw new Error('Batas waktu terlambat tidak valid.');
+  project.attendanceSourceMode = sourceMode;
+  project.attendanceLateAfter = lateAfter;
+  project.settingsUpdatedAt = new Date().toISOString();
+  project.settingsUpdatedBy = actor.id;
+  saveDB();
+  return getProjectAttendancePolicy(projectId);
 }
 
 export function outletProjectsForEmployee(employeeId = getActor()?.employeeId) {

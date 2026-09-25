@@ -2,9 +2,8 @@ import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
   updateOwnProfile,
   getDB, getOrganization, getCurrentOrgId,
-  getProjectStoreSettings, saveProjectStoreSettings, defaultStoreCatalog,
-  getAttendancePolicy, getAttendancePoints, createAttendancePoint,
-  isTestDevice,
+  getProjectStoreSettings, saveProjectStoreSettings, saveProjectAttendanceSettings, defaultStoreCatalog,
+  getAttendancePoints, createAttendancePoint, isTestDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, isSuperadminHostDevice } from './lib/device.js';
 import { getApiToken } from './lib/uploads.js';
@@ -16,6 +15,7 @@ import {
   syncCurrentOrganizationProfile, updateCurrentOrganizationProfile,
 } from './lib/cloud-organizations.js';
 import { applyOrganizationBranding, normalizeThemeColor } from './lib/organization-branding.js';
+import { commitOperationalChanges } from './lib/cloud-data.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
 
@@ -68,6 +68,8 @@ function accountErrorMessage(error) {
     SELF_DISABLE_FORBIDDEN: 'Akun yang sedang digunakan tidak dapat dinonaktifkan.',
     PASSWORD_TOO_SHORT: 'Password minimal 8 karakter.',
     EMAIL_INVALID: 'Format email tidak valid.',
+    ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN: 'Email login adalah identitas global. Ubah email hanya dari Profil pemilik akun.',
+    ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN: 'Password adalah credential global. Pemilik akun harus mengubahnya dari tab Keamanan.',
   };
   const message = messages[error?.code] || error?.message || String(error || 'Aksi akun gagal.');
   const requestId = error?.payload?.requestId;
@@ -108,44 +110,67 @@ function renderProjectStoreSettings() {
         </form>`;
 }
 
+function settingsProjects() {
+  const acc = account();
+  let projects = (getDB().projects || []).filter(project => ['active','draft','planning'].includes(String(project.status || 'active')));
+  if (acc?.role === 'manager') {
+    const allowed = new Set([...(acc.projectIds || []), ...(acc.projectId ? [acc.projectId] : [])].map(String));
+    projects = projects.filter(project => allowed.has(String(project.id)));
+  }
+  return projects;
+}
+
 function renderAttendanceSettings() {
-  const policy = getAttendancePolicy();
-  const points = getAttendancePoints();
+  const projects = settingsProjects();
+  const selected = projects.some(project => String(project.id) === String(window.FT.state._attendanceSettingsProjectId || ''))
+    ? String(window.FT.state._attendanceSettingsProjectId)
+    : String(projects[0]?.id || '');
+  const project = projects.find(row => String(row.id) === selected) || null;
+  const sourceMode = project?.attendanceSourceMode === 'visit' ? 'visit' : 'manual';
+  const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(project?.attendanceLateAfter || ''))
+    ? String(project.attendanceLateAfter)
+    : '09:00';
   return `
-        <div class="card-title">Attendance policy</div>
-        <div class="card-subtitle">Set where people must check in. Assign a specific point on each employee record when mode is Specific point.</div>
-        <form class="am-form" data-pqt-onsubmit="AM.saveAttendancePolicy(event)">
+        <div class="card-title">Attendance per project</div>
+        <div class="card-subtitle">Authority attendance disimpan pada project dan dipakai langsung oleh server. Manual = employee melakukan attendance langsung; Visit = attendance dibentuk otomatis dari Visit.</div>
+        ${project ? `
+        <form class="am-form" data-pqt-onsubmit="AM.saveAttendanceProjectSettings(event)">
           <div class="form-group">
-            <label class="label">Required check-in location</label>
-            <select class="select" name="attendanceMode">
-              <option value="office" ${policy.mode === 'office' ? 'selected' : ''}>Office</option>
-              <option value="outlet" ${policy.mode === 'outlet' ? 'selected' : ''}>Outlet</option>
-              <option value="point" ${policy.mode === 'point' ? 'selected' : ''}>Specific point</option>
+            <label class="label">Project</label>
+            <select class="select" name="projectId" data-pqt-onchange="AM.pickAttendanceSettingsProject(this.value)">
+              ${projects.map(row => `<option value="${esc(row.id)}" ${String(row.id) === selected ? 'selected' : ''}>${esc(row.code || row.id)} — ${esc(row.name)}</option>`).join('')}
             </select>
           </div>
           <div class="form-row">
-            <div class="form-group"><label class="label">Geofence radius (meters)</label><input class="input" type="number" name="attendanceRadiusM" min="20" value="${esc(policy.radiusM)}"></div>
-            <div class="form-group"><label class="label">Office name</label><input class="input" name="officeName" value="${esc(policy.officeName || '')}"></div>
+            <div class="form-group">
+              <label class="label">Sumber attendance</label>
+              <select class="select" name="sourceMode">
+                <option value="manual" ${sourceMode === 'manual' ? 'selected' : ''}>Manual attendance</option>
+                <option value="visit" ${sourceMode === 'visit' ? 'selected' : ''}>Otomatis dari Visit</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="label">Batas terlambat</label>
+              <input class="input" type="time" name="lateAfter" value="${esc(lateAfter)}" required>
+            </div>
           </div>
-          <div class="form-row">
-            <div class="form-group"><label class="label">Office latitude</label><input class="input" name="officeLat" value="${policy.officeLat ?? ''}" placeholder="-6.1944"></div>
-            <div class="form-group"><label class="label">Office longitude</label><input class="input" name="officeLng" value="${policy.officeLng ?? ''}" placeholder="106.8229"></div>
-          </div>
-          <button class="btn btn-primary" type="submit">Save attendance policy</button>
+          <div class="am-muted">Perubahan sumber attendance dapat ditolak bila attendance hari ini sudah tercatat, untuk mencegah campuran Manual dan Visit dalam project yang sama.</div>
+          <button class="btn btn-primary" type="submit">Simpan pengaturan attendance</button>
         </form>
-        <hr style="margin:20px 0;border:0;border-top:1px solid var(--gray-200)">
+        ` : '<div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur attendance.</p></div>'}
+        <hr class="am-section-divider">
         <div class="filter-row">
           <div>
-            <div class="card-title">Named points</div>
-            <div class="card-subtitle">Create points here, then pick one on Employee data when policy is Specific point.</div>
+            <div class="card-title">Attendance points</div>
+            <div class="card-subtitle">Master titik referensi tetap cloud-authoritative dan dapat dipakai oleh data employee/project yang memerlukannya.</div>
           </div>
           <div class="spacer"></div>
           <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
         </div>
         <form class="am-form" data-pqt-onsubmit="AM.addAttendancePoint(event)">
           <div class="form-row">
-            <div class="form-group"><label class="label">Name</label><input class="input" name="pointName" required></div>
-            <div class="form-group"><label class="label">Type</label>
+            <div class="form-group"><label class="label">Nama</label><input class="input" name="pointName" required></div>
+            <div class="form-group"><label class="label">Tipe</label>
               <select class="select" name="pointType"><option value="point">Point</option><option value="office">Office</option><option value="store">Outlet</option><option value="meeting">Meeting</option></select>
             </div>
           </div>
@@ -153,10 +178,10 @@ function renderAttendanceSettings() {
             <div class="form-group"><label class="label">Latitude</label><input class="input" name="pointLat"></div>
             <div class="form-group"><label class="label">Longitude</label><input class="input" name="pointLng"></div>
           </div>
-          <div class="form-group"><label class="label">Address</label><input class="input" name="pointAddress"></div>
-          <button class="btn btn-secondary" type="submit">Add point</button>
+          <div class="form-group"><label class="label">Alamat</label><input class="input" name="pointAddress"></div>
+          <button class="btn btn-secondary" type="submit">Tambah titik</button>
         </form>
-        <ul style="margin-top:12px">${points.map(p => `<li><strong>${esc(p.name)}</strong> · ${esc(p.type)}${p.lat != null ? ` · ${p.lat}, ${p.lng}` : ''}</li>`).join('') || '<li class="am-muted">No named points yet.</li>'}</ul>`;
+        <ul class="am-master-list">${getAttendancePoints().map(point => `<li><strong>${esc(point.name)}</strong> · ${esc(point.type)}${point.lat != null ? ` · ${esc(point.lat)}, ${esc(point.lng)}` : ''}</li>`).join('') || '<li class="am-muted">Belum ada attendance point.</li>'}</ul>`;
 }
 
 function linkedEmployee(acc) {
@@ -490,7 +515,7 @@ function accountForm(existing) {
   return `
     <form data-pqt-onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
       <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
-      <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" required></div>
+      <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" ${existing ? 'disabled' : 'required'}>${existing ? '<div class="am-muted">Email adalah identitas global. Pemilik akun mengubahnya dari Settings → Profile.</div>' : ''}</div>
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
           <select class="select" name="role" ${isSelf ? 'disabled' : ''}>
@@ -515,10 +540,11 @@ function accountForm(existing) {
           ${options.map(e => `<option value="${e.id}" ${existing?.employeeId === e.id ? 'selected' : ''}>${esc(e.name)} — ${esc(e.role)}</option>`).join('')}
         </select>
       </div>
-      <div class="form-group"><label class="label">${existing ? 'Password baru (opsional)' : 'Password'}</label>
-        <input class="input" type="password" name="password" minlength="8" autocomplete="new-password" ${existing ? '' : 'required'} placeholder="${existing ? 'Kosongkan jika tidak diubah' : 'Minimal 8 karakter'}">
-        ${existing ? '' : '<div class="am-muted">Jika email sudah memiliki akun ProQTrack di organisasi lain, akun existing akan ditautkan dan password lamanya tetap berlaku.</div>'}
-      </div>
+      ${existing ? '<div class="form-group"><label class="label">Password</label><div class="am-muted">Credential global tidak dapat diubah oleh admin tenant. Pemilik akun mengubah password dari Settings → Security.</div></div>' : `
+      <div class="form-group"><label class="label">Password</label>
+        <input class="input" type="password" name="password" minlength="8" autocomplete="new-password" required placeholder="Minimal 8 karakter">
+        <div class="am-muted">Jika email sudah memiliki akun ProQTrack di organisasi lain, akun existing akan ditautkan dan password lamanya tetap berlaku.</div>
+      </div>`}
       ${existing?.role === 'employee' ? `
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
@@ -540,6 +566,8 @@ function formData(event) {
 
 let accountSaveInFlight = false;
 const accountActionInFlight = new Set();
+const settingsProjectSaveInFlight = new Set();
+let settingsPointSaveInFlight = false;
 
 window.AM = {
   setTab(id) {
@@ -590,61 +618,120 @@ window.AM = {
       toast(error.message || error, 'error');
     }
   },
-  saveAttendancePolicy(event) {
+  pickAttendanceSettingsProject(id) {
+    window.FT.state._attendanceSettingsProjectId = id;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  async saveAttendanceProjectSettings(event) {
     event.preventDefault();
+    const form = event.target;
+    const projectId = String(form.projectId.value || '');
+    const key = `attendance:${projectId}`;
+    if (settingsProjectSaveInFlight.has(key)) return;
+    const project = (getDB().projects || []).find(row => String(row.id) === projectId);
+    if (!project) {
+      toast('Project tidak ditemukan.', 'error');
+      return;
+    }
+    const submit = form.querySelector('button[type="submit"]');
+    const sourceMode = form.sourceMode.value === 'visit' ? 'visit' : 'manual';
+    const lateAfter = String(form.lateAfter.value || '');
+    const nextProject = { ...project, attendanceSourceMode:sourceMode, attendanceLateAfter:lateAfter };
+    settingsProjectSaveInFlight.add(key);
+    if (submit) submit.disabled = true;
     try {
-      const form = event.target;
-      updateAppSettings({
-        attendanceMode: form.attendanceMode.value,
-        attendanceRadiusM: Number(form.attendanceRadiusM.value) || 150,
-        officeName: form.officeName.value,
-        officeLat: form.officeLat.value === '' ? null : Number(form.officeLat.value),
-        officeLng: form.officeLng.value === '' ? null : Number(form.officeLng.value),
-      });
-      toast('Attendance policy saved');
+      await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
+      saveProjectAttendanceSettings(projectId,{ sourceMode, lateAfter });
+      toast('Pengaturan attendance tersimpan di cloud');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      const messages = {
+        PROJECT_ATTENDANCE_SOURCE_IN_USE:'Sumber attendance tidak dapat diubah karena attendance hari ini sudah tercatat.',
+        PROJECT_INVALID_ATTENDANCE_SOURCE:'Sumber attendance project tidak valid.',
+        PROJECT_INVALID_ATTENDANCE_CUTOFF:'Batas waktu terlambat tidak valid.',
+        REVISION_CONFLICT:'Data project berubah di perangkat lain. Muat ulang lalu coba kembali.',
+      };
+      toast(messages[error?.code || error?.message] || error?.message || String(error), 'error');
+    } finally {
+      settingsProjectSaveInFlight.delete(key);
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
-  addAttendancePoint(event) {
+  async addAttendancePoint(event) {
     event.preventDefault();
+    if (settingsPointSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const row = {
+      id:`APT-${crypto.randomUUID()}`,
+      name:String(fd.pointName || '').trim(),
+      type:String(fd.pointType || 'point'),
+      lat:fd.pointLat === '' ? null : Number(fd.pointLat),
+      lng:fd.pointLng === '' ? null : Number(fd.pointLng),
+      address:String(fd.pointAddress || '').trim(),
+      status:'active',
+    };
+    settingsPointSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const fd = Object.fromEntries(new FormData(event.target));
-      createAttendancePoint({
-        name: fd.pointName || fd.name,
-        type: fd.pointType || fd.type,
-        lat: fd.pointLat || fd.lat,
-        lng: fd.pointLng || fd.lng,
-        address: fd.pointAddress || fd.address,
-      });
-      toast('Attendance point added');
+      await commitOperationalChanges([{ entity:'attendancePoints', op:'upsert', row }]);
+      createAttendancePoint(row);
+      toast('Attendance point tersimpan di cloud');
+      form.reset();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(error?.message || String(error),'error');
+    } finally {
+      settingsPointSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   pickStoreProject(id) {
     window.FT.state._storeProjectId = id;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
-  saveStoreCatalog(event) {
+  async saveStoreCatalog(event) {
     event.preventDefault();
+    const form = event.target;
+    const projectId = String(form.projectId.value || '');
+    const key = `catalog:${projectId}`;
+    if (settingsProjectSaveInFlight.has(key)) return;
+    const project = (getDB().projects || []).find(row => String(row.id) === projectId);
+    if (!project) {
+      toast('Project tidak ditemukan.', 'error');
+      return;
+    }
+    const split = name => String(form[name].value || '').split(/\n/).map(value => value.trim()).filter(Boolean);
+    const catalog = {
+      allowNewOutlet:form.allowNewOutlet.checked,
+      notesMode:form.notesMode.value === 'dropdown' ? 'dropdown' : 'freetext',
+      notesOptions:split('notesOptions'),
+      segments:split('segments'),
+      types:split('types'),
+      ownerships:split('ownerships'),
+    };
+    const nextProject = {
+      ...project,
+      modules:{ ...(project.modules || {}), newOutlet:catalog.allowNewOutlet },
+      storeCatalog:catalog,
+    };
+    const submit = form.querySelector('button[type="submit"]');
+    settingsProjectSaveInFlight.add(key);
+    if (submit) submit.disabled = true;
     try {
-      const form = event.target;
-      const split = name => String(form[name].value || '').split(/\n/).map(s => s.trim()).filter(Boolean);
-      saveProjectStoreSettings(form.projectId.value, {
-        allowNewOutlet: form.allowNewOutlet.checked,
-        notesMode: form.notesMode.value,
-        notesOptions: split('notesOptions'),
-        segments: split('segments'),
-        types: split('types'),
-        ownerships: split('ownerships'),
-      });
-      toast('Outlet catalog saved');
+      await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
+      saveProjectStoreSettings(projectId,catalog);
+      toast('Outlet catalog tersimpan di cloud');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      const message = (error?.code || error?.message) === 'REVISION_CONFLICT'
+        ? 'Data project berubah di perangkat lain. Muat ulang lalu coba kembali.'
+        : (error?.message || String(error));
+      toast(message,'error');
+    } finally {
+      settingsProjectSaveInFlight.delete(key);
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   previewThemeColor(input) {
@@ -759,6 +846,10 @@ window.AM = {
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const current = id ? getAccounts().find(a => String(a.id) === String(id)) : null;
+      if (current) {
+        delete data.email;
+        delete data.password;
+      }
       if (current && String(current.id) === String(account()?.id || '')) {
         data.role = current.role;
         data.status = 'active';
@@ -840,6 +931,8 @@ function installStyles() {
     .am-form .form-group{margin-bottom:12px}
     .am-check{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:13px}
     .am-actions{display:flex;gap:8px;margin-top:12px}
+    .am-section-divider{margin:20px 0;border:0;border-top:1px solid var(--gray-200)}
+    .am-master-list{margin-top:12px}
     body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
     @media(max-width:800px){.am-grid{grid-template-columns:1fr}}
   `;
