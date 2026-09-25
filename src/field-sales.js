@@ -143,7 +143,7 @@ export function attendanceCheckinCard() {
     );
     const preferred = assigned && points.some(p=>p.id===assigned.id) ? assigned : null;
     const ordered = preferred ? [preferred,...points.filter(p=>p.id!==preferred.id)] : points;
-    options = ordered.map(p => `<option value="${esc(p.id)}|${esc(p.type || 'point')}|${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    options = ordered.map(p => `<option value="${esc(p.id)}|point|${esc(p.name)}">${esc(p.name)}</option>`).join('');
     hint = options
       ? 'Check-in manual wajib memakai GPS perangkat dan berada dalam radius titik attendance.'
       : 'Belum ada titik attendance dengan koordinat GPS yang valid. Minta manager menambahkan titik attendance.';
