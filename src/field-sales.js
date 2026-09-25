@@ -6,7 +6,7 @@ import {
   getOrganization, getCurrentOrgId, getDB, getActor,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
   canEmployeeAddStore, outletProjectsForEmployee, storeCatalogForEmployee, formatOutletLabel,
-  getAttendancePolicy, getEmployee,
+  getAttendancePolicy, getProjectAttendancePolicy, getEmployeeAttendanceProjects, getEmployee,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
@@ -108,54 +108,87 @@ export function outletNotesField(catalog, current = '') {
 export function attendanceCheckinCard() {
   const id = empId();
   const today = todayISO();
-  const att = getAttendance().find(a => a.employeeId === id && a.date === today);
+  const attendance = getAttendance().filter(a => String(a.employeeId) === String(id) && String(a.date || a.workDate) === today);
   const policy = getAttendancePolicy();
   const emp = getEmployee(id);
+  const projects = getEmployeeAttendanceProjects(id);
+  const projectMap = Object.fromEntries(projects.map(project => [String(project.id),project]));
+  const recordedProjectIds = new Set(attendance.map(row => String(row.projectId || '')));
+  const manualProjects = projects.filter(project =>
+    getProjectAttendancePolicy(project.id).sourceMode === 'manual'
+    && !recordedProjectIds.has(String(project.id))
+  );
+  const visitProjects = projects.filter(project => getProjectAttendancePolicy(project.id).sourceMode === 'visit');
   const firstStore = getVisitsOnDate(today, id)[0];
   const store = firstStore ? getOutlets().find(o => o.id === firstStore.outletId) : null;
   const assigned = emp?.attendancePointId
     ? getAttendancePoints().find(p => p.id === emp.attendancePointId)
     : null;
-  if (att) {
-    return `<div style="display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;background:#ecfdf5">
-      ${appIcon('attendance')}
-      <div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-600)">${esc(att.status === 'late' || att.status === 'terlambat' ? 'Late' : 'Present')}</div>
-        <div class="am-muted">Check in ${att.checkInTime || '-'} · ${esc(att.checkInLocation || att.locationName || '-')}${att.locationType ? ' · ' + locationTypeLabel(att.locationType) : ''}</div>
-      </div>
-    </div>`;
-  }
+
   let options = '';
   let hint = '';
   if (policy.mode === 'office') {
     const name = policy.officeName || 'Office';
     options = `<option value="office|office|${esc(name)}">${esc(name)} — Office</option>`;
-    hint = `Must check in at the office (radius ${policy.radiusM} m).`;
+    hint = `Check-in manual di kantor (radius referensi ${policy.radiusM} m).`;
   } else if (policy.mode === 'outlet') {
     const outlets = getOutlets().filter(o => o.status !== 'inactive');
     options = outlets.map(o => `<option value="${o.id}|store|${esc(o.name)}">${esc(formatOutletLabel(o))}</option>`).join('');
-    if (store) options = `<option value="${store.id}|store|${esc(store.name)}">${esc(store.name)} — today's first outlet</option>` + options;
-    hint = `Must check in at an outlet (radius ${policy.radiusM} m).`;
+    if (store) options = `<option value="${store.id}|store|${esc(store.name)}">${esc(store.name)} — outlet kunjungan pertama hari ini</option>` + options;
+    hint = `Check-in manual di outlet (radius referensi ${policy.radiusM} m).`;
   } else {
-    if (assigned) {
-      options = `<option value="${assigned.id}|${assigned.type}|${esc(assigned.name)}">${esc(assigned.name)}</option>`;
-    }
+    if (assigned) options = `<option value="${assigned.id}|${assigned.type}|${esc(assigned.name)}">${esc(assigned.name)}</option>`;
     hint = assigned
-      ? `Assigned point: ${assigned.name} (radius ${policy.radiusM} m).`
-      : 'No attendance point assigned on your employee record. Ask a manager.';
+      ? `Titik absensi: ${assigned.name} (radius referensi ${policy.radiusM} m).`
+      : 'Belum ada titik absensi yang ditetapkan. Hubungi Manager.';
   }
+
+  const recordedHtml = attendance.length
+    ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${attendance.map(att => {
+        const project = projectMap[String(att.projectId)] || {};
+        const source = att.attendanceSource === 'visit' ? 'Otomatis dari Visit' : 'Manual';
+        return `<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:#ecfdf5">
+          ${appIcon('attendance')}
+          <div style="flex:1">
+            <strong>${esc(project.code || project.name || att.projectId || 'Project')}</strong>
+            <div class="am-muted">Check-in ${esc(att.checkInTime || att.checkInAt || '-')} · ${esc(source)}</div>
+          </div>
+          ${statusBadge(att.status)}
+        </div>`;
+      }).join('')}</div>`
+    : '';
+
+  const visitHint = visitProjects.length
+    ? `<div class="am-muted" style="margin:0 0 10px">Absensi otomatis dari check-in Visit: ${visitProjects.map(project => esc(project.code || project.name || project.id)).join(', ')}.</div>`
+    : '';
+
+  if (!projects.length) {
+    return `<div class="empty-state"><h3>Belum ada project aktif</h3><p>Attendance mengikuti assignment project aktif.</p></div>`;
+  }
+
   return `<div>
-    <p class="am-muted" style="margin:0 0 10px">${esc(hint)}</p>
-    ${options ? `<form data-pqt-onsubmit="FS.checkInAttendance(event)">
-      <div class="form-group">
-        <label class="label">Check-in location</label>
-        <select class="select" name="point" required>
-          <option value="">Select location</option>
-          ${options}
-        </select>
-      </div>
-      <button class="btn btn-primary" type="submit">Check in</button>
-    </form>` : ''}
+    ${recordedHtml}
+    ${visitHint}
+    ${manualProjects.length && options ? `
+      <p class="am-muted" style="margin:0 0 10px">${esc(hint)}</p>
+      <form data-pqt-onsubmit="FS.checkInAttendance(event)">
+        <div class="form-group">
+          <label class="label">Project</label>
+          <select class="select" name="projectId" required>
+            <option value="">Pilih project</option>
+            ${manualProjects.map(project => `<option value="${project.id}">${esc(project.code || project.id)} — ${esc(project.name || '')}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="label">Lokasi check-in</label>
+          <select class="select" name="point" required>
+            <option value="">Pilih lokasi</option>
+            ${options}
+          </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Check in</button>
+      </form>`
+      : (!manualProjects.length && !visitProjects.length ? '<div class="am-muted">Attendance hari ini sudah tercatat untuk seluruh project manual.</div>' : '')}
   </div>`;
 }
 
@@ -276,27 +309,55 @@ function productRow(kind, products, existing, idx) {
 }
 
 window.FS = {
-  checkInAttendance(e) {
+  async checkInAttendance(e) {
     e.preventDefault();
-    const raw = new FormData(e.target).get('point') || '';
+    const form = e.target;
+    const fd = new FormData(form);
+    const raw = fd.get('point') || '';
+    const projectId = String(fd.get('projectId') || '');
     const [locationId, locationType, ...nameParts] = String(raw).split('|');
     const locationName = nameParts.join('|');
     const id = empId();
-    if (!id) { window.showToast?.('Akses ditolak', 'error'); return; }
+    const submit = form.querySelector('button[type="submit"]');
+    if (!id || !projectId) { window.showToast?.('Project attendance tidak valid.', 'error'); return; }
+    if (getProjectAttendancePolicy(projectId).sourceMode !== 'manual') {
+      window.showToast?.('Attendance project ini dihitung otomatis dari Visit.', 'error');
+      return;
+    }
     const now = new Date();
-    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(now));
-    createAttendance({
-      employeeId: id,
-      date: todayISO(),
-      checkInTime: now.toTimeString().slice(0, 5),
-      status: hour >= 9 ? 'terlambat' : 'hadir',
-      checkInLocation: locationName,
-      locationType,
-      locationId,
-    });
-    window.showToast?.('Absensi tercatat', 'success');
-    window.FT?.state && (location.hash = '#/myday');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(now);
+    const hour = parts.find(part => part.type === 'hour')?.value || '00';
+    const minute = parts.find(part => part.type === 'minute')?.value || '00';
+    const checkInTime = `${hour}:${minute}`;
+    let cloudCommitted = false;
+    try {
+      if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
+      createAttendance({
+        employeeId:id,
+        projectId,
+        date:todayISO(),
+        workDate:todayISO(),
+        checkInAt:checkInTime,
+        checkInTime,
+        checkInLocation:locationName,
+        locationType,
+        locationId,
+      });
+      if (submit) submit.textContent = 'Sinkronisasi…';
+      await waitForOperationalSync();
+      cloudCommitted = true;
+      await refreshOperationalData(getDB(), getActor());
+      window.showToast?.('Absensi tercatat.', 'success');
+      location.hash = '#/myday';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (err) {
+      if (!cloudCommitted) restoreOperationalBaseline(getDB());
+      window.showToast?.(err.message || err, 'error');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } finally {
+      if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Check in'; }
+    }
   },
   openVisitDetail(id) {
     openModal('Detail kunjungan', renderVisitDetailHtml(id));
