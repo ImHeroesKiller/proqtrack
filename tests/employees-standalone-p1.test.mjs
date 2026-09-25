@@ -20,12 +20,15 @@ test('Employees standalone P1 locks status lifecycle in edit UI and backend', as
 });
 
 test('Employees standalone P1 escapes stored employee detail output', async () => {
-  const app = await read('src/app.js');
+  const [app, employeePage] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/employees-page.js'),
+  ]);
   assert.match(app, /<div class="detail-label">ID<\/div><div class="detail-value">\$\{esc\(emp\.id\)\}<\/div>/);
   assert.match(app, /<div class="detail-label">Telepon<\/div><div class="detail-value">\$\{esc\(emp\.phone \|\| '—'\)\}<\/div>/);
   assert.match(app, /outletIcon\(o\.type\)\+' '\+esc\(o\.name\)/);
   assert.match(app, /esc\(v\.checkInTime \|\| '-'\)/);
-  assert.match(app, /safePhotoUrl\(e\.photo\)/);
+  assert.match(employeePage, /safePhotoUrl\(e\.photo\)/);
 });
 
 test('Employees standalone P1 stores profile photos in R2 and cleans failed uploads', async () => {
