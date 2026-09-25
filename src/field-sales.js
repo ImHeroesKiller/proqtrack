@@ -369,16 +369,25 @@ window.FS = {
       : [];
     wrap.insertAdjacentHTML('beforeend', productRow(kind, products, existing, wrap.children.length));
   },
-  addAttendancePoint(e) {
+  async addAttendancePoint(e) {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
+    const form=e.target;
+    const submit=form.querySelector('button[type="submit"],button:not([type])');
+    const data = Object.fromEntries(new FormData(form).entries());
     try {
+      if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}
       createAttendancePoint(data);
+      await waitForOperationalSync();
+      await refreshOperationalData(getDB(),getActor());
       window.showToast?.('Titik absensi ditambah', 'success');
       window.FT.closeModal?.();
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (err) {
+      restoreOperationalBaseline(getDB());
       window.showToast?.(err.message || err, 'error');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } finally {
+      if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan';}
     }
   },
 };
