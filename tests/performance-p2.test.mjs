@@ -8,6 +8,7 @@ test('P2 runtime coalesces shell renders and uses one route-aware refresh timer'
   const app = await read('src/app.js');
   assert.match(app, /function scheduleRender\(\)/);
   assert.match(app, /renderFrame = requestAnimationFrame/);
+  assert.match(app, /cancelAnimationFrame\(renderFrame\)/);
   assert.match(app, /const PASSIVE_REFRESH_COOLDOWN_MS = 5000/);
   assert.match(app, /function routeRefreshConfig/);
   assert.match(app, /function configureRouteRefresh/);
