@@ -197,3 +197,19 @@ P1 memperkuat lifecycle, correction governance, validation, dan source consisten
 - Employee dapat memperbarui Leave pending hanya sebelum periode mulai; final Leave immutable.
 - Perubahan attendanceSourceMode Manual ↔ Visit diblokir bila Attendance hari berjalan sudah tercatat.
 - Regression guard: `tests/attendance-leave-p1.test.mjs`.
+
+
+## Attendance + Leave P2 operational hardening — 25 September 2026
+
+P2 berfokus pada usability operasional tanpa mengubah authority P0/P1:
+
+- Attendance Manager memiliki KPI operasional, filter karyawan/project/status/source/range tanggal, live result count, reset filter, dan filtered-empty state.
+- Setiap Attendance memiliki detail operasional dan audit koreksi; source Visit tetap ditandai read-only.
+- Leave queue memiliki filter status/type/range periode, live result count, filtered-empty state, dan aging indicator untuk pending >= 3 hari.
+- Approval/rejection menampilkan ringkasan pengajuan sebelum keputusan dan dilindungi in-flight guard agar action tidak terkirim dua kali.
+- Withdrawal employee menggunakan modal operasional, tetap mempertahankan audit trail, dan dilindungi duplicate-action guard.
+- Employee dapat mengedit Leave pending selama periode belum dimulai; penyimpanan menunggu cloud authority sebelum sukses ditampilkan.
+- Manual Attendance check-out memiliki in-flight duplicate guard dan friendly operational error mapping.
+- My Attendance menampilkan label project yang lebih jelas; My Leave menampilkan Detail/Edit/Batalkan sesuai lifecycle.
+- UI Attendance/Leave menggunakan responsive operational classes di `assets/ui-2026.css` untuk mobile dan desktop.
+- Regression guard: `tests/attendance-leave-p2.test.mjs`.

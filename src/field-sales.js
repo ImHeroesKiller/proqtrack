@@ -310,6 +310,8 @@ function productRow(kind, products, existing, idx) {
   </div>`;
 }
 
+const attendanceCheckoutInFlight = new Set();
+
 window.FS = {
   async checkInAttendance(e) {
     e.preventDefault();
@@ -362,9 +364,12 @@ window.FS = {
     }
   },
   async checkOutAttendance(id) {
-    const att = getAttendance().find(row => String(row.id) === String(id));
+    const key = String(id || '');
+    if (!key || attendanceCheckoutInFlight.has(key)) return;
+    const att = getAttendance().find(row => String(row.id) === key);
     if (!att) { window.showToast?.('Data attendance tidak ditemukan.', 'error'); return; }
     if (att.attendanceSource === 'visit') { window.showToast?.('Check-out attendance ini mengikuti Visit.', 'error'); return; }
+    attendanceCheckoutInFlight.add(key);
     const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
     const now = new Date();
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(now);
@@ -381,9 +386,17 @@ window.FS = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (err) {
       if (!cloudCommitted) restoreOperationalBaseline(getDB());
-      window.showToast?.(err.message || err, 'error');
+      const message = {
+        ATTENDANCE_CHECKOUT_BEFORE_CHECKIN:'Check-out tidak boleh lebih awal dari check-in.',
+        ATTENDANCE_CHECKOUT_IMMUTABLE:'Check-out attendance sudah tercatat.',
+        ATTENDANCE_SELF_SERVICE_TODAY_ONLY:'Check-out mandiri hanya dapat dilakukan pada hari yang sama.',
+        REVISION_CONFLICT:'Data berubah dari perangkat lain. Muat ulang lalu coba kembali.',
+      }[err?.code || err?.message] || err.message || err;
+      window.showToast?.(message, 'error');
       await refreshOperationalData(getDB(), getActor()).catch(() => null);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } finally {
+      attendanceCheckoutInFlight.delete(key);
     }
   },
   openVisitDetail(id) {
