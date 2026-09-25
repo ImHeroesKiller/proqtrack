@@ -180,3 +180,20 @@ P0 authority untuk Attendance dan Leave ditutup dengan prinsip cloud-authoritati
 - Overlap pengajuan Leave berstatus pending/approved diblokir.
 - UI Attendance/Leave baru menyatakan sukses setelah sync dan authoritative refresh selesai.
 - Regression guard: `tests/attendance-leave-p0.test.mjs`.
+
+
+## Attendance + Leave P1 lifecycle — 25 September 2026
+
+P1 memperkuat lifecycle, correction governance, validation, dan source consistency:
+
+- Manual Attendance bersifat self-service hanya untuk hari berjalan, wajib berada dalam periode project dan assignment yang sesuai.
+- Manual Attendance memiliki lifecycle check-in → satu kali check-out; check-out tidak dapat dimundurkan sebelum check-in atau diubah setelah final.
+- Koreksi Attendance hanya untuk Manager/Supervisor/Admin pada source manual, wajib alasan minimal 10 karakter, dan menyimpan previous snapshot, actor, timestamp, serta correction count.
+- Attendance turunan Visit tetap read-only. Completion Visit mengisi check-out Attendance turunan secara authoritative.
+- Attendance manual maupun check-in Visit ditolak bila terdapat Leave approved pada tanggal tersebut.
+- Leave pending dapat dibatalkan oleh pengaju tanpa delete; record disimpan sebagai rejected dengan metadata decisionKind=withdrawn untuk audit trail.
+- Reviewer tidak dapat menyetujui/menolak Leave miliknya sendiri. Penolakan wajib memiliki decision note.
+- Approval Leave ditolak bila sudah terdapat Attendance present/late pada periode yang diajukan.
+- Employee dapat memperbarui Leave pending hanya sebelum periode mulai; final Leave immutable.
+- Perubahan attendanceSourceMode Manual ↔ Visit diblokir bila Attendance hari berjalan sudah tercatat.
+- Regression guard: `tests/attendance-leave-p1.test.mjs`.

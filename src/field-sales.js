@@ -1,7 +1,7 @@
 import {
   getVisits, getOutlets, getEmployees, getProducts, getStocks, getStocksByOutlet,
   getPriceObservations, getCompetitorIntel, getFieldPhotos, getFieldPhotosByEmployee,
-  getAttendance, createAttendance, getAttendancePoints, createAttendancePoint,
+  getAttendance, createAttendance, checkOutAttendance, getAttendancePoints, createAttendancePoint,
   getVisitLocations, getVisitsOnDate, visitDay, FIELD_PHOTO_TYPES,
   getOrganization, getCurrentOrgId, getDB, getActor,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
@@ -151,9 +151,11 @@ export function attendanceCheckinCard() {
           ${appIcon('attendance')}
           <div style="flex:1">
             <strong>${esc(project.code || project.name || att.projectId || 'Project')}</strong>
-            <div class="am-muted">Check-in ${esc(att.checkInTime || att.checkInAt || '-')} · ${esc(source)}</div>
+            <div class="am-muted">Check-in ${esc(att.checkInTime || att.checkInAt || '-')} · Check-out ${esc(att.checkOutTime || att.checkOutAt || 'belum')} · ${esc(source)}</div>
           </div>
-          ${statusBadge(att.status)}
+          ${att.attendanceSource !== 'visit' && !att.checkOutAt && !att.checkOutTime
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.checkOutAttendance('${att.id}')">Check out</button>`
+            : statusBadge(att.status)}
         </div>`;
       }).join('')}</div>`
     : '';
@@ -357,6 +359,31 @@ window.FS = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } finally {
       if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Check in'; }
+    }
+  },
+  async checkOutAttendance(id) {
+    const att = getAttendance().find(row => String(row.id) === String(id));
+    if (!att) { window.showToast?.('Data attendance tidak ditemukan.', 'error'); return; }
+    if (att.attendanceSource === 'visit') { window.showToast?.('Check-out attendance ini mengikuti Visit.', 'error'); return; }
+    const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(now);
+    const hour = parts.find(part => part.type === 'hour')?.value || '00';
+    const minute = parts.find(part => part.type === 'minute')?.value || '00';
+    const checkOutTime = `${hour}:${minute}`;
+    let cloudCommitted = false;
+    try {
+      checkOutAttendance(id, checkOutTime);
+      await waitForOperationalSync();
+      cloudCommitted = true;
+      await refreshOperationalData(getDB(), getActor());
+      window.showToast?.('Check-out attendance tercatat.', 'success');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (err) {
+      if (!cloudCommitted) restoreOperationalBaseline(getDB());
+      window.showToast?.(err.message || err, 'error');
+      await refreshOperationalData(getDB(), getActor()).catch(() => null);
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   },
   openVisitDetail(id) {

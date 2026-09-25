@@ -1428,6 +1428,7 @@ window.PM = {
         PROJECT_INVALID_TARGET_OUTLETS:'Target outlet tidak valid.',
         PROJECT_INVALID_ATTENDANCE_SOURCE:'Sumber attendance project tidak valid.',
         PROJECT_INVALID_ATTENDANCE_CUTOFF:'Batas waktu terlambat tidak valid.',
+        PROJECT_ATTENDANCE_SOURCE_IN_USE:'Sumber attendance tidak dapat diubah karena attendance hari ini sudah tercatat.',
         CHANGE_FORBIDDEN:'Anda tidak memiliki izin untuk mengubah project ini.',
         CLOUD_SYNC_UNAVAILABLE:'Sinkronisasi cloud belum siap. Project belum disimpan.',
         CLOUD_SYNC_BUSY:'Sinkronisasi sedang berjalan. Coba simpan kembali.',

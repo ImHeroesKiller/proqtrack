@@ -65,7 +65,7 @@ test('P0 leave review stamps approver on server and is cloud-confirmed', () => {
   assert.match(worker, /row\.approverId = claims\.sub/);
   assert.match(worker, /LEAVE_REVIEW_DECISION_REQUIRED/);
   assert.match(worker, /LEAVE_FINAL_IMMUTABLE/);
-  assert.match(app, /updateLeave\(id, \{ status \}\)/);
+  assert.match(app, /updateLeave\(id,\s*\{\s*status(?:,\s*decisionNote)?\s*\}\)/);
   assert.match(app, /await waitForOperationalSync\(\)/);
   assert.doesNotMatch(app, /updateLeave\(id, \{ status: 'approved', approverId:/);
 });

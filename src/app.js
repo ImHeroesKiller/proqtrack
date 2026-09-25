@@ -2,11 +2,11 @@
 // Simple hash-based router + global state + page renderers
 
 import {
-  getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee,
+  getDashboardStats, getEmployees, getOutlets, getVisits, getAttendance, getVisitsByEmployee, correctAttendance,
   resetDB, authenticate, createVisit, updateVisit, createEmployee, updateEmployee,
   createOutlet, updateOutlet, deleteEmployee, deleteOutlet, outletReferenceSummary, deleteVisit, getDB, getAccounts,
   getProducts, createProduct, updateProduct, deleteProduct, productReferenceSummary,
-  getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, deleteLeave,
+  getLeaves, getLeavesByEmployee, getLeaveTypes, createLeave, updateLeave, withdrawLeave, deleteLeave,
   getStocks, getStocksByOutlet, getInventoryCycles, createInventoryCycle,
   getPriceObservations, getPriceObservationsByOutlet, getPriceObservationsByVisit,
   getPriceObservationsByEmployee, createPriceObservation, updatePriceObservation, deletePriceObservation,
@@ -1673,6 +1673,17 @@ window.FT.closeSidebar = function() {
 const visitCheckInInFlight = new Set();
 const visitCheckOutInFlight = new Set();
 
+function visitExecutionErrorMessage(error, fallback = 'Proses kunjungan gagal') {
+  const code = error?.code || error?.message || '';
+  return {
+    VISIT_APPROVED_LEAVE_CONFLICT:'Check-in tidak dapat dilakukan karena ijin/cuti pada tanggal ini sudah disetujui.',
+    VISIT_OUTSIDE_GEOFENCE:'Check-in berada di luar radius outlet.',
+    VISIT_GPS_REQUIRED:'Lokasi GPS wajib tersedia untuk check-in.',
+    VISIT_GEOFENCE_UNAVAILABLE:'Geofence outlet belum tersedia atau tidak valid.',
+    REVISION_CONFLICT:'Data kunjungan berubah dari perangkat lain. Muat ulang lalu coba kembali.',
+  }[code] || error?.message || fallback;
+}
+
 async function checkInVisitWithEvidence(id) {
   const key = String(id || '');
   if (!key || visitCheckInInFlight.has(key)) return null;
@@ -1760,7 +1771,7 @@ window.FT.checkInVisit = async function(id) {
     showToast('Check-in berhasil dengan GPS dan geofence valid', 'success');
     render();
   } catch (error) {
-    showToast(error.message || 'Check-in gagal', 'error');
+    showToast(visitExecutionErrorMessage(error,'Check-in gagal'), 'error');
   }
 };
 
@@ -1772,7 +1783,7 @@ window.FT.checkOutVisit = async function(id) {
     showToast('Check-out berhasil dengan bukti GPS', 'success');
     render();
   } catch (error) {
-    showToast(error.message || 'Check-out gagal', 'error');
+    showToast(visitExecutionErrorMessage(error,'Check-out gagal'), 'error');
   }
 };
 
@@ -2755,7 +2766,7 @@ function renderMyVisits() {
             <tr><th>Tanggal</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th></th></tr>
           </thead>
           <tbody>
-            ${visits.length === 0 ? `<tr><td colspan="7"><div class="empty-state">${appIcon('visits')}<h3>Belum ada riwayat kunjungan</h3></div></td></tr>` :
+            ${visits.length === 0 ? `<tr><td colspan="8"><div class="empty-state">${appIcon('visits')}<h3>Belum ada riwayat kunjungan</h3></div></td></tr>` :
             visits.map(v => {
               const o = outletMap[v.outletId];
               return `
@@ -3414,33 +3425,43 @@ window.FT.deleteStock = function() {
 // ===== Attendance Manager Page =====
 function renderAttendanceManager() {
   const attendance = getAttendance();
+  const db = getDB();
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const projectMap = Object.fromEntries((db.projects || []).map(project => [String(project.id), project]));
   return `
     <div class="card">
       <div class="filter-row">
         <input class="input search-input" id="attSearch" placeholder="🔍 Cari karyawan..." data-pqt-oninput="FT.filterAttendance()">
         <select class="select" id="attStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterAttendance()">
           <option value="">Semua Status</option>
-          <option>hadir</option><option>terlambat</option><option>tidak hadir</option>
+          <option value="hadir">Hadir</option><option value="terlambat">Terlambat</option><option value="tidak hadir">Tidak Hadir</option>
         </select>
         <div class="spacer"></div>
         <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
-          <thead><tr><th>Karyawan</th><th>Tanggal</th><th>Check In</th><th>Lokasi</th><th>Status</th></tr></thead>
+          <thead><tr><th>Karyawan</th><th>Project</th><th>Tanggal</th><th>Check In</th><th>Check Out</th><th>Source</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            ${attendance.length === 0 ? `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada data absensi</h3></div></td></tr>` :
+            ${attendance.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada data absensi</h3></div></td></tr>` :
             attendance.map(a => {
               const emp = empMap[a.employeeId];
               if (!emp) return '';
+              const project = projectMap[String(a.projectId)] || {};
+              const source = a.attendanceSource === 'visit' ? 'Visit' : 'Manual';
+              const corrected = a.correctionCount ? `<div class="am-muted">Koreksi ${a.correctionCount}x</div>` : '';
               return `
                 <tr>
-                  <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
-                  <td>${formatDateShort(a.date)}</td>
-                  <td>${a.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td style="font-size:13px;">${a.checkInLocation || '-'}</td>
+                  <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
+                  <td><strong>${esc(project.code || a.projectId || '-')}</strong><div class="am-muted">${esc(project.name || '')}</div></td>
+                  <td>${formatDateShort(a.date || a.workDate)}</td>
+                  <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
+                  <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
+                  <td>${esc(source)}${corrected}</td>
                   <td>${statusBadge(a.status)}</td>
+                  <td>${a.attendanceSource === 'visit'
+                    ? '<span class="am-muted">Read-only</span>'
+                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}</td>
                 </tr>
               `;
             }).join('')}
@@ -3450,6 +3471,76 @@ function renderAttendanceManager() {
     </div>
   `;
 }
+
+window.FT.openAttendanceCorrection = function(id) {
+  const row = getAttendance().find(item => String(item.id) === String(id));
+  if (!row) return;
+  if (row.attendanceSource === 'visit') {
+    showToast('Attendance dari Visit harus dikoreksi melalui workflow Visit.', 'error');
+    return;
+  }
+  const normalized = normalizeAttendanceStatus(row.status);
+  const selected = normalized === 'terlambat' ? 'late' : normalized === 'tidak hadir' ? 'absent' : 'present';
+  const timeValue = value => {
+    const match = String(value || '').match(/(?:T|^)(\d{2}:\d{2})/);
+    return match?.[1] || '';
+  };
+  openModal('Koreksi Attendance', `
+    <form data-pqt-onsubmit="FT.saveAttendanceCorrection(event,'${id}')">
+      <div class="form-group"><label class="label">Status</label>
+        <select class="select" name="status">
+          <option value="present" ${selected === 'present' ? 'selected' : ''}>Hadir</option>
+          <option value="late" ${selected === 'late' ? 'selected' : ''}>Terlambat</option>
+          <option value="absent" ${selected === 'absent' ? 'selected' : ''}>Tidak Hadir</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Check In</label><input class="input" type="time" name="checkInAt" value="${esc(timeValue(row.checkInAt || row.checkInTime))}"></div>
+        <div class="form-group"><label class="label">Check Out</label><input class="input" type="time" name="checkOutAt" value="${esc(timeValue(row.checkOutAt || row.checkOutTime))}"></div>
+      </div>
+      <div class="form-group"><label class="label">Alasan koreksi</label><textarea class="textarea" name="correctionReason" minlength="10" required placeholder="Minimal 10 karakter untuk audit trail"></textarea></div>
+      <div class="am-muted" style="margin-bottom:12px">Identitas karyawan, project, tanggal, dan source tidak dapat diubah.</div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary" type="submit">Simpan Koreksi</button></div>
+    </form>`);
+};
+
+window.FT.saveAttendanceCorrection = async function(e,id) {
+  e.preventDefault();
+  const form=e.target, submit=form.querySelector('button[type="submit"]');
+  const data=Object.fromEntries(new FormData(form));
+  let cloudCommitted=false;
+  try {
+    if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}
+    correctAttendance(id,{
+      status:data.status,
+      checkInAt:data.checkInAt,
+      checkInTime:data.checkInAt,
+      checkOutAt:data.checkOutAt,
+      checkOutTime:data.checkOutAt,
+      correctionReason:data.correctionReason,
+    });
+    await waitForOperationalSync();
+    cloudCommitted=true;
+    await refreshOperationalData(getDB(),getActor());
+    closeModal();
+    showToast('Koreksi attendance tersimpan dengan audit trail.','success');
+    render();
+  } catch(error) {
+    if(!cloudCommitted) restoreOperationalBaseline(getDB());
+    const message={
+      ATTENDANCE_VISIT_DERIVED_IMMUTABLE:'Attendance dari Visit tidak dapat dikoreksi manual.',
+      ATTENDANCE_CORRECTION_REASON_REQUIRED:'Alasan koreksi wajib minimal 10 karakter.',
+      ATTENDANCE_CHECKOUT_BEFORE_CHECKIN:'Check-out tidak boleh lebih awal dari check-in.',
+      ATTENDANCE_CORRECTION_STATUS_INVALID:'Status koreksi tidak valid.',
+      REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
+    }[error?.code||error?.message]||error?.message||'Koreksi attendance gagal disimpan.';
+    showToast(message,'error');
+    await refreshOperationalData(getDB(),getActor()).catch(()=>null);
+    render();
+  } finally {
+    if(submit?.isConnected){submit.disabled=false;submit.textContent='Simpan Koreksi';}
+  }
+};
 
 window.FT.openAttendancePointModal = function() {
   openModal('Titik absensi', `
@@ -3475,102 +3566,132 @@ window.FT.filterAttendance = function() {
 };
 
 // ===== Leaves Manager Page =====
+function leaveStatusHtml(row) {
+  if (row?.decisionKind === 'withdrawn') return '<span class="status-badge" style="background:var(--gray-100);color:var(--gray-600)">Dibatalkan</span>';
+  return statusBadge(row?.status);
+}
+
 function renderLeavesManager() {
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const leaves = getLeaves().filter(l => empMap[l.employeeId]).sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
   const pending = leaves.filter(l => l.status === 'pending');
   return `
-    ${pending.length > 0 ? `
-      <div class="grid-3" style="margin-bottom:20px;">
-        <div class="stat-card"><div class="stat-icon" style="background:var(--amber-50);color:var(--amber-500);">⏳</div><div class="stat-label">Menunggu Approval</div><div class="stat-value">${pending.length}</div></div>
-        <div class="stat-card"><div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">✅</div><div class="stat-label">Disetujui</div><div class="stat-value">${leaves.filter(l=>l.status==='approved').length}</div></div>
-        <div class="stat-card"><div class="stat-icon" style="background:var(--red-50);color:var(--red-500);">❌</div><div class="stat-label">Ditolak</div><div class="stat-value">${leaves.filter(l=>l.status==='rejected').length}</div></div>
-      </div>
-    ` : ''}
+    <div class="grid-3" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-icon">⏳</div><div class="stat-label">Menunggu Approval</div><div class="stat-value">${pending.length}</div></div>
+      <div class="stat-card"><div class="stat-icon">✅</div><div class="stat-label">Disetujui</div><div class="stat-value">${leaves.filter(l=>l.status==='approved').length}</div></div>
+      <div class="stat-card"><div class="stat-icon">📄</div><div class="stat-label">Selesai / Dibatalkan</div><div class="stat-value">${leaves.filter(l=>l.status==='rejected').length}</div></div>
+    </div>
     <div class="card">
       <div class="filter-row">
         <input class="input search-input" id="leaveSearch" placeholder="🔍 Cari pengajuan..." data-pqt-oninput="FT.filterLeaves()">
-        <select class="select" id="leaveStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterLeaves()">
+        <select class="select" id="leaveStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterLeaves()">
           <option value="">Semua Status</option>
-          <option>pending</option><option>approved</option><option>rejected</option>
+          <option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected / Dibatalkan</option>
         </select>
         <div class="spacer"></div>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="leaveTable">
-          <thead><tr><th>Karyawan</th><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
+          <thead><tr><th>Karyawan</th><th>Tipe</th><th>Periode</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
           <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3></div></td></tr>` :
+            ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><h3>Belum ada pengajuan</h3></div></td></tr>` :
             leaves.map(l => {
-              const emp = empMap[l.employeeId];
-              if (!emp) return '';
-              return `
-                <tr>
-                  <td><span style="font-weight:600;">${esc(emp.name)}</span></td>
-                  <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
-                  <td>${formatDateShort(l.startDate)}</td>
-                  <td>${formatDateShort(l.endDate)}</td>
-                  <td style="text-align:center; font-weight:600;">${l.days}</td>
-                  <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${l.reason}</td>
-                  <td>${statusBadge(l.status)}</td>
-                  <td style="font-size:12px; color:var(--gray-400);">${l.status === 'pending' ? '-' : (accMap[l.approverId] || '-')}</td>
-                  <td>
-                    ${l.status === 'pending' ? `
-                      <button class="btn btn-primary btn-sm" style="background:var(--green-600);border-color:var(--green-600);" data-pqt-onclick="FT.approveLeave('${l.id}')">✓ Setujui</button>
-                      <button class="btn btn-danger btn-sm" style="margin-left:4px;margin-top:4px;" data-pqt-onclick="FT.rejectLeave('${l.id}')">✕ Tolak</button>
-                    ` : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>`}
-                  </td>
-                </tr>
-              `;
+              const emp=empMap[l.employeeId];
+              if(!emp) return '';
+              const selfReview = state.account?.employeeId && String(state.account.employeeId) === String(l.employeeId);
+              return `<tr>
+                <td><strong>${esc(emp.name)}</strong></td>
+                <td>${esc(l.type)}</td>
+                <td>${formatDateShort(l.startDate)} – ${formatDateShort(l.endDate)}</td>
+                <td>${l.days}</td>
+                <td style="max-width:220px">${esc(l.reason)}</td>
+                <td>${leaveStatusHtml(l)}</td>
+                <td>${l.status === 'pending' ? '—' : esc(accMap[l.approverId] || (l.decisionKind === 'withdrawn' ? 'Pengaju' : '—'))}</td>
+                <td>${l.status === 'pending' && !selfReview
+                  ? `<div class="am-actions"><button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','approved')">Setujui</button><button class="btn btn-danger btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','rejected')">Tolak</button></div>`
+                  : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>`}</td>
+              </tr>`;
             }).join('')}
           </tbody>
         </table>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 window.FT.filterLeaves = function() {
-  const search = document.getElementById('leaveSearch').value.toLowerCase();
-  const status = document.getElementById('leaveStatusFilter').value;
+  const search = document.getElementById('leaveSearch')?.value.toLowerCase() || '';
+  const status = document.getElementById('leaveStatusFilter')?.value || '';
   document.querySelectorAll('#leaveTable tbody tr').forEach(row => {
-    let show = true;
-    if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (status && !row.textContent.toLowerCase().includes(status)) show = false;
-    row.style.display = show ? '' : 'none';
+    let show=true;
+    if(search && !row.textContent.toLowerCase().includes(search)) show=false;
+    if(status && !row.textContent.toLowerCase().includes(status)) show=false;
+    row.style.display=show?'':'none';
   });
 };
 
-async function reviewLeaveAuthoritatively(id, status) {
-  let cloudCommitted = false;
-  try {
-    updateLeave(id, { status });
-    await waitForOperationalSync();
-    cloudCommitted = true;
-    await refreshOperationalData(getDB(), getActor());
-    showToast(status === 'approved' ? 'Pengajuan disetujui.' : 'Pengajuan ditolak.', 'success');
-    render();
-  } catch (error) {
-    if (!cloudCommitted) restoreOperationalBaseline(getDB());
-    const message = {
-      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
-      LEAVE_REVIEW_DECISION_REQUIRED:'Keputusan approval tidak valid.',
-      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
-      REVISION_CONFLICT:'Data berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
-    }[error?.code || error?.message] || error?.message || 'Keputusan ijin/cuti gagal disimpan.';
-    showToast(message, 'error');
-    await refreshOperationalData(getDB(), getActor()).catch(() => null);
-    render();
-  }
-}
-
-window.FT.approveLeave = function(id) {
-  return reviewLeaveAuthoritatively(id, 'approved');
+window.FT.openLeaveDecision = function(id,status) {
+  const leave=getLeaves().find(row=>String(row.id)===String(id));
+  if(!leave || leave.status!=='pending') return;
+  const rejected=status==='rejected';
+  openModal(rejected?'Tolak Pengajuan':'Setujui Pengajuan',`
+    <form data-pqt-onsubmit="FT.submitLeaveDecision(event,'${id}','${status}')">
+      <div class="form-group"><label class="label">${rejected?'Alasan penolakan':'Catatan keputusan (opsional)'}</label>
+        <textarea class="textarea" name="decisionNote" ${rejected?'required minlength="5"':''} placeholder="${rejected?'Minimal 5 karakter':'Catatan untuk audit trail'}"></textarea>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn ${rejected?'btn-danger':'btn-primary'}">${rejected?'Tolak':'Setujui'}</button></div>
+    </form>`);
 };
 
-window.FT.rejectLeave = function(id) {
-  return reviewLeaveAuthoritatively(id, 'rejected');
+window.FT.submitLeaveDecision = async function(e,id,status) {
+  e.preventDefault();
+  const form=e.target, submit=form.querySelector('button[type="submit"]');
+  const decisionNote=String(new FormData(form).get('decisionNote')||'');
+  let cloudCommitted=false;
+  try {
+    if(submit){submit.disabled=true;submit.textContent='Menyimpan…';}
+    updateLeave(id,{status,decisionNote});
+    await waitForOperationalSync();
+    cloudCommitted=true;
+    await refreshOperationalData(getDB(),getActor());
+    closeModal();
+    showToast(status==='approved'?'Pengajuan disetujui.':'Pengajuan ditolak.','success');
+    render();
+  } catch(error) {
+    if(!cloudCommitted) restoreOperationalBaseline(getDB());
+    const message={
+      LEAVE_SELF_REVIEW_FORBIDDEN:'Pengaju tidak boleh mereview pengajuannya sendiri.',
+      LEAVE_REJECTION_NOTE_REQUIRED:'Alasan penolakan wajib minimal 5 karakter.',
+      LEAVE_ATTENDANCE_CONFLICT:'Pengajuan tidak dapat disetujui karena sudah ada attendance pada periode tersebut.',
+      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
+      REVISION_CONFLICT:'Data berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
+    }[error?.code||error?.message]||error?.message||'Keputusan ijin/cuti gagal disimpan.';
+    showToast(message,'error');
+    await refreshOperationalData(getDB(),getActor()).catch(()=>null);
+    render();
+  } finally {
+    if(submit?.isConnected){submit.disabled=false;submit.textContent=status==='approved'?'Setujui':'Tolak';}
+  }
+};
+
+window.FT.withdrawMyLeave = async function(id) {
+  const leave=getLeaves().find(row=>String(row.id)===String(id));
+  if(!leave || leave.status!=='pending') return;
+  if(!window.confirm('Batalkan pengajuan ijin/cuti ini? Riwayat tetap tersimpan untuk audit.')) return;
+  let cloudCommitted=false;
+  try {
+    withdrawLeave(id,'Dibatalkan oleh pengaju');
+    await waitForOperationalSync();
+    cloudCommitted=true;
+    await refreshOperationalData(getDB(),getActor());
+    showToast('Pengajuan dibatalkan.','success');
+    render();
+  } catch(error) {
+    if(!cloudCommitted) restoreOperationalBaseline(getDB());
+    showToast(error?.message||'Pengajuan gagal dibatalkan.','error');
+    await refreshOperationalData(getDB(),getActor()).catch(()=>null);
+    render();
+  }
 };
 
 window.FT.viewLeave = function(id) {
@@ -3580,20 +3701,17 @@ window.FT.viewLeave = function(id) {
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
   openModal('Detail Pengajuan', `
     <div class="detail-grid">
-      <div class="detail-label">Karyawan</div><div class="detail-value">${emp ? emp.name : '-'}</div>
-      <div class="detail-label">Tipe</div><div class="detail-value">${l.type}</div>
-      <div class="detail-label">Mulai</div><div class="detail-value">${formatDate(l.startDate)}</div>
-      <div class="detail-label">Sampai</div><div class="detail-value">${formatDate(l.endDate)}</div>
+      <div class="detail-label">Karyawan</div><div class="detail-value">${esc(emp?.name || '-')}</div>
+      <div class="detail-label">Tipe</div><div class="detail-value">${esc(l.type || '-')}</div>
+      <div class="detail-label">Periode</div><div class="detail-value">${formatDate(l.startDate)} – ${formatDate(l.endDate)}</div>
       <div class="detail-label">Durasi</div><div class="detail-value">${l.days} hari</div>
-      <div class="detail-label">Alasan</div><div class="detail-value full">${l.reason}</div>
-      <div class="detail-label">Status</div><div class="detail-value">${statusBadge(l.status)}</div>
+      <div class="detail-label">Alasan</div><div class="detail-value full">${esc(l.reason || '-')}</div>
+      <div class="detail-label">Status</div><div class="detail-value">${leaveStatusHtml(l)}</div>
       <div class="detail-label">Diajukan</div><div class="detail-value">${formatDateShort(l.submittedAt)}</div>
-      <div class="detail-label">Approver</div><div class="detail-value">${accMap[l.approverId] || '-'}</div>
+      <div class="detail-label">Approver</div><div class="detail-value">${esc(accMap[l.approverId] || (l.decisionKind === 'withdrawn' ? 'Pengaju' : '-'))}</div>
+      <div class="detail-label">Catatan keputusan</div><div class="detail-value full">${esc(l.decisionNote || '-')}</div>
     </div>
-    <div class="modal-footer" style="padding:24px 0 0;">
-      <button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>
-    </div>
-  `);
+    <div class="modal-footer" style="padding:24px 0 0;"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>`);
 };
 
 // ===== My Attendance (Employee) =====
@@ -3617,14 +3735,16 @@ function renderMyAttendance() {
       <div class="card-subtitle">${emp ? emp.name : ''} — ${records.length} catatan</div>
       <div class="visits-table-wrapper">
         <table class="table">
-          <thead><tr><th>Tanggal</th><th>Check In</th><th>Lokasi Check In</th><th>Status</th></tr></thead>
+          <thead><tr><th>Tanggal</th><th>Project</th><th>Check In</th><th>Check Out</th><th>Source</th><th>Status</th></tr></thead>
           <tbody>
-            ${records.length === 0 ? `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada riwayat absensi</h3></div></td></tr>` :
+            ${records.length === 0 ? `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada riwayat absensi</h3></div></td></tr>` :
             records.map(a => `
               <tr>
-                <td>${formatDateShort(a.date)}</td>
-                <td>${a.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                <td style="font-size:13px;">${a.checkInLocation || '-'}</td>
+                <td>${formatDateShort(a.date || a.workDate)}</td>
+                <td>${esc(a.projectId || '-')}</td>
+                <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
+                <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
+                <td>${esc(a.attendanceSource === 'visit' ? 'Visit' : 'Manual')}</td>
                 <td>${statusBadge(a.status)}</td>
               </tr>
             `).join('')}
@@ -3657,9 +3777,9 @@ function renderMyLeaves() {
       </div>
       <div class="visits-table-wrapper" style="margin-top:16px;">
         <table class="table">
-          <thead><tr><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th></tr></thead>
+          <thead><tr><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th><th></th></tr></thead>
           <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
+            ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
             leaves.map(l => `
               <tr>
                 <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
@@ -3667,8 +3787,9 @@ function renderMyLeaves() {
                 <td>${formatDateShort(l.endDate)}</td>
                 <td style="text-align:center; font-weight:600;">${l.days}</td>
                 <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${l.reason}</td>
-                <td>${statusBadge(l.status)}</td>
+                <td>${leaveStatusHtml(l)}</td>
                 <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(l.submittedAt)}</td>
+                <td>${l.status === 'pending' ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.withdrawMyLeave('${l.id}')">Batalkan</button>` : ''}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -3698,7 +3819,7 @@ window.FT.openMyLeaveModal = function() {
       </div>
       <div class="form-group">
         <label class="label">Alasan</label>
-        <textarea class="textarea" name="reason" placeholder="Jelaskan alasan pengajuan..." required></textarea>
+        <textarea class="textarea" name="reason" minlength="5" placeholder="Jelaskan alasan pengajuan..." required></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
@@ -3739,6 +3860,9 @@ window.FT.createMyLeave = async function(e) {
     const message = {
       LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
       LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
+      LEAVE_TYPE_REQUIRED:'Tipe ijin/cuti wajib dipilih.',
+      LEAVE_REASON_REQUIRED:'Alasan ijin/cuti wajib minimal 5 karakter.',
+      LEAVE_PAST_PERIOD_SELF_SERVICE_FORBIDDEN:'Pengajuan yang seluruh periodenya sudah lewat tidak dapat dibuat.',
       LEAVE_SELF_ONLY:'Pengajuan hanya dapat dibuat untuk akun sendiri.',
       REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
     }[error?.code || error?.message] || error?.message || 'Pengajuan ijin/cuti gagal dikirim.';
