@@ -589,6 +589,10 @@ async function refreshActiveRoute({ manual = false, reason = 'passive' } = {}) {
 
 // ===== Main Render =====
 function render() {
+  if (renderFrame) {
+    cancelAnimationFrame(renderFrame);
+    renderFrame = 0;
+  }
   const app = document.getElementById('app');
   const currentBrand = getOrganization(getCurrentOrgId()) || null;
   applyOrganizationBranding(currentBrand);
