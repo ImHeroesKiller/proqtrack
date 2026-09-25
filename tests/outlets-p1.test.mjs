@@ -59,5 +59,5 @@ test('Outlets P1 waits for cloud authority before success and rolls back rejecti
   assert.match(cloud, /export function restoreOperationalBaseline/);
   assert.match(app, /await confirmAuthoritativeSync\(\)/);
   assert.match(app, /restoreOperationalBaseline\(getDB\(\)\)/);
-  assert.match(app, /tersinkron ke cloud/);
+  assert.match(app, /Outlet berhasil disimpan\.|Data outlet berhasil diperbarui\./);
 });
