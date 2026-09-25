@@ -95,7 +95,7 @@ test('P1 removes long-lived document-wide MutationObservers from route runtimes'
     read('src/reports/index-v2.js'),
     read('src/phase0-ui.js'),
   ]);
-  assert.match(entry, /observer\.disconnect\(\)/);
+  assert.doesNotMatch(entry, /new MutationObserver/);
   assert.doesNotMatch(projectRuntime, /new MutationObserver/);
   assert.doesNotMatch(reports, /new MutationObserver/);
   assert.match(projectRuntime, /proqtrack:db-persisted/);
