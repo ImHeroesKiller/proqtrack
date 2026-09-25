@@ -16,6 +16,7 @@ import { icon as appIcon } from '../assets/icons.js';
 import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM } from './lib/location-evidence.js';
 import { attendanceLeaveFriendlyErrorMessage, attendanceSourceKey, attendanceSourceLabel } from './lib/attendance-leave-ui.js';
 import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
+import { ensureLeaflet } from './lib/leaflet-loader.js';
 
 function empId() {
   return window.FT?.state?.account?.employeeId || null;
@@ -393,8 +394,8 @@ window.FS = {
   setPhotoFilter(key, value) {
     const state = window.FT.state;
     state._photoFilters = { ...(state._photoFilters || {}), [key]: value };
+    state._photoVisibleCount = 0;
     if (key === 'type') state._photoFilterType = value;
-    window.FT.navigate ? null : null;
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
   addProductRow(kind, outletId, projectId = '') {
@@ -627,9 +628,18 @@ function showMapsLink(lat, lng) {
 let _outletMap = null;
 let _outletMarker = null;
 
-window.FS.initOutletMap = function() {
+window.FS.initOutletMap = async function() {
   const el = document.getElementById('outletPickMap');
-  if (!el || typeof L === 'undefined') return;
+  if (!el) return;
+  try {
+    await ensureLeaflet();
+  } catch (error) {
+    const hint = document.getElementById('outletMapHint');
+    if (hint) hint.textContent = 'Peta belum dapat dimuat. Koordinat tetap dapat diisi dari GPS.';
+    console.warn('outlet_map_load_failed', error?.message || error);
+    return;
+  }
+  if (!el.isConnected || !window.L) return;
   if (_outletMap) {
     _outletMap.remove();
     _outletMap = null;
@@ -640,13 +650,13 @@ window.FS.initOutletMap = function() {
   const hasCurrent = Number.isFinite(currentLat) && Number.isFinite(currentLng)
     && currentLat >= -90 && currentLat <= 90 && currentLng >= -180 && currentLng <= 180;
   const start = hasCurrent ? [currentLat, currentLng] : [-6.2, 106.82];
-  _outletMap = L.map(el, { zoomControl: true }).setView(start, hasCurrent ? 16 : 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  _outletMap = window.L.map(el, { zoomControl: true }).setView(start, hasCurrent ? 16 : 12);
+  window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap',
     maxZoom: 19,
   }).addTo(_outletMap);
   if (hasCurrent) {
-    _outletMarker = L.marker(start).addTo(_outletMap);
+    _outletMarker = window.L.marker(start).addTo(_outletMap);
     showMapsLink(currentLat, currentLng);
     const hint = document.getElementById('outletMapHint');
     if (hint) hint.textContent = `${currentLat.toFixed(6)}, ${currentLng.toFixed(6)} · Lokasi outlet saat ini`;
@@ -654,7 +664,7 @@ window.FS.initOutletMap = function() {
   _outletMap.on('click', async ev => {
     const { lat, lng } = ev.latlng;
     if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
-    else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
+    else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
     try {
       const geo = await reverseGeocode(lat, lng);
       applyGeocode(geo, lat, lng);
@@ -680,7 +690,7 @@ window.FS.searchOutletMap = async function() {
     if (_outletMap) {
       _outletMap.setView([lat, lng], 16);
       if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
-      else _outletMarker = L.marker([lat, lng]).addTo(_outletMap);
+      else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
     }
     applyGeocode(hit, lat, lng);
     showMapsLink(lat, lng);
