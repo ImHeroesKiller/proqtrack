@@ -1,4 +1,4 @@
-import { authHeaders, clearApiToken, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
+import { clearApiToken, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
@@ -642,6 +642,7 @@ async function apiJson(path, options = {}) {
     }
     return data;
   } catch (error) {
+    if (SESSION_AUTH_ERRORS.has(String(error?.code || ''))) throw error;
     if (error?.name === 'AbortError' || generation !== bridgeGeneration) {
       throw bridgeError('SESSION_STALE', 0);
     }
