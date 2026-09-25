@@ -3465,7 +3465,7 @@ function renderAttendanceManager() {
           <input class="input" id="attDateTo" type="date" aria-label="Tanggal attendance sampai" data-pqt-onchange="FT.filterAttendance()">
         </div>
         <div class="ops-toolbar-actions">
-          <span class="ops-result-count" id="attResultCount">${attendance.length} record</span>
+          <span class="ops-result-count" id="attResultCount" aria-live="polite">${attendance.length} record</span>
           <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetAttendanceFilters()">Reset</button>
           <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Titik absensi</button>
         </div>
@@ -3483,7 +3483,7 @@ function renderAttendanceManager() {
               const corrected = a.correctionCount ? `<div class="am-muted">Koreksi ${a.correctionCount}x</div>` : '';
               return `
                 <tr data-att-row="1" data-project="${esc(String(a.projectId || ''))}" data-status="${esc(attendanceStatusKey(a))}" data-source="${attendanceSourceKey(a)}" data-date="${esc(String(a.date || a.workDate || ''))}">
-                  <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
+                  <td><div class="ops-employee-cell"><div class="avatar ops-avatar-sm">${getInitials(emp.name)}</div><span class="ops-employee-name">${esc(emp.name)}</span></div></td>
                   <td><strong>${esc(project.code || a.projectId || '-')}</strong><div class="am-muted">${esc(project.name || '')}</div></td>
                   <td>${formatDateShort(a.date || a.workDate)}</td>
                   <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
@@ -3491,10 +3491,10 @@ function renderAttendanceManager() {
                   <td>${esc(source)}${corrected}</td>
                   <td>${statusBadge(a.status)}</td>
                   <td><div class="ops-row-actions">
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewAttendance('${a.id}')">Detail</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewAttendance('${a.id}')">Detail</button>
                     ${attendanceSourceKey(a) === 'visit'
                       ? '<span class="ops-chip">Visit read-only</span>'
-                      : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}
+                      : `<button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}
                   </div></td>
                 </tr>
               `;
@@ -3552,7 +3552,7 @@ window.FT.openAttendanceCorrection = function(id) {
         <div class="form-group"><label class="label">Check Out</label><input class="input" type="time" name="checkOutAt" value="${esc(timeValue(row.checkOutAt || row.checkOutTime))}"></div>
       </div>
       <div class="form-group"><label class="label">Alasan koreksi</label><textarea class="textarea" name="correctionReason" minlength="10" required placeholder="Minimal 10 karakter untuk audit trail"></textarea></div>
-      <div class="am-muted" style="margin-bottom:12px">Identitas karyawan, project, tanggal, dan source tidak dapat diubah.</div>
+      <div class="ops-inline-note">Identitas karyawan, project, tanggal, dan source tidak dapat diubah.</div>
       <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary" type="submit">Simpan Koreksi</button></div>
     </form>`);
 };
@@ -3597,7 +3597,7 @@ window.FT.openAttendancePointModal = function() {
         <select class="select" name="type"><option value="office">Kantor</option><option value="meeting">Meeting point</option><option value="store">Toko</option></select>
       </div>
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address"></div>
-      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
+      <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button type="submit" class="btn btn-primary">Simpan</button></div>
     </form>`);
 };
 
@@ -3672,7 +3672,7 @@ function renderLeavesManager() {
           <input class="input" id="leaveDateTo" type="date" aria-label="Periode leave sampai" data-pqt-onchange="FT.filterLeaves()">
         </div>
         <div class="ops-toolbar-actions">
-          <span class="ops-result-count" id="leaveResultCount">${leaves.length} pengajuan</span>
+          <span class="ops-result-count" id="leaveResultCount" aria-live="polite">${leaves.length} pengajuan</span>
           <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetLeaveFilters()">Reset</button>
         </div>
       </div>
@@ -3692,13 +3692,13 @@ function renderLeavesManager() {
                 <td>${esc(l.type)}</td>
                 <td>${formatDateShort(l.startDate)} – ${formatDateShort(l.endDate)}</td>
                 <td>${l.days}</td>
-                <td style="max-width:220px">${esc(l.reason)}</td>
+                <td class="ops-reason-cell">${esc(l.reason)}</td>
                 <td>${leaveStatusHtml(l)}</td>
                 <td>${l.status === 'pending' ? '—' : esc(accMap[l.approverId] || (l.decisionKind === 'withdrawn' ? 'Pengaju' : '—'))}</td>
                 <td><div class="ops-row-actions">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
                   ${l.status === 'pending' && !selfReview
-                    ? `<button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','approved')">Setujui</button><button class="btn btn-danger btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','rejected')">Tolak</button>`
+                    ? `<button type="button" class="btn btn-primary btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','approved')">Setujui</button><button type="button" class="btn btn-danger btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','rejected')">Tolak</button>`
                     : ''}
                 </div></td>
               </tr>`;
@@ -3854,7 +3854,7 @@ window.FT.viewLeave = function(id) {
       <div class="detail-label">Approver</div><div class="detail-value">${esc(accMap[l.approverId] || (l.decisionKind === 'withdrawn' ? 'Pengaju' : '-'))}</div>
       <div class="detail-label">Catatan keputusan</div><div class="detail-value full">${esc(l.decisionNote || '-')}</div>
     </div>
-    <div class="modal-footer" style="padding:24px 0 0;"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>`);
+    <div class="modal-footer ops-modal-footer-spaced"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>`);
 };
 
 // ===== My Attendance (Employee) =====
@@ -3869,10 +3869,10 @@ function renderMyAttendance() {
     tidakHadir: records.filter(r => normalizeAttendanceStatus(r.status) === 'tidak hadir').length,
   };
   return `
-    <div class="grid-3" style="margin-bottom:24px;">
-      <div class="stat-card"><div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">✅</div><div class="stat-label">Hadir</div><div class="stat-value">${summary.hadir}</div></div>
-      <div class="stat-card"><div class="stat-icon" style="background:var(--amber-50);color:var(--amber-500);">⏰</div><div class="stat-label">Terlambat</div><div class="stat-value">${summary.terlambat}</div></div>
-      <div class="stat-card"><div class="stat-icon" style="background:var(--red-50);color:var(--red-500);">❌</div><div class="stat-label">Tidak Hadir</div><div class="stat-value">${summary.tidakHadir}</div></div>
+    <div class="grid-3 ops-summary-grid">
+      <div class="stat-card"><div class="stat-icon ops-icon-success">✅</div><div class="stat-label">Hadir</div><div class="stat-value">${summary.hadir}</div></div>
+      <div class="stat-card"><div class="stat-icon ops-icon-warning">⏰</div><div class="stat-label">Terlambat</div><div class="stat-value">${summary.terlambat}</div></div>
+      <div class="stat-card"><div class="stat-icon ops-icon-danger">❌</div><div class="stat-label">Tidak Hadir</div><div class="stat-value">${summary.tidakHadir}</div></div>
     </div>
     <div class="card">
       <div class="card-title">Riwayat Absensi</div>
@@ -3908,18 +3908,18 @@ function renderMyLeaves() {
   const approved = leaves.filter(l => l.status === 'approved').length;
 
   return `
-    <div class="grid-3" style="margin-bottom:24px;">
-      <div class="stat-card"><div class="stat-icon" style="background:var(--amber-50);color:var(--amber-500);">⏳</div><div class="stat-label">Menunggu</div><div class="stat-value">${pending}</div></div>
-      <div class="stat-card"><div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">✅</div><div class="stat-label">Disetujui</div><div class="stat-value">${approved}</div></div>
-      <div class="stat-card"><div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">📄</div><div class="stat-label">Total Pengajuan</div><div class="stat-value">${leaves.length}</div></div>
+    <div class="grid-3 ops-summary-grid">
+      <div class="stat-card"><div class="stat-icon ops-icon-warning">⏳</div><div class="stat-label">Menunggu</div><div class="stat-value">${pending}</div></div>
+      <div class="stat-card"><div class="stat-icon ops-icon-success">✅</div><div class="stat-label">Disetujui</div><div class="stat-value">${approved}</div></div>
+      <div class="stat-card"><div class="stat-icon ops-icon-info">📄</div><div class="stat-label">Total Pengajuan</div><div class="stat-value">${leaves.length}</div></div>
     </div>
     <div class="card">
       <div class="filter-row">
-        <div class="card-title" style="margin:0;">Pengajuan Ijin & Cuti Saya</div>
+        <div class="card-title ops-card-title-reset">Pengajuan Ijin & Cuti Saya</div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openMyLeaveModal()">+ Ajukan Ijin/Cuti</button>
+        <button type="button" class="btn btn-primary" data-pqt-onclick="FT.openMyLeaveModal()">+ Ajukan Ijin/Cuti</button>
       </div>
-      <div class="visits-table-wrapper" style="margin-top:16px;">
+      <div class="visits-table-wrapper ops-table-spaced">
         <table class="table">
           <thead><tr><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th><th></th></tr></thead>
           <tbody>
@@ -3929,14 +3929,14 @@ function renderMyLeaves() {
                 <td><span class="ops-chip">${esc(l.type || '-')}</span></td>
                 <td>${formatDateShort(l.startDate)}</td>
                 <td>${formatDateShort(l.endDate)}</td>
-                <td style="text-align:center; font-weight:600;">${l.days}</td>
-                <td style="max-width:240px; font-size:13px; color:var(--gray-500);">${esc(l.reason || '-')}</td>
+                <td class="ops-days-cell">${l.days}</td>
+                <td class="ops-reason-cell">${esc(l.reason || '-')}</td>
                 <td>${leaveStatusHtml(l)}</td>
-                <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(l.submittedAt)}</td>
+                <td class="ops-muted-cell">${formatDateShort(l.submittedAt)}</td>
                 <td><div class="ops-row-actions">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
+                  <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
                   ${canEditPendingLeave(l,todayISO()) ? `<button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openEditMyLeave('${l.id}')">Edit</button>` : ''}
-                  ${l.status === 'pending' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.openWithdrawMyLeave('${l.id}')">Batalkan</button>` : ''}
+                  ${l.status === 'pending' ? `<button type="button" class="btn btn-danger btn-sm" data-pqt-onclick="FT.openWithdrawMyLeave('${l.id}')">Batalkan</button>` : ''}
                 </div></td>
               </tr>
             `).join('')}
