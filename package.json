@@ -18,7 +18,8 @@
     "db:migrate:production": "npm run db:migrate:live",
     "deploy:live": "npm run build && npm run perf:budget && wrangler deploy",
     "db:migrate:live": "wrangler d1 migrations apply DB --remote",
-    "perf:budget": "node scripts/performance-budget.mjs"
+    "perf:budget": "node scripts/performance-budget.mjs",
+    "uat:production:full": "node scripts/final-full-production-uat.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.123.0",
