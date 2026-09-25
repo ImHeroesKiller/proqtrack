@@ -232,6 +232,17 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
   const isCheckOut = currentStatus === 'in_progress' && nextStatus === 'completed';
   if (!isCheckIn && !isCheckOut) return null;
 
+  if (isCheckIn) {
+    const employeeId = str(row.employeeId || row.employee_id || existing.employee_id || existing.employeeId);
+    const workDate = str(row.date || row.visitDate || row.scheduledAt || existing.scheduled_at || existing.scheduledAt).slice(0,10);
+    if (employeeId && /^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      const approvedLeave = await env.DB.prepare(
+        "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND status='approved' AND start_date<=? AND end_date>=? LIMIT 1"
+      ).bind(organizationId,employeeId,workDate,workDate).first();
+      if (approvedLeave) return { error:'VISIT_APPROVED_LEAVE_CONFLICT', status:409 };
+    }
+  }
+
   const outletId = str(row.outletId || row.outlet_id || existing.outlet_id || existing.outletId);
   const outlet = await env.DB.prepare(
     'SELECT id,latitude,longitude,geofence_radius_m,status FROM core_outlets WHERE organization_id=? AND id=? LIMIT 1'
@@ -307,6 +318,27 @@ function leaveSpanDays(startDate, endDate) {
   return Math.floor((end - start) / 86400000) + 1;
 }
 
+async function organizationToday(env, organizationId) {
+  const org = await env.DB.prepare(
+    'SELECT timezone FROM core_organizations WHERE id=? LIMIT 1'
+  ).bind(organizationId).first();
+  const timeZone = str(org?.timezone || 'Asia/Jakarta') || 'Asia/Jakarta';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit'
+  }).formatToParts(new Date());
+  const pick = type => parts.find(part => part.type === type)?.value || '';
+  return `${pick('year')}-${pick('month')}-${pick('day')}`;
+}
+
+function validAttendanceClock(value) {
+  const clock = attendanceClock(value);
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(clock) ? clock : '';
+}
+
+function attendanceCorrectionRole(role) {
+  return BROAD_ROLES.has(role) || role === 'manager' || role === 'supervisor';
+}
+
 const firstValue = (row, keys) => {
   for (const key of keys) {
     if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
@@ -336,13 +368,23 @@ async function validateAttendanceAuthorityMutation(env, organizationId, claims, 
     'SELECT id,status,starts_on,ends_on,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
   ).bind(organizationId,projectId).first();
   if (!project || !['active','draft'].includes(str(project.status))) return { error:'ATTENDANCE_PROJECT_NOT_ACTIVE', status:409 };
-
-  const assignment = await env.DB.prepare(
-    "SELECT id FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active' AND (starts_on IS NULL OR starts_on<=?) AND (ends_on IS NULL OR ends_on>=?) LIMIT 1"
-  ).bind(organizationId,projectId,employeeId,workDate,workDate).first();
-  if (!assignment) return { error:'ATTENDANCE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+  if ((project.starts_on && workDate < str(project.starts_on)) || (project.ends_on && workDate > str(project.ends_on))) {
+    return { error:'ATTENDANCE_OUTSIDE_PROJECT_PERIOD', status:409 };
+  }
 
   const role = roleOf(claims);
+  const today = await organizationToday(env,organizationId);
+  if (role === 'employee' && workDate !== today) {
+    return { error:'ATTENDANCE_SELF_SERVICE_TODAY_ONLY', status:403 };
+  }
+
+  const assignment = await env.DB.prepare(
+    "SELECT id,status FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status IN ('active','ended') AND (starts_on IS NULL OR starts_on<=?) AND (ends_on IS NULL OR ends_on>=?) LIMIT 1"
+  ).bind(organizationId,projectId,employeeId,workDate,workDate).first();
+  if (!assignment || (!existing && str(assignment.status) !== 'active')) {
+    return { error:'ATTENDANCE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+  }
+
   if (role === 'employee' && (!context.actorEmployeeId || str(context.actorEmployeeId) !== employeeId)) {
     return { error:'ATTENDANCE_SELF_ONLY', status:403 };
   }
@@ -350,14 +392,20 @@ async function validateAttendanceAuthorityMutation(env, organizationId, claims, 
   const policy = projectAttendancePolicy(project);
   if (!existing) {
     if (policy.sourceMode === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_ONLY', status:409 };
+    const leave = await env.DB.prepare(
+      "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND status='approved' AND start_date<=? AND end_date>=? LIMIT 1"
+    ).bind(organizationId,employeeId,workDate,workDate).first();
+    if (leave) return { error:'ATTENDANCE_APPROVED_LEAVE_CONFLICT', status:409 };
+
     const checkInAt = str(row.checkInAt || row.checkInTime || row.check_in_at);
-    if (!checkInAt) return { error:'ATTENDANCE_CHECKIN_REQUIRED', status:422 };
+    const checkInClock = validAttendanceClock(checkInAt);
+    if (!checkInClock) return { error:'ATTENDANCE_CHECKIN_INVALID', status:422 };
     row.projectId = projectId;
     row.employeeId = employeeId;
     row.workDate = workDate;
     row.date = workDate;
     row.checkInAt = checkInAt;
-    row.checkInTime = attendanceClock(checkInAt) || checkInAt;
+    row.checkInTime = checkInClock;
     row.status = attendanceStatusAt(checkInAt, policy.lateAfter);
     row.attendanceSource = 'manual';
     row.createdBy = claims.sub;
@@ -366,7 +414,79 @@ async function validateAttendanceAuthorityMutation(env, organizationId, claims, 
   }
 
   const meta = parseMetadata(existing.metadata_json);
-  if (str(meta.attendanceSource) === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_IMMUTABLE', status:409 };
+  const source = str(meta.attendanceSource || 'manual') === 'visit' ? 'visit' : 'manual';
+  if (source === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_IMMUTABLE', status:409 };
+
+  const correctionReason = str(row.correctionReason);
+  if (correctionReason) {
+    if (!attendanceCorrectionRole(role)) return { error:'ATTENDANCE_CORRECTION_FORBIDDEN', status:403 };
+    if (correctionReason.length < 10) return { error:'ATTENDANCE_CORRECTION_REASON_REQUIRED', status:422 };
+
+    const nextStatus = canonicalAttendanceStatus(row.status || existing.status);
+    if (!['present','late','absent'].includes(nextStatus)) return { error:'ATTENDANCE_CORRECTION_STATUS_INVALID', status:422 };
+    const checkInAt = str(row.checkInAt || row.checkInTime || row.check_in_at || existing.check_in_at);
+    const checkOutAt = str(row.checkOutAt || row.checkOutTime || row.check_out_at || existing.check_out_at);
+    const checkInClock = checkInAt ? validAttendanceClock(checkInAt) : '';
+    const checkOutClock = checkOutAt ? validAttendanceClock(checkOutAt) : '';
+    if (nextStatus !== 'absent' && !checkInClock) return { error:'ATTENDANCE_CHECKIN_INVALID', status:422 };
+    if (checkOutAt && !checkOutClock) return { error:'ATTENDANCE_CHECKOUT_INVALID', status:422 };
+    if (checkInClock && checkOutClock && checkOutClock < checkInClock) return { error:'ATTENDANCE_CHECKOUT_BEFORE_CHECKIN', status:422 };
+
+    row.projectId = projectId;
+    row.employeeId = employeeId;
+    row.workDate = workDate;
+    row.date = workDate;
+    row.status = nextStatus;
+    row.checkInAt = checkInAt || null;
+    row.checkInTime = checkInClock || null;
+    row.checkOutAt = checkOutAt || null;
+    row.checkOutTime = checkOutClock || null;
+    row.attendanceSource = 'manual';
+    row.correctionReason = correctionReason;
+    row.correctionPrevious = {
+      status:str(existing.status),
+      checkInAt:existing.check_in_at || null,
+      checkOutAt:existing.check_out_at || null,
+      correctedAt:meta.correctedAt || null,
+    };
+    row.correctionCount = Math.max(0,Number(meta.correctionCount)||0) + 1;
+    row.correctedBy = claims.sub;
+    row.correctedAt = new Date().toISOString();
+    return null;
+  }
+
+  if (row.correctedBy || row.correctedAt || row.correctionPrevious) {
+    return { error:'ATTENDANCE_CORRECTION_REASON_REQUIRED', status:422 };
+  }
+  if (str(row.status || existing.status) !== str(existing.status)) return { error:'ATTENDANCE_DIRECT_STATUS_CHANGE_FORBIDDEN', status:409 };
+  if (!unchangedIfProvided(row, existing, ['checkInAt','checkInTime','check_in_at'], ['check_in_at'])) {
+    return { error:'ATTENDANCE_CHECKIN_IMMUTABLE', status:409 };
+  }
+
+  const existingCheckout = str(existing.check_out_at);
+  const requestedCheckout = str(row.checkOutAt || row.checkOutTime || row.check_out_at);
+  if (existingCheckout) {
+    if (requestedCheckout && requestedCheckout !== existingCheckout) return { error:'ATTENDANCE_CHECKOUT_IMMUTABLE', status:409 };
+    return null;
+  }
+  if (!requestedCheckout) return null;
+  const checkInClock = validAttendanceClock(existing.check_in_at);
+  const checkOutClock = validAttendanceClock(requestedCheckout);
+  if (!checkOutClock) return { error:'ATTENDANCE_CHECKOUT_INVALID', status:422 };
+  if (checkInClock && checkOutClock < checkInClock) return { error:'ATTENDANCE_CHECKOUT_BEFORE_CHECKIN', status:422 };
+
+  row.projectId = projectId;
+  row.employeeId = employeeId;
+  row.workDate = workDate;
+  row.date = workDate;
+  row.status = str(existing.status);
+  row.checkInAt = existing.check_in_at;
+  row.checkInTime = checkInClock || existing.check_in_at;
+  row.checkOutAt = requestedCheckout;
+  row.checkOutTime = checkOutClock;
+  row.attendanceSource = 'manual';
+  row.checkedOutBy = claims.sub;
+  row.checkedOutAt = new Date().toISOString();
   return null;
 }
 
@@ -380,51 +500,111 @@ async function validateLeaveAuthorityMutation(env, organizationId, claims, row, 
   if (role === 'employee' && (!context.actorEmployeeId || str(context.actorEmployeeId) !== employeeId)) {
     return { error:'LEAVE_SELF_ONLY', status:403 };
   }
+  const today = await organizationToday(env,organizationId);
 
   if (!existing) {
+    const type = str(row.type);
+    const reason = str(row.reason);
     const startDate = str(row.startDate);
     const endDate = str(row.endDate);
     const days = leaveSpanDays(startDate,endDate);
+    if (!type) return { error:'LEAVE_TYPE_REQUIRED', status:422 };
+    if (reason.length < 5) return { error:'LEAVE_REASON_REQUIRED', status:422 };
     if (!days) return { error:'LEAVE_PERIOD_INVALID', status:422 };
+    if (role === 'employee' && endDate < today) return { error:'LEAVE_PAST_PERIOD_SELF_SERVICE_FORBIDDEN', status:409 };
     const conflict = await env.DB.prepare(
       "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND status IN ('pending','approved') AND NOT(end_date<? OR start_date>?) LIMIT 1"
     ).bind(organizationId,employeeId,startDate,endDate).first();
     if (conflict) return { error:'LEAVE_PERIOD_CONFLICT', status:409 };
     row.employeeId = employeeId;
+    row.type = type;
+    row.reason = reason;
     row.startDate = startDate;
     row.endDate = endDate;
     row.days = days;
     row.status = 'pending';
     row.approverId = null;
     row.approvedAt = null;
-    row.submittedAt = new Date().toISOString().slice(0,10);
+    row.submittedAt = today;
     row.submittedBy = claims.sub;
+    row.decisionKind = null;
+    row.decisionNote = null;
     return null;
   }
 
   if (finalLeaveStatuses.has(str(existing.status))) return { error:'LEAVE_FINAL_IMMUTABLE', status:409 };
   const nextStatus = str(row.status || existing.status || 'pending');
+  const requestedDecisionKind = str(row.decisionKind);
+
   if (role === 'employee') {
+    if (nextStatus === 'rejected' && requestedDecisionKind === 'withdrawn') {
+      row.employeeId = str(existing.employee_id);
+      row.type = str(existing.type);
+      row.startDate = str(existing.start_date);
+      row.endDate = str(existing.end_date);
+      row.days = Number(existing.days || 1);
+      row.reason = str(existing.reason);
+      row.submittedAt = str(existing.submitted_at);
+      row.status = 'rejected';
+      row.approverId = null;
+      row.approvedAt = null;
+      row.decisionKind = 'withdrawn';
+      row.decisionNote = str(row.decisionNote || 'Dibatalkan oleh pengaju');
+      row.withdrawnBy = claims.sub;
+      row.withdrawnAt = new Date().toISOString();
+      return null;
+    }
     if (nextStatus !== 'pending') return { error:'LEAVE_DECISION_FORBIDDEN', status:403 };
     const startDate = str(row.startDate || existing.start_date);
     const endDate = str(row.endDate || existing.end_date);
+    const reason = str(row.reason || existing.reason);
+    const type = str(row.type || existing.type);
     const days = leaveSpanDays(startDate,endDate);
+    if (startDate <= today) return { error:'LEAVE_EDIT_AFTER_START_FORBIDDEN', status:409 };
+    if (!type) return { error:'LEAVE_TYPE_REQUIRED', status:422 };
+    if (reason.length < 5) return { error:'LEAVE_REASON_REQUIRED', status:422 };
     if (!days) return { error:'LEAVE_PERIOD_INVALID', status:422 };
     const conflict = await env.DB.prepare(
       "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND id<>? AND status IN ('pending','approved') AND NOT(end_date<? OR start_date>?) LIMIT 1"
     ).bind(organizationId,employeeId,str(existing.id),startDate,endDate).first();
     if (conflict) return { error:'LEAVE_PERIOD_CONFLICT', status:409 };
+    row.employeeId = employeeId;
+    row.type = type;
+    row.reason = reason;
+    row.startDate = startDate;
+    row.endDate = endDate;
     row.status = 'pending';
     row.approverId = null;
     row.approvedAt = null;
     row.submittedAt = str(existing.submitted_at);
     row.days = days;
+    row.decisionKind = null;
+    row.decisionNote = null;
     return null;
   }
 
   if (!['approved','rejected'].includes(nextStatus) || nextStatus === str(existing.status)) {
     return { error:'LEAVE_REVIEW_DECISION_REQUIRED', status:422 };
   }
+  if (context.actorEmployeeId && str(context.actorEmployeeId) === employeeId) {
+    return { error:'LEAVE_SELF_REVIEW_FORBIDDEN', status:403 };
+  }
+
+  const decisionNote = str(row.decisionNote);
+  if (nextStatus === 'rejected' && decisionNote.length < 5) {
+    return { error:'LEAVE_REJECTION_NOTE_REQUIRED', status:422 };
+  }
+  if (nextStatus === 'approved') {
+    const attendanceConflict = await env.DB.prepare(
+      "SELECT id,work_date FROM core_attendance WHERE organization_id=? AND employee_id=? AND work_date BETWEEN ? AND ? AND status IN ('present','late') LIMIT 1"
+    ).bind(organizationId,employeeId,str(existing.start_date),str(existing.end_date)).first();
+    if (attendanceConflict) return {
+      error:'LEAVE_ATTENDANCE_CONFLICT',
+      status:409,
+      workDate:str(attendanceConflict.work_date),
+    };
+  }
+
   row.employeeId = str(existing.employee_id);
   row.type = str(existing.type);
   row.startDate = str(existing.start_date);
@@ -435,6 +615,8 @@ async function validateLeaveAuthorityMutation(env, organizationId, claims, row, 
   row.status = nextStatus;
   row.approverId = claims.sub;
   row.approvedAt = new Date().toISOString();
+  row.decisionKind = nextStatus;
+  row.decisionNote = decisionNote;
   return null;
 }
 
@@ -557,18 +739,13 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
     if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
     if (!unchangedIfProvided(row, existing, ['workDate','date','work_date'], ['work_date','workDate','date'])) return false;
+    if (str(row.correctionReason) && ['manager','supervisor'].includes(role)) return true;
     if (!unchangedIfProvided(row, existing, ['status'], ['status'])) return false;
-    for (const pair of [
-      [['checkInAt','checkInTime','check_in_at'],['check_in_at','checkInAt','checkInTime']],
-      [['checkInLatitude','lat','check_in_latitude'],['check_in_latitude','checkInLatitude','lat']],
-      [['checkInLongitude','lng','check_in_longitude'],['check_in_longitude','checkInLongitude','lng']],
-      [['checkOutAt','checkOutTime','check_out_at'],['check_out_at','checkOutAt','checkOutTime']],
-      [['checkOutLatitude','check_out_latitude'],['check_out_latitude','checkOutLatitude']],
-      [['checkOutLongitude','check_out_longitude'],['check_out_longitude','checkOutLongitude']],
-    ]) {
-      const current = firstValue(existing, pair[1]);
-      if (current !== null && !unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
-    }
+    if (!unchangedIfProvided(row, existing, ['checkInAt','checkInTime','check_in_at'], ['check_in_at','checkInAt','checkInTime'])) return false;
+    if (!unchangedIfProvided(row, existing, ['checkInLatitude','lat','check_in_latitude'], ['check_in_latitude','checkInLatitude','lat'])) return false;
+    if (!unchangedIfProvided(row, existing, ['checkInLongitude','lng','check_in_longitude'], ['check_in_longitude','checkInLongitude','lng'])) return false;
+    const currentCheckout = firstValue(existing,['check_out_at','checkOutAt','checkOutTime']);
+    if (currentCheckout !== null && !unchangedIfProvided(row, existing, ['checkOutAt','checkOutTime','check_out_at'], ['check_out_at','checkOutAt','checkOutTime'])) return false;
     return true;
   }
 
@@ -580,6 +757,7 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     if (role === 'employee') {
       if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
       if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
+      if (nextStatus === 'rejected' && str(row.decisionKind) === 'withdrawn') return true;
       return nextStatus === 'pending';
     }
     return ['pending','approved','rejected'].includes(nextStatus);
@@ -1267,6 +1445,16 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   const attendanceLateAfter = str(row.attendanceLateAfter || parseMetadata(existing?.metadata_json)?.attendanceLateAfter || '09:00');
   if (!['manual','visit'].includes(attendanceSourceMode)) return { error:'PROJECT_INVALID_ATTENDANCE_SOURCE', status:422 };
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(attendanceLateAfter)) return { error:'PROJECT_INVALID_ATTENDANCE_CUTOFF', status:422 };
+  if (existing) {
+    const currentAttendanceSource = projectAttendancePolicy(existing).sourceMode;
+    if (currentAttendanceSource !== attendanceSourceMode) {
+      const today = await organizationToday(env,organizationId);
+      const attendanceInUse = await env.DB.prepare(
+        'SELECT id FROM core_attendance WHERE organization_id=? AND project_id=? AND work_date=? LIMIT 1'
+      ).bind(organizationId,id,today).first();
+      if (attendanceInUse) return { error:'PROJECT_ATTENDANCE_SOURCE_IN_USE', status:409 };
+    }
+  }
 
   const client = await env.DB.prepare(
     'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
