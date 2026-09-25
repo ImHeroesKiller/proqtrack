@@ -2,7 +2,8 @@
 // P1 Performance: keep login/app authority on the critical path and defer route-only enhancers.
 
 const boot = {
-  version: 'p6-persistent-shell-route-split-2026-09-26',
+  version: 'p5-root-soft-nav-lcp-2026-09-26',
+  performanceLayer: 'p1-persistent-shell-route-split',
   stage: 'loading',
   modules: [],
   lazyModules: [],
