@@ -2918,8 +2918,6 @@ function renderProducts() {
 
 window.FT.productPage=function(delta){ productPage=Math.max(1,productPage+Number(delta||0)); window.FT.filterProducts(productPage); };
 
-window.FT.filterProducts(productPage); };
-
 window.FT.filterProducts=function(page=productPage){
   const ids={search:'productSearch',projectId:'productProjectFilter',clientId:'productClientFilter',category:'productCatFilter',brand:'productBrandFilter',status:'productStatusFilter'};
   const filters=productFilterSnapshot(key=>document.getElementById(ids[key])?.value||'');
