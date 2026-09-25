@@ -742,7 +742,7 @@ async function performOperationalRefresh(localDb, account = {}, refreshToken = g
   return { refreshed:true, revision, refreshedAt:new Date().toISOString() };
 }
 
-export function refreshOperationalData(localDb, account = {}) {
+export async function refreshOperationalData(localDb, account = {}) {
   const token = getApiToken();
   const key = [
     token || '',
