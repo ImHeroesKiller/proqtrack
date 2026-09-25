@@ -1836,7 +1836,7 @@ function renderEmployees() {
     };
     return {
       model,
-      html:`<tr>
+      html:`<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
         <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
         <td data-label="Role">${roleBadge(e.role)}</td>
         <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
@@ -2388,9 +2388,6 @@ function renderOutlets() {
 window.FT.outletPage = function(delta) {
   outletPage = Math.max(1, outletPage + Number(delta || 0));
   window.FT.filterOutlets(outletPage);
-};
-
-window.FT.filterOutlets(outletPage);
 };
 
 window.FT.filterOutlets = function(page = outletPage) {
