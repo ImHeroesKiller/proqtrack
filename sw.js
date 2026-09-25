@@ -5,7 +5,8 @@
 // Attendance + Leave P1 lifecycle refresh
 // Attendance + Leave P2 operational UX refresh
 // Attendance + Leave P3 maintainability refresh
-const CACHE = 'proqtrack-v12.44';
+const RELEASE = '__PROQTRACK_RELEASE__';
+const CACHE = `proqtrack-shell-${RELEASE}`;
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -86,32 +87,25 @@ function isPrivateApi(url) {
 }
 
 async function navigationResponse(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match('./index.html');
+  if (cached) return cached;
   try {
-    const response = await fetch(request);
-    if (response.ok) {
-      const cache = await caches.open(CACHE);
-      await cache.put('./index.html', response.clone());
-    }
-    return response;
+    return await fetch(request);
   } catch {
-    return (await caches.match('./index.html')) || Response.error();
+    return Response.error();
   }
 }
 
 async function staticResponse(request) {
-  const cached = await caches.match(request);
-  const network = fetch(request).then(async response => {
-    if (response.ok && response.type !== 'opaque') {
-      const cache = await caches.open(CACHE);
-      await cache.put(request, response.clone());
-    }
-    return response;
-  }).catch(() => null);
-  if (cached) {
-    network.catch(() => {});
-    return cached;
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  try {
+    return await fetch(request);
+  } catch {
+    return Response.error();
   }
-  return (await network) || Response.error();
 }
 
 self.addEventListener('fetch', event => {
