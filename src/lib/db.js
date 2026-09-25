@@ -1036,7 +1036,7 @@ export function getAttendancePolicy(projectId = '') {
   return getProjectAttendancePolicy(projectId);
 }
 
-export function getAttendanceProjectsForEmployee(employeeId = getActor()?.employeeId) {
+export function getActiveProjectsForEmployee(employeeId = getActor()?.employeeId, moduleName = '') {
   if (!employeeId) return [];
   const db=getDB();
   const activeAssignments=(db.projectAssignments || []).filter(row =>
@@ -1044,8 +1044,18 @@ export function getAttendanceProjectsForEmployee(employeeId = getActor()?.employ
   );
   const allowed=new Set(activeAssignments.map(row=>String(row.projectId)));
   return (db.projects || []).filter(project =>
-    allowed.has(String(project.id)) && project.status==='active'
+    allowed.has(String(project.id))
+    && project.status==='active'
+    && (!moduleName || project.modules?.[moduleName] !== false)
   );
+}
+
+export function getAttendanceProjectsForEmployee(employeeId = getActor()?.employeeId) {
+  return getActiveProjectsForEmployee(employeeId,'attendance');
+}
+
+export function getLeaveProjectsForEmployee(employeeId = getActor()?.employeeId) {
+  return getActiveProjectsForEmployee(employeeId,'leaves');
 }
 
 export function updateAppSettings(partial) {
