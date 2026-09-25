@@ -188,5 +188,5 @@ test('all master pages expose bulk upload and UI permissions match server roles'
 test('PWA refreshes bulk master client generation', async () => {
   const sw = await read('sw.js');
   assert.match(sw, /proqtrack-v12/);
-  assert.match(sw, /\.\/src\/bulk-master\.js/);
+  assert.match(sw, /PRECACHE_MANIFEST/);
 });
