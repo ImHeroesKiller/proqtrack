@@ -26,18 +26,20 @@ test('production HTML uses one explicit external runtime entry', async () => {
 
 test('runtime bootstrap keeps only authority-critical modules on startup path', async () => {
   const source = await read('src/bootstrap.js');
-  const criticalStart = source.indexOf('// Critical runtime only.');
+  const criticalStart = source.indexOf('// UI delegation must exist');
   const criticalEnd = source.indexOf('// cloud-cutover and offline login', criticalStart);
   const critical = source.slice(criticalStart, criticalEnd);
 
   for (const token of [
     './lib/ui-events.js',
-    './data/uat-seed-v1.js',
     './cloud-cutover.js',
     './m4-bootstrap.js',
     './lib/m6-client.js',
     './app.js',
   ]) assert.ok(critical.includes(token), token);
+
+  assert.match(source, /if \(shouldLoadUatSeed\(\)\) await load\('\.\/data\/uat-seed-v1\.js'/);
+  assert.match(critical, /await Promise\.all\(\[/);
 
   for (const token of [
     './types/index.js',
