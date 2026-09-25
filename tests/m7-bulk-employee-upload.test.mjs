@@ -63,8 +63,8 @@ test('bulk upload is first-class server route and employee UI exposes it', async
   assert.match(main, /handleBulkEmployeeRoute/);
   assert.match(main, /pathname\.startsWith\('\/api\/bulk\/employees'\)/);
   assert.match(hardening, /return 'bulk'/);
-  assert.match(app, /BulkEmployees\.open\(\)/);
-  assert.match(app, /\.\/bulk-employees\.js/);
+  assert.match(app, /FT\.openBulkEmployees\(\)/);
+  assert.match(app, /import\('\.\/bulk-employees\.js'\)/);
   assert.match(wrangler, /CORE_BULK_API_ENABLED/);
   assert.match(workflow, /\/api\/bulk\/employees\/preview/);
   assert.match(migration, /core_bulk_import_runs/);
