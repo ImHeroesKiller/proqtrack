@@ -3888,7 +3888,7 @@ function renderMyAttendance() {
                 <td><strong>${esc(projectMap[String(a.projectId)]?.code || a.projectId || '-')}</strong><div class="am-muted">${esc(projectMap[String(a.projectId)]?.name || '')}</div></td>
                 <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
                 <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
-                <td>${esc(a.attendanceSource === 'visit' ? 'Visit' : 'Manual')}</td>
+                <td>${esc(attendanceSourceLabel(a))}</td>
                 <td>${statusBadge(a.status)}</td>
               </tr>
             `).join('')}
