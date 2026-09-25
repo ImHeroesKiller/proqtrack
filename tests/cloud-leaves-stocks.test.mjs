@@ -26,7 +26,7 @@ test('Demo leave and stock rows reference the current Demo master data', async (
 });
 
 test('local selectors reject orphan rows before computing badges', async () => {
-  const db = await read('src/lib/db.js');
-  assert.match(db, /db\.leaves\)\.filter\(row => employeeIds\.has\(row\.employeeId\)\)/);
+  const [db, attendanceDomain] = await Promise.all([read('src/lib/db.js'), read('src/lib/db-attendance-leave.js')]);
+  assert.match(attendanceDomain, /db\.leaves\)\.filter\(row => employeeIds\.has\(row\.employeeId\)\)/);
   assert.match(db, /db\.stocks\)\.filter\(row => outletIds\.has\(row\.outletId\) && productIds\.has\(row\.productId\)\)/);
 });
