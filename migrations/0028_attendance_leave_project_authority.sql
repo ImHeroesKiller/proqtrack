@@ -10,10 +10,12 @@ SET project_id = (
   FROM core_employee_project_assignments a
   WHERE a.organization_id = core_leaves.organization_id
     AND a.employee_id = core_leaves.employee_id
-    AND a.status = 'active'
+    AND a.status IN ('active','inactive','ended')
     AND (a.starts_on IS NULL OR date(a.starts_on) <= date(core_leaves.start_date))
-    AND (a.ends_on IS NULL OR date(a.ends_on) >= date(core_leaves.start_date))
-  ORDER BY a.starts_on DESC, a.id
+    AND (a.ends_on IS NULL OR date(a.ends_on) >= date(core_leaves.end_date))
+  ORDER BY
+    CASE a.status WHEN 'active' THEN 0 WHEN 'ended' THEN 1 ELSE 2 END,
+    a.starts_on DESC, a.id
   LIMIT 1
 )
 WHERE project_id IS NULL;
