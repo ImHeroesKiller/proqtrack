@@ -755,12 +755,13 @@ export function refreshOperationalData(localDb, account = {}) {
   const request = performOperationalRefresh(localDb, account, token);
   refreshPromise = request;
   refreshKey = key;
-  request.finally(() => {
+  const clearRequest = () => {
     if (refreshPromise === request) {
       refreshPromise = null;
       refreshKey = '';
     }
-  });
+  };
+  request.then(clearRequest, clearRequest);
   return request;
 }
 
@@ -916,7 +917,15 @@ export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
         finish(error);
         return;
       }
-      if (!syncing && !queuedSnapshot) finish();
+      if (!syncing && !queuedSnapshot) {
+        finish();
+        return;
+      }
+      if (status === 'synced') {
+        queueMicrotask(() => {
+          if (!syncing && !queuedSnapshot) finish();
+        });
+      }
     };
     const timeout = setTimeout(() => {
       const error = new Error('CLOUD_SYNC_TIMEOUT');
