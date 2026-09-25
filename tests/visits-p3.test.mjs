@@ -27,10 +27,13 @@ test('Visits P3 exposes user-safe correction errors', () => {
 });
 
 test('Visits P3 adds accessibility and PWA wiring', async () => {
-  const app = await read('src/app.js');
+  const [app, visitsPage] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/visits-page.js'),
+  ]);
   const html = await read('index.html');
   const sw = await read('sw.js');
-  assert.match(app,/role="status" aria-live="polite"/);
+  assert.match(visitsPage,/role="status" aria-live="polite"/);
   assert.match(app,/visitMatchesFilters/);
   assert.match(app,/paginateVisits/);
   assert.match(html,/\.sr-only/);
