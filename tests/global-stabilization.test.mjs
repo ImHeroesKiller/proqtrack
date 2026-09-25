@@ -50,3 +50,16 @@ test('stability field Stock and Price product pickers stay inside visit project 
   assert.match(app,/productPickerRows\('stock', outletId, visit\?\.projectId \|\| ''\)/);
   assert.match(app,/productPickerRows\('price', outletId, visit\?\.projectId \|\| ''\)/);
 });
+
+
+test('stability supervisor project-management routes are delegated, not dead navigation', () => {
+  const pm = readFileSync(new URL('../src/types/index.js', import.meta.url), 'utf8');
+  for (const route of ['#/my-projects','#/my-team','#/supervisor-compare']) {
+    assert.ok(app.includes(route), route);
+    assert.ok(pm.includes(route), route);
+  }
+  assert.match(app,/PROJECT_MANAGEMENT_ROUTES\.has\(route\).*?window\.PM\?\.renderRoute\?\.\(\)/s);
+  assert.match(pm,/if \(h === "#\/my-projects"\) return renderProjects\(true\)/);
+  assert.match(pm,/if \(h === "#\/my-team"\)/);
+  assert.match(pm,/if \(h === "#\/supervisor-compare"\)/);
+});
