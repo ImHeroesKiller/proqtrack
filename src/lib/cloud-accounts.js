@@ -113,9 +113,11 @@ export async function resetCloudAccountDevice(id) {
     account.deviceId = null;
     account.deviceBinding = null;
     account.deviceImei = '';
+    account.deviceBound = false;
     account.deviceLabel = '';
     account.deviceUserAgent = '';
     account.devicePairedAt = null;
+    account.deviceLastSeenAt = null;
     account.deviceResetAt = new Date().toISOString();
     persistDB('cloud-device-reset');
   }
@@ -139,28 +141,41 @@ export async function changeCloudPassword(currentPassword, nextPassword) {
   return data;
 }
 
-export async function updateCloudProfile({ email, name } = {}) {
+export async function updateCloudProfile({ email, name, phone = '', area = '' } = {}) {
   const data = await apiJson('/api/auth/profile', {
     method:'PATCH',
-    body:JSON.stringify({ email, name }),
+    body:JSON.stringify({ email, name, phone, area }),
   });
+  const authoritative = data.account || {};
   const db = getDB();
   const id = String(window.FT?.state?.account?.id || '');
   const account = (db.accounts || []).find(row => String(row.id) === id);
   if (account) {
-    account.email = data.account?.email || email || account.email;
-    if (name) account.name = name;
-    account.updatedAt = new Date().toISOString();
+    Object.assign(account, {
+      email:authoritative.email || email || account.email,
+      name:authoritative.name || name || account.name,
+      employeeId:authoritative.employeeId || account.employeeId || null,
+      phone:authoritative.phone ?? phone ?? account.phone ?? '',
+      area:authoritative.area ?? area ?? account.area ?? '',
+      deviceBound:authoritative.deviceBound === true,
+      deviceLabel:authoritative.deviceLabel || '',
+      devicePairedAt:authoritative.devicePairedAt || null,
+      deviceLastSeenAt:authoritative.deviceLastSeenAt || null,
+      updatedAt:new Date().toISOString(),
+    });
   }
-  if (account?.employeeId) {
-    const employee = (db.employees || []).find(row => row.id === account.employeeId);
+  const employeeId = authoritative.employeeId || account?.employeeId;
+  if (employeeId) {
+    const employee = (db.employees || []).find(row => String(row.id) === String(employeeId));
     if (employee) {
-      employee.email = account.email;
-      if (name) employee.name = name;
+      employee.email = authoritative.email || email || employee.email;
+      employee.name = authoritative.name || name || employee.name;
+      employee.phone = authoritative.phone ?? phone ?? employee.phone ?? '';
+      employee.area = authoritative.area ?? area ?? employee.area ?? '';
     }
   }
   persistDB('cloud-profile');
-  return data.account || null;
+  return authoritative;
 }
 
 if (typeof window !== 'undefined') {
