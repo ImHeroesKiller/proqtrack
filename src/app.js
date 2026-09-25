@@ -20,7 +20,7 @@ import {
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
-  getVisitsOnDate, visitDay, getAttendancePoints, getAttendanceProjectsForEmployee, getOutletProposals,
+  getVisitsOnDate, visitDay, getAttendancePoints, getAttendanceProjectsForEmployee, getLeaveProjectsForEmployee, getOutletProposals,
   canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, getProductSalesAudit, createProductSale, voidProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
@@ -2638,10 +2638,10 @@ function renderMyDay() {
   const target = salesTargetOf(emp);
   const doneCount = completed.length;
   const pct = target > 0 ? Math.min(100, Math.round((sold / target) * 100)) : 0;
-  const att = getAttendance().find(a => a.employeeId === empId && a.date === todayISO());
+  const todaysAttendance = getAttendance().filter(a => a.employeeId === empId && a.date === todayISO());
   const active = activeV[0];
   const activeOut = active ? outletMap[active.outletId] : null;
-  const attMaps = att && (att.lat || att.lng) ? mapsDir(att.lat, att.lng) : (activeOut ? mapsDir(activeOut.lat, activeOut.lng) : '');
+  const attMaps = activeOut ? mapsDir(activeOut.lat, activeOut.lng) : '';
   const alerts = getLeaves().filter(l => l.employeeId === empId && l.status === 'pending').length;
   const tile = (label, iconName, onclick) => `<button type="button" class="mq-tile" data-pqt-onclick="${onclick}">
     <span class="mq-tile-ico">${iconSvg(iconName)}</span><span>${label}</span></button>`;
@@ -2679,14 +2679,8 @@ function renderMyDay() {
       </section>
 
       <section class="mq-card mq-att">
-        ${att ? `
-          <div class="mq-att-status">
-            <span class="mq-dot"></span>
-            <div><small>Status Absensi</small><strong>${esc(att.status === 'late' || att.status === 'terlambat' ? 'Terlambat' : 'Hadir')}</strong></div>
-          </div>
-          <div class="mq-att-meta">Check-in <b>${esc(att.checkInTime || '—')}</b><br>${esc(att.checkInLocation || att.locationName || '—')}</div>
-          ${attMaps ? `<a class="mq-ghost" href="${attMaps}" target="_blank" rel="noreferrer">${iconSvg('pin')} Lihat Lokasi</a>` : ''}
-        ` : `<div class="mq-att-form">${attendanceCheckinCard()}</div>`}
+        ${todaysAttendance.length ? `<div class="mq-att-meta" style="margin-bottom:10px"><b>${todaysAttendance.length}</b> attendance project tercatat hari ini.</div>` : ''}
+        <div class="mq-att-form">${attendanceCheckinCard()}</div>
       </section>
 
       ${active && activeOut ? `
@@ -3635,6 +3629,7 @@ function renderMyLeaves() {
   const leaveTypes = getLeaveTypes();
   const pending = leaves.filter(l => l.status === 'pending').length;
   const approved = leaves.filter(l => l.status === 'approved').length;
+  const projectMap = Object.fromEntries((getDB().projects || []).map(p => [p.id,p]));
 
   return `
     <div class="grid-3" style="margin-bottom:24px;">
@@ -3650,11 +3645,12 @@ function renderMyLeaves() {
       </div>
       <div class="visits-table-wrapper" style="margin-top:16px;">
         <table class="table">
-          <thead><tr><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th></tr></thead>
+          <thead><tr><th>Project</th><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th></tr></thead>
           <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
+            ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
             leaves.map(l => `
               <tr>
+                <td>${esc(projectMap[l.projectId]?.code || l.projectId || '-')}</td>
                 <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${esc(l.type)}</span></td>
                 <td>${formatDateShort(l.startDate)}</td>
                 <td>${formatDateShort(l.endDate)}</td>
@@ -3673,7 +3669,7 @@ function renderMyLeaves() {
 
 window.FT.openMyLeaveModal = function() {
   const leaveTypes = getLeaveTypes();
-  const projects = getAttendanceProjectsForEmployee(myEmployeeId());
+  const projects = getLeaveProjectsForEmployee(myEmployeeId());
   openModal('Ajukan Ijin / Cuti', `
     <form data-pqt-onsubmit="FT.createMyLeave(event)">
       <div class="form-group">
