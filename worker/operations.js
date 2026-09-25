@@ -291,7 +291,21 @@ async function activeProjectAssignment(env, organizationId, projectId, employeeI
   ).bind(organizationId,projectId,employeeId,workDate,workDate,workDate,workDate).first();
 }
 
-export async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
+export async function validateAttendancePointMutation(row, existing, op) {
+  if (op === 'delete') return null;
+  const name=str(row.name || existing?.name);
+  const lat=num(row.latitude ?? row.lat ?? existing?.latitude);
+  const lng=num(row.longitude ?? row.lng ?? existing?.longitude);
+  const radius=num(row.radiusM ?? existing?.radius_m);
+  if (!name) return { error:'ATTENDANCE_POINT_NAME_REQUIRED', status:422 };
+  if (lat == null || lat < -90 || lat > 90) return { error:'ATTENDANCE_POINT_LATITUDE_INVALID', status:422 };
+  if (lng == null || lng < -180 || lng > 180) return { error:'ATTENDANCE_POINT_LONGITUDE_INVALID', status:422 };
+  if (radius == null || radius < 10) return { error:'ATTENDANCE_POINT_RADIUS_INVALID', status:422 };
+  row.latitude=lat; row.longitude=lng; row.radiusM=radius;
+  return null;
+}
+
+async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
   if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
   const projectId=str(row.projectId || existing?.project_id);
   const employeeId=str(row.employeeId || existing?.employee_id);
@@ -336,8 +350,12 @@ export async function validateAttendanceMutation(env, organizationId, claims, ro
   let target=null;
   if (locationType === 'store') {
     target=await env.DB.prepare(
-      "SELECT latitude,longitude,geofence_radius_m AS radius_m,status FROM core_outlets WHERE organization_id=? AND id=? LIMIT 1"
-    ).bind(organizationId,locationId).first();
+      `SELECT o.latitude,o.longitude,o.geofence_radius_m AS radius_m,o.status
+         FROM core_outlets o
+         JOIN core_project_outlets po
+           ON po.organization_id=o.organization_id AND po.outlet_id=o.id
+        WHERE o.organization_id=? AND o.id=? AND po.project_id=? AND po.status='active' LIMIT 1`
+    ).bind(organizationId,locationId,projectId).first();
   } else {
     target=await env.DB.prepare(
       "SELECT latitude,longitude,radius_m,status FROM core_attendance_points WHERE organization_id=? AND id=? LIMIT 1"
@@ -2058,6 +2076,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         id:row.id || null,
         ...(cycleError.authoritativeOpening != null ? { authoritativeOpening:cycleError.authoritativeOpening } : {}),
       }, cycleError.status || 422);
+    }
+    if (entity === 'attendancePoints') {
+      const pointError = await validateAttendancePointMutation(row, existing, op);
+      if (pointError) return json({ error:pointError.error, entity, id:row.id || null }, pointError.status || 422);
     }
     if (entity === 'attendance') {
       const attendanceError = await validateAttendanceMutation(env, organizationId, claims, row, existing, op);
