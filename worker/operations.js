@@ -276,6 +276,7 @@ async function projectAttendancePolicy(env, organizationId, projectId) {
   const meta = parseMetadata(project.metadata_json);
   return {
     project,
+    enabled:meta.modules?.attendance !== false,
     source:['manual','visit'].includes(str(meta.attendanceSource)) ? str(meta.attendanceSource) : 'manual',
   };
 }
@@ -301,6 +302,7 @@ async function validateAttendanceMutation(env, organizationId, claims, row, exis
 
   const policy=await projectAttendancePolicy(env,organizationId,projectId);
   if (!policy) return { error:'ATTENDANCE_PROJECT_NOT_FOUND', status:422 };
+  if (!policy.enabled) return { error:'ATTENDANCE_MODULE_DISABLED', status:409 };
   if (policy.source !== 'manual') return { error:'ATTENDANCE_MANUAL_DISABLED', status:409 };
 
   const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,workDate);
@@ -367,9 +369,11 @@ async function validateLeaveMutation(env, organizationId, row, existing, op) {
   if (!startDate || !endDate || endDate < startDate) return { error:'LEAVE_INVALID_PERIOD', status:422 };
 
   const project=await env.DB.prepare(
-    'SELECT id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+    'SELECT id,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
   ).bind(organizationId,projectId).first();
   if (!project) return { error:'LEAVE_PROJECT_NOT_FOUND', status:422 };
+  const projectMeta=parseMetadata(project.metadata_json);
+  if (projectMeta.modules?.leaves === false) return { error:'LEAVE_MODULE_DISABLED', status:409 };
   const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,startDate);
   if (!assignment) return { error:'LEAVE_ASSIGNMENT_REQUIRED', status:403 };
 
@@ -2081,7 +2085,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(geofenceError.radiusM != null ? { radiusM:geofenceError.radiusM } : {}),
       }, geofenceError.status || 422);
       const attendancePolicy = await projectAttendancePolicy(env, organizationId, str(row.projectId || existing?.project_id));
-      visitAttendanceSource = attendancePolicy?.source || 'manual';
+      visitAttendanceSource = attendancePolicy?.enabled === false ? 'disabled' : (attendancePolicy?.source || 'manual');
     }
     if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
       row.approverId = claims.sub;
