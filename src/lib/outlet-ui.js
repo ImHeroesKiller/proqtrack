@@ -3,18 +3,21 @@ export const OUTLET_PAGE_SIZE = 20;
 const text = value => String(value ?? '').trim();
 const lower = value => text(value).toLowerCase();
 
-export function outletOperationalModel(outlet = {}, { projects = [], clients = [], visits = [] } = {}) {
+export function outletOperationalModel(outlet = {}, {
+  projects = [], clients = [], visits = [], projectMap = null, clientMap = null, visitStats = null,
+} = {}) {
   const projectIds = Array.isArray(outlet.projectIds) ? outlet.projectIds.filter(Boolean).map(String) : [];
-  const projectMap = new Map(projects.map(project => [String(project.id), project]));
-  const clientMap = new Map(clients.map(client => [String(client.id), client]));
-  const linkedProjects = projectIds.map(id => projectMap.get(id)).filter(Boolean);
-  const client = clientMap.get(String(outlet.clientId || linkedProjects[0]?.clientId || '')) || null;
-  const outletVisits = visits.filter(visit => String(visit.outletId) === String(outlet.id));
-  const datedVisits = outletVisits
+  const projectIndex = projectMap instanceof Map ? projectMap : new Map(projects.map(project => [String(project.id), project]));
+  const clientIndex = clientMap instanceof Map ? clientMap : new Map(clients.map(client => [String(client.id), client]));
+  const linkedProjects = projectIds.map(id => projectIndex.get(id)).filter(Boolean);
+  const client = clientIndex.get(String(outlet.clientId || linkedProjects[0]?.clientId || '')) || null;
+  const cachedVisitStats = visitStats instanceof Map ? visitStats.get(String(outlet.id)) : null;
+  const outletVisits = cachedVisitStats ? [] : visits.filter(visit => String(visit.outletId) === String(outlet.id));
+  const datedVisits = cachedVisitStats ? [] : outletVisits
     .map(visit => text(visit.date || visit.visitDate || visit.scheduledAt).slice(0,10))
     .filter(Boolean)
     .sort();
-  const lastVisitDate = datedVisits.at(-1) || '';
+  const lastVisitDate = cachedVisitStats?.lastVisitDate || datedVisits.at(-1) || '';
   const projectLabel = linkedProjects.map(project => project.code || project.name || project.id).join(', ');
   const search = [
     outlet.id, outlet.outletNumber, outlet.code, outlet.name, outlet.address, outlet.area,
@@ -29,7 +32,7 @@ export function outletOperationalModel(outlet = {}, { projects = [], clients = [
     clientId:String(client?.id || outlet.clientId || ''),
     projectLabel,
     clientLabel:text(client?.name || client?.code),
-    visitCount:outletVisits.length,
+    visitCount:cachedVisitStats?.count ?? outletVisits.length,
     lastVisitDate,
     shared:projectIds.length > 1,
     search,
