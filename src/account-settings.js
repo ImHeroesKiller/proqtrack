@@ -149,8 +149,8 @@ function renderProjectStoreSettings() {
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
   return `
-        <div class="card-title">Outlet catalog per project</div>
-        <div class="card-subtitle">Enable New Outlet and set Segment, Type, Ownership, and Notes options for this project.</div>
+        <div class="card-title">Katalog outlet per project</div>
+        <div class="card-subtitle">Atur izin penambahan outlet baru serta pilihan Segmen, Tipe, Kepemilikan, dan Catatan untuk project ini.</div>
         <form class="am-form" data-pqt-onsubmit="AM.saveStoreCatalog(event)">
           <div class="form-group">
             <label class="label">Project</label>
@@ -158,19 +158,19 @@ function renderProjectStoreSettings() {
               ${projects.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
             </select>
           </div>
-          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Allow field sales to add a new outlet on this project</label>
-          <div class="form-group"><label class="label">Segment (one option per line)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
-          <div class="form-group"><label class="label">Outlet type</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
-          <div class="form-group"><label class="label">Ownership / account</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
+          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Izinkan Field Sales menambahkan outlet baru pada project ini</label>
+          <div class="form-group"><label class="label">Segmen (satu opsi per baris)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
+          <div class="form-group"><label class="label">Tipe outlet</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
+          <div class="form-group"><label class="label">Kepemilikan / account</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
           <div class="form-group">
-            <label class="label">Notes field on New Outlet form</label>
+            <label class="label">Format catatan pada form Outlet Baru</label>
             <select class="select" name="notesMode">
-              <option value="freetext" ${cat.notesMode !== 'dropdown' ? 'selected' : ''}>Free text</option>
+              <option value="freetext" ${cat.notesMode !== 'dropdown' ? 'selected' : ''}>Teks bebas</option>
               <option value="dropdown" ${cat.notesMode === 'dropdown' ? 'selected' : ''}>Dropdown</option>
             </select>
           </div>
-          <div class="form-group"><label class="label">Notes dropdown options (one per line)</label><textarea class="textarea" name="notesOptions">${esc(lines(cat.notesOptions))}</textarea></div>
-          <button class="btn btn-primary" type="submit">Save outlet catalog</button>
+          <div class="form-group"><label class="label">Pilihan catatan dropdown (satu opsi per baris)</label><textarea class="textarea" name="notesOptions">${esc(lines(cat.notesOptions))}</textarea></div>
+          <button class="btn btn-primary" type="submit">Simpan katalog outlet</button>
         </form>`;
 }
 
@@ -330,13 +330,13 @@ export function renderSettings() {
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
-    ['profil', 'Profile'],
-    ['keamanan', 'Security'],
-    ['tampilan', 'Display'],
-    ...(isOrgAdmin ? [['organisasi', 'Organization'], ['katalog', 'Outlet catalog'], ['absensi', 'Attendance']] : []),
-    ...(acc.role === 'manager' ? [['katalog', 'Outlet catalog']] : []),
-    ...(acc.role === 'employee' ? [['perangkat', 'Device']] : []),
-    ['sesi', 'Session'],
+    ['profil', 'Profil'],
+    ['keamanan', 'Keamanan'],
+    ['tampilan', 'Tampilan'],
+    ...(isOrgAdmin ? [['organisasi', 'Organisasi'], ['katalog', 'Katalog Outlet'], ['absensi', 'Attendance']] : []),
+    ...(acc.role === 'manager' ? [['katalog', 'Katalog Outlet']] : []),
+    ...(acc.role === 'employee' ? [['perangkat', 'Perangkat']] : []),
+    ['sesi', 'Sesi'],
   ];
   const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
   const pane = id => `class="am-pane ${tab === id ? 'active' : ''}"`;
