@@ -67,6 +67,10 @@ async function session(name,projects) {
   expect(r.data.role===actors[name].role,`session ${name} role ${r.data.role}`);
   expect(r.data.organizationId===ids.org,`session ${name} org mismatch`);
   for(const project of projects) expect(r.data.projectIds?.includes(project),`session ${name} missing project ${project}`);
+  if (actors[name].role === 'employee') {
+    expect(r.data.deviceBound === true,`session ${name} device binding missing`);
+  }
+  return r.data;
 }
 async function bootstrap(name) {
   const r=await api('/api/core/bootstrap',{token:actors[name].token});
