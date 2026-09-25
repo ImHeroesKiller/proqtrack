@@ -15,7 +15,7 @@ test('CSP keeps executable scripts self-hosted with no inline event execution', 
     assert.doesNotMatch(source, /https:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net)/);
     assert.doesNotMatch(source, /script-src 'self' 'unsafe-inline'/);
   }
-  assert.match(html, /\.\/assets\/vendor\/leaflet\/leaflet\.js/);
+  assert.doesNotMatch(html, /assets\/vendor\/leaflet\/leaflet\.js/);
   assert.doesNotMatch(html, /<script type="module">/);
   assert.match(headers, /Content-Security-Policy:/);
   assert.doesNotMatch(headers, /Content-Security-Policy-Report-Only/);
