@@ -391,3 +391,70 @@ body {
     flex:1 1 auto;
   }
 }
+
+
+/* Attendance + Leave P3 quality polish */
+.ops-employee-cell {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+}
+.ops-avatar-sm {
+  width:28px;
+  height:28px;
+  font-size:11px;
+  flex:0 0 auto;
+}
+.ops-employee-name {
+  min-width:0;
+  font-weight:600;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.ops-reason-cell {
+  max-width:240px;
+  color:var(--gray-500);
+  font-size:13px;
+  overflow-wrap:anywhere;
+}
+.ops-days-cell {
+  text-align:center;
+  font-weight:600;
+}
+.ops-muted-cell {
+  color:var(--gray-400);
+  font-size:12px;
+}
+.ops-summary-grid {
+  margin-bottom:24px;
+}
+.ops-card-title-reset {
+  margin:0;
+}
+.ops-table-spaced {
+  margin-top:16px;
+}
+.ops-modal-footer-spaced {
+  padding:24px 0 0;
+}
+.ops-icon-success {
+  background:var(--green-50);
+  color:var(--green-600);
+}
+.ops-icon-warning {
+  background:var(--amber-50);
+  color:var(--amber-500);
+}
+.ops-icon-danger {
+  background:var(--red-50);
+  color:var(--red-500);
+}
+.ops-icon-info {
+  background:var(--blue-50);
+  color:var(--blue-600);
+}
+.ops-withdrawn-badge {
+  background:var(--gray-100);
+  color:var(--gray-600);
+}

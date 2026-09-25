@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const field = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../assets/ui-2026.css', import.meta.url), 'utf8');
+const ui = readFileSync(new URL('../src/lib/attendance-leave-ui.js', import.meta.url), 'utf8');
 
 test('P2 attendance manager exposes operational filters and result count', () => {
   assert.match(app, /id="attProjectFilter"/);
@@ -29,7 +30,8 @@ test('P2 leave queue can filter status type and overlapping period', () => {
   assert.match(app, /id="leaveTypeFilter"/);
   assert.match(app, /id="leaveDateFrom"/);
   assert.match(app, /id="leaveDateTo"/);
-  assert.match(app, /const overlaps = \(!from \|\| end >= from\) && \(!to \|\| start <= to\)/);
+  assert.match(ui, /const overlaps = \(!filters\.from \|\| end >= filters\.from\)/);
+  assert.match(app, /leaveMatchesFilters/);
   assert.match(app, /ops-priority-note/);
 });
 
@@ -45,7 +47,8 @@ test('P2 leave decisions and withdrawals are guarded against duplicate actions',
 test('P2 employee can edit pending future leave with cloud confirmation', () => {
   assert.match(app, /FT\.openEditMyLeave/);
   assert.match(app, /FT\.saveMyLeaveEdit/);
-  assert.match(app, /String\(leave\.startDate \|\| ''\) <= todayISO\(\)/);
+  assert.match(app, /canEditPendingLeave\(leave,todayISO\(\)\)/);
+  assert.match(ui, /export function canEditPendingLeave/);
   assert.match(app, /updateLeave\(id, \{ type:data\.type, startDate:data\.startDate, endDate:data\.endDate, reason:data\.reason, status:'pending' \}\)/);
   assert.match(app, /await waitForOperationalSync\(\)/);
 });

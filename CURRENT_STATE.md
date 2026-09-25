@@ -213,3 +213,17 @@ P2 berfokus pada usability operasional tanpa mengubah authority P0/P1:
 - My Attendance menampilkan label project yang lebih jelas; My Leave menampilkan Detail/Edit/Batalkan sesuai lifecycle.
 - UI Attendance/Leave menggunakan responsive operational classes di `assets/ui-2026.css` untuk mobile dan desktop.
 - Regression guard: `tests/attendance-leave-p2.test.mjs`.
+
+
+## Attendance + Leave P3 maintainability — 25 September 2026
+
+P3 menutup maintainability/refactor/quality backlog tanpa mengubah authority atau lifecycle P0–P2:
+
+- Pure presentation/domain helper dipindahkan ke `src/lib/attendance-leave-ui.js`.
+- Attendance source/status normalization, operational summary, filter snapshot/matching, time extraction, Leave display status, pending aging, summary, filter overlap, edit eligibility, dan friendly errors memiliki satu source of truth.
+- `src/app.js` kembali fokus pada rendering dan orchestration cloud; filter/summary/error business rules tidak lagi tersebar di handler UI.
+- `src/field-sales.js` menggunakan helper source/error yang sama dan `currentTenantTimeHHMM()` untuk check-in/check-out timezone handling.
+- Regression P2 diubah agar menguji invariant helper, bukan bentuk implementasi lama di file monolitik.
+- Attendance/Leave UI mengurangi inline-style debt dan menambah semantic button type, aria-live result count, serta reusable quality classes di `assets/ui-2026.css`.
+- Pure unit coverage tersedia di `tests/attendance-leave-p3.test.mjs`.
+- P0, P1, dan P2 regression suites tetap menjadi release gate.
