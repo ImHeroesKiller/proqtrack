@@ -267,6 +267,176 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
 
 const finalLeaveStatuses = new Set(['approved','rejected']);
 
+async function projectAttendancePolicy(env, organizationId, projectId) {
+  if (!projectId) return null;
+  const project = await env.DB.prepare(
+    "SELECT id,status,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1"
+  ).bind(organizationId,projectId).first();
+  if (!project) return null;
+  const meta = parseMetadata(project.metadata_json);
+  return {
+    project,
+    source:['manual','visit'].includes(str(meta.attendanceSource)) ? str(meta.attendanceSource) : 'manual',
+  };
+}
+
+async function activeProjectAssignment(env, organizationId, projectId, employeeId, workDate = '') {
+  return env.DB.prepare(
+    `SELECT id FROM core_employee_project_assignments
+      WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active'
+        AND (?='' OR starts_on IS NULL OR date(starts_on)<=date(?))
+        AND (?='' OR ends_on IS NULL OR date(ends_on)>=date(?))
+      LIMIT 1`
+  ).bind(organizationId,projectId,employeeId,workDate,workDate,workDate,workDate).first();
+}
+
+async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
+  if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
+  const projectId=str(row.projectId || existing?.project_id);
+  const employeeId=str(row.employeeId || existing?.employee_id);
+  const workDate=str(row.workDate || row.date || existing?.work_date);
+  if (!projectId) return { error:'ATTENDANCE_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'ATTENDANCE_EMPLOYEE_REQUIRED', status:422 };
+  if (!workDate) return { error:'ATTENDANCE_DATE_REQUIRED', status:422 };
+
+  const policy=await projectAttendancePolicy(env,organizationId,projectId);
+  if (!policy) return { error:'ATTENDANCE_PROJECT_NOT_FOUND', status:422 };
+  if (policy.source !== 'manual') return { error:'ATTENDANCE_MANUAL_DISABLED', status:409 };
+
+  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,workDate);
+  if (!assignment) return { error:'ATTENDANCE_ASSIGNMENT_REQUIRED', status:403 };
+
+  if (!existing) {
+    const duplicate=await env.DB.prepare(
+      'SELECT id FROM core_attendance WHERE organization_id=? AND project_id=? AND employee_id=? AND work_date=? LIMIT 1'
+    ).bind(organizationId,projectId,employeeId,workDate).first();
+    if (duplicate) return { error:'ATTENDANCE_ALREADY_RECORDED', status:409 };
+  }
+
+  const canonical = {
+    hadir:'present',present:'present',
+    terlambat:'late',late:'late',
+  }[str(row.status || existing?.status || 'present').toLowerCase()];
+  if (!canonical) return { error:'ATTENDANCE_INVALID_STATUS', status:422 };
+  row.status=canonical;
+  row.source='manual';
+
+  const lat=Number(row.checkInLatitude ?? row.lat ?? row.check_in_latitude);
+  const lng=Number(row.checkInLongitude ?? row.lng ?? row.check_in_longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { error:'ATTENDANCE_GPS_REQUIRED', status:422 };
+  row.checkInLatitude=lat;
+  row.checkInLongitude=lng;
+
+  const locationType=str(row.locationType || parseMetadata(existing?.metadata_json)?.locationType);
+  const locationId=str(row.locationId || parseMetadata(existing?.metadata_json)?.locationId);
+  if (!locationType || !locationId) return { error:'ATTENDANCE_LOCATION_REQUIRED', status:422 };
+
+  let target=null;
+  if (locationType === 'store') {
+    target=await env.DB.prepare(
+      "SELECT latitude,longitude,geofence_radius_m AS radius_m,status FROM core_outlets WHERE organization_id=? AND id=? LIMIT 1"
+    ).bind(organizationId,locationId).first();
+  } else {
+    target=await env.DB.prepare(
+      "SELECT latitude,longitude,radius_m,status FROM core_attendance_points WHERE organization_id=? AND id=? LIMIT 1"
+    ).bind(organizationId,locationId).first();
+  }
+  if (!target || target.status !== 'active' || !finiteCoordinate(target.latitude) || !finiteCoordinate(target.longitude)) {
+    return { error:'ATTENDANCE_LOCATION_UNAVAILABLE', status:409 };
+  }
+  const radiusRaw=Number(target.radius_m);
+  const radiusM=Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : 150;
+  const distanceM=visitDistanceMeters(lat,lng,target.latitude,target.longitude);
+  if (distanceM == null || distanceM > radiusM) {
+    return { error:'ATTENDANCE_OUTSIDE_GEOFENCE', status:422, distanceM, radiusM };
+  }
+  row.geofenceDistanceM=distanceM;
+  row.geofenceRadiusM=radiusM;
+  row.geofenceStatus='valid';
+  return null;
+}
+
+async function validateLeaveMutation(env, organizationId, row, existing, op) {
+  if (op === 'delete') return { error:'LEAVE_DELETE_FORBIDDEN', status:409 };
+  const projectId=str(row.projectId || existing?.project_id);
+  const employeeId=str(row.employeeId || existing?.employee_id);
+  const startDate=str(row.startDate || existing?.start_date);
+  const endDate=str(row.endDate || existing?.end_date);
+  if (!projectId) return { error:'LEAVE_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'LEAVE_EMPLOYEE_REQUIRED', status:422 };
+  if (!startDate || !endDate || endDate < startDate) return { error:'LEAVE_INVALID_PERIOD', status:422 };
+
+  const project=await env.DB.prepare(
+    'SELECT id FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project) return { error:'LEAVE_PROJECT_NOT_FOUND', status:422 };
+  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,startDate);
+  if (!assignment) return { error:'LEAVE_ASSIGNMENT_REQUIRED', status:403 };
+
+  const expectedDays=Math.floor((Date.parse(endDate)-Date.parse(startDate))/86400000)+1;
+  if (!Number.isFinite(expectedDays) || expectedDays < 1) return { error:'LEAVE_INVALID_PERIOD', status:422 };
+  row.projectId=projectId;
+  row.days=expectedDays;
+  row.type=str(row.type || existing?.type || 'Cuti Tahunan');
+  row.reason=str(row.reason || existing?.reason || '');
+  if (!row.type) return { error:'LEAVE_TYPE_REQUIRED', status:422 };
+  if (!row.reason) return { error:'LEAVE_REASON_REQUIRED', status:422 };
+
+  const overlap=await env.DB.prepare(
+    `SELECT id FROM core_leaves
+      WHERE organization_id=? AND project_id=? AND employee_id=? AND status<>'rejected'
+        AND id<>? AND date(start_date)<=date(?) AND date(end_date)>=date(?) LIMIT 1`
+  ).bind(organizationId,projectId,employeeId,str(row.id || existing?.id),endDate,startDate).first();
+  if (overlap) return { error:'LEAVE_PERIOD_OVERLAP', status:409 };
+  return null;
+}
+
+function visitAttendanceStatements(env, organizationId, row, existing) {
+  if (!existing) return [];
+  const currentStatus=canonicalVisitStatus(existing.status);
+  const nextStatus=canonicalVisitStatus(row.status || existing.status);
+  const isCheckIn=currentStatus==='planned' && nextStatus==='in_progress';
+  const isCheckOut=currentStatus==='in_progress' && nextStatus==='completed';
+  if (!isCheckIn && !isCheckOut) return [];
+  const projectId=str(row.projectId || existing.project_id);
+  const employeeId=str(row.employeeId || existing.employee_id);
+  const capturedAt=str(isCheckIn
+    ? (row.checkInCapturedAt || row.startedAt || row.checkInAt)
+    : (row.checkOutCapturedAt || row.completedAt || row.checkOutAt));
+  const workDate=str(capturedAt || row.date || row.scheduledAt || existing.scheduled_at).slice(0,10);
+  if (!projectId || !employeeId || !workDate) return [];
+
+  const attendanceId=`ATTV-${projectId}-${employeeId}-${workDate}`;
+  const checkInAt=isCheckIn ? capturedAt : null;
+  const checkOutAt=isCheckOut ? capturedAt : null;
+  const lat=isCheckIn ? num(row.checkInLat ?? row.startLatitude ?? row.lat) : null;
+  const lng=isCheckIn ? num(row.checkInLng ?? row.startLongitude ?? row.lng) : null;
+  const outLat=isCheckOut ? num(row.checkOutLat ?? row.endLatitude) : null;
+  const outLng=isCheckOut ? num(row.checkOutLng ?? row.endLongitude) : null;
+  const meta=JSON.stringify({ source:'visit', sourceVisitId:str(row.id || existing.id) });
+  return [env.DB.prepare(
+    `INSERT INTO core_attendance(
+      id,organization_id,project_id,employee_id,work_date,status,
+      check_in_at,check_out_at,check_in_latitude,check_in_longitude,
+      check_out_latitude,check_out_longitude,idempotency_key,metadata_json,row_version,updated_at
+    ) VALUES(?,?,?,?,?,'present',?,?,?,?,?,?,?, ?,1,CURRENT_TIMESTAMP)
+    ON CONFLICT(organization_id,project_id,employee_id,work_date) DO UPDATE SET
+      check_in_at=COALESCE(core_attendance.check_in_at,excluded.check_in_at),
+      check_out_at=COALESCE(excluded.check_out_at,core_attendance.check_out_at),
+      check_in_latitude=COALESCE(core_attendance.check_in_latitude,excluded.check_in_latitude),
+      check_in_longitude=COALESCE(core_attendance.check_in_longitude,excluded.check_in_longitude),
+      check_out_latitude=COALESCE(excluded.check_out_latitude,core_attendance.check_out_latitude),
+      check_out_longitude=COALESCE(excluded.check_out_longitude,core_attendance.check_out_longitude),
+      metadata_json=json_set(COALESCE(NULLIF(core_attendance.metadata_json,''),'{}'),
+        '$.source','visit','$.lastVisitId',json_extract(excluded.metadata_json,'$.sourceVisitId')),
+      row_version=core_attendance.row_version+1,updated_at=CURRENT_TIMESTAMP`
+  ).bind(
+    attendanceId,organizationId,projectId,employeeId,workDate,
+    nullable(checkInAt),nullable(checkOutAt),lat,lng,outLat,outLng,
+    `visit-attendance:${projectId}:${employeeId}:${workDate}`,meta
+  )];
+}
+
 const firstValue = (row, keys) => {
   for (const key of keys) {
     if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
