@@ -7,7 +7,7 @@ const ids = {
   org:`ORG-UAT-AL-${runKey}`, client:`CL-UAT-AL-${runKey}`,
   manual:`PRJ-UAT-AL-MANUAL-${runKey}`, visit:`PRJ-UAT-AL-VISIT-${runKey}`,
   outlet:`OUT-UAT-AL-${runKey}`,
-  manager:`USR-UAT-AL-MANAGER-${runKey}`, supervisor:`USR-UAT-AL-SUPERVISOR-${runKey}`,
+  head:`USR-UAT-AL-HEAD-${runKey}`, manager:`USR-UAT-AL-MANAGER-${runKey}`, supervisor:`USR-UAT-AL-SUPERVISOR-${runKey}`,
   manualUser:`USR-UAT-AL-EMP-MANUAL-${runKey}`, visitUser:`USR-UAT-AL-EMP-VISIT-${runKey}`,
   manualEmp:`EMP-UAT-AL-MANUAL-${runKey}`, visitEmp:`EMP-UAT-AL-VISIT-${runKey}`, otherEmp:`EMP-UAT-AL-OTHER-${runKey}`,
   manualAtt:`UAT-AL-ATT-MANUAL-${runKey}`, visitDirect:`UAT-AL-ATT-VISIT-DIRECT-${runKey}`,
@@ -29,6 +29,7 @@ const hashPassword = plain => {
   return `pbkdf2$sha256$100000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 };
 const actors = {
+  head:{id:ids.head,email:`uat.al.head.${runKey}@proqtrack.id`,role:'head',pass:password()},
   manager:{id:ids.manager,email:`uat.al.manager.${runKey}@proqtrack.id`,role:'manager',pass:password()},
   supervisor:{id:ids.supervisor,email:`uat.al.supervisor.${runKey}@proqtrack.id`,role:'supervisor',pass:password()},
   manual:{id:ids.manualUser,email:`uat.al.manual.${runKey}@proqtrack.id`,role:'employee',pass:password(),employeeId:ids.manualEmp},
@@ -67,6 +68,10 @@ async function session(name,projects) {
   expect(r.data.role===actors[name].role,`session ${name} role ${r.data.role}`);
   expect(r.data.organizationId===ids.org,`session ${name} org mismatch`);
   for(const project of projects) expect(r.data.projectIds?.includes(project),`session ${name} missing project ${project}`);
+  if (actors[name].role === 'employee') {
+    expect(r.data.deviceBound === true,`session ${name} device binding missing`);
+  }
+  return r.data;
 }
 async function bootstrap(name) {
   const r=await api('/api/core/bootstrap',{token:actors[name].token});
@@ -102,11 +107,11 @@ function cleanup() {
       DELETE FROM core_projects WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_clients WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_auth_devices WHERE organization_id='${sqlq(ids.org)}';
-      DELETE FROM core_auth_sessions WHERE user_id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
+      DELETE FROM core_auth_sessions WHERE user_id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
       DELETE FROM core_sync_state WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_organization_users WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_organizations WHERE id='${sqlq(ids.org)}';
-      DELETE FROM auth_users WHERE id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
+      DELETE FROM auth_users WHERE id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
     `);
     cleaned=true;
   } catch(error) { console.error('UAT cleanup failed',error.message); }
@@ -122,11 +127,13 @@ try {
     VALUES('${ids.org}','UATAL-${runKey}','Attendance Leave Final UAT','active','Asia/Jakarta','{"synthetic":true,"attendanceLeaveFinalUat":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
     INSERT INTO core_sync_state(organization_id,revision,cutover_mode,updated_at) VALUES('${ids.org}',0,'cloud',CURRENT_TIMESTAMP);
     INSERT INTO auth_users(id,email,password_hash,role,status,project_ids,client_ids,created_at) VALUES
+      ('${actors.head.id}','${actors.head.email}','${actors.head.hash}','head','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.manager.id}','${actors.manager.email}','${actors.manager.hash}','manager','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.supervisor.id}','${actors.supervisor.email}','${actors.supervisor.hash}','supervisor','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.manual.id}','${actors.manual.email}','${actors.manual.hash}','employee','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.visit.id}','${actors.visit.email}','${actors.visit.hash}','employee','active','[]','[]',CURRENT_TIMESTAMP);
     INSERT INTO core_organization_users(organization_id,user_id,role,status,created_at,updated_at) VALUES
+      ('${ids.org}','${ids.head}','head','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.manager}','manager','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.supervisor}','supervisor','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.manualUser}','employee','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
@@ -157,9 +164,83 @@ try {
       VALUES('${ids.org}','${ids.visit}','${ids.outlet}','active',CURRENT_TIMESTAMP);
   `);
 
-  await login('manager'); await login('supervisor'); await login('manual',true); await login('visit',true);
-  await session('manager',[ids.manual,ids.visit]); await session('supervisor',[ids.manual,ids.visit]);
+  await login('head'); await login('manager'); await login('supervisor'); await login('manual',true); await login('visit',true);
+  await session('head',[ids.manual,ids.visit]); await session('manager',[ids.manual,ids.visit]); await session('supervisor',[ids.manual,ids.visit]);
   await session('manual',[ids.manual]); await session('visit',[ids.visit]);
+
+  // Integrated Settings regression for project roles.
+  for (const name of ['manager','supervisor','manual','visit']) {
+    const actor=actors[name];
+    const profile=await api('/api/auth/profile',{
+      method:'PATCH',
+      token:actor.token,
+      body:{
+        email:actor.email,
+        name:`Settings UAT ${name}`,
+        phone:actor.role==='employee' ? '081234567890' : '',
+        area:actor.role==='employee' ? 'Jakarta UAT' : '',
+      },
+    });
+    expect(profile.status===200,`settings profile ${name} HTTP ${profile.status}: ${JSON.stringify(profile.data)}`);
+    expect(profile.data.account?.name===`Settings UAT ${name}`,`settings profile ${name} name mismatch`);
+
+    const orgDenied=await api('/api/organization/profile',{
+      method:'PATCH',
+      token:actor.token,
+      body:{name:'Forbidden Settings UAT',timezone:'Asia/Jakarta'},
+    });
+    expect(orgDenied.status===403 && orgDenied.data.error==='ORGANIZATION_PROFILE_FORBIDDEN',
+      `settings organization boundary ${name}: ${orgDenied.status} ${JSON.stringify(orgDenied.data)}`);
+
+    const accountsDenied=await api('/api/admin/accounts',{token:actor.token});
+    expect(accountsDenied.status===403,`settings accounts boundary ${name}: HTTP ${accountsDenied.status}`);
+  }
+
+  const employeeProfile=await session('manual',[ids.manual]);
+  expect(employeeProfile.phone==='081234567890','settings employee phone not authoritative');
+  expect(employeeProfile.area==='Jakarta UAT','settings employee area not authoritative');
+
+  const headProfile=await api('/api/auth/profile',{
+    method:'PATCH',
+    token:actors.head.token,
+    body:{email:actors.head.email,name:'Settings UAT head',phone:'',area:''},
+  });
+  expect(headProfile.status===200 && headProfile.data.account?.name==='Settings UAT head',
+    `settings profile head failed: ${headProfile.status} ${JSON.stringify(headProfile.data)}`);
+
+  const headOrganization=await api('/api/organization/profile',{
+    method:'PATCH',
+    token:actors.head.token,
+    body:{name:'Attendance Leave Final UAT',timezone:'Asia/Jakarta',themeColor:'#ef5000',notes:'Head Settings final UAT'},
+  });
+  expect(headOrganization.status===200,
+    `settings organization head failed: ${headOrganization.status} ${JSON.stringify(headOrganization.data)}`);
+
+  const headAccounts=await api('/api/admin/accounts',{token:actors.head.token});
+  expect(headAccounts.status===200,`settings accounts head HTTP ${headAccounts.status}`);
+  const headVisibleIds=new Set((headAccounts.data.accounts||[]).map(row=>row.id));
+  expect(!headVisibleIds.has(ids.head),'settings head must not manage Head row');
+  expect(headVisibleIds.has(ids.manager)&&headVisibleIds.has(ids.supervisor)&&headVisibleIds.has(ids.manualUser),
+    'settings head account scope incomplete');
+
+  const managerSettingsBootstrap=await bootstrap('manager');
+  const managerManualProject=managerSettingsBootstrap.data?.projects?.find(row=>row.id===ids.manual);
+  expect(managerManualProject,'settings manager manual project missing');
+  await sync('manager','settings-manager-catalog-allowed',[{
+    entity:'projects',op:'upsert',row:{
+      ...managerManualProject,
+      modules:{...(managerManualProject.modules||{}),newOutlet:false},
+      storeCatalog:{allowNewOutlet:false,notesMode:'freetext',notesOptions:[],segments:['General'],types:['Retail'],ownerships:['Independent']},
+    }
+  }]);
+  const managerAfterCatalog=await bootstrap('manager');
+  const projectAfterCatalog=managerAfterCatalog.data?.projects?.find(row=>row.id===ids.manual);
+  expect(projectAfterCatalog?.storeCatalog?.allowNewOutlet===false,'settings manager catalog update missing');
+  expect(projectAfterCatalog?.attendanceSourceMode==='manual','settings manager catalog changed attendance source');
+
+  await sync('manager','settings-manager-attendance-policy-denied',[{
+    entity:'projects',op:'upsert',row:{...projectAfterCatalog,attendanceSourceMode:'visit'}
+  }],403,'CHANGE_FORBIDDEN');
 
   await sync('manual','manual-checkin',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,checkInAt:'08:05'}}]);
   await sync('manual','employee-self-only',[{entity:'attendance',op:'upsert',row:{id:`UAT-AL-ATT-OTHER-${runKey}`,projectId:ids.manual,employeeId:ids.otherEmp,workDate:today,checkInAt:'08:10'}}],403,'ATTENDANCE_SELF_ONLY');
@@ -231,11 +312,11 @@ try {
   cleanup();
   const residual=d1Row(`SELECT
     (SELECT COUNT(*) FROM core_organizations WHERE id='${ids.org}') organizations,
-    (SELECT COUNT(*) FROM auth_users WHERE id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}')) users,
+    (SELECT COUNT(*) FROM auth_users WHERE id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}')) users,
     (SELECT COUNT(*) FROM core_attendance WHERE organization_id='${ids.org}') attendance,
     (SELECT COUNT(*) FROM core_leaves WHERE organization_id='${ids.org}') leaves;`);
   expect(Object.values(residual).every(v=>Number(v)===0),`cleanup residual ${JSON.stringify(residual)}`);
-  console.log('Attendance + Leave final production UAT PASS: Manager/Supervisor/Employee, Manual/Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
+  console.log('Attendance + Leave final production UAT PASS: Head/Manager/Supervisor/Employee, Settings boundaries, Manual/Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
 } catch(error) {
   console.error('Attendance + Leave final production UAT FAILED:',error?.stack||error);
   process.exitCode=1;
@@ -244,14 +325,10 @@ try {
 }
 
 if (!process.exitCode) {
-  // The authenticated Settings role matrix reuses production smoke scripts.
-  // Cool down the login gateway window first so this release gate does not
-  // weaken or race the production rate limit.
+  // Manager/Supervisor/Employee Settings boundaries are exercised above on
+  // this script's isolated tenant. Cool down auth rate limiting before the
+  // independent Head/Admin Settings smoke.
   execFileSync('sleep',['61'],{ stdio:'inherit' });
-  execFileSync('bash',['scripts/m7-authenticated-production-uat.sh'],{
-    stdio:'inherit',
-    env:process.env,
-  });
   execFileSync('bash',['scripts/settings-admin-smoke.sh'],{
     stdio:'inherit',
     env:process.env,
