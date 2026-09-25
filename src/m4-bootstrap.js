@@ -139,8 +139,12 @@ document.addEventListener('focusin', primeEvidenceRuntime, true);
 window.addEventListener('proqtrack:cloud-status', event => {
   if (event.detail?.status === 'ready' || event.detail?.status === 'synced') scheduleEvidenceRuntime();
 });
-window.addEventListener('online', scheduleEvidenceRuntime);
-scheduleEvidenceRuntime();
+window.addEventListener('online', () => {
+  if (window.FT?.state?.loggedIn) scheduleEvidenceRuntime();
+});
+window.addEventListener('hashchange', () => {
+  if (window.FT?.state?.loggedIn) scheduleEvidenceRuntime();
+});
 
 if (typeof window !== 'undefined') {
   window.__PROQTRACK_M4_BOOTSTRAP_LOADED__ = true;
