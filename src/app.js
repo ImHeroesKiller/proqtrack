@@ -1804,6 +1804,8 @@ function employeeProjectIds(employeeId) {
   return activeProjectIdsForEmployee(getDB().projectAssignments || [], employeeId);
 }
 
+let employeeRowsCache = [];
+
 function renderEmployees() {
   const employees = getEmployees();
   const db = getDB();
@@ -1812,6 +1814,44 @@ function renderEmployees() {
   const operationalCounts = employeeOperationalCounts(employees, assignments, accounts);
   const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
   const projectOptions = employeeProjectOptions(employees, assignments, db.projects || []);
+  const currentMonth = todayISO().slice(0, 7);
+  const salesByEmployee = new Map();
+  for (const sale of getProductSales()) {
+    if (!String(sale.soldAt || sale.date || '').startsWith(currentMonth)) continue;
+    const key = String(sale.employeeId || '');
+    salesByEmployee.set(key, (salesByEmployee.get(key) || 0) + (Number(sale.totalAmount ?? sale.amount) || 0));
+  }
+  employeeRowsCache = employees.map(e => {
+    const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
+    const cIdx = e.name.charCodeAt(0) % colors.length;
+    const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
+    const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
+    const model = {
+      search,
+      role:e.role || '',
+      status:e.status || '',
+      projectIds,
+      assigned:flags.assigned,
+      loginLinked:flags.loginLinked,
+    };
+    return {
+      model,
+      html:`<tr>
+        <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
+        <td data-label="Role">${roleBadge(e.role)}</td>
+        <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
+        <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
+        <td data-label="Area">${esc(e.area || '—')}</td>
+        <td data-label="Telepon">${esc(e.phone || '—')}</td>
+        <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(salesByEmployee.get(String(e.id)) || 0)}</span> / ${formatCurrency(salesTargetOf(e))}</td>
+        <td data-label="Kunjungan">${e.totalVisits}</td>
+        <td data-label="Status">${statusBadge(e.status)}</td>
+        <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
+      </tr>`,
+    };
+  });
+  const initialPage = paginateEmployees(employeeRowsCache, employeePage, EMPLOYEE_PAGE_SIZE);
+  employeePage = initialPage.currentPage;
   const rendered = `
     <div class="card">
       <div class="pm-kpi-grid" style="margin-bottom:14px;">
@@ -1822,27 +1862,11 @@ function renderEmployees() {
       </div>
       <div class="filter-row">
         <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, kode, area, project..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
-        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Role</option>
-          <option value="Field Sales">Field Sales</option>
-          <option value="Supervisor">Supervisor</option>
-        </select>
-        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Status</option>
-          <option value="active">Aktif</option>
-          <option value="inactive">Nonaktif</option>
-          <option value="terminated">Berakhir</option>
-        </select>
-        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Project</option>
-          ${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}
-        </select>
-        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option>
-        </select>
-        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option>
-        </select>
+        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Role</option><option value="Field Sales">Field Sales</option><option value="Supervisor">Supervisor</option></select>
+        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="terminated">Berakhir</option></select>
+        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Project</option>${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}</select>
+        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option></select>
+        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option></select>
         <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetEmployeeFilters()">Reset</button>
         <div class="spacer"></div>
         <span id="employeeSyncState">${employeeSyncLabel()}</span>
@@ -1853,26 +1877,7 @@ function renderEmployees() {
       <div class="visits-table-wrapper">
         <table class="table employee-table" id="empTable">
           <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Operational</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            ${employees.map(e => {
-              const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
-              const cIdx = e.name.charCodeAt(0) % colors.length;
-              const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
-              const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
-              return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
-                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
-                <td data-label="Role">${roleBadge(e.role)}</td>
-                <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
-                <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
-                <td data-label="Area">${esc(e.area || '—')}</td>
-                <td data-label="Telepon">${esc(e.phone || '—')}</td>
-                <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
-                <td data-label="Kunjungan">${e.totalVisits}</td>
-                <td data-label="Status">${statusBadge(e.status)}</td>
-                <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
         </table>
       </div>
       <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter. Gunakan Reset untuk menampilkan seluruh data.</div>
@@ -1888,6 +1893,9 @@ window.FT.employeePage = function(delta) {
   window.FT.filterEmployees(employeePage);
 };
 
+window.FT.filterEmployees(employeePage);
+};
+
 window.FT.filterEmployees = function(page = employeePage) {
   const filters = employeeFilterSnapshot(key => {
     const ids = {
@@ -1896,19 +1904,11 @@ window.FT.filterEmployees = function(page = employeePage) {
     };
     return document.getElementById(ids[key])?.value || '';
   });
-  const rows = [...document.querySelectorAll('#empTable tbody tr')];
-  const matched = rows.filter(row => employeeMatchesFilters({
-    search:row.dataset.search || '',
-    role:row.dataset.role || '',
-    status:row.dataset.status || '',
-    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
-    assigned:row.dataset.assigned === '1',
-    loginLinked:row.dataset.login === '1',
-  }, filters));
+  const matched = employeeRowsCache.filter(row => employeeMatchesFilters(row.model, filters));
   const pageState = paginateEmployees(matched, page, EMPLOYEE_PAGE_SIZE);
   employeePage = pageState.currentPage;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const tbody = document.querySelector('#empTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.map(row => row.html).join('');
   const summary = document.getElementById('employeeResultSummary');
   if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} karyawan` : 'Tidak ada karyawan yang sesuai dengan filter.';
   const empty = document.getElementById('employeeEmpty');
