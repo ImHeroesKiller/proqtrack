@@ -1335,34 +1335,71 @@ window.FT.focusEmployee = function(empId) {
 };
 
 // ===== Visits Page =====
+let visitPage = 1;
+let visitRowsCache = [];
+
+function visitRowEntry(visit, emp, outlet) {
+  if (!emp || !outlet) return null;
+  const stars = visit.rating > 0 ? `${'★'.repeat(visit.rating)}${'☆'.repeat(5-visit.rating)}` : '-';
+  const date = visitDay(visit);
+  const search = [
+    date, visit.status, emp.name, emp.email, outlet.name, outlet.outletNumber, outlet.code,
+    visit.projectId, visit.notes,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return {
+    visit,
+    search,
+    html:`
+      <tr data-visit-id="${esc(visit.id)}">
+        <td>${formatDateShort(date)}</td>
+        <td>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
+            <span style="font-weight:600;">${esc(emp.name)}</span>
+          </div>
+        </td>
+        <td>${outletIcon(outlet.type)} ${esc(outlet.name)}</td>
+        <td>${visit.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
+        <td>${visit.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
+        <td>${formatDuration(visit.checkInTime, visit.checkOutTime)}</td>
+        <td>${statusBadge(visit.status)}</td>
+        <td style="color:#fbbf24;">${stars}</td>
+        <td><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${visit.id}')">Detail</button></td>
+      </tr>`,
+  };
+}
+
 function renderVisits() {
-  const visits = getVisits().sort((a,b) => b.date.localeCompare(a.date) || (b.checkInTime||'').localeCompare(a.checkInTime||''));
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const visits = getVisits().sort((a,b) => String(visitDay(b)).localeCompare(String(visitDay(a))) || (b.checkInTime||'').localeCompare(a.checkInTime||''));
+  const employees = getEmployees();
+  const outlets = getOutlets();
+  const empMap = new Map(employees.map(e => [String(e.id), e]));
+  const outletMap = new Map(outlets.map(o => [String(o.id), o]));
+  visitRowsCache = visits
+    .map(v => visitRowEntry(v, empMap.get(String(v.employeeId)), outletMap.get(String(v.outletId))))
+    .filter(Boolean);
+  const initialPage = paginateVisits(visitRowsCache, visitPage, VISITS_PAGE_SIZE);
+  visitPage = initialPage.currentPage;
 
   setTimeout(() => window.FT?.initVisitFilters?.(), 0);
   return `
     <div class="card">
       <div class="filter-row">
-        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits()">
-        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits()">
+        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits(1)">
+        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits(1)">
           <option value="">Semua Status</option>
           <option value="completed">Selesai</option>
           <option value="checked-in">Sedang Berlangsung</option>
           <option value="planned">Direncanakan</option>
         </select>
-        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits()">
+        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits(1)">
           <option value="">Semua Karyawan</option>
-          ${getEmployees().map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
+          ${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
         </select>
-        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
-          <option value="">Semua Project</option>
-        </select>
-        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
-          <option value="">Semua Outlet</option>
-        </select>
-        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
-        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
+        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Project</option></select>
+        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Outlet</option></select>
+        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
+        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
         <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetVisitFilters()">Reset</button>
         <div class="spacer"></div>
         <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
@@ -1370,50 +1407,11 @@ function renderVisits() {
       <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper visit-responsive-table">
         <table class="table" id="visitsTable">
-          <thead>
-            <tr>
-              <th>Tanggal</th>
-              <th>Karyawan</th>
-              <th>Outlet</th>
-              <th>Check In</th>
-              <th>Check Out</th>
-              <th>Durasi</th>
-              <th>Status</th>
-              <th>Rating</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${visits.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>` :
-            visits.map(v => {
-              const emp = empMap[v.employeeId]; const out = outletMap[v.outletId];
-              if (!emp || !out) return '';
-              const stars = v.rating > 0 ? `${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}` : '-';
-              return `
-                <tr data-visit-id="${esc(v.id)}" data-status="${esc(v.status || '')}" data-emp="${esc(v.employeeId || '')}" data-project="${esc(v.projectId || '')}" data-outlet="${esc(v.outletId || '')}" data-date="${esc(visitDay(v))}">
-                  <td>${formatDateShort(visitDay(v))}</td>
-                  <td>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
-                      <span style="font-weight:600;">${esc(emp.name)}</span>
-                    </div>
-                  </td>
-                  <td>${outletIcon(out.type)} ${esc(out.name)}</td>
-                  <td>${v.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
-                  <td>${statusBadge(v.status)}</td>
-                  <td style="color:#fbbf24;">${stars}</td>
-                  <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${v.id}')">Detail</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-            ${attendance.length ? '<tr id="attFilteredEmpty" hidden><td colspan="8"><div class="empty-state"><h3>Tidak ada data sesuai filter</h3><p>Ubah atau reset filter Attendance.</p></div></td></tr>' : ''}
-          </tbody>
+          <thead><tr><th>Tanggal</th><th>Karyawan</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th>Rating</th><th></th></tr></thead>
+          <tbody>${initialPage.items.length ? initialPage.items.map(row => row.html).join('') : '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>'}</tbody>
         </table>
       </div>
+      <div id="visitPager" class="visit-pager"></div>
     </div>
   `;
 }
@@ -1443,7 +1441,7 @@ window.FT.initVisitFilters = function() {
   FT.filterVisits(1);
 };
 
-window.FT.filterVisits = function(page = 1) {
+window.FT.filterVisits = function(page = visitPage) {
   const search = (document.getElementById('visitSearch')?.value || '').toLowerCase().trim();
   const status = document.getElementById('visitStatusFilter')?.value || '';
   const empF = document.getElementById('visitEmpFilter')?.value || '';
@@ -1451,41 +1449,32 @@ window.FT.filterVisits = function(page = 1) {
   const outletF = document.getElementById('visitOutletFilter')?.value || '';
   const dateFrom = document.getElementById('visitDateFrom')?.value || '';
   const dateTo = document.getElementById('visitDateTo')?.value || '';
-  const rows = [...document.querySelectorAll('#visitsTable tbody tr[data-visit-id]')];
   const filters = { search, status, employeeId:empF, projectId:projectF, outletId:outletF, dateFrom, dateTo };
-  const matched = rows.filter(row => visitMatchesFilters({
-    status:row.dataset.status,
-    employeeId:row.dataset.emp,
-    projectId:row.dataset.project,
-    outletId:row.dataset.outlet,
-    date:row.dataset.date,
-  }, filters, row.textContent));
+  const matched = visitRowsCache.filter(row => visitMatchesFilters(row.visit, filters, row.search));
   const pageState = paginateVisits(matched, page, VISITS_PAGE_SIZE);
-  const { currentPage, pageCount } = pageState;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  visitPage = pageState.currentPage;
+  const tbody = document.querySelector('#visitsTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.length
+    ? pageState.items.map(row => row.html).join('')
+    : '<tr><td colspan="9"><div class="empty-state"><h3>Tidak ada kunjungan sesuai filter</h3><p>Ubah atau reset filter kunjungan.</p></div></td></tr>';
   const summary = document.getElementById('visitFilterSummary');
-  if (summary) {
-    summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} kunjungan` : 'Tidak ada kunjungan yang cocok dengan filter.';
-  }
-  let pager = document.getElementById('visitPager');
-  if (!pager) {
-    pager = document.createElement('div');
-    pager.id = 'visitPager';
-    pager.className = 'visit-pager';
-    document.querySelector('.visit-responsive-table')?.after(pager);
-  }
-  pager.replaceChildren();
-  if (pageState.total > VISITS_PAGE_SIZE) {
-    const prev = document.createElement('button');
-    prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = currentPage <= 1;
-    prev.addEventListener('click', () => FT.filterVisits(currentPage - 1));
-    const label = document.createElement('span');
-    label.className = 'visit-page-indicator'; label.textContent = `Halaman ${currentPage} / ${pageCount}`;
-    const next = document.createElement('button');
-    next.className = 'btn btn-secondary btn-sm'; next.type = 'button'; next.textContent = 'Berikutnya ›'; next.disabled = currentPage >= pageCount;
-    next.addEventListener('click', () => FT.filterVisits(currentPage + 1));
-    pager.append(prev, label, next);
+  if (summary) summary.textContent = pageState.total
+    ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} kunjungan`
+    : 'Tidak ada kunjungan yang cocok dengan filter.';
+  const pager = document.getElementById('visitPager');
+  if (pager) {
+    pager.replaceChildren();
+    if (pageState.total > VISITS_PAGE_SIZE) {
+      const prev = document.createElement('button');
+      prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = pageState.currentPage <= 1;
+      prev.addEventListener('click', () => FT.filterVisits(pageState.currentPage - 1));
+      const label = document.createElement('span');
+      label.className = 'visit-page-indicator'; label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
+      const next = document.createElement('button');
+      next.className = 'btn btn-secondary btn-sm'; next.type = 'button'; next.textContent = 'Berikutnya ›'; next.disabled = pageState.currentPage >= pageState.pageCount;
+      next.addEventListener('click', () => FT.filterVisits(pageState.currentPage + 1));
+      pager.append(prev, label, next);
+    }
   }
 };
 
@@ -1494,6 +1483,7 @@ window.FT.resetVisitFilters = function() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  visitPage = 1;
   FT.filterVisits(1);
 };
 
