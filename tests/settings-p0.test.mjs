@@ -38,7 +38,9 @@ test('Settings P0 attendance UI uses authoritative project source and cutoff', a
   assert.doesNotMatch(ui, /name="attendanceMode"/);
   assert.doesNotMatch(ui, /attendanceRadiusM/);
   assert.doesNotMatch(ui, /officeLat/);
-  assert.doesNotMatch(ui, /addAttendancePoint\(event\)/);
+  assert.match(ui, /async addAttendancePoint\(event\)/);
+  assert.match(ui, /entity:'attendancePoints', op:'upsert'/);
+  assert.match(ui, /Attendance point tersimpan di cloud/);
   assert.match(db, /export function saveProjectAttendanceSettings/);
 });
 
