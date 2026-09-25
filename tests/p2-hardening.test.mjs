@@ -43,7 +43,8 @@ test('field photo metadata hydrates from authoritative evidence without becoming
   ]);
   assert.match(client, /fetchCloudFieldPhotos/);
   assert.match(client, /\/api\/evidence\?limit=250&offset=/);
-  assert.match(client, /remote\.data\.fieldPhotos/);
+  assert.match(client, /applyRemoteDataToLocal\(localDb, \{ fieldPhotos: rows \}\)/);
+  assert.match(client, /ensureEvidenceMetadataHydrated/);
   const collections = client.slice(client.indexOf('export const CLOUD_COLLECTIONS'), client.indexOf('const DB_KEY'));
   assert.doesNotMatch(collections, /'fieldPhotos'/);
   assert.match(evidence, /nextOffset/);
