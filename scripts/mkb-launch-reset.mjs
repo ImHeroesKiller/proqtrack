@@ -95,7 +95,6 @@ function operationalCounts() {
       (SELECT COUNT(*) FROM core_survey_responses WHERE organization_id='${ORG_ID}') survey_responses,
       (SELECT COUNT(*) FROM core_field_evidence WHERE organization_id='${ORG_ID}') evidence,
       (SELECT COUNT(*) FROM core_inventory_cycles WHERE organization_id='${ORG_ID}') inventory_cycles,
-      (SELECT COUNT(*) FROM core_inventory_cycles_v2 WHERE organization_id='${ORG_ID}') inventory_cycles_v2,
       (SELECT COUNT(*) FROM core_outlet_proposals WHERE organization_id='${ORG_ID}') outlet_proposals,
       (SELECT COUNT(*) FROM report_generation_jobs WHERE organization_id='${ORG_ID}') report_jobs,
       (SELECT COUNT(*) FROM core_report_schedules WHERE organization_id='${ORG_ID}') report_schedules,
@@ -197,7 +196,6 @@ d1(`
   DELETE FROM core_outlet_proposals WHERE organization_id='${ORG_ID}';
   DELETE FROM core_competitor_intel WHERE organization_id='${ORG_ID}';
   DELETE FROM core_price_observations WHERE organization_id='${ORG_ID}';
-  DELETE FROM core_inventory_cycles_v2 WHERE organization_id='${ORG_ID}';
   DELETE FROM core_inventory_cycles WHERE organization_id='${ORG_ID}';
   DELETE FROM core_stocks WHERE organization_id='${ORG_ID}';
   DELETE FROM core_leaves WHERE organization_id='${ORG_ID}';
