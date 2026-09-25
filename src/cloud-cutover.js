@@ -7,6 +7,7 @@ import {
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
 import { clearApiToken, getApiToken } from './lib/uploads.js';
 import { syncCloudOrganizations, syncCurrentOrganizationProfile } from './lib/cloud-organizations.js';
+import { warnUnexpectedRuntime } from './lib/console-hygiene.js';
 import {
   applyRemoteDataToLocal,
   bootstrapOperationalData,
@@ -69,7 +70,7 @@ async function cloudFirstLogin(event) {
       // Online authentication is cloud-authoritative. A stale local password,
       // device binding, or tenant cache must never block a valid server login.
       localAccount = null;
-      console.warn('local_login_hint_ignored', error?.message || error);
+      // Expected local hint mismatch: cloud authentication remains authoritative.
     }
 
     // A superadmin must authenticate globally first. Reusing a stale tenant id
@@ -103,7 +104,7 @@ async function cloudFirstLogin(event) {
       try {
         await syncCloudOrganizations();
       } catch (error) {
-        console.warn('organization_list_refresh_failed', error?.code || error?.message || error);
+        warnUnexpectedRuntime('organization_list_refresh_failed', error);
       }
     }
 
@@ -115,7 +116,7 @@ async function cloudFirstLogin(event) {
       }
       if (cloudAccount.organizationId) {
         await syncCurrentOrganizationProfile().catch(error => {
-          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+          warnUnexpectedRuntime('organization_profile_refresh_failed', error);
         });
       }
       localAccount = ensureCloudIdentity(db, cloudAccount, localAccount || localCandidate, password);
@@ -229,9 +230,7 @@ async function restoreCloudSessionOnReload() {
     // Keep it off the root LCP path and reconcile immediately after first render.
     if (account.organizationId && getApiToken() === restoreToken) {
       queueMicrotask(() => syncCurrentOrganizationProfile(restoreToken).catch(error => {
-        if (![401,403].includes(Number(error?.status || 0))) {
-          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
-        }
+        warnUnexpectedRuntime('organization_profile_refresh_failed', error);
       }));
     }
     return true;
@@ -242,9 +241,7 @@ async function restoreCloudSessionOnReload() {
     state.sessionRestoring = false;
     state.account = null;
     window.FT.scheduleRender?.();
-    if (navigator.onLine !== false) {
-      console.warn('cloud_session_restore_failed', error?.code || error?.message || error);
-    }
+    warnUnexpectedRuntime('cloud_session_restore_failed', error);
     return false;
   } finally {
     restoreInFlight = false;
@@ -252,7 +249,7 @@ async function restoreCloudSessionOnReload() {
 }
 
 async function cloudLogout() {
-  try { await logoutCloudSession(); } catch (error) { console.warn('cloud_logout_failed', error); }
+  try { await logoutCloudSession(); } catch (error) { warnUnexpectedRuntime('cloud_logout_failed', error); }
   const state = window.FT.state;
   state.loggedIn = false;
   state.sessionRestoring = false;

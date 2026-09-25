@@ -1,5 +1,6 @@
 import { clearApiToken, getApiToken, getApiTokenMeta, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
+import { warnUnexpectedRuntime } from './console-hygiene.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
   'clients',
@@ -358,9 +359,7 @@ export function ensureEvidenceMetadataHydrated(localDb, sessionToken = getApiTok
       return true;
     })
     .catch(error => {
-      if (![401,403].includes(Number(error?.status || 0))) {
-        console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
-      }
+      warnUnexpectedRuntime('evidence_metadata_hydrate_failed', error);
       return false;
     })
     .finally(() => {
@@ -1107,7 +1106,7 @@ export async function switchCloudOrganization(localDb, organizationId) {
           ensureCloudIdentity(localDb, priorSession, null, '');
         }
       } catch (rollbackError) {
-        console.warn('organization_switch_rollback_failed', rollbackError?.message || rollbackError);
+        warnUnexpectedRuntime('organization_switch_rollback_failed', rollbackError);
         await revokeApiSession().catch(() => {});
       }
     }
