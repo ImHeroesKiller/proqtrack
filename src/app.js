@@ -2848,12 +2848,45 @@ function productOptionList(rows, valueKey, labelFn) {
   return (rows||[]).map(row=>`<option value="${esc(row[valueKey])}">${esc(labelFn(row))}</option>`).join('');
 }
 
+let productRowsCache = [];
+
 function renderProducts() {
-  const products=getProducts(), db=getDB();
-  const models=products.map(product=>productOperationalModel(product,{projects:db.projects||[],clients:db.clients||[]}));
-  const options=productFilterOptions(products,{projects:db.projects||[],clients:db.clients||[]});
-  const statusSummary=productStatusSummary(products);
-  const sharedCount=models.filter(model=>model.shared).length;
+  const products = getProducts();
+  const db = getDB();
+  const projects = db.projects || [];
+  const clients = db.clients || [];
+  const projectMap = new Map(projects.map(project => [String(project.id), project]));
+  const clientMap = new Map(clients.map(client => [String(client.id), client]));
+  const models = products.map(product => productOperationalModel(product, { projects, clients, projectMap, clientMap }));
+  const options = productFilterOptions(products,{projects,clients});
+  const statusSummary = productStatusSummary(products);
+  const sharedCount = models.filter(model => model.shared).length;
+  const referenceCounts = new Map();
+  for (const rows of [db.productSales, db.stocks, db.priceObservations, db.competitorIntel]) {
+    for (const row of rows || []) {
+      const key = String(row.productId || '');
+      if (!key) continue;
+      referenceCounts.set(key, (referenceCounts.get(key) || 0) + 1);
+    }
+  }
+  productRowsCache = models.map(model => {
+    const p = model.product;
+    const lifecycle = productLifecycleAction(p, referenceCounts.get(String(p.id)) || 0);
+    return {
+      model,
+      html:`
+        <tr>
+          <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
+          <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
+          <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
+          <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
+          <td>${statusBadge(p.status)}</td>
+          <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">${esc(lifecycle.label)}</button></td>
+        </tr>`,
+    };
+  });
+  const initialPage = paginateProducts(productRowsCache, productPage, PRODUCT_PAGE_SIZE);
+  productPage = initialPage.currentPage;
   const rendered=`
     <div class="grid-4" style="margin-bottom:14px">
       <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${statusSummary.total}</div></div>
@@ -2880,17 +2913,7 @@ function renderProducts() {
       <div id="productResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper"><table class="table" id="productTable">
         <thead><tr><th>Produk</th><th>Project / Client</th><th>Brand / Kategori</th><th>Harga</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          ${models.map(model=>{const p=model.product,lifecycle=productLifecycleAction(p,productReferenceSummary(p.id).total);return `
-            <tr data-search="${esc(model.search)}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}" data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
-              <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
-              <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
-              <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
-              <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
-              <td>${statusBadge(p.status)}</td>
-              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">${esc(lifecycle.label)}</button></td>
-            </tr>`;}).join('')}
-        </tbody>
+        <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
       </table></div>
       <div id="productEmpty" class="pm-empty" hidden></div>
       <div id="productPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(-1)">Sebelumnya</button><span id="productPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(1)">Berikutnya</button></div>
@@ -2901,26 +2924,22 @@ function renderProducts() {
 
 window.FT.productPage=function(delta){ productPage=Math.max(1,productPage+Number(delta||0)); window.FT.filterProducts(productPage); };
 
+window.FT.filterProducts(productPage); };
+
 window.FT.filterProducts=function(page=productPage){
   const ids={search:'productSearch',projectId:'productProjectFilter',clientId:'productClientFilter',category:'productCatFilter',brand:'productBrandFilter',status:'productStatusFilter'};
   const filters=productFilterSnapshot(key=>document.getElementById(ids[key])?.value||'');
-  const rows=[...document.querySelectorAll('#productTable tbody tr')];
-  const matched=rows.filter(row=>productMatchesFilters({
-    search:row.dataset.search||'',
-    projectIds:String(row.dataset.projects||'').split('|').filter(Boolean),
-    clientId:row.dataset.client||'',
-    product:{category:row.dataset.cat||'',brand:row.dataset.brand||'',status:row.dataset.status||''},
-  },filters));
-  const state=paginateProducts(matched,page,PRODUCT_PAGE_SIZE);
-  productPage=state.currentPage;
-  const visible=new Set(state.items);
-  rows.forEach(row=>{row.style.display=visible.has(row)?'':'none';});
+  const matched=productRowsCache.filter(row=>productMatchesFilters(row.model,filters));
+  const pageState=paginateProducts(matched,page,PRODUCT_PAGE_SIZE);
+  productPage=pageState.currentPage;
+  const tbody=document.querySelector('#productTable tbody');
+  if(tbody) tbody.innerHTML=pageState.items.map(row=>row.html).join('');
   const summary=document.getElementById('productResultSummary');
-  if(summary) summary.textContent=state.total?`Menampilkan ${state.from}–${state.to} dari ${state.total} produk`:(rows.length?'Tidak ada produk yang sesuai filter.':'Belum ada produk.');
+  if(summary) summary.textContent=pageState.total?`Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} produk`:(productRowsCache.length?'Tidak ada produk yang sesuai filter.':'Belum ada produk.');
   const empty=document.getElementById('productEmpty');
-  if(empty){empty.hidden=state.total!==0;empty.textContent=rows.length?'Tidak ada produk yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.':'Belum ada produk. Tambahkan produk atau gunakan Bulk Upload.';}
-  const pager=document.getElementById('productPager'); if(pager) pager.hidden=state.total<=PRODUCT_PAGE_SIZE;
-  const label=document.getElementById('productPageLabel'); if(label) label.textContent=`Halaman ${state.currentPage} / ${state.pageCount}`;
+  if(empty){empty.hidden=pageState.total!==0;empty.textContent=productRowsCache.length?'Tidak ada produk yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.':'Belum ada produk. Tambahkan produk atau gunakan Bulk Upload.';}
+  const pager=document.getElementById('productPager'); if(pager) pager.hidden=pageState.total<=PRODUCT_PAGE_SIZE;
+  const label=document.getElementById('productPageLabel'); if(label) label.textContent=`Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
   const sync=document.getElementById('productSyncState'); if(sync) sync.innerHTML=productSyncLabel();
 };
 
