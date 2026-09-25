@@ -1072,7 +1072,7 @@ async function bootstrapData(env, claims) {
     data.products = data.products.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.projectProducts = data.projectProducts.filter(row => allowedProjects.has(str(row.projectId)));
     for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
-    data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
+    data.leaves = data.leaves.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
     data.inventoryCycles = data.inventoryCycles.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
