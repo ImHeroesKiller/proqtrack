@@ -305,7 +305,7 @@ export async function validateAttendancePointMutation(row, existing, op) {
   return null;
 }
 
-async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
+export async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
   if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
   const projectId=str(row.projectId || existing?.project_id);
   const employeeId=str(row.employeeId || existing?.employee_id);
