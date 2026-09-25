@@ -37,6 +37,7 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
+import { warnUnexpectedRuntime } from './lib/console-hygiene.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -588,8 +589,8 @@ async function refreshHomeData({ manual = false } = {}) {
     return false;
   } catch (error) {
     if (manual) showToast(error?.message || 'Refresh Home gagal', 'error');
-    else if (![401,403].includes(Number(error?.status || 0))) {
-      console.warn('home_refresh_failed', error?.code || error?.message || error);
+    else {
+      warnUnexpectedRuntime('home_refresh_failed', error);
     }
     return false;
   } finally {
@@ -641,8 +642,8 @@ async function refreshTrackingData({ manual = false } = {}) {
     return false;
   } catch (error) {
     if (manual) showToast(error?.message || 'Refresh Last Location gagal', 'error');
-    else if (![401,403].includes(Number(error?.status || 0))) {
-      console.warn('tracking_refresh_failed', error?.code || error?.message || error);
+    else {
+      warnUnexpectedRuntime('tracking_refresh_failed', error);
     }
     return false;
   } finally {
@@ -694,8 +695,8 @@ async function refreshVisitsData({ manual = false } = {}) {
     return false;
   } catch (error) {
     if (manual) showToast(error?.message || 'Refresh kunjungan gagal', 'error');
-    else if (![401,403].includes(Number(error?.status || 0))) {
-      console.warn('visits_refresh_failed', error?.code || error?.message || error);
+    else {
+      warnUnexpectedRuntime('visits_refresh_failed', error);
     }
     return false;
   } finally {
@@ -1133,7 +1134,7 @@ function render() {
     ensureEvidenceMetadataHydrated(getDB()).then(changed => {
       if (changed && state.loggedIn && state.route === route) scheduleRender();
     }).catch(error => {
-      console.warn('evidence_metadata_route_hydrate_failed', error?.message || error);
+      warnUnexpectedRuntime('evidence_metadata_route_hydrate_failed', error);
     });
   }
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
