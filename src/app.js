@@ -57,11 +57,32 @@ import {
   canEditPendingLeave,
 } from './lib/attendance-leave-ui.js';
 import { icon as appIcon, iconSvg } from '../assets/icons.js';
-import './bulk-employees.js';
-import './bulk-master.js';
 
 const safeColor = value => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : '#64748b';
 const jsArg = value => esc(JSON.stringify(String(value ?? '')));
+
+let bulkEmployeesRuntimePromise = null;
+let bulkMasterRuntimePromise = null;
+
+function ensureBulkEmployeesRuntime() {
+  if (!bulkEmployeesRuntimePromise) {
+    bulkEmployeesRuntimePromise = import('./bulk-employees.js').catch(error => {
+      bulkEmployeesRuntimePromise = null;
+      throw error;
+    });
+  }
+  return bulkEmployeesRuntimePromise;
+}
+
+function ensureBulkMasterRuntime() {
+  if (!bulkMasterRuntimePromise) {
+    bulkMasterRuntimePromise = import('./bulk-master.js').catch(error => {
+      bulkMasterRuntimePromise = null;
+      throw error;
+    });
+  }
+  return bulkMasterRuntimePromise;
+}
 
 // Make utils available globally for inline handlers
 window.FT = {
@@ -339,6 +360,24 @@ function scheduleRender() {
   return true;
 }
 window.FT.scheduleRender = scheduleRender;
+window.FT.openBulkEmployees = async function() {
+  try {
+    await ensureBulkEmployeesRuntime();
+    window.BulkEmployees?.open?.();
+  } catch (error) {
+    console.warn('bulk_employees_runtime_failed', error?.message || error);
+    showToast('Modul bulk karyawan belum dapat dimuat.', 'error');
+  }
+};
+window.FT.openBulkMaster = async function(entity) {
+  try {
+    await ensureBulkMasterRuntime();
+    window.BulkMaster?.open?.(entity);
+  } catch (error) {
+    console.warn('bulk_master_runtime_failed', error?.message || error);
+    showToast('Modul bulk master belum dapat dimuat.', 'error');
+  }
+};
 
 window.FT.goNav = function(event, route) {
   event?.preventDefault?.();
@@ -1260,6 +1299,9 @@ function renderManagerDashboard() {
     .filter(v => visitDay(v) === today)
     .sort((a,b) => String(b.checkInTime || '').localeCompare(String(a.checkInTime || '')));
   const employees = getEmployees();
+  const outlets = getOutlets();
+  const employeeById = new Map(employees.map(row => [String(row.id), row]));
+  const outletById = new Map(outlets.map(row => [String(row.id), row]));
   const activeEmployees = employees.filter(e => e.status === 'active');
   const pendingLeaves = getLeaves().filter(l => l.status === 'pending').length;
   const project = isManager() && state.account?.projectId
@@ -1297,8 +1339,8 @@ function renderManagerDashboard() {
         <div class="card-title">Aktivitas hari ini</div>
         <div class="card-subtitle">${esc(today)} · terbaru lebih dulu</div>
         ${todayVisits.length ? `<div class="visits-table-wrapper"><table class="table"><thead><tr><th>Waktu</th><th>Sales</th><th>Outlet</th><th>Status</th></tr></thead><tbody>${todayVisits.slice(0,8).map(v => {
-          const emp = employees.find(e => e.id === v.employeeId);
-          const out = getOutlets().find(o => o.id === v.outletId);
+          const emp = employeeById.get(String(v.employeeId));
+          const out = outletById.get(String(v.outletId));
           return `<tr><td>${esc(v.checkInTime || '-')}</td><td>${esc(emp?.name || '-')}</td><td>${esc(out?.name || '-')}</td><td>${statusBadge(v.status)}</td></tr>`;
         }).join('')}</tbody></table></div><div class="home-card-footer">${dashLink('#/visits','Lihat semua kunjungan')}</div>` : '<div class="empty-state"><h3>Belum ada kunjungan hari ini</h3><p>Pantau tim di Last Location atau lihat jadwal kunjungan.</p></div>'}
       </div>
@@ -1324,6 +1366,21 @@ function renderSupervisorDashboard() {
   const pendingStores = getOutletProposals().filter(p => p.status === 'pending');
   const active = visits.filter(v => ['checked-in','in_progress'].includes(String(v.status || '')));
   const employeeMap = new Map(team.map(row => [String(row.id),row]));
+  const visitsTodayByEmployee = new Map();
+  for (const visit of visits) {
+    const key = String(visit.employeeId || '');
+    visitsTodayByEmployee.set(key, (visitsTodayByEmployee.get(key) || 0) + 1);
+  }
+  const monthSalesByEmployee = new Map();
+  const monthKey = todayISO().slice(0,7);
+  for (const sale of getProductSales()) {
+    const date = String(sale.saleDate || sale.date || sale.createdAt || '');
+    if (!date.startsWith(monthKey)) continue;
+    const key = String(sale.employeeId || sale.soldBy || '');
+    if (!teamIds.has(key)) continue;
+    const amount = Number(sale.amount ?? sale.total ?? sale.totalAmount ?? 0) || 0;
+    monthSalesByEmployee.set(key, (monthSalesByEmployee.get(key) || 0) + amount);
+  }
   const leaveTypes = new Map((getLeaveTypes() || []).map(row => [String(row.code || row.id || row.value || ''),row.label || row.name || row.code]));
   const org = getOrganization();
   const leavePeriod = row => {
@@ -1351,7 +1408,7 @@ function renderSupervisorDashboard() {
       <div class="card">
         <div class="card-title">Tim hari ini</div>
         <div class="card-subtitle">Aktivitas dan penjualan bulan berjalan</div>
-        ${team.slice(0,8).map(e => `<div class="home-team-row"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayCount(e.id)} visits · ${formatCurrency(monthSalesAmount(e.id))}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" data-pqt-onclick="return FT.openTrackingEmployee(event,'${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">Belum ada anggota tim.</p>'}
+        ${team.slice(0,8).map(e => `<div class="home-team-row"><div><strong>${esc(e.name)}</strong><div class="am-muted">${esc(e.area)} · ${visitsTodayByEmployee.get(String(e.id)) || 0} visits · ${formatCurrency(monthSalesByEmployee.get(String(e.id)) || 0)}</div></div><a class="btn btn-secondary btn-sm" href="#/tracking" data-pqt-onclick="return FT.openTrackingEmployee(event,'${e.id}')">Track</a></div>`).join('') || '<p class="am-muted">Belum ada anggota tim.</p>'}
         ${team.length > 8 ? `<div class="home-card-footer">${dashLink('#/my-team',`Lihat semua ${team.length} anggota`)}</div>` : ''}
       </div>
       <div class="card">
@@ -2141,7 +2198,7 @@ function renderEmployees() {
         <div class="spacer"></div>
         <span id="employeeSyncState">${employeeSyncLabel()}</span>
         <button class="btn btn-secondary" id="employeeRefreshBtn" type="button" data-pqt-onclick="FT.refreshEmployees()">Refresh</button>
-        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkEmployees.open()">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>` : ``}
+        ${isProjectAdmin() ? `<button class="btn btn-secondary" data-pqt-onclick="FT.openBulkEmployees()">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="FT.openEmployeeModal()">+ Tambah Karyawan</button>` : ``}
       </div>
       <div id="employeeResultSummary" class="pm-result-summary" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper">
@@ -2340,6 +2397,7 @@ window.FT.createEmployee = async function(e) {
   let uploadedPhoto = null;
   try {
     if (submit) { submit.disabled = true; submit.textContent = 'Memeriksa…'; }
+    await ensureBulkEmployeesRuntime();
     const { checked } = await window.BulkEmployees.previewSingleEmployee({ ...data, photo:'' });
     if (!checked?.valid) {
       const error = new Error((checked?.errors || ['VALIDATION_FAILED']).join(', '));
@@ -2360,6 +2418,7 @@ window.FT.createEmployee = async function(e) {
     data.photo = uploadedPhoto.url;
     if (submit) submit.textContent = 'Menyimpan…';
     delete data.photoFile;
+    await ensureBulkEmployeesRuntime();
     await window.BulkEmployees.createSingleEmployee(data);
     closeModal();
     showToast(checked.loginAction === 'create'
@@ -2380,6 +2439,7 @@ window.FT.deleteEmployee = async function(id) {
   const { message:impact } = employeeDeactivationImpact(id, getDB().projectAssignments || []);
   if (!confirm(`Nonaktifkan karyawan ini?${impact} Akses login aktif akan dicabut.`)) return;
   try {
+    await ensureBulkEmployeesRuntime();
     await window.BulkEmployees.updateSingleEmployee({
       employeeCode: current.employeeCode || current.code || id,
       name: current.name,
@@ -2540,6 +2600,7 @@ window.FT.updateEmployee = async function(e, id) {
     data.photo = uploadedPhoto.url;
     delete data.photoFile;
     if (submit) submit.textContent = 'Menyimpan…';
+    await ensureBulkEmployeesRuntime();
     await window.BulkEmployees.updateSingleEmployee(data);
     const oldKey = uploadedPhoto?.uploaded ? employeePhotoObjectKey(current.photo) : '';
     if (oldKey && oldKey !== uploadedPhoto.key) await cleanupEmployeePhoto(oldKey);
@@ -2637,7 +2698,7 @@ function renderOutlets() {
         <div class="spacer"></div>
         <span id="outletSyncState">${outletSyncLabel()}</span>
         <button class="btn btn-secondary" id="outletRefreshBtn" data-pqt-onclick="FT.refreshOutlets()">Refresh</button>
-        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('outlets')">Bulk Upload</button>
+        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('outlets')">Bulk Upload</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openOutletModal()">+ Tambah Outlet</button>
       </div>
       <div id="outletResultSummary" class="am-muted" style="margin:10px 0"></div>
@@ -3170,7 +3231,7 @@ function renderProducts() {
         <div class="spacer"></div>
         <span id="productSyncState">${productSyncLabel()}</span>
         <button class="btn btn-secondary" id="productRefreshBtn" data-pqt-onclick="FT.refreshProducts()">Refresh</button>
-        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('products')">Bulk Upload</button>
+        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('products')">Bulk Upload</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
       </div>
       <datalist id="catList">${options.categories.map(v=>`<option value="${esc(v)}">`).join('')}</datalist>
@@ -4812,8 +4873,8 @@ function renderCompetitors() {
         <div class="card-title" style="margin:0;">Master Kompetitor</div>
         <div class="spacer"></div>
         ${isOrgAdmin() ? `
-        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('competitors')">Bulk Merek</button>
-        <button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('competitorProducts')">Bulk Produk</button>
+        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('competitors')">Bulk Merek</button>
+        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('competitorProducts')">Bulk Produk</button>
         <button class="btn btn-secondary" data-pqt-onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
         <button class="btn btn-primary" data-pqt-onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
         ` : ''}
