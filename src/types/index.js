@@ -723,7 +723,7 @@ function renderClients() {
       ["Project Terhubung", (db.projects || []).length],
     ])}<div class="card">
       <div class="pm-toolbar">
-        ${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}
+        ${canManageClients() ? `<button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('clients')">Bulk Upload</button><button class="btn btn-primary" data-pqt-onclick="PM.openClient()">${svg("plus")} Tambah Klien</button>` : ""}
         <input class="input" id="clientSearch" placeholder="Cari klien, PIC, kota" aria-label="Cari klien" data-pqt-oninput="PM.filterClients(1)">
         <select class="select" id="clientStatusFilter" aria-label="Filter status klien" data-pqt-onchange="PM.filterClients(1)"><option value="">Semua status</option><option value="active">Aktif</option><option value="prospect">Prospect</option><option value="inactive">Nonaktif</option></select>
         <span id="clientSyncState">${clientSyncLabel()}</span>
@@ -775,7 +775,7 @@ function renderProjects(readOnly = false) {
       ["Assignment Aktif", (db.projectAssignments || []).filter((x) => x.status === "active" && rows.some((p) => p.id === x.projectId)).length],
     ])}<div class="card">
       <div class="pm-toolbar">
-        ${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="BulkMaster.open('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}
+        ${!readOnly && canManage() ? `<button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('projects')">Bulk Upload</button>${canCreateProject() ? `<button class="btn btn-primary" data-pqt-onclick="PM.openProject()">${svg("plus")} Tambah Project</button>` : ""}` : ""}
         <input class="input" id="projectSearch" placeholder="Cari project, kode, klien" aria-label="Cari project" data-pqt-oninput="PM.filterProjects(1)">
         <select class="select" id="projectStatusFilter" aria-label="Filter status project" data-pqt-onchange="PM.filterProjects(1)">
           <option value="">Semua status</option><option value="active">Aktif</option><option value="draft">Draft</option><option value="on_hold">Ditahan</option><option value="completed">Selesai</option><option value="cancelled">Dibatalkan</option>
