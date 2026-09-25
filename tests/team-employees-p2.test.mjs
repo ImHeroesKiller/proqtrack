@@ -5,24 +5,27 @@ import { readFile } from 'node:fs/promises';
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Team Employees P2 adds combined employee filters pagination and sync state', async () => {
-  const app = await read('src/app.js');
-  const helper = await read('src/lib/team-employee-ui.js');
+  const [app, employeePage, helper] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/employees-page.js'),
+    read('src/lib/team-employee-ui.js'),
+  ]);
   assert.match(helper, /EMPLOYEE_PAGE_SIZE = 15/);
-  assert.match(app, /empRoleFilter/);
-  assert.match(app, /empStatusFilter/);
-  assert.match(app, /empProjectFilter/);
-  assert.match(app, /employeeResultSummary/);
-  assert.match(app, /employeePager/);
-  assert.match(app, /employeeSyncState/);
-  assert.match(app, /employeeSyncState/);
+  assert.match(employeePage, /empRoleFilter/);
+  assert.match(employeePage, /empStatusFilter/);
+  assert.match(employeePage, /empProjectFilter/);
+  assert.match(employeePage, /employeeResultSummary/);
+  assert.match(employeePage, /employeePager/);
+  assert.match(employeePage, /employeeSyncState/);
+  assert.match(employeePage, /employeeSyncState/);
   assert.match(helper, /function employeeSyncState/);
 });
 
 test('Team Employees P2 renames destructive action to Nonaktifkan and hides it for inactive rows', async () => {
-  const app = await read('src/app.js');
-  assert.match(app, />Nonaktifkan<\/button>/);
-  assert.match(app, /e\.status === 'active'/);
-  assert.doesNotMatch(app, /FT\.deleteEmployee\('\$\{e\.id\}'\)[^\n]*>Hapus<\/button>/);
+  const employeePage = await read('src/routes/employees-page.js');
+  assert.match(employeePage, />Nonaktifkan<\/button>/);
+  assert.match(employeePage, /e\.status === 'active'/);
+  assert.doesNotMatch(employeePage, /FT\.deleteEmployee\('\$\{e\.id\}'\)[^\n]*>Hapus<\/button>/);
 });
 
 test('Team Employees P2 enriches employee detail with assignments, supervisor, capacity and login', async () => {
