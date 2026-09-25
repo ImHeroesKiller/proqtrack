@@ -3409,6 +3409,7 @@ window.FT.deleteStock = function() {
 function renderAttendanceManager() {
   const attendance = getAttendance();
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const projectMap = Object.fromEntries((getDB().projects || []).map(p => [p.id,p]));
   return `
     <div class="card">
       <div class="filter-row">
@@ -3422,18 +3423,20 @@ function renderAttendanceManager() {
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
-          <thead><tr><th>Karyawan</th><th>Tanggal</th><th>Check In</th><th>Lokasi</th><th>Status</th></tr></thead>
+          <thead><tr><th>Karyawan</th><th>Project</th><th>Tanggal</th><th>Check In</th><th>Lokasi</th><th>Sumber</th><th>Status</th></tr></thead>
           <tbody>
-            ${attendance.length === 0 ? `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada data absensi</h3></div></td></tr>` :
+            ${attendance.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada data absensi</h3></div></td></tr>` :
             attendance.map(a => {
               const emp = empMap[a.employeeId];
               if (!emp) return '';
               return `
                 <tr>
                   <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
+                  <td>${esc(projectMap[a.projectId]?.code || a.projectId || '-')}</td>
                   <td>${formatDateShort(a.date)}</td>
-                  <td>${a.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td style="font-size:13px;">${a.checkInLocation || '-'}</td>
+                  <td>${esc(a.checkInTime || (a.checkInAt ? String(a.checkInAt).slice(11,16) : '—'))}</td>
+                  <td style="font-size:13px;">${esc(a.checkInLocation || a.locationName || '-')}</td>
+                  <td>${esc(a.source === 'visit' ? 'Visit' : 'Manual')}</td>
                   <td>${statusBadge(a.status)}</td>
                 </tr>
               `;
@@ -3501,7 +3504,7 @@ function renderLeavesManager() {
         <table class="table" id="leaveTable">
           <thead><tr><th>Karyawan</th><th>Project</th><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
           <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3></div></td></tr>` :
+            ${leaves.length === 0 ? `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3></div></td></tr>` :
             leaves.map(l => {
               const emp = empMap[l.employeeId];
               if (!emp) return '';
@@ -3515,7 +3518,7 @@ function renderLeavesManager() {
                   <td style="text-align:center; font-weight:600;">${l.days}</td>
                   <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${esc(l.reason)}</td>
                   <td>${statusBadge(l.status)}</td>
-                  <td style="font-size:12px; color:var(--gray-400);">${l.status === 'pending' ? '-' : (accMap[l.approverId] || '-')}</td>
+                  <td style="font-size:12px; color:var(--gray-400);">${l.status === 'pending' ? '-' : esc(accMap[l.approverId] || '-')}</td>
                   <td>
                     ${l.status === 'pending' ? `
                       <button class="btn btn-primary btn-sm" style="background:var(--green-600);border-color:var(--green-600);" data-pqt-onclick="FT.approveLeave('${l.id}')">✓ Setujui</button>
@@ -3575,7 +3578,7 @@ window.FT.viewLeave = function(id) {
       <div class="detail-label">Alasan</div><div class="detail-value full">${esc(l.reason)}</div>
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(l.status)}</div>
       <div class="detail-label">Diajukan</div><div class="detail-value">${formatDateShort(l.submittedAt)}</div>
-      <div class="detail-label">Approver</div><div class="detail-value">${accMap[l.approverId] || '-'}</div>
+      <div class="detail-label">Approver</div><div class="detail-value">${esc(accMap[l.approverId] || '-')}</div>
     </div>
     <div class="modal-footer" style="padding:24px 0 0;">
       <button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>
@@ -3588,6 +3591,7 @@ function renderMyAttendance() {
   const empId = myEmployeeId();
   const emp = getEmployees().find(e => e.id === empId);
   const records = getAttendance().filter(a => a.employeeId === empId).sort((a,b) => b.date.localeCompare(a.date));
+  const projectMap = Object.fromEntries((getDB().projects || []).map(p => [p.id,p]));
   const summary = {
     hadir: records.filter(r => normalizeAttendanceStatus(r.status) === 'hadir').length,
     terlambat: records.filter(r => normalizeAttendanceStatus(r.status) === 'terlambat').length,
@@ -3604,14 +3608,16 @@ function renderMyAttendance() {
       <div class="card-subtitle">${emp ? emp.name : ''} — ${records.length} catatan</div>
       <div class="visits-table-wrapper">
         <table class="table">
-          <thead><tr><th>Tanggal</th><th>Check In</th><th>Lokasi Check In</th><th>Status</th></tr></thead>
+          <thead><tr><th>Project</th><th>Tanggal</th><th>Check In</th><th>Lokasi Check In</th><th>Sumber</th><th>Status</th></tr></thead>
           <tbody>
-            ${records.length === 0 ? `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada riwayat absensi</h3></div></td></tr>` :
+            ${records.length === 0 ? `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada riwayat absensi</h3></div></td></tr>` :
             records.map(a => `
               <tr>
+                <td>${esc(projectMap[a.projectId]?.code || a.projectId || '-')}</td>
                 <td>${formatDateShort(a.date)}</td>
-                <td>${a.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                <td style="font-size:13px;">${a.checkInLocation || '-'}</td>
+                <td>${esc(a.checkInTime || (a.checkInAt ? String(a.checkInAt).slice(11,16) : '—'))}</td>
+                <td style="font-size:13px;">${esc(a.checkInLocation || a.locationName || '-')}</td>
+                <td>${esc(a.source === 'visit' ? 'Visit' : 'Manual')}</td>
                 <td>${statusBadge(a.status)}</td>
               </tr>
             `).join('')}
@@ -3682,7 +3688,7 @@ window.FT.openMyLeaveModal = function() {
       <div class="form-group">
         <label class="label">Tipe</label>
         <select class="select" name="type" required>
-          ${leaveTypes.map(t => `<option>${t.name}</option>`).join('')}
+          ${leaveTypes.map(t => `<option>${esc(t.name)}</option>`).join('')}
         </select>
       </div>
       <div class="form-row">
