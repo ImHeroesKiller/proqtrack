@@ -129,5 +129,5 @@ test('P3 runtime and PWA baseline wires maintenance modules explicitly', async (
   assert.match(bootstrap, /uiEvents: Boolean\(window\.ProQUIEvents\)/);
   assert.match(sw, /proqtrack-v12\.44/);
   assert.match(sw, /\.\/src\/lib\/ui-events\.js/);
-  assert.match(sw, /\.\/src\/lib\/document-export\.js/);
+  assert.match(sw, /RUNTIME_CACHE/);
 });

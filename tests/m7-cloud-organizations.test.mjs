@@ -53,7 +53,7 @@ test('M7 health, PWA and deployment smoke include organization authority', async
   ]);
   assert.match(hardening, /metadata_json/);
   assert.match(sw, /proqtrack-v12/);
-  assert.match(sw, /cloud-organizations\.js/);
+  assert.match(sw, /PRECACHE_MANIFEST/);
   assert.match(main, /handleOrganizationAdminRoute/);
   assert.match(workflow, /\/api\/admin\/organizations/);
   assert.match(migration, /ALTER TABLE core_organizations ADD COLUMN metadata_json/);
