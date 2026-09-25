@@ -51,7 +51,8 @@ test('offline outbox contains operational collections only and never account cre
   assert.doesNotMatch(source, /password/i);
   assert.doesNotMatch(source, /Storage\.prototype/);
   assert.doesNotMatch(source, /proto\.setItem/);
-  assert.match(source, /setInterval\(observeLocalCache/);
+  assert.match(source, /proqtrack:db-persisted/);
+  assert.doesNotMatch(source, /setInterval\(observeLocalCache/);
   assert.match(source, /recoverCloudConflict/);
 });
 
