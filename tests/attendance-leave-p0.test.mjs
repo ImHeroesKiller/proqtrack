@@ -5,7 +5,12 @@ import {
   validateAttendanceMutation,
   validateLeaveMutation,
   visitAttendanceStatements,
+  operationalTransitionAllowed,
 } from '../worker/operations.js';
+
+function validateTransition(role, entity, change, existing) {
+  return operationalTransitionAllowed({role},entity,change,{existing});
+}
 
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const db = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8');
@@ -158,4 +163,43 @@ test('P0 cloud bootstrap isolates leaves by both project and employee', () => {
 
 test('P0 visit checkout keeps attendance on original visit start day', () => {
   assert.match(worker,/isCheckOut\s*\? \(existing\.started_at/);
+});
+
+
+test('P0 attendance records are immutable after first authoritative write', () => {
+  const existing={id:'ATT-1',project_id:'PRJ-1',employee_id:'EMP-1',work_date:'2026-09-25',status:'present'};
+  assert.equal(validateTransition('manager','attendance',{row:{...existing,status:'late'}},existing),false);
+  assert.equal(validateTransition('employee','attendance',{row:{...existing,checkInAt:'2026-09-25T09:00:00Z'}},existing),false);
+});
+
+test('P0 leave pending identity and period fields are immutable while approval status may advance', () => {
+  const existing={
+    id:'LV-1',project_id:'PRJ-1',employee_id:'EMP-1',start_date:'2026-09-25',end_date:'2026-09-26',
+    type:'Cuti Tahunan',reason:'Keperluan keluarga',days:2,status:'pending',submitted_at:'2026-09-24'
+  };
+  assert.equal(validateTransition('supervisor','leaves',{row:{id:'LV-1',projectId:'PRJ-2',status:'approved'}},existing),false);
+  assert.equal(validateTransition('supervisor','leaves',{row:{id:'LV-1',startDate:'2026-09-27',status:'approved'}},existing),false);
+  assert.equal(validateTransition('supervisor','leaves',{row:{id:'LV-1',status:'approved'}},existing),true);
+  assert.equal(validateTransition('employee','leaves',{row:{id:'LV-1',status:'approved'}},existing),false);
+});
+
+test('P0 leave assignment must cover the entire requested period', async () => {
+  const calls=[];
+  const env={DB:{prepare(sql){return{bind(...args){calls.push({sql,args});return{async first(){
+    if (/FROM core_projects/.test(sql)) return {id:'PRJ-1',metadata_json:'{}'};
+    if (/FROM core_employee_project_assignments/.test(sql)) return null;
+    if (/FROM core_leaves/.test(sql)) return null;
+    return null;
+  }};}};}}};
+  const row={id:'LV-2',projectId:'PRJ-1',employeeId:'EMP-1',type:'Cuti Tahunan',startDate:'2026-09-25',endDate:'2026-09-30',reason:'Keperluan keluarga',status:'pending'};
+  const result=await validateLeaveMutation(env,'ORG-1',row,null,'upsert');
+  assert.equal(result?.error,'LEAVE_ASSIGNMENT_REQUIRED');
+  const assignmentCall=calls.find(x=>/FROM core_employee_project_assignments/.test(x.sql));
+  assert.ok(assignmentCall);
+  assert.equal(assignmentCall.args.at(-1),'2026-09-30');
+});
+
+test('P0 leave backfill accepts historical ended assignment only when it covers full leave period', () => {
+  assert.match(migration,/a\.status IN \('active','inactive','ended'\)/);
+  assert.match(migration,/date\(a\.ends_on\) >= date\(core_leaves\.end_date\)/);
 });
