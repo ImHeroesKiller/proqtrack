@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "budgets": {
+    "source": {
+      "src/app.js": 350000,
+      "src/lib/db.js": 125000,
+      "src/types/index.js": 120000,
+      "src/lib/cloud-data.js": 52000,
+      "src/field-sales.js": 52000,
+      "index.html": 32000,
+      "sw.js": 12000
+    },
+    "frontendJsTotalBytes": 1250000,
+    "distPrecacheAssetCount": 140,
+    "distPrecacheTotalBytes": 1900000
+  }
+}
