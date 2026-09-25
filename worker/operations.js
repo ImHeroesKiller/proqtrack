@@ -407,7 +407,11 @@ export function visitAttendanceStatements(env, organizationId, row, existing, at
   const capturedAt=str(isCheckIn
     ? (row.checkInCapturedAt || row.startedAt || row.checkInAt)
     : (row.checkOutCapturedAt || row.completedAt || row.checkOutAt));
-  const workDate=str(capturedAt || row.date || row.scheduledAt || existing.scheduled_at).slice(0,10);
+  const workDate=str(
+    isCheckOut
+      ? (existing.started_at || row.startedAt || row.date || existing.scheduled_at || capturedAt)
+      : (capturedAt || row.date || row.scheduledAt || existing.scheduled_at)
+  ).slice(0,10);
   if (!projectId || !employeeId || !workDate) return [];
 
   const attendanceId=`ATTV-${projectId}-${employeeId}-${workDate}`;
@@ -750,7 +754,7 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
     return false;
   }
   if (role === 'supervisor' || role === 'employee') {
-    if (role === 'supervisor' && entity === 'attendancePoints') return true;
+    if (role === 'supervisor' && entity === 'attendancePoints') return false;
     if (!FIELD_ENTITIES.has(entity)) return false;
     return projectAllowed(claims, projectId) && !!employeeId && context.accessibleEmployeeIds?.has(employeeId);
   }
