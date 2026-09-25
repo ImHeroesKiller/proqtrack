@@ -57,10 +57,11 @@ test('Employees standalone P3 deactivation impact is deterministic', () => {
 
 test('Employees standalone P3 runtime delegates logic to helper module', async () => {
   const app=await read('src/app.js');
+  const employeePage=await read('src/routes/employees-page.js');
   const helper=await read('src/lib/team-employee-ui.js');
   const sw=await read('sw.js');
-  assert.match(app,/employeeProjectOptions\(employees, assignments/);
-  assert.match(app,/employeeListModel\(e, \{ assignments, accounts, projectMap \}\)/);
+  assert.match(employeePage,/employeeProjectOptions\(employees, assignments/);
+  assert.match(employeePage,/employeeListModel\(e, \{ assignments, accounts, projectMap \}\)/);
   assert.match(app,/employeeFilterSnapshot\(key =>/);
   assert.match(app,/employeeDeactivationImpact\(id, getDB\(\)\.projectAssignments/);
   assert.doesNotMatch(app,/function employeeActiveAssignments/);
