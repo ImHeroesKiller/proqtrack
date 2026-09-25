@@ -639,15 +639,17 @@ async function visitAttendanceStatements(env, organizationId, row) {
     attendanceSource:'visit',
     provenance:'visit',
     visitId:str(row.id),
+    firstVisitId:str(row.id),
     locationId:str(row.outletId),
     locationType:'store',
     checkInLocation:str(row.outletId),
   });
-  return [env.DB.prepare(
-    `INSERT OR IGNORE INTO core_attendance(
+  const statements = [env.DB.prepare(
+    `INSERT INTO core_attendance(
       id,organization_id,project_id,employee_id,work_date,status,check_in_at,
       check_in_latitude,check_in_longitude,idempotency_key,metadata_json,row_version,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)`
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)
+    ON CONFLICT(organization_id,project_id,employee_id,work_date) DO NOTHING`
   ).bind(
     id,organizationId,projectId,employeeId,workDate,
     attendanceStatusAt(checkInAt,policy.lateAfter),checkInAt,
@@ -656,6 +658,28 @@ async function visitAttendanceStatements(env, organizationId, row) {
     `attendance:visit:${projectId}:${employeeId}:${workDate}`,
     metadataJson
   )];
+
+  if (nextStatus === 'completed') {
+    const checkOutAt = str(row.checkOutTime || row.checkOutAt || row.completedAt || row.checkOutCapturedAt);
+    if (checkOutAt) {
+      statements.push(env.DB.prepare(
+        `UPDATE core_attendance
+         SET check_out_at=?,
+             check_out_latitude=?,
+             check_out_longitude=?,
+             row_version=row_version+1,
+             updated_at=CURRENT_TIMESTAMP
+         WHERE organization_id=? AND project_id=? AND employee_id=? AND work_date=?
+           AND json_extract(metadata_json,'$.attendanceSource')='visit'`
+      ).bind(
+        checkOutAt,
+        num(row.checkOutLat ?? row.endLatitude),
+        num(row.checkOutLng ?? row.endLongitude),
+        organizationId,projectId,employeeId,workDate
+      ));
+    }
+  }
+  return statements;
 }
 
 export function operationalTransitionAllowed(claims, entity, change, context = {}) {
