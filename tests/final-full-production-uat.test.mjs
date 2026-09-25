@@ -58,6 +58,11 @@ test('final UAT validates live analytics reports and cleanup invariants', async 
   assert.match(script, /kpis\?\.sales\?\.transactions/);
   assert.match(script, /kpis\?\.surveys\?\.responses/);
   assert.match(script, /cleanup residual/);
+  assert.match(script, /SYNTHETIC_REPORT_PREFIX = 'reports\/ORG-UAT-FINAL-'/);
+  assert.match(script, /cleanupSyntheticReportArtifacts/);
+  assert.match(script, /synthetic report R2 residual/);
+  assert.doesNotMatch(script, /report cancel failed/);
+  assert.match(script, /report schedule list missing created schedule/);
   assert.match(script, /Final full-production UAT PASS/);
 });
 
