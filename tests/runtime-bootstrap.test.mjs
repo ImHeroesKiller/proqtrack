@@ -24,33 +24,38 @@ test('production HTML uses one explicit external runtime entry', async () => {
   assert.doesNotMatch(logo, /src\/app\.js/);
 });
 
-test('runtime bootstrap contains all P0 modules in deterministic order', async () => {
+test('runtime bootstrap keeps only authority-critical modules on startup path', async () => {
   const source = await read('src/bootstrap.js');
-  const ordered = [
-    "./types/index.js",
-    "./reports/index-v2.js",
-    "./reports/phase4-fixed.js",
-    "./cloud-cutover.js",
-    "./m4-bootstrap.js",
-    "./lib/m6-client.js",
-    "./app.js",
-  ];
+  const criticalStart = source.indexOf('// Critical runtime only.');
+  const criticalEnd = source.indexOf('// cloud-cutover and offline login', criticalStart);
+  const critical = source.slice(criticalStart, criticalEnd);
 
-  let previous = -1;
-  for (const token of ordered) {
-    const current = source.indexOf(token);
-    assert.ok(current > previous, `${token} must load after the previous runtime module`);
-    previous = current;
-  }
+  for (const token of [
+    './lib/ui-events.js',
+    './data/uat-seed-v1.js',
+    './cloud-cutover.js',
+    './m4-bootstrap.js',
+    './lib/m6-client.js',
+    './app.js',
+  ]) assert.ok(critical.includes(token), token);
 
-  assert.match(source, /__PROQTRACK_BOOT__/);
-  assert.match(source, /cloudCutoverModule = await load\('\.\/cloud-cutover\.js'/);
+  for (const token of [
+    './types/index.js',
+    './reports/index-v2.js',
+    './reports/phase4-fixed.js',
+    './operational-mapping.js',
+    './pwa-install.js',
+  ]) assert.ok(!critical.includes(token), token);
+
+  assert.match(source, /async function loadProjectRuntime/);
+  assert.match(source, /async function loadReportRuntime/);
+  assert.match(source, /async function ensureRouteRuntime/);
+  assert.match(source, /function scheduleIdleRuntime/);
+  assert.match(source, /if \(!window\.FT\?\.state\?\.loggedIn\) return false/);
   assert.match(source, /cloudCutoverModule\.installCloudCutover\?\.\(\)/);
-  assert.match(source, /m4BootstrapModule = await load\('\.\/m4-bootstrap\.js'/);
   assert.match(source, /m4BootstrapModule\.installOfflineRuntime\?\.\(\)/);
   assert.match(source, /__m3CloudCutoverInstalled/);
   assert.match(source, /__m4OfflineLoginInstalled/);
-  assert.match(source, /ReportPhase4/);
   assert.match(source, /ProQTrackM6/);
   assert.match(source, /proqtrack:boot-ready/);
 });
