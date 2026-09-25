@@ -165,6 +165,57 @@ try {
   await session('manager',[ids.manual,ids.visit]); await session('supervisor',[ids.manual,ids.visit]);
   await session('manual',[ids.manual]); await session('visit',[ids.visit]);
 
+  // Integrated Settings regression for project roles.
+  for (const name of ['manager','supervisor','manual','visit']) {
+    const actor=actors[name];
+    const profile=await api('/api/auth/profile',{
+      method:'PATCH',
+      token:actor.token,
+      body:{
+        email:actor.email,
+        name:`Settings UAT ${name}`,
+        phone:actor.role==='employee' ? '081234567890' : '',
+        area:actor.role==='employee' ? 'Jakarta UAT' : '',
+      },
+    });
+    expect(profile.status===200,`settings profile ${name} HTTP ${profile.status}: ${JSON.stringify(profile.data)}`);
+    expect(profile.data.account?.name===`Settings UAT ${name}`,`settings profile ${name} name mismatch`);
+
+    const orgDenied=await api('/api/organization/profile',{
+      method:'PATCH',
+      token:actor.token,
+      body:{name:'Forbidden Settings UAT',timezone:'Asia/Jakarta'},
+    });
+    expect(orgDenied.status===403 && orgDenied.data.error==='ORGANIZATION_PROFILE_FORBIDDEN',
+      `settings organization boundary ${name}: ${orgDenied.status} ${JSON.stringify(orgDenied.data)}`);
+
+    const accountsDenied=await api('/api/admin/accounts',{token:actor.token});
+    expect(accountsDenied.status===403,`settings accounts boundary ${name}: HTTP ${accountsDenied.status}`);
+  }
+
+  const employeeProfile=await session('manual',[ids.manual]);
+  expect(employeeProfile.phone==='081234567890','settings employee phone not authoritative');
+  expect(employeeProfile.area==='Jakarta UAT','settings employee area not authoritative');
+
+  const managerSettingsBootstrap=await bootstrap('manager');
+  const managerManualProject=managerSettingsBootstrap.data?.projects?.find(row=>row.id===ids.manual);
+  expect(managerManualProject,'settings manager manual project missing');
+  await sync('manager','settings-manager-catalog-allowed',[{
+    entity:'projects',op:'upsert',row:{
+      ...managerManualProject,
+      modules:{...(managerManualProject.modules||{}),newOutlet:false},
+      storeCatalog:{allowNewOutlet:false,notesMode:'freetext',notesOptions:[],segments:['General'],types:['Retail'],ownerships:['Independent']},
+    }
+  }]);
+  const managerAfterCatalog=await bootstrap('manager');
+  const projectAfterCatalog=managerAfterCatalog.data?.projects?.find(row=>row.id===ids.manual);
+  expect(projectAfterCatalog?.storeCatalog?.allowNewOutlet===false,'settings manager catalog update missing');
+  expect(projectAfterCatalog?.attendanceSourceMode==='manual','settings manager catalog changed attendance source');
+
+  await sync('manager','settings-manager-attendance-policy-denied',[{
+    entity:'projects',op:'upsert',row:{...projectAfterCatalog,attendanceSourceMode:'visit'}
+  }],403,'CHANGE_FORBIDDEN');
+
   await sync('manual','manual-checkin',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,checkInAt:'08:05'}}]);
   await sync('manual','employee-self-only',[{entity:'attendance',op:'upsert',row:{id:`UAT-AL-ATT-OTHER-${runKey}`,projectId:ids.manual,employeeId:ids.otherEmp,workDate:today,checkInAt:'08:10'}}],403,'ATTENDANCE_SELF_ONLY');
   await sync('manual','manual-checkout',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,checkOutAt:'17:15'}}]);
