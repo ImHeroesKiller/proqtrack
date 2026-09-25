@@ -147,14 +147,18 @@ test('account create attaches an existing global identity without changing its p
 });
 
 test('account management UI mirrors server hierarchy and prevents duplicate mutations', async () => {
-  const settings = await read('src/account-settings.js');
-  assert.match(settings, /function managedRoles\(actorRole\)/);
-  assert.match(settings, /function canManageAccount\(actor, target\)/);
-  assert.match(settings, /function canChangeAccountStatus\(actor, target\)/);
+  const [settings, helper] = await Promise.all([
+    read('src/account-settings.js'),
+    read('src/lib/settings-ui.js'),
+  ]);
+  assert.match(helper, /export function managedRoles\(actorRole\)/);
+  assert.match(helper, /export function canManageAccount\(actor, target\)/);
+  assert.match(helper, /export function canChangeAccountStatus\(actor, target\)/);
   assert.match(settings, /let accountSaveInFlight = false/);
   assert.match(settings, /if \(accountSaveInFlight\) return/);
-  assert.match(settings, /submit\.disabled = true/);
-  assert.match(settings, /ACCOUNT_ALREADY_IN_ORGANIZATION/);
+  assert.match(settings, /setSubmitBusy\(form,true,id \? 'Menyimpan…' : 'Membuat akun…'\)/);
+  assert.match(helper, /submit\.disabled = true/);
+  assert.match(helper, /ACCOUNT_ALREADY_IN_ORGANIZATION/);
   assert.match(settings, /Akun existing ditautkan\. Password lama tetap berlaku\./);
   assert.match(settings, /data\.role = current\.role/);
   assert.match(settings, /data\.status = 'active'/);
