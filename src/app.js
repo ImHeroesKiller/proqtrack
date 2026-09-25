@@ -1335,34 +1335,71 @@ window.FT.focusEmployee = function(empId) {
 };
 
 // ===== Visits Page =====
+let visitPage = 1;
+let visitRowsCache = [];
+
+function visitRowEntry(visit, emp, outlet) {
+  if (!emp || !outlet) return null;
+  const stars = visit.rating > 0 ? `${'★'.repeat(visit.rating)}${'☆'.repeat(5-visit.rating)}` : '-';
+  const date = visitDay(visit);
+  const search = [
+    date, visit.status, emp.name, emp.email, outlet.name, outlet.outletNumber, outlet.code,
+    visit.projectId, visit.notes,
+  ].filter(Boolean).join(' ').toLowerCase();
+  return {
+    visit,
+    search,
+    html:`
+      <tr data-visit-id="${esc(visit.id)}">
+        <td>${formatDateShort(date)}</td>
+        <td>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
+            <span style="font-weight:600;">${esc(emp.name)}</span>
+          </div>
+        </td>
+        <td>${outletIcon(outlet.type)} ${esc(outlet.name)}</td>
+        <td>${visit.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
+        <td>${visit.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
+        <td>${formatDuration(visit.checkInTime, visit.checkOutTime)}</td>
+        <td>${statusBadge(visit.status)}</td>
+        <td style="color:#fbbf24;">${stars}</td>
+        <td><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${visit.id}')">Detail</button></td>
+      </tr>`,
+  };
+}
+
 function renderVisits() {
-  const visits = getVisits().sort((a,b) => b.date.localeCompare(a.date) || (b.checkInTime||'').localeCompare(a.checkInTime||''));
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
+  const visits = getVisits().sort((a,b) => String(visitDay(b)).localeCompare(String(visitDay(a))) || (b.checkInTime||'').localeCompare(a.checkInTime||''));
+  const employees = getEmployees();
+  const outlets = getOutlets();
+  const empMap = new Map(employees.map(e => [String(e.id), e]));
+  const outletMap = new Map(outlets.map(o => [String(o.id), o]));
+  visitRowsCache = visits
+    .map(v => visitRowEntry(v, empMap.get(String(v.employeeId)), outletMap.get(String(v.outletId))))
+    .filter(Boolean);
+  const initialPage = paginateVisits(visitRowsCache, visitPage, VISITS_PAGE_SIZE);
+  visitPage = initialPage.currentPage;
 
   setTimeout(() => window.FT?.initVisitFilters?.(), 0);
   return `
     <div class="card">
       <div class="filter-row">
-        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits()">
-        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits()">
+        <label class="sr-only" for="visitSearch">Cari kunjungan</label><input class="input search-input" id="visitSearch" placeholder="🔍 Cari kunjungan..." data-pqt-oninput="FT.filterVisits(1)">
+        <select class="select" id="visitStatusFilter" style="width:180px;" data-pqt-onchange="FT.filterVisits(1)">
           <option value="">Semua Status</option>
           <option value="completed">Selesai</option>
           <option value="checked-in">Sedang Berlangsung</option>
           <option value="planned">Direncanakan</option>
         </select>
-        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits()">
+        <select class="select" id="visitEmpFilter" style="width:200px;" data-pqt-onchange="FT.filterVisits(1)">
           <option value="">Semua Karyawan</option>
-          ${getEmployees().map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
+          ${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
         </select>
-        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
-          <option value="">Semua Project</option>
-        </select>
-        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits()">
-          <option value="">Semua Outlet</option>
-        </select>
-        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
-        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits()">
+        <select class="select" id="visitProjectFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Project</option></select>
+        <select class="select" id="visitOutletFilter" style="width:190px;" data-pqt-onchange="FT.filterVisits(1)"><option value="">Semua Outlet</option></select>
+        <input class="input" id="visitDateFrom" type="date" aria-label="Tanggal mulai" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
+        <input class="input" id="visitDateTo" type="date" aria-label="Tanggal akhir" style="width:160px;" data-pqt-onchange="FT.filterVisits(1)">
         <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetVisitFilters()">Reset</button>
         <div class="spacer"></div>
         <button class="btn btn-primary" data-pqt-onclick="FT.openVisitModal()">+ Tambah Kunjungan</button>
@@ -1370,50 +1407,11 @@ function renderVisits() {
       <div id="visitFilterSummary" class="am-muted" style="margin:0 0 10px;" role="status" aria-live="polite"></div>
       <div class="visits-table-wrapper visit-responsive-table">
         <table class="table" id="visitsTable">
-          <thead>
-            <tr>
-              <th>Tanggal</th>
-              <th>Karyawan</th>
-              <th>Outlet</th>
-              <th>Check In</th>
-              <th>Check Out</th>
-              <th>Durasi</th>
-              <th>Status</th>
-              <th>Rating</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${visits.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>` :
-            visits.map(v => {
-              const emp = empMap[v.employeeId]; const out = outletMap[v.outletId];
-              if (!emp || !out) return '';
-              const stars = v.rating > 0 ? `${'★'.repeat(v.rating)}${'☆'.repeat(5-v.rating)}` : '-';
-              return `
-                <tr data-visit-id="${esc(v.id)}" data-status="${esc(v.status || '')}" data-emp="${esc(v.employeeId || '')}" data-project="${esc(v.projectId || '')}" data-outlet="${esc(v.outletId || '')}" data-date="${esc(visitDay(v))}">
-                  <td>${formatDateShort(visitDay(v))}</td>
-                  <td>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <div class="avatar" style="width:28px;height:28px;font-size:11px;background:${['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'][emp.name.charCodeAt(0)%6]};">${getInitials(emp.name)}</div>
-                      <span style="font-weight:600;">${esc(emp.name)}</span>
-                    </div>
-                  </td>
-                  <td>${outletIcon(out.type)} ${esc(out.name)}</td>
-                  <td>${v.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
-                  <td>${statusBadge(v.status)}</td>
-                  <td style="color:#fbbf24;">${stars}</td>
-                  <td>
-                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${v.id}')">Detail</button>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-            ${attendance.length ? '<tr id="attFilteredEmpty" hidden><td colspan="8"><div class="empty-state"><h3>Tidak ada data sesuai filter</h3><p>Ubah atau reset filter Attendance.</p></div></td></tr>' : ''}
-          </tbody>
+          <thead><tr><th>Tanggal</th><th>Karyawan</th><th>Outlet</th><th>Check In</th><th>Check Out</th><th>Durasi</th><th>Status</th><th>Rating</th><th></th></tr></thead>
+          <tbody>${initialPage.items.length ? initialPage.items.map(row => row.html).join('') : '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>'}</tbody>
         </table>
       </div>
+      <div id="visitPager" class="visit-pager"></div>
     </div>
   `;
 }
@@ -1443,7 +1441,7 @@ window.FT.initVisitFilters = function() {
   FT.filterVisits(1);
 };
 
-window.FT.filterVisits = function(page = 1) {
+window.FT.filterVisits = function(page = visitPage) {
   const search = (document.getElementById('visitSearch')?.value || '').toLowerCase().trim();
   const status = document.getElementById('visitStatusFilter')?.value || '';
   const empF = document.getElementById('visitEmpFilter')?.value || '';
@@ -1451,41 +1449,32 @@ window.FT.filterVisits = function(page = 1) {
   const outletF = document.getElementById('visitOutletFilter')?.value || '';
   const dateFrom = document.getElementById('visitDateFrom')?.value || '';
   const dateTo = document.getElementById('visitDateTo')?.value || '';
-  const rows = [...document.querySelectorAll('#visitsTable tbody tr[data-visit-id]')];
   const filters = { search, status, employeeId:empF, projectId:projectF, outletId:outletF, dateFrom, dateTo };
-  const matched = rows.filter(row => visitMatchesFilters({
-    status:row.dataset.status,
-    employeeId:row.dataset.emp,
-    projectId:row.dataset.project,
-    outletId:row.dataset.outlet,
-    date:row.dataset.date,
-  }, filters, row.textContent));
+  const matched = visitRowsCache.filter(row => visitMatchesFilters(row.visit, filters, row.search));
   const pageState = paginateVisits(matched, page, VISITS_PAGE_SIZE);
-  const { currentPage, pageCount } = pageState;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  visitPage = pageState.currentPage;
+  const tbody = document.querySelector('#visitsTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.length
+    ? pageState.items.map(row => row.html).join('')
+    : '<tr><td colspan="9"><div class="empty-state"><h3>Tidak ada kunjungan sesuai filter</h3><p>Ubah atau reset filter kunjungan.</p></div></td></tr>';
   const summary = document.getElementById('visitFilterSummary');
-  if (summary) {
-    summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} kunjungan` : 'Tidak ada kunjungan yang cocok dengan filter.';
-  }
-  let pager = document.getElementById('visitPager');
-  if (!pager) {
-    pager = document.createElement('div');
-    pager.id = 'visitPager';
-    pager.className = 'visit-pager';
-    document.querySelector('.visit-responsive-table')?.after(pager);
-  }
-  pager.replaceChildren();
-  if (pageState.total > VISITS_PAGE_SIZE) {
-    const prev = document.createElement('button');
-    prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = currentPage <= 1;
-    prev.addEventListener('click', () => FT.filterVisits(currentPage - 1));
-    const label = document.createElement('span');
-    label.className = 'visit-page-indicator'; label.textContent = `Halaman ${currentPage} / ${pageCount}`;
-    const next = document.createElement('button');
-    next.className = 'btn btn-secondary btn-sm'; next.type = 'button'; next.textContent = 'Berikutnya ›'; next.disabled = currentPage >= pageCount;
-    next.addEventListener('click', () => FT.filterVisits(currentPage + 1));
-    pager.append(prev, label, next);
+  if (summary) summary.textContent = pageState.total
+    ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} kunjungan`
+    : 'Tidak ada kunjungan yang cocok dengan filter.';
+  const pager = document.getElementById('visitPager');
+  if (pager) {
+    pager.replaceChildren();
+    if (pageState.total > VISITS_PAGE_SIZE) {
+      const prev = document.createElement('button');
+      prev.className = 'btn btn-secondary btn-sm'; prev.type = 'button'; prev.textContent = '‹ Sebelumnya'; prev.disabled = pageState.currentPage <= 1;
+      prev.addEventListener('click', () => FT.filterVisits(pageState.currentPage - 1));
+      const label = document.createElement('span');
+      label.className = 'visit-page-indicator'; label.textContent = `Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
+      const next = document.createElement('button');
+      next.className = 'btn btn-secondary btn-sm'; next.type = 'button'; next.textContent = 'Berikutnya ›'; next.disabled = pageState.currentPage >= pageState.pageCount;
+      next.addEventListener('click', () => FT.filterVisits(pageState.currentPage + 1));
+      pager.append(prev, label, next);
+    }
   }
 };
 
@@ -1494,6 +1483,7 @@ window.FT.resetVisitFilters = function() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  visitPage = 1;
   FT.filterVisits(1);
 };
 
@@ -1814,6 +1804,8 @@ function employeeProjectIds(employeeId) {
   return activeProjectIdsForEmployee(getDB().projectAssignments || [], employeeId);
 }
 
+let employeeRowsCache = [];
+
 function renderEmployees() {
   const employees = getEmployees();
   const db = getDB();
@@ -1822,6 +1814,44 @@ function renderEmployees() {
   const operationalCounts = employeeOperationalCounts(employees, assignments, accounts);
   const projectMap = Object.fromEntries((db.projects || []).map(project => [project.id, project]));
   const projectOptions = employeeProjectOptions(employees, assignments, db.projects || []);
+  const currentMonth = todayISO().slice(0, 7);
+  const salesByEmployee = new Map();
+  for (const sale of getProductSales()) {
+    if (!String(sale.soldAt || sale.date || '').startsWith(currentMonth)) continue;
+    const key = String(sale.employeeId || '');
+    salesByEmployee.set(key, (salesByEmployee.get(key) || 0) + (Number(sale.totalAmount ?? sale.amount) || 0));
+  }
+  employeeRowsCache = employees.map(e => {
+    const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
+    const cIdx = e.name.charCodeAt(0) % colors.length;
+    const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
+    const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
+    const model = {
+      search,
+      role:e.role || '',
+      status:e.status || '',
+      projectIds,
+      assigned:flags.assigned,
+      loginLinked:flags.loginLinked,
+    };
+    return {
+      model,
+      html:`<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
+        <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
+        <td data-label="Role">${roleBadge(e.role)}</td>
+        <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
+        <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
+        <td data-label="Area">${esc(e.area || '—')}</td>
+        <td data-label="Telepon">${esc(e.phone || '—')}</td>
+        <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(salesByEmployee.get(String(e.id)) || 0)}</span> / ${formatCurrency(salesTargetOf(e))}</td>
+        <td data-label="Kunjungan">${e.totalVisits}</td>
+        <td data-label="Status">${statusBadge(e.status)}</td>
+        <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
+      </tr>`,
+    };
+  });
+  const initialPage = paginateEmployees(employeeRowsCache, employeePage, EMPLOYEE_PAGE_SIZE);
+  employeePage = initialPage.currentPage;
   const rendered = `
     <div class="card">
       <div class="pm-kpi-grid" style="margin-bottom:14px;">
@@ -1832,27 +1862,11 @@ function renderEmployees() {
       </div>
       <div class="filter-row">
         <input class="input search-input" id="empSearch" placeholder="🔍 Cari nama, email, kode, area, project..." aria-label="Cari karyawan" data-pqt-oninput="FT.filterEmployees(1)">
-        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Role</option>
-          <option value="Field Sales">Field Sales</option>
-          <option value="Supervisor">Supervisor</option>
-        </select>
-        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Status</option>
-          <option value="active">Aktif</option>
-          <option value="inactive">Nonaktif</option>
-          <option value="terminated">Berakhir</option>
-        </select>
-        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Project</option>
-          ${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}
-        </select>
-        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option>
-        </select>
-        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)">
-          <option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option>
-        </select>
+        <select class="select" id="empRoleFilter" style="width:180px;" aria-label="Filter role" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Role</option><option value="Field Sales">Field Sales</option><option value="Supervisor">Supervisor</option></select>
+        <select class="select" id="empStatusFilter" style="width:160px;" aria-label="Filter status" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="terminated">Berakhir</option></select>
+        <select class="select" id="empProjectFilter" style="width:220px;" aria-label="Filter project" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Project</option>${projectOptions.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}</select>
+        <select class="select" id="empAssignmentFilter" style="width:180px;" aria-label="Filter assignment" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Assignment</option><option value="assigned">Sudah Ditugaskan</option><option value="unassigned">Belum Ditugaskan</option></select>
+        <select class="select" id="empLoginFilter" style="width:180px;" aria-label="Filter login" data-pqt-onchange="FT.filterEmployees(1)"><option value="">Semua Login</option><option value="linked">Login Terhubung</option><option value="unlinked">Login Belum Terhubung</option></select>
         <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetEmployeeFilters()">Reset</button>
         <div class="spacer"></div>
         <span id="employeeSyncState">${employeeSyncLabel()}</span>
@@ -1863,26 +1877,7 @@ function renderEmployees() {
       <div class="visits-table-wrapper">
         <table class="table employee-table" id="empTable">
           <thead><tr><th>Nama</th><th>Role</th><th>Project</th><th>Operational</th><th>Area</th><th>Telepon</th><th>Sales / Target</th><th>Total</th><th>Status</th><th>Aksi</th></tr></thead>
-          <tbody>
-            ${employees.map(e => {
-              const colors = ['#ea580c','#7c3aed','#059669','#d97706','#dc2626','#0891b2'];
-              const cIdx = e.name.charCodeAt(0) % colors.length;
-              const rowModel = employeeListModel(e, { assignments, accounts, projectMap });
-              const { projectIds, projects, search, operational:flags, assignmentLabel, loginLabel } = rowModel;
-              return `<tr data-search="${esc(search)}" data-role="${esc(e.role || '')}" data-status="${esc(e.status || '')}" data-projects="${esc(projectIds.join('|'))}" data-assigned="${flags.assigned ? '1' : '0'}" data-login="${flags.loginLinked ? '1' : '0'}">
-                <td data-label="Nama"><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:${colors[cIdx]};${safePhotoUrl(e.photo) ? `background-image:url('${safePhotoUrl(e.photo)}');background-size:cover;background-position:center;font-size:0;` : ''}">${getInitials(e.name)}</div><div><div style="font-weight:600;color:var(--gray-800);">${esc(e.name)}</div><div class="pm-subtext">${esc(e.employeeCode || e.code || e.id)} · ${esc(e.email)}</div></div></div></td>
-                <td data-label="Role">${roleBadge(e.role)}</td>
-                <td data-label="Project">${projects.map(p => `<span class="pm-project-chip">${esc(p.code || p.id)}</span>`).join('') || '—'}</td>
-                <td data-label="Operational"><div class="pm-subtext">${esc(assignmentLabel)}</div><div class="pm-subtext">${esc(loginLabel)}</div></td>
-                <td data-label="Area">${esc(e.area || '—')}</td>
-                <td data-label="Telepon">${esc(e.phone || '—')}</td>
-                <td data-label="Sales / Target"><span style="font-weight:600;">${formatCurrency(monthSalesAmount(e.id))}</span> / ${formatCurrency(salesTargetOf(e))}</td>
-                <td data-label="Kunjungan">${e.totalVisits}</td>
-                <td data-label="Status">${statusBadge(e.status)}</td>
-                <td data-label="Aksi"><div class="pm-actions"><button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/employee/${e.id}'">Detail</button>${isProjectAdmin() && e.status === 'active' ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteEmployee('${e.id}')">Nonaktifkan</button>` : ''}</div></td>
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
         </table>
       </div>
       <div id="employeeEmpty" class="pm-empty" hidden>Tidak ada karyawan yang sesuai dengan filter. Gunakan Reset untuk menampilkan seluruh data.</div>
@@ -1906,19 +1901,11 @@ window.FT.filterEmployees = function(page = employeePage) {
     };
     return document.getElementById(ids[key])?.value || '';
   });
-  const rows = [...document.querySelectorAll('#empTable tbody tr')];
-  const matched = rows.filter(row => employeeMatchesFilters({
-    search:row.dataset.search || '',
-    role:row.dataset.role || '',
-    status:row.dataset.status || '',
-    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
-    assigned:row.dataset.assigned === '1',
-    loginLinked:row.dataset.login === '1',
-  }, filters));
+  const matched = employeeRowsCache.filter(row => employeeMatchesFilters(row.model, filters));
   const pageState = paginateEmployees(matched, page, EMPLOYEE_PAGE_SIZE);
   employeePage = pageState.currentPage;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const tbody = document.querySelector('#empTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.map(row => row.html).join('');
   const summary = document.getElementById('employeeResultSummary');
   if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} karyawan` : 'Tidak ada karyawan yang sesuai dengan filter.';
   const empty = document.getElementById('employeeEmpty');
@@ -2310,6 +2297,8 @@ function outletSyncLabel() {
   return `<span class="status-badge ${presentation.className}">${esc(presentation.label)}</span>`;
 }
 
+let outletRowsCache = [];
+
 function renderOutlets() {
   const db = getDB();
   const outlets = getOutlets();
@@ -2318,7 +2307,47 @@ function renderOutlets() {
   const visits = getVisits();
   const options = outletFilterOptions(outlets, { projects, clients });
   const summary = outletStatusSummary(outlets);
-  const models = outlets.map(outlet => outletOperationalModel(outlet, { projects, clients, visits }));
+  const projectMap = new Map(projects.map(project => [String(project.id), project]));
+  const clientMap = new Map(clients.map(client => [String(client.id), client]));
+  const visitStats = new Map();
+  for (const visit of visits) {
+    const key = String(visit.outletId || '');
+    if (!key) continue;
+    const date = String(visit.date || visit.visitDate || visit.scheduledAt || '').slice(0,10);
+    const current = visitStats.get(key) || { count:0, lastVisitDate:'' };
+    current.count += 1;
+    if (date && date > current.lastVisitDate) current.lastVisitDate = date;
+    visitStats.set(key, current);
+  }
+  const models = outlets.map(outlet => outletOperationalModel(outlet, {
+    projects, clients, visits, projectMap, clientMap, visitStats,
+  }));
+  outletRowsCache = models.map(model => {
+    const o = model.outlet;
+    return {
+      model,
+      html:`
+        <tr>
+          <td>
+            <div style="font-weight:700;color:var(--gray-800)">${outletIcon(o.type)} ${esc(o.name)}</div>
+            <div class="am-muted">${esc(o.outletNumber || o.code || o.id)} · ${esc(displayValue(o.address))}</div>
+          </td>
+          <td>
+            <div style="font-weight:600">${esc(model.projectLabel || 'Belum terhubung')}</div>
+            <div class="am-muted">${esc(model.clientLabel || 'Tanpa client')}${model.shared ? ' · Shared outlet' : ''}</div>
+          </td>
+          <td><div>${esc(displayValue(o.type))}</div><div class="am-muted">${esc(displayValue(o.area))} · ${esc(displayValue(o.channel))}</div></td>
+          <td><div>${model.visitCount} kunjungan</div><div class="am-muted">Terakhir: ${model.lastVisitDate ? esc(formatDateShort(model.lastVisitDate)) : 'Belum ada'}</div></td>
+          <td>${statusBadge(o.status)}</td>
+          <td style="white-space:nowrap">
+            <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
+            <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${outletLifecycleAction(o, model.visitCount).label}</button>
+          </td>
+        </tr>`,
+    };
+  });
+  const initialPage = paginateOutlets(outletRowsCache, outletPage, OUTLET_PAGE_SIZE);
+  outletPage = initialPage.currentPage;
   const rendered = `
     <div class="pm-kpis">
       <div class="pm-kpi"><span>Total Outlet</span><strong>${summary.total}</strong></div>
@@ -2329,23 +2358,11 @@ function renderOutlets() {
     <div class="card">
       <div class="filter-row" style="gap:8px;flex-wrap:wrap">
         <input class="input search-input" id="outletSearch" placeholder="🔍 Nama, kode, alamat, PIC, project..." data-pqt-oninput="FT.filterOutlets(1)">
-        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Project</option>
-          ${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}
-        </select>
-        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Client</option>
-          ${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}
-        </select>
-        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option>
-        </select>
-        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Tipe</option>${storeOptionList(options.types)}
-        </select>
-        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)">
-          <option value="">Semua Area</option>${storeOptionList(options.areas)}
-        </select>
+        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Project</option>${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}</select>
+        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Client</option>${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}</select>
+        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option></select>
+        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Tipe</option>${storeOptionList(options.types)}</select>
+        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Area</option>${storeOptionList(options.areas)}</select>
         <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetOutletFilters()">Reset</button>
         <div class="spacer"></div>
         <span id="outletSyncState">${outletSyncLabel()}</span>
@@ -2356,38 +2373,8 @@ function renderOutlets() {
       <div id="outletResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper">
         <table class="table" id="outletTable">
-          <thead>
-            <tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr>
-          </thead>
-          <tbody>
-            ${models.map(model => {
-              const o = model.outlet;
-              return `
-              <tr data-search="${esc(model.search)}" data-type="${esc(o.type || '')}" data-area="${esc(o.area || '')}" data-status="${esc(o.status || '')}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}">
-                <td>
-                  <div style="font-weight:700;color:var(--gray-800)">${outletIcon(o.type)} ${esc(o.name)}</div>
-                  <div class="am-muted">${esc(o.outletNumber || o.code || o.id)} · ${esc(displayValue(o.address))}</div>
-                </td>
-                <td>
-                  <div style="font-weight:600">${esc(model.projectLabel || 'Belum terhubung')}</div>
-                  <div class="am-muted">${esc(model.clientLabel || 'Tanpa client')}${model.shared ? ' · Shared outlet' : ''}</div>
-                </td>
-                <td>
-                  <div>${esc(displayValue(o.type))}</div>
-                  <div class="am-muted">${esc(displayValue(o.area))} · ${esc(displayValue(o.channel))}</div>
-                </td>
-                <td>
-                  <div>${model.visitCount} kunjungan</div>
-                  <div class="am-muted">Terakhir: ${model.lastVisitDate ? esc(formatDateShort(model.lastVisitDate)) : 'Belum ada'}</div>
-                </td>
-                <td>${statusBadge(o.status)}</td>
-                <td style="white-space:nowrap">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="location.hash='#/outlet/' + ${jsArg(o.id)}">Detail</button>
-                  <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteOutlet(${jsArg(o.id)})">${outletLifecycleAction(o, model.visitCount).label}</button>
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
+          <thead><tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr></thead>
+          <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
         </table>
       </div>
       <div id="outletEmpty" class="pm-empty" hidden>Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.</div>
@@ -2406,21 +2393,18 @@ window.FT.outletPage = function(delta) {
 window.FT.filterOutlets = function(page = outletPage) {
   const ids = { search:'outletSearch', projectId:'outletProjectFilter', clientId:'outletClientFilter', status:'outletStatusFilter', type:'outletTypeFilter', area:'outletAreaFilter' };
   const filters = outletFilterSnapshot(key => document.getElementById(ids[key])?.value || '');
-  const rows = [...document.querySelectorAll('#outletTable tbody tr')];
-  const matched = rows.filter(row => outletMatchesFilters({
-    search:row.dataset.search || '',
-    projectIds:String(row.dataset.projects || '').split('|').filter(Boolean),
-    clientId:row.dataset.client || '',
-    outlet:{ type:row.dataset.type || '', area:row.dataset.area || '', status:row.dataset.status || '' },
-  }, filters));
+  const matched = outletRowsCache.filter(row => outletMatchesFilters(row.model, filters));
   const pageState = paginateOutlets(matched, page, OUTLET_PAGE_SIZE);
   outletPage = pageState.currentPage;
-  const visible = new Set(pageState.items);
-  rows.forEach(row => { row.style.display = visible.has(row) ? '' : 'none'; });
+  const tbody = document.querySelector('#outletTable tbody');
+  if (tbody) tbody.innerHTML = pageState.items.map(row => row.html).join('');
   const summary = document.getElementById('outletResultSummary');
-  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} outlet` : (rows.length ? 'Tidak ada outlet yang sesuai filter.' : 'Belum ada outlet.');
+  if (summary) summary.textContent = pageState.total ? `Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} outlet` : (outletRowsCache.length ? 'Tidak ada outlet yang sesuai filter.' : 'Belum ada outlet.');
   const empty = document.getElementById('outletEmpty');
-  if (empty) { empty.hidden = pageState.total !== 0; empty.textContent = rows.length ? 'Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.' : 'Belum ada outlet. Tambahkan outlet atau gunakan Bulk Upload.'; }
+  if (empty) {
+    empty.hidden = pageState.total !== 0;
+    empty.textContent = outletRowsCache.length ? 'Tidak ada outlet yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.' : 'Belum ada outlet. Tambahkan outlet atau gunakan Bulk Upload.';
+  }
   const pager = document.getElementById('outletPager');
   if (pager) pager.hidden = pageState.total <= OUTLET_PAGE_SIZE;
   const label = document.getElementById('outletPageLabel');
@@ -2858,12 +2842,45 @@ function productOptionList(rows, valueKey, labelFn) {
   return (rows||[]).map(row=>`<option value="${esc(row[valueKey])}">${esc(labelFn(row))}</option>`).join('');
 }
 
+let productRowsCache = [];
+
 function renderProducts() {
-  const products=getProducts(), db=getDB();
-  const models=products.map(product=>productOperationalModel(product,{projects:db.projects||[],clients:db.clients||[]}));
-  const options=productFilterOptions(products,{projects:db.projects||[],clients:db.clients||[]});
-  const statusSummary=productStatusSummary(products);
-  const sharedCount=models.filter(model=>model.shared).length;
+  const products = getProducts();
+  const db = getDB();
+  const projects = db.projects || [];
+  const clients = db.clients || [];
+  const projectMap = new Map(projects.map(project => [String(project.id), project]));
+  const clientMap = new Map(clients.map(client => [String(client.id), client]));
+  const models = products.map(product => productOperationalModel(product, { projects, clients, projectMap, clientMap }));
+  const options = productFilterOptions(products,{projects,clients});
+  const statusSummary = productStatusSummary(products);
+  const sharedCount = models.filter(model => model.shared).length;
+  const referenceCounts = new Map();
+  for (const rows of [db.productSales, db.stocks, db.priceObservations, db.competitorIntel]) {
+    for (const row of rows || []) {
+      const key = String(row.productId || '');
+      if (!key) continue;
+      referenceCounts.set(key, (referenceCounts.get(key) || 0) + 1);
+    }
+  }
+  productRowsCache = models.map(model => {
+    const p = model.product;
+    const lifecycle = productLifecycleAction(p, referenceCounts.get(String(p.id)) || 0);
+    return {
+      model,
+      html:`
+        <tr>
+          <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
+          <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
+          <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
+          <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
+          <td>${statusBadge(p.status)}</td>
+          <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">${esc(lifecycle.label)}</button></td>
+        </tr>`,
+    };
+  });
+  const initialPage = paginateProducts(productRowsCache, productPage, PRODUCT_PAGE_SIZE);
+  productPage = initialPage.currentPage;
   const rendered=`
     <div class="grid-4" style="margin-bottom:14px">
       <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${statusSummary.total}</div></div>
@@ -2890,17 +2907,7 @@ function renderProducts() {
       <div id="productResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper"><table class="table" id="productTable">
         <thead><tr><th>Produk</th><th>Project / Client</th><th>Brand / Kategori</th><th>Harga</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          ${models.map(model=>{const p=model.product,lifecycle=productLifecycleAction(p,productReferenceSummary(p.id).total);return `
-            <tr data-search="${esc(model.search)}" data-projects="${esc(model.projectIds.join('|'))}" data-client="${esc(model.clientId)}" data-cat="${esc(p.category||'')}" data-brand="${esc(p.brand||'')}" data-status="${esc(p.status||'')}">
-              <td><div style="font-weight:700;color:var(--gray-800)">${esc(p.name)}</div><div class="am-muted">${esc(p.sku)} · ${esc(p.unit||'—')}</div></td>
-              <td><div style="font-weight:600">${esc(model.projectLabel||'Belum terhubung')}</div><div class="am-muted">${esc(model.clientLabel||'Tanpa client')}${model.shared?' · Shared product':''}</div></td>
-              <td><div>${esc(p.brand||'—')}</div><div class="am-muted">${esc(p.category||'—')}</div></td>
-              <td><div style="font-weight:700">${formatCurrency(p.price)}</div><div class="am-muted">${p.cost!=null?`HPP ${formatCurrency(p.cost)}`:'HPP —'} · ${p.margin!=null?`${p.margin}%`:'Margin —'}</div></td>
-              <td>${statusBadge(p.status)}</td>
-              <td style="white-space:nowrap"><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editProduct(${jsArg(p.id)})">Edit</button><button class="btn btn-danger btn-sm" style="margin-left:4px" data-pqt-onclick="FT.deleteProductConfirm(${jsArg(p.id)})">${esc(lifecycle.label)}</button></td>
-            </tr>`;}).join('')}
-        </tbody>
+        <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>
       </table></div>
       <div id="productEmpty" class="pm-empty" hidden></div>
       <div id="productPager" class="pm-pager" hidden><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(-1)">Sebelumnya</button><span id="productPageLabel"></span><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.productPage(1)">Berikutnya</button></div>
@@ -2914,23 +2921,17 @@ window.FT.productPage=function(delta){ productPage=Math.max(1,productPage+Number
 window.FT.filterProducts=function(page=productPage){
   const ids={search:'productSearch',projectId:'productProjectFilter',clientId:'productClientFilter',category:'productCatFilter',brand:'productBrandFilter',status:'productStatusFilter'};
   const filters=productFilterSnapshot(key=>document.getElementById(ids[key])?.value||'');
-  const rows=[...document.querySelectorAll('#productTable tbody tr')];
-  const matched=rows.filter(row=>productMatchesFilters({
-    search:row.dataset.search||'',
-    projectIds:String(row.dataset.projects||'').split('|').filter(Boolean),
-    clientId:row.dataset.client||'',
-    product:{category:row.dataset.cat||'',brand:row.dataset.brand||'',status:row.dataset.status||''},
-  },filters));
-  const state=paginateProducts(matched,page,PRODUCT_PAGE_SIZE);
-  productPage=state.currentPage;
-  const visible=new Set(state.items);
-  rows.forEach(row=>{row.style.display=visible.has(row)?'':'none';});
+  const matched=productRowsCache.filter(row=>productMatchesFilters(row.model,filters));
+  const pageState=paginateProducts(matched,page,PRODUCT_PAGE_SIZE);
+  productPage=pageState.currentPage;
+  const tbody=document.querySelector('#productTable tbody');
+  if(tbody) tbody.innerHTML=pageState.items.map(row=>row.html).join('');
   const summary=document.getElementById('productResultSummary');
-  if(summary) summary.textContent=state.total?`Menampilkan ${state.from}–${state.to} dari ${state.total} produk`:(rows.length?'Tidak ada produk yang sesuai filter.':'Belum ada produk.');
+  if(summary) summary.textContent=pageState.total?`Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} produk`:(productRowsCache.length?'Tidak ada produk yang sesuai filter.':'Belum ada produk.');
   const empty=document.getElementById('productEmpty');
-  if(empty){empty.hidden=state.total!==0;empty.textContent=rows.length?'Tidak ada produk yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.':'Belum ada produk. Tambahkan produk atau gunakan Bulk Upload.';}
-  const pager=document.getElementById('productPager'); if(pager) pager.hidden=state.total<=PRODUCT_PAGE_SIZE;
-  const label=document.getElementById('productPageLabel'); if(label) label.textContent=`Halaman ${state.currentPage} / ${state.pageCount}`;
+  if(empty){empty.hidden=pageState.total!==0;empty.textContent=productRowsCache.length?'Tidak ada produk yang sesuai filter. Gunakan Reset untuk menampilkan seluruh data.':'Belum ada produk. Tambahkan produk atau gunakan Bulk Upload.';}
+  const pager=document.getElementById('productPager'); if(pager) pager.hidden=pageState.total<=PRODUCT_PAGE_SIZE;
+  const label=document.getElementById('productPageLabel'); if(label) label.textContent=`Halaman ${pageState.currentPage} / ${pageState.pageCount}`;
   const sync=document.getElementById('productSyncState'); if(sync) sync.innerHTML=productSyncLabel();
 };
 

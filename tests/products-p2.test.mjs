@@ -80,7 +80,7 @@ test('Products P2 page wires filters, pagination, refresh and shared context', (
   for (const marker of [
     'productProjectFilter','productClientFilter','productResultSummary','productPager',
     'FT.refreshProducts','Shared product','productSyncState','FT.resetProductFilters',
-    'Menampilkan ${state.from}–${state.to} dari ${state.total} produk',
+    'Menampilkan ${pageState.from}–${pageState.to} dari ${pageState.total} produk',
   ]) assert.ok(app.includes(marker),marker);
 });
 

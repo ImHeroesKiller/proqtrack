@@ -1,5 +1,6 @@
 import { access, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { posix } from "node:path";
+import { createHash } from "node:crypto";
 
 const entries = [
   "index.html",
@@ -94,15 +95,30 @@ const shell = new Set([
   ...runtime,
 ]);
 
-const assets = [...shell]
+const shellPaths = [...shell]
   .filter(path => !excludedFromPrecache.has(path))
-  .sort()
-  .map(path => `./${path}`);
+  .sort();
+const releaseHash = createHash("sha256");
+for (const path of shellPaths) {
+  releaseHash.update(path);
+  releaseHash.update("\0");
+  releaseHash.update(await readFile(`dist/${path}`));
+  releaseHash.update("\0");
+}
+const release = releaseHash.digest("hex").slice(0, 16);
+const assets = shellPaths.map(path => `./${path}`);
 
 await writeFile(
   "dist/precache-manifest.json",
-  `${JSON.stringify({ version: 2, assets }, null, 2)}\n`,
+  `${JSON.stringify({ version: release, assets }, null, 2)}\n`,
   "utf8",
 );
 
-console.log(`Static application copied to dist/; runtime precache contains ${assets.length} of ${copied.length} copied assets.`);
+const swPath = "dist/sw.js";
+const swSource = await readFile(swPath, "utf8");
+if (!swSource.includes("__PROQTRACK_RELEASE__")) {
+  throw new Error("sw.js release token missing");
+}
+await writeFile(swPath, swSource.replaceAll("__PROQTRACK_RELEASE__", release), "utf8");
+
+console.log(`Static application copied to dist/; release ${release}; runtime precache contains ${assets.length} of ${copied.length} copied assets.`);

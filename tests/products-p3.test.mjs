@@ -91,7 +91,7 @@ test('Products P3 page consumes centralized form lifecycle and status models', (
   assert.match(app,/productFormModel\(p\|\|\{\},\{/);
   assert.match(app,/normalizeProductFormPayload\(Object\.fromEntries\(fd\),fd\.getAll\('projectIds'\)\)/);
   assert.match(app,/productStatusSummary\(products\)/);
-  assert.match(app,/productLifecycleAction\(p,productReferenceSummary\(p\.id\)\.total\)/);
+  assert.match(app,/productLifecycleAction\(p, referenceCounts\.get\(String\(p\.id\)\) \|\| 0\)/);
   assert.doesNotMatch(app,/function productAvailableProjects\(\)/);
 });
 

@@ -697,6 +697,34 @@ function ensurePlatformAccounts(db) {
 }
 
 let _cache = null;
+let _mirrorTimer = null;
+let _pendingMirrorText = '';
+let _persistNotifyQueued = false;
+
+function scheduleLegacyMirror(text) {
+  if (typeof localStorage === 'undefined') return;
+  _pendingMirrorText = text;
+  if (_mirrorTimer) return;
+  const flush = () => {
+    _mirrorTimer = null;
+    const value = _pendingMirrorText;
+    _pendingMirrorText = '';
+    if (!value) return;
+    try { localStorage.setItem('proqtrack_db_v7', value); } catch { /* legacy mirror best effort */ }
+  };
+  if (typeof requestIdleCallback === 'function') _mirrorTimer = requestIdleCallback(flush, { timeout:1500 });
+  else _mirrorTimer = setTimeout(flush, 250);
+}
+
+function schedulePersistNotification() {
+  if (_persistNotifyQueued || typeof window === 'undefined' || typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') return;
+  _persistNotifyQueued = true;
+  queueMicrotask(() => {
+    _persistNotifyQueued = false;
+    window.dispatchEvent(new CustomEvent('proqtrack:db-persisted', { detail:{ db:_cache } }));
+  });
+}
+
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('proqtrack:db-updated', (event) => {
     if (event?.detail?.fromCache) return;
@@ -746,7 +774,12 @@ export function saveDB() {
   try {
     const text = JSON.stringify(_cache);
     localStorage.setItem(DB_KEY, text);
-    try { localStorage.setItem('proqtrack_db_v7', text); } catch { /* legacy mirror */ }
+    if (typeof document === 'undefined') {
+      try { localStorage.setItem('proqtrack_db_v7', text); } catch { /* test/server shim compatibility */ }
+    } else {
+      scheduleLegacyMirror(text);
+    }
+    schedulePersistNotification();
     return true;
   } catch (e) {
     console.error('Failed to save DB', e);

@@ -81,10 +81,13 @@ test('P0 runtime modules keep cloud, offline, evidence and reporting responsibil
   assert.match(reportPhase4, /window\.ReportPhase4/);
 });
 
-test('service worker advances cache and precaches the explicit bootstrap', async () => {
-  const sw = await read('sw.js');
-  assert.match(sw, /proqtrack-v12\.44/);
+test('service worker uses an atomic content-versioned release cache', async () => {
+  const [sw, build] = await Promise.all([read('sw.js'), read('scripts/build.mjs')]);
+  assert.match(sw, /__PROQTRACK_RELEASE__/);
+  assert.match(sw, /proqtrack-shell-/);
   assert.match(sw, /'\.\/src\/entry\.js'/);
   assert.match(sw, /'\.\/src\/bootstrap\.js'/);
   assert.match(sw, /pathname\.startsWith\('\/api\/'\)/);
+  assert.match(build, /createHash\("sha256"\)/);
+  assert.match(build, /replaceAll\("__PROQTRACK_RELEASE__"/);
 });

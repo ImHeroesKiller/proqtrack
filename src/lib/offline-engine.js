@@ -12,7 +12,6 @@ let installed = false;
 let recovering = false;
 let replaying = false;
 const lastSignatures = new Map();
-let observeTimer = null;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -69,7 +68,11 @@ async function persistOperationalSnapshot(db) {
   return true;
 }
 
-function observeLocalCache() {
+function observeLocalCache(dbHint = null) {
+  if (dbHint && typeof dbHint === 'object') {
+    persistOperationalSnapshot(dbHint).catch(() => {});
+    return;
+  }
   if (typeof localStorage === 'undefined') return;
   try {
     const raw = localStorage.getItem(DB_KEY);
@@ -184,9 +187,11 @@ export function installOfflineEngine() {
   if (installed || typeof window === 'undefined') return false;
   installed = true;
   observeLocalCache();
-  observeTimer = setInterval(observeLocalCache, 5000);
-  window.addEventListener('proqtrack:db-updated', observeLocalCache);
-  window.addEventListener('online', () => replayLatestSnapshot().catch(() => {}));
+  window.addEventListener('proqtrack:db-persisted', event => observeLocalCache(event.detail?.db || null));
+  window.addEventListener('online', () => {
+    observeLocalCache();
+    replayLatestSnapshot().catch(() => {});
+  });
   document?.addEventListener?.('visibilitychange', () => {
     if (document.visibilityState === 'visible') observeLocalCache();
   });
@@ -201,8 +206,7 @@ export function installOfflineEngine() {
 }
 
 export function stopOfflineObserver() {
-  if (observeTimer) clearInterval(observeTimer);
-  observeTimer = null;
+  // P0 performance: observer is event-driven; retained for compatibility.
 }
 
 installOfflineEngine();

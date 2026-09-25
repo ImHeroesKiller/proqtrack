@@ -659,12 +659,15 @@ export async function refreshOperationalData(localDb, account = {}) {
   }
   if (getApiToken() !== refreshToken) return { refreshed:false, reason:'session-changed' };
 
-  const remote = await apiJson('/api/core/bootstrap', {
+  const remote = await apiJson('/api/core/bootstrap?revision=' + encodeURIComponent(String(revision)), {
     headers:{ authorization:`Bearer ${refreshToken}` },
   });
   if (getApiToken() !== refreshToken) return { refreshed:false, reason:'session-changed' };
   if ((remote.cutoverMode || 'pending') !== 'cloud') {
     return { refreshed:false, reason:'not-cloud' };
+  }
+  if (remote.notModified === true) {
+    return { refreshed:false, reason:'not-modified', revision:Number(remote.revision || revision), refreshedAt:new Date().toISOString() };
   }
 
   cutoverMode = 'cloud';

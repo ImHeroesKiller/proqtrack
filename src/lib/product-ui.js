@@ -2,13 +2,13 @@ const text = value => String(value ?? '').trim();
 
 export const PRODUCT_PAGE_SIZE = 20;
 
-export function productOperationalModel(product = {}, { projects = [], clients = [] } = {}) {
-  const projectMap = new Map((projects || []).map(project => [String(project.id), project]));
-  const clientMap = new Map((clients || []).map(client => [String(client.id), client]));
+export function productOperationalModel(product = {}, { projects = [], clients = [], projectMap = null, clientMap = null } = {}) {
+  const projectIndex = projectMap instanceof Map ? projectMap : new Map((projects || []).map(project => [String(project.id), project]));
+  const clientIndex = clientMap instanceof Map ? clientMap : new Map((clients || []).map(client => [String(client.id), client]));
   const projectIds = [...new Set((product.projectIds || []).map(String).filter(Boolean))];
-  const linkedProjects = projectIds.map(id => projectMap.get(id)).filter(Boolean);
+  const linkedProjects = projectIds.map(id => projectIndex.get(id)).filter(Boolean);
   const clientId = text(product.clientId || linkedProjects[0]?.clientId);
-  const client = clientMap.get(clientId);
+  const client = clientIndex.get(clientId);
   const projectLabel = linkedProjects.map(project => project.code || project.name || project.id).join(', ');
   const clientLabel = client?.name || client?.code || clientId || '';
   const search = [

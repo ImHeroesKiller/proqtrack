@@ -74,6 +74,44 @@ const allRows = async stmt => {
   const result = await stmt.all();
   return Array.isArray(result?.results) ? result.results : [];
 };
+
+function sqlMarks(values = []) {
+  return values.map(() => '?').join(',');
+}
+
+async function rowsWhereIn(env, table, organizationId, column, values = [], suffix = '') {
+  const list = unique(values);
+  if (!list.length) return [];
+  const sql = `SELECT * FROM ${table} WHERE organization_id=? AND ${column} IN (${sqlMarks(list)}) ${suffix}`;
+  return allRows(env.DB.prepare(sql).bind(organizationId, ...list));
+}
+
+async function rowsByProjectEmployee(env, table, organizationId, projectIds = [], employeeIds = [], employeeColumn = 'employee_id') {
+  const projects = unique(projectIds);
+  const employees = unique(employeeIds);
+  if (!projects.length || !employees.length) return [];
+  const sql = `SELECT * FROM ${table} WHERE organization_id=? AND project_id IN (${sqlMarks(projects)}) AND ${employeeColumn} IN (${sqlMarks(employees)})`;
+  return allRows(env.DB.prepare(sql).bind(organizationId, ...projects, ...employees));
+}
+
+async function scopedSurveyTemplateRows(env, organizationId, projectIds = [], clientIds = []) {
+  const projects = unique(projectIds);
+  const clients = unique(clientIds);
+  const clauses = [];
+  const args = [organizationId];
+  if (projects.length) {
+    clauses.push(`project_id IN (${sqlMarks(projects)})`);
+    args.push(...projects);
+  }
+  if (clients.length) {
+    clauses.push(`client_id IN (${sqlMarks(clients)})`);
+    args.push(...clients);
+  }
+  if (!clauses.length) return [];
+  return allRows(env.DB.prepare(
+    `SELECT * FROM core_survey_templates WHERE organization_id=? AND (${clauses.join(' OR ')})`
+  ).bind(...args));
+}
 const roleOf = claims => str(claims?.role).toLowerCase();
 const projectAllowed = (claims, projectId) => BROAD_ROLES.has(roleOf(claims)) || (!!projectId && (claims.projectIds || []).includes(projectId));
 const clientAllowed = (claims, clientId) => BROAD_ROLES.has(roleOf(claims)) || (!!clientId && (claims.clientIds || []).includes(clientId));
@@ -1171,29 +1209,56 @@ async function syncState(env, organizationId) {
 async function employeeAccess(env, claims) {
   const organizationId = claims.organizationId;
   if (!organizationId) return new Set();
-  if (BROAD_ROLES.has(roleOf(claims))) {
+  const role = roleOf(claims);
+  if (BROAD_ROLES.has(role)) {
     const rows = await allRows(env.DB.prepare('SELECT id FROM core_employees WHERE organization_id=?').bind(organizationId));
     return new Set(rows.map(row => str(row.id)));
   }
-  const rows = await allRows(env.DB.prepare(`
-    SELECT DISTINCT e.id,e.auth_user_id,e.metadata_json,a.project_id,a.supervisor_user_id
-    FROM core_employees e
-    LEFT JOIN core_employee_project_assignments a ON a.organization_id=e.organization_id AND a.employee_id=e.id AND a.status='active'
-    WHERE e.organization_id=?
-  `).bind(organizationId));
-  const own = rows.find(row => str(row.auth_user_id) === str(claims.sub));
+
+  const own = await env.DB.prepare(
+    'SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? LIMIT 1'
+  ).bind(organizationId,str(claims.sub)).first();
   const ownEmployeeId = str(own?.id);
-  const allowedProjects = new Set(claims.projectIds || []);
-  const ids = new Set();
-  for (const row of rows) {
-    if (str(row.auth_user_id) === str(claims.sub)) ids.add(str(row.id));
-    if (roleOf(claims) === 'manager' && allowedProjects.has(str(row.project_id))) ids.add(str(row.id));
-    if (roleOf(claims) === 'supervisor') {
-      const meta = parseMetadata(row.metadata_json);
-      if (str(row.supervisor_user_id) === str(claims.sub) || (ownEmployeeId && str(meta.supervisorId) === ownEmployeeId)) ids.add(str(row.id));
-    }
+  if (role === 'employee') return new Set(ownEmployeeId ? [ownEmployeeId] : []);
+
+  const projectIds = unique(claims.projectIds || []);
+  if (!projectIds.length) return new Set(ownEmployeeId ? [ownEmployeeId] : []);
+  const marks = sqlMarks(projectIds);
+
+  if (role === 'manager') {
+    const rows = await allRows(env.DB.prepare(`
+      SELECT DISTINCT e.id
+      FROM core_employees e
+      LEFT JOIN core_employee_project_assignments a
+        ON a.organization_id=e.organization_id AND a.employee_id=e.id AND a.status='active'
+      WHERE e.organization_id=?
+        AND (e.auth_user_id=? OR a.project_id IN (${marks}))
+    `).bind(organizationId,str(claims.sub),...projectIds));
+    return new Set(rows.map(row => str(row.id)).filter(Boolean));
   }
-  return ids;
+
+  if (role === 'supervisor') {
+    const rows = await allRows(env.DB.prepare(`
+      SELECT DISTINCT e.id
+      FROM core_employees e
+      LEFT JOIN core_employee_project_assignments a
+        ON a.organization_id=e.organization_id AND a.employee_id=e.id AND a.status='active'
+      WHERE e.organization_id=?
+        AND (
+          e.auth_user_id=?
+          OR (
+            a.project_id IN (${marks})
+            AND (
+              a.supervisor_user_id=?
+              OR json_extract(e.metadata_json,'$.supervisorId')=?
+            )
+          )
+        )
+    `).bind(organizationId,str(claims.sub),...projectIds,str(claims.sub),ownEmployeeId));
+    return new Set(rows.map(row => str(row.id)).filter(Boolean));
+  }
+
+  return new Set(ownEmployeeId ? [ownEmployeeId] : []);
 }
 
 function decodeRows(entity, rows, relationMap = new Map()) {
@@ -1256,34 +1321,84 @@ function decodeRows(entity, rows, relationMap = new Map()) {
 
 async function bootstrapData(env, claims) {
   const org = claims.organizationId;
-  const [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles,priceObservations,competitorIntel,outletProposals] = await Promise.all([
-    allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_employee_project_assignments WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_outlets WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare("SELECT * FROM core_project_outlets WHERE organization_id=? AND status='active'").bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_visits WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_attendance WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_products WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare("SELECT * FROM core_project_products WHERE organization_id=? AND status='active'").bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_product_sales WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_survey_templates WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_survey_responses WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_competitors WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_competitor_products WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_leaves WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_stocks WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_inventory_cycles WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_price_observations WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_competitor_intel WHERE organization_id=?').bind(org)),
-    allRows(env.DB.prepare('SELECT * FROM core_outlet_proposals WHERE organization_id=?').bind(org)),
-  ]);
+  const broad = BROAD_ROLES.has(roleOf(claims));
+  let clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales;
+  let surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles;
+  let priceObservations,competitorIntel,outletProposals;
+  let scopedEmployeesAllowed = null;
+
+  if (broad) {
+    [clients,projects,employees,assignments,outlets,projectOutlets,visits,attendance,products,projectProducts,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles,priceObservations,competitorIntel,outletProposals] = await Promise.all([
+      allRows(env.DB.prepare('SELECT * FROM core_clients WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_projects WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_employees WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_employee_project_assignments WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_outlets WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare("SELECT * FROM core_project_outlets WHERE organization_id=? AND status='active'").bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_visits WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_attendance WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_products WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare("SELECT * FROM core_project_products WHERE organization_id=? AND status='active'").bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_product_sales WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_survey_templates WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_survey_responses WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_competitors WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_competitor_products WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_leaves WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_stocks WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_inventory_cycles WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_price_observations WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_competitor_intel WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_outlet_proposals WHERE organization_id=?').bind(org)),
+    ]);
+  } else {
+    const allowedProjects = unique(claims.projectIds || []);
+    const employeeIds = [...await employeeAccess(env, claims)];
+    scopedEmployeesAllowed = new Set(employeeIds);
+
+    projects = await rowsWhereIn(env,'core_projects',org,'id',allowedProjects);
+    const allowedClients = unique([...(claims.clientIds || []), ...projects.map(row => row.client_id)]);
+    [clients,employees,assignments,projectOutlets,projectProducts,visits,attendance,sales,surveyTemplates,surveyResponses,competitors,competitorProducts,attendancePoints,leaves,stocks,inventoryCycles,priceObservations,competitorIntel,outletProposals] = await Promise.all([
+      rowsWhereIn(env,'core_clients',org,'id',allowedClients),
+      rowsWhereIn(env,'core_employees',org,'id',employeeIds),
+      rowsByProjectEmployee(env,'core_employee_project_assignments',org,allowedProjects,employeeIds),
+      rowsWhereIn(env,'core_project_outlets',org,'project_id',allowedProjects,"AND status='active'"),
+      rowsWhereIn(env,'core_project_products',org,'project_id',allowedProjects,"AND status='active'"),
+      rowsByProjectEmployee(env,'core_visits',org,allowedProjects,employeeIds),
+      rowsByProjectEmployee(env,'core_attendance',org,allowedProjects,employeeIds),
+      rowsByProjectEmployee(env,'core_product_sales',org,allowedProjects,employeeIds),
+      scopedSurveyTemplateRows(env,org,allowedProjects,allowedClients),
+      rowsByProjectEmployee(env,'core_survey_responses',org,allowedProjects,employeeIds),
+      allRows(env.DB.prepare('SELECT * FROM core_competitors WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_competitor_products WHERE organization_id=?').bind(org)),
+      allRows(env.DB.prepare('SELECT * FROM core_attendance_points WHERE organization_id=?').bind(org)),
+      rowsWhereIn(env,'core_leaves',org,'employee_id',employeeIds),
+      rowsWhereIn(env,'core_stocks',org,'project_id',allowedProjects),
+      rowsByProjectEmployee(env,'core_inventory_cycles',org,allowedProjects,employeeIds),
+      rowsByProjectEmployee(env,'core_price_observations',org,allowedProjects,employeeIds),
+      rowsByProjectEmployee(env,'core_competitor_intel',org,allowedProjects,employeeIds),
+      rowsByProjectEmployee(env,'core_outlet_proposals',org,allowedProjects,employeeIds,'submitted_by'),
+    ]);
+
+    const outletIds = unique(projectOutlets.map(row => row.outlet_id));
+    const productIds = unique(projectProducts.map(row => row.product_id));
+    [outlets,products] = await Promise.all([
+      rowsWhereIn(env,'core_outlets',org,'id',outletIds),
+      rowsWhereIn(env,'core_products',org,'id',productIds),
+    ]);
+  }
+
   const outletProjects = new Map();
-  for (const row of projectOutlets) { if (!outletProjects.has(str(row.outlet_id))) outletProjects.set(str(row.outlet_id), []); outletProjects.get(str(row.outlet_id)).push(str(row.project_id)); }
+  for (const row of projectOutlets) {
+    if (!outletProjects.has(str(row.outlet_id))) outletProjects.set(str(row.outlet_id), []);
+    outletProjects.get(str(row.outlet_id)).push(str(row.project_id));
+  }
   const productProjects = new Map();
-  for (const row of projectProducts) { if (!productProjects.has(str(row.product_id))) productProjects.set(str(row.product_id), []); productProjects.get(str(row.product_id)).push(str(row.project_id)); }
+  for (const row of projectProducts) {
+    if (!productProjects.has(str(row.product_id))) productProjects.set(str(row.product_id), []);
+    productProjects.get(str(row.product_id)).push(str(row.project_id));
+  }
   const data = {
     clients: decodeRows('clients', clients),
     projects: decodeRows('projects', projects),
@@ -1305,14 +1420,17 @@ async function bootstrapData(env, claims) {
     priceObservations: decodeRows('priceObservations', priceObservations),
     competitorIntel: decodeRows('competitorIntel', competitorIntel),
     outletProposals: decodeRows('outletProposals', outletProposals),
-    projectProducts: projectProducts.map ? [] : projectProducts,
+    projectProducts: [],
   };
-  data.projectProducts = projectProducts instanceof Map ? [...projectProducts.entries()].flatMap(([productId, ids]) => ids.map(projectId => ({ id: `PP-${projectId}-${productId}`, organizationId: org, projectId, productId, status: 'active' }))) : [];
+  data.projectProducts = [...productProjects.entries()].flatMap(([productId, ids]) =>
+    ids.map(projectId => ({ id:`PP-${projectId}-${productId}`, organizationId:org, projectId, productId, status:'active' }))
+  );
 
-  if (!BROAD_ROLES.has(roleOf(claims))) {
+  if (!broad) {
     const allowedProjects = new Set(claims.projectIds || []);
     const allowedClients = new Set(claims.clientIds || []);
-    const employeesAllowed = await employeeAccess(env, claims);
+    for (const project of data.projects) if (project.clientId) allowedClients.add(str(project.clientId));
+    const employeesAllowed = scopedEmployeesAllowed || new Set();
     data.clients = data.clients.filter(row => allowedClients.has(str(row.id)));
     data.projects = data.projects.filter(row => allowedProjects.has(str(row.id)));
     data.projectAssignments = data.projectAssignments.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
@@ -1320,11 +1438,15 @@ async function bootstrapData(env, claims) {
     data.outlets = data.outlets.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.products = data.products.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.projectProducts = data.projectProducts.filter(row => allowedProjects.has(str(row.projectId)));
-    for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
+    for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) {
+      data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
+    }
     data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
     data.inventoryCycles = data.inventoryCycles.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
-    data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
+    data.surveyTemplates = data.surveyTemplates.filter(row =>
+      (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId)))
+    );
   }
   return data;
 }
@@ -1363,11 +1485,18 @@ async function importAuthStatements(env, snapshot, claims, organizationId) {
   return { statements, userIdByEmployee };
 }
 
-async function handleBootstrap(env, claims) {
+async function handleBootstrap(request, env, claims) {
   const state = await syncState(env, claims.organizationId);
+  const revision = Number(state.revision || 0);
+  const cutoverMode = state.cutover_mode || 'pending';
+  const url = new URL(request.url);
+  const requestedRevision = Number(url.searchParams.get('revision') || request.headers.get('if-revision') || -1);
+  if (cutoverMode === 'cloud' && Number.isFinite(requestedRevision) && requestedRevision >= 0 && requestedRevision === revision) {
+    return json({ ok:true, revision, cutoverMode, notModified:true, data:null });
+  }
   const data = await bootstrapData(env, claims);
   const rowCount = Object.values(data).filter(Array.isArray).reduce((sum, rows) => sum + rows.length, 0);
-  return json({ ok: true, revision: Number(state.revision || 0), cutoverMode: state.cutover_mode || 'pending', empty: rowCount === 0, data });
+  return json({ ok: true, revision, cutoverMode, empty: rowCount === 0, data });
 }
 
 async function handleImport(request, env, claims) {
@@ -2403,7 +2532,7 @@ export async function handleOperationalRoute(request, env, claims, url = new URL
   if (!url.pathname.startsWith('/api/core/')) return null;
   if (env.CORE_DATA_API_ENABLED !== 'true') return json({ error: 'CORE_DATA_API_LOCKED' }, 503);
   if (!claims?.organizationId) return json({ error: 'ORGANIZATION_REQUIRED' }, 409);
-  if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(env, claims);
+  if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(request, env, claims);
   if (url.pathname === '/api/core/import' && request.method === 'POST') return handleImport(request, env, claims);
   if (url.pathname === '/api/core/sync' && request.method === 'POST') return handleSync(request, env, claims, bulkReceipt);
   return json({ error: 'NOT_FOUND' }, 404);
