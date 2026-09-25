@@ -2,7 +2,7 @@
 // P1 Performance: keep login/app authority on the critical path and defer route-only enhancers.
 
 const boot = {
-  version: 'p4-root-lcp-2026-09-25',
+  version: 'p5-root-soft-nav-lcp-2026-09-26',
   stage: 'loading',
   modules: [],
   lazyModules: [],
@@ -64,10 +64,22 @@ function yieldToMain() {
 }
 
 let idleRuntimeScheduled = false;
+let authenticatedPaintSeen = false;
+
+function afterAuthenticatedPaint() {
+  return new Promise(resolve => {
+    if (!window.FT?.state?.loggedIn) return resolve(false);
+    // Two animation frames keep route rendering/LCP ahead of optional module
+    // fetch/compile work even when hash navigation and login complete together.
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+  });
+}
+
 function scheduleIdleRuntime() {
   if (idleRuntimeScheduled) return;
   idleRuntimeScheduled = true;
   const run = async () => {
+    await afterAuthenticatedPaint();
     const modules = [
       ['./lib/performance-monitor.js', 'performance-monitor'],
       ['./operational-mapping.js', 'operational-mapping'],
@@ -78,17 +90,25 @@ function scheduleIdleRuntime() {
       ['./pwa-install.js', 'pwa-install'],
     ];
     for (const [path, name] of modules) {
+      if (!window.FT?.state?.loggedIn || document.visibilityState !== 'visible') break;
       try { await load(path, name, { lazy:true }); } catch (error) {
         console.warn('proqtrack_lazy_module_failed', name, error?.message || error);
       }
       await yieldToMain();
     }
   };
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(() => run(), { timeout:2500 });
-  } else {
-    setTimeout(() => run(), 700);
-  }
+  const start = () => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => run(), { timeout:5000 });
+    } else {
+      setTimeout(() => run(), 1200);
+    }
+  };
+  if (authenticatedPaintSeen) start();
+  else window.addEventListener('proqtrack:render-complete', () => {
+    authenticatedPaintSeen = true;
+    start();
+  }, { once:true });
 }
 
 function shouldLoadUatSeed() {
@@ -124,6 +144,8 @@ window.addEventListener('hashchange', () => {
   ensureRouteRuntime(location.hash).catch(error => {
     console.warn('proqtrack_route_runtime_failed', error?.message || error);
   });
+  // Optional runtime is scheduled by render-complete, not hashchange itself,
+  // so a soft navigation to #/ never competes with its LCP frame.
   if (window.FT?.state?.loggedIn) scheduleIdleRuntime();
 });
 window.addEventListener('proqtrack:cloud-status', event => {
