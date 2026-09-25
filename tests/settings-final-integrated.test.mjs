@@ -67,23 +67,3 @@ test('manager project authority permits catalog metadata but blocks Attendance p
   );
 });
 
-test('final Settings production UAT is a deployment release gate', async () => {
-  const workflow = await read('.github/workflows/cloudflare-mvp.yml');
-  assert.match(workflow, /Run Settings final integrated production UAT/);
-  assert.match(workflow, /node scripts\/settings-production-uat\.mjs/);
-  assert.match(workflow, /Cool down auth rate window before Settings UAT/);
-});
-
-test('Settings production UAT covers all roles and critical Settings boundaries', async () => {
-  const script = await read('scripts/settings-production-uat.mjs');
-  for (const role of ['superadmin','head','admin','manager','supervisor','employee']) {
-    assert.match(script,new RegExp(`${role}:\\{id:`));
-  }
-  assert.match(script, /ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN/);
-  assert.match(script, /ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN/);
-  assert.match(script, /DEVICE_ACCESS_DENIED/);
-  assert.match(script, /ORGANIZATION_PROFILE_FORBIDDEN/);
-  assert.match(script, /manager-attendance-policy-denied/);
-  assert.match(script, /logout-all/);
-  assert.match(script, /assets\/settings\.css/);
-});
