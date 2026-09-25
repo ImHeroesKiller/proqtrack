@@ -15,8 +15,8 @@ test('P3B project management migration is physically extracted behind orchestrat
   assert.doesNotMatch(index, /if \(allowLegacyDemoSeed && !db\.clients\.length\)/);
 
   assert.match(migration, /export function createProjectManagementMigration/);
-  assert.match(migration, /if \(allowLegacyDemoSeed && !db\.clients\.length\)/);
-  assert.match(migration, /db\.projectAssignments = rows/);
+  assert.doesNotMatch(migration, /allowLegacyDemoSeed|demoSeed/);
+  assert.match(migration, /assignmentCounts/);
   assert.match(migration, /projectSettings\.push/);
 });
 
