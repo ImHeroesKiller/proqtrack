@@ -3424,20 +3424,45 @@ window.FT.deleteStock = function() {
 
 // ===== Attendance Manager Page =====
 function renderAttendanceManager() {
-  const attendance = getAttendance();
+  const attendance = getAttendance().slice().sort((a,b) => String(b.date || b.workDate || '').localeCompare(String(a.date || a.workDate || '')));
   const db = getDB();
+  const today = todayISO();
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
+  const projects = (db.projects || []).filter(project => attendance.some(row => String(row.projectId) === String(project.id)));
   const projectMap = Object.fromEntries((db.projects || []).map(project => [String(project.id), project]));
+  const todayRows = attendance.filter(row => String(row.date || row.workDate || '') === today);
+  const openCheckout = todayRows.filter(row => row.attendanceSource !== 'visit' && !row.checkOutAt && !row.checkOutTime);
+  const corrected = attendance.filter(row => Number(row.correctionCount || 0) > 0);
   return `
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" id="attSearch" placeholder="🔍 Cari karyawan..." data-pqt-oninput="FT.filterAttendance()">
-        <select class="select" id="attStatusFilter" style="width:160px;" data-pqt-onchange="FT.filterAttendance()">
-          <option value="">Semua Status</option>
-          <option value="hadir">Hadir</option><option value="terlambat">Terlambat</option><option value="tidak hadir">Tidak Hadir</option>
-        </select>
-        <div class="spacer"></div>
-        <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Meeting point / kantor</button>
+    <div class="ops-kpi-grid">
+      <div class="ops-kpi"><span>Hari ini</span><strong>${todayRows.length}</strong><small>attendance tercatat</small></div>
+      <div class="ops-kpi"><span>Belum check-out</span><strong>${openCheckout.length}</strong><small>manual hari ini</small></div>
+      <div class="ops-kpi"><span>Koreksi</span><strong>${corrected.length}</strong><small>memiliki audit correction</small></div>
+      <div class="ops-kpi"><span>Total</span><strong>${attendance.length}</strong><small>record terlihat</small></div>
+    </div>
+    <div class="card ops-card">
+      <div class="ops-toolbar">
+        <div class="ops-toolbar-main">
+          <input class="input search-input" id="attSearch" placeholder="Cari karyawan / project..." data-pqt-oninput="FT.filterAttendance()">
+          <select class="select" id="attProjectFilter" data-pqt-onchange="FT.filterAttendance()">
+            <option value="">Semua Project</option>
+            ${projects.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name || '')}</option>`).join('')}
+          </select>
+          <select class="select" id="attStatusFilter" data-pqt-onchange="FT.filterAttendance()">
+            <option value="">Semua Status</option>
+            <option value="hadir">Hadir</option><option value="terlambat">Terlambat</option><option value="tidak hadir">Tidak Hadir</option>
+          </select>
+          <select class="select" id="attSourceFilter" data-pqt-onchange="FT.filterAttendance()">
+            <option value="">Semua Source</option><option value="manual">Manual</option><option value="visit">Visit</option>
+          </select>
+          <input class="input" id="attDateFrom" type="date" aria-label="Tanggal attendance dari" data-pqt-onchange="FT.filterAttendance()">
+          <input class="input" id="attDateTo" type="date" aria-label="Tanggal attendance sampai" data-pqt-onchange="FT.filterAttendance()">
+        </div>
+        <div class="ops-toolbar-actions">
+          <span class="ops-result-count" id="attResultCount">${attendance.length} record</span>
+          <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetAttendanceFilters()">Reset</button>
+          <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Titik absensi</button>
+        </div>
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="attTable">
@@ -3451,7 +3476,7 @@ function renderAttendanceManager() {
               const source = a.attendanceSource === 'visit' ? 'Visit' : 'Manual';
               const corrected = a.correctionCount ? `<div class="am-muted">Koreksi ${a.correctionCount}x</div>` : '';
               return `
-                <tr>
+                <tr data-att-row="1" data-project="${esc(String(a.projectId || ''))}" data-status="${esc(normalizeAttendanceStatus(a.status))}" data-source="${a.attendanceSource === 'visit' ? 'visit' : 'manual'}" data-date="${esc(String(a.date || a.workDate || ''))}">
                   <td><div style="display:flex;align-items:center;gap:8px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;">${getInitials(emp.name)}</div><span style="font-weight:600;">${esc(emp.name)}</span></div></td>
                   <td><strong>${esc(project.code || a.projectId || '-')}</strong><div class="am-muted">${esc(project.name || '')}</div></td>
                   <td>${formatDateShort(a.date || a.workDate)}</td>
@@ -3459,9 +3484,12 @@ function renderAttendanceManager() {
                   <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
                   <td>${esc(source)}${corrected}</td>
                   <td>${statusBadge(a.status)}</td>
-                  <td>${a.attendanceSource === 'visit'
-                    ? '<span class="am-muted">Read-only</span>'
-                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}</td>
+                  <td><div class="ops-row-actions">
+                    <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewAttendance('${a.id}')">Detail</button>
+                    ${a.attendanceSource === 'visit'
+                      ? '<span class="ops-chip">Visit read-only</span>'
+                      : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}
+                  </div></td>
                 </tr>
               `;
             }).join('')}
@@ -3471,6 +3499,28 @@ function renderAttendanceManager() {
     </div>
   `;
 }
+
+window.FT.viewAttendance = function(id) {
+  const row = getAttendance().find(item => String(item.id) === String(id));
+  if (!row) return;
+  const emp = getEmployees().find(item => String(item.id) === String(row.employeeId));
+  const project = (getDB().projects || []).find(item => String(item.id) === String(row.projectId));
+  const source = row.attendanceSource === 'visit' ? 'Otomatis dari Visit' : 'Manual';
+  const correctedBy = getAccounts().find(acc => String(acc.id) === String(row.correctedBy));
+  openModal('Detail Attendance', `
+    <div class="ops-detail-grid">
+      <div><span>Karyawan</span><strong>${esc(emp?.name || row.employeeId || '-')}</strong></div>
+      <div><span>Project</span><strong>${esc(project?.code || row.projectId || '-')}</strong><small>${esc(project?.name || '')}</small></div>
+      <div><span>Tanggal</span><strong>${formatDate(row.date || row.workDate)}</strong></div>
+      <div><span>Status</span><strong>${statusBadge(row.status)}</strong></div>
+      <div><span>Check In</span><strong>${esc(row.checkInTime || row.checkInAt || '—')}</strong></div>
+      <div><span>Check Out</span><strong>${esc(row.checkOutTime || row.checkOutAt || '—')}</strong></div>
+      <div><span>Source</span><strong>${esc(source)}</strong></div>
+      <div><span>Koreksi</span><strong>${Number(row.correctionCount || 0)}x</strong></div>
+    </div>
+    ${row.correctionReason ? `<div class="ops-audit-box"><strong>Audit koreksi terakhir</strong><p>${esc(row.correctionReason)}</p><small>${esc(correctedBy?.name || correctedBy?.email || row.correctedBy || '-')} · ${esc(row.correctedAt || '-')}</small></div>` : ''}
+    <div class="modal-footer"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button>${row.attendanceSource === 'visit' ? '' : `<button class="btn btn-primary" data-pqt-onclick="FT.closeModal();FT.openAttendanceCorrection('${row.id}')">Koreksi</button>`}</div>`);
+};
 
 window.FT.openAttendanceCorrection = function(id) {
   const row = getAttendance().find(item => String(item.id) === String(id));
@@ -3555,15 +3605,38 @@ window.FT.openAttendancePointModal = function() {
 };
 
 window.FT.filterAttendance = function() {
-  const search = document.getElementById('attSearch').value.toLowerCase();
-  const status = document.getElementById('attStatusFilter').value;
-  document.querySelectorAll('#attTable tbody tr').forEach(row => {
-    let show = true;
-    if (search && !row.textContent.toLowerCase().includes(search)) show = false;
-    if (status && !row.textContent.toLowerCase().includes(status)) show = false;
-    row.style.display = show ? '' : 'none';
+  const search = String(document.getElementById('attSearch')?.value || '').trim().toLowerCase();
+  const project = String(document.getElementById('attProjectFilter')?.value || '');
+  const status = String(document.getElementById('attStatusFilter')?.value || '');
+  const source = String(document.getElementById('attSourceFilter')?.value || '');
+  const from = String(document.getElementById('attDateFrom')?.value || '');
+  const to = String(document.getElementById('attDateTo')?.value || '');
+  let visible = 0;
+  document.querySelectorAll('#attTable tbody tr[data-att-row="1"]').forEach(row => {
+    const date = row.dataset.date || '';
+    const show = (!search || row.textContent.toLowerCase().includes(search))
+      && (!project || row.dataset.project === project)
+      && (!status || row.dataset.status === status)
+      && (!source || row.dataset.source === source)
+      && (!from || date >= from)
+      && (!to || date <= to);
+    row.hidden = !show;
+    if (show) visible += 1;
   });
+  const count = document.getElementById('attResultCount');
+  if (count) count.textContent = `${visible} record`;
+  const empty = document.getElementById('attFilteredEmpty');
+  if (empty) empty.hidden = visible !== 0;
 };
+
+window.FT.resetAttendanceFilters = function() {
+  for (const id of ['attSearch','attProjectFilter','attStatusFilter','attSourceFilter','attDateFrom','attDateTo']) {
+    const node = document.getElementById(id);
+    if (node) node.value = '';
+  }
+  FT.filterAttendance();
+};
+
 
 // ===== Leaves Manager Page =====
 function leaveStatusHtml(row) {
