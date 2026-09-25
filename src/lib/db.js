@@ -1864,7 +1864,7 @@ export function getAttendancePoints() {
 
 export function createAttendancePoint(data) {
   const actor = assertLoggedIn();
-  if (!isProjectAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
+  if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
   const lat = data.lat === '' || data.lat == null ? null : Number(data.lat);
   const lng = data.lng === '' || data.lng == null ? null : Number(data.lng);
   const radiusM = data.radiusM === '' || data.radiusM == null ? 150 : Number(data.radiusM);
