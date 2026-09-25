@@ -6,14 +6,14 @@ import {
   getOrganization, getCurrentOrgId, getDB, getActor,
   createOutletProposal, getOutletProposals, reviewOutletProposal,
   canEmployeeAddStore, outletProjectsForEmployee, storeCatalogForEmployee, formatOutletLabel,
-  getAttendancePolicy, getEmployee,
+  getAttendancePolicy, getProjectAttendancePolicy, getAttendanceProjectsForEmployee, getEmployee,
 } from './lib/db.js';
 import {
   esc, formatDate, formatDateShort, formatDuration, formatCurrency, statusBadge,
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
-import { locationFreshness, locationSourceLabel, visitLocationEvidence } from './lib/location-evidence.js';
+import { locationFreshness, locationSourceLabel, visitLocationEvidence, captureDevicePosition } from './lib/location-evidence.js';
 import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 
 function empId() {
@@ -108,49 +108,63 @@ export function outletNotesField(catalog, current = '') {
 export function attendanceCheckinCard() {
   const id = empId();
   const today = todayISO();
-  const att = getAttendance().find(a => a.employeeId === id && a.date === today);
-  const policy = getAttendancePolicy();
+  const projects = getAttendanceProjectsForEmployee(id);
+  const manualProjects = projects.filter(project => getProjectAttendancePolicy(project.id).source === 'manual');
+  const visitProjects = projects.filter(project => getProjectAttendancePolicy(project.id).source === 'visit');
+  const todays = getAttendance().filter(a => a.employeeId === id && a.date === today);
+  if (!projects.length) {
+    return '<div class="empty-state"><h3>Tidak ada project aktif</h3><p>Attendance tersedia setelah karyawan memiliki assignment project aktif.</p></div>';
+  }
+  if (!manualProjects.length) {
+    return `<div style="padding:16px;border-radius:12px;background:var(--blue-50)">
+      ${appIcon('attendance')}
+      <div style="font-weight:700;margin-top:8px">Attendance otomatis dari Visit</div>
+      <div class="am-muted">Check-in dan check-out kunjungan pada project aktif akan membentuk attendance secara otomatis.</div>
+    </div>`;
+  }
+
+  const policy = getAttendancePolicy(manualProjects[0]?.id || '');
   const emp = getEmployee(id);
-  const firstStore = getVisitsOnDate(today, id)[0];
-  const store = firstStore ? getOutlets().find(o => o.id === firstStore.outletId) : null;
   const assigned = emp?.attendancePointId
     ? getAttendancePoints().find(p => p.id === emp.attendancePointId)
     : null;
-  if (att) {
-    return `<div style="display:flex;align-items:center;gap:12px;padding:16px;border-radius:12px;background:#ecfdf5">
-      ${appIcon('attendance')}
-      <div>
-        <div style="font-size:18px;font-weight:800;color:var(--green-600)">${esc(att.status === 'late' || att.status === 'terlambat' ? 'Late' : 'Present')}</div>
-        <div class="am-muted">Check in ${att.checkInTime || '-'} · ${esc(att.checkInLocation || att.locationName || '-')}${att.locationType ? ' · ' + locationTypeLabel(att.locationType) : ''}</div>
-      </div>
-    </div>`;
-  }
+
   let options = '';
   let hint = '';
-  if (policy.mode === 'office') {
-    const name = policy.officeName || 'Office';
-    options = `<option value="office|office|${esc(name)}">${esc(name)} — Office</option>`;
-    hint = `Must check in at the office (radius ${policy.radiusM} m).`;
-  } else if (policy.mode === 'outlet') {
-    const outlets = getOutlets().filter(o => o.status !== 'inactive');
-    options = outlets.map(o => `<option value="${o.id}|store|${esc(o.name)}">${esc(formatOutletLabel(o))}</option>`).join('');
-    if (store) options = `<option value="${store.id}|store|${esc(store.name)}">${esc(store.name)} — today's first outlet</option>` + options;
-    hint = `Must check in at an outlet (radius ${policy.radiusM} m).`;
+  if (policy.mode === 'outlet') {
+    const outlets = getOutlets().filter(o => o.status !== 'inactive' && Number.isFinite(Number(o.lat)) && Number.isFinite(Number(o.lng)));
+    options = outlets.map(o => `<option value="${esc(o.id)}|store|${esc(o.name)}">${esc(formatOutletLabel(o))}</option>`).join('');
+    hint = `Check-in manual wajib memakai GPS perangkat dan berada dalam geofence outlet.`;
   } else {
-    if (assigned) {
-      options = `<option value="${assigned.id}|${assigned.type}|${esc(assigned.name)}">${esc(assigned.name)}</option>`;
-    }
-    hint = assigned
-      ? `Assigned point: ${assigned.name} (radius ${policy.radiusM} m).`
-      : 'No attendance point assigned on your employee record. Ask a manager.';
+    const points = getAttendancePoints().filter(p =>
+      p.status !== 'inactive'
+      && Number.isFinite(Number(p.lat))
+      && Number.isFinite(Number(p.lng))
+    );
+    const preferred = assigned && points.some(p=>p.id===assigned.id) ? assigned : null;
+    const ordered = preferred ? [preferred,...points.filter(p=>p.id!==preferred.id)] : points;
+    options = ordered.map(p => `<option value="${esc(p.id)}|${esc(p.type || 'point')}|${esc(p.name)}">${esc(p.name)}</option>`).join('');
+    hint = options
+      ? 'Check-in manual wajib memakai GPS perangkat dan berada dalam radius titik attendance.'
+      : 'Belum ada titik attendance dengan koordinat GPS yang valid. Minta manager menambahkan titik attendance.';
   }
+
   return `<div>
+    ${todays.length ? `<div class="am-muted" style="margin-bottom:10px">${todays.length} attendance project sudah tercatat hari ini.</div>` : ''}
+    ${visitProjects.length ? `<div class="am-muted" style="margin-bottom:10px">${visitProjects.length} project menggunakan attendance otomatis dari Visit.</div>` : ''}
     <p class="am-muted" style="margin:0 0 10px">${esc(hint)}</p>
     ${options ? `<form data-pqt-onsubmit="FS.checkInAttendance(event)">
       <div class="form-group">
-        <label class="label">Check-in location</label>
+        <label class="label">Project</label>
+        <select class="select" name="projectId" required>
+          <option value="">Pilih project</option>
+          ${manualProjects.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Lokasi check-in</label>
         <select class="select" name="point" required>
-          <option value="">Select location</option>
+          <option value="">Pilih lokasi</option>
           ${options}
         </select>
       </div>
@@ -276,27 +290,61 @@ function productRow(kind, products, existing, idx) {
 }
 
 window.FS = {
-  checkInAttendance(e) {
+  async checkInAttendance(e) {
     e.preventDefault();
-    const raw = new FormData(e.target).get('point') || '';
+    const form = e.target;
+    const submit = form.querySelector('button[type="submit"]');
+    const fd = new FormData(form);
+    const raw = fd.get('point') || '';
+    const projectId = String(fd.get('projectId') || '');
     const [locationId, locationType, ...nameParts] = String(raw).split('|');
     const locationName = nameParts.join('|');
     const id = empId();
-    if (!id) { window.showToast?.('Akses ditolak', 'error'); return; }
-    const now = new Date();
-    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(now));
-    createAttendance({
-      employeeId: id,
-      date: todayISO(),
-      checkInTime: now.toTimeString().slice(0, 5),
-      status: hour >= 9 ? 'terlambat' : 'hadir',
-      checkInLocation: locationName,
-      locationType,
-      locationId,
-    });
-    window.showToast?.('Absensi tercatat', 'success');
-    window.FT?.state && (location.hash = '#/myday');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    if (!id || !projectId) { window.showToast?.('Project attendance belum dipilih.', 'error'); return; }
+    try {
+      if (submit) { submit.disabled=true; submit.textContent='Mengambil GPS…'; }
+      const gps = await captureDevicePosition();
+      const now = new Date();
+      const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Jakarta', hour: '2-digit', hour12: false }).format(now));
+      if (submit) submit.textContent='Sinkronisasi…';
+      createAttendance({
+        employeeId:id,
+        projectId,
+        date:todayISO(),
+        workDate:todayISO(),
+        checkInTime:new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Jakarta',hour:'2-digit',minute:'2-digit',hour12:false}).format(now),
+        checkInAt:gps.capturedAt,
+        checkInLatitude:gps.lat,
+        checkInLongitude:gps.lng,
+        lat:gps.lat,
+        lng:gps.lng,
+        locationSource:'device_gps',
+        status:hour >= 9 ? 'late' : 'present',
+        checkInLocation:locationName,
+        locationType,
+        locationId,
+        idempotencyKey:`attendance:${projectId}:${id}:${todayISO()}`,
+      });
+      await waitForOperationalSync();
+      await refreshOperationalData(getDB(),getActor());
+      window.showToast?.('Absensi tercatat', 'success');
+      window.FT?.state && (location.hash = '#/myday');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (err) {
+      restoreOperationalBaseline(getDB());
+      const message = {
+        ATTENDANCE_MANUAL_DISABLED:'Project ini menggunakan attendance otomatis dari Visit.',
+        ATTENDANCE_ALREADY_RECORDED:'Attendance project hari ini sudah tercatat.',
+        ATTENDANCE_GPS_REQUIRED:'Lokasi GPS perangkat wajib tersedia.',
+        ATTENDANCE_LOCATION_UNAVAILABLE:'Titik attendance belum memiliki koordinat yang valid.',
+        ATTENDANCE_OUTSIDE_GEOFENCE:'Anda berada di luar area attendance yang diizinkan.',
+        ATTENDANCE_ASSIGNMENT_REQUIRED:'Anda tidak memiliki assignment aktif pada project ini.',
+      }[err?.code || err?.message] || err?.message || String(err);
+      window.showToast?.(message,'error');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } finally {
+      if (submit?.isConnected) { submit.disabled=false; submit.textContent='Check in'; }
+    }
   },
   openVisitDetail(id) {
     openModal('Detail kunjungan', renderVisitDetailHtml(id));
