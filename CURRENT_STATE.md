@@ -227,3 +227,15 @@ P3 menutup maintainability/refactor/quality backlog tanpa mengubah authority ata
 - Attendance/Leave UI mengurangi inline-style debt dan menambah semantic button type, aria-live result count, serta reusable quality classes di `assets/ui-2026.css`.
 - Pure unit coverage tersedia di `tests/attendance-leave-p3.test.mjs`.
 - P0, P1, dan P2 regression suites tetap menjadi release gate.
+
+
+## Settings P0 authority hardening — 25 September 2026
+
+Empat P0 Settings ditutup dengan invariant production berikut:
+
+- Admin tenant tidak dapat mengubah email/password global user melalui Account Management. Credential global hanya berubah melalui self-service Profile/Security pemilik account; attach-existing tetap mempertahankan credential lama.
+- Revocation session akibat perubahan role/status account atau reset device dibatasi ke `organization_id` aktif sehingga membership/session user di tenant lain tidak ikut terputus.
+- Settings → Attendance tidak lagi menyimpan policy Office/Outlet/Point lokal yang tidak dipakai server. UI mengubah `attendanceSourceMode` Manual/Visit dan `attendanceLateAfter` pada project melalui `commitOperationalChanges`; server tetap menolak source switch bila attendance hari ini sudah digunakan.
+- Settings → Outlet Catalog disimpan dalam metadata project cloud (`modules.newOutlet` + `storeCatalog`). Browser `projectSettings` hanya legacy fallback untuk data lama dan bukan authority baru.
+- Worker project mutation mempertahankan metadata existing saat patch parsial agar module/catalog/attendance settings tidak terhapus oleh update project lain.
+- Regression guard: `tests/settings-p0.test.mjs`.
