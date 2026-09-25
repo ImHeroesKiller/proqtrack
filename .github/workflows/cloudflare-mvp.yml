@@ -41,6 +41,8 @@ jobs:
         run: npm audit --audit-level=critical
       - run: npm test
       - run: npm run build
+      - name: Performance budget gate
+        run: npm run perf:budget
 
       - name: Ensure Worker API_AUTH_SECRET
         shell: bash

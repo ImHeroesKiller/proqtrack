@@ -29,5 +29,7 @@ jobs:
         run: npm run db:migrate:local
       - run: npm test
       - run: npm run build
+      - name: Performance budget gate
+        run: npm run perf:budget
       - name: Validate Worker bundle
         run: npx wrangler deploy --dry-run --env=""

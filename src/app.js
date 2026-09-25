@@ -589,6 +589,7 @@ async function refreshActiveRoute({ manual = false, reason = 'passive' } = {}) {
 
 // ===== Main Render =====
 function render() {
+  const renderStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   if (renderFrame) {
     cancelAnimationFrame(renderFrame);
     renderFrame = 0;
@@ -827,6 +828,10 @@ function render() {
   configureRouteRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
+  const renderFinishedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  window.dispatchEvent(new CustomEvent('proqtrack:render-complete', {
+    detail: { route, durationMs:Math.max(0, renderFinishedAt - renderStartedAt) },
+  }));
 }
 
 // ===== Sidebar =====
@@ -5853,7 +5858,10 @@ function init() {
   getDB();
   state.route = getRoute();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
+    if (document.visibilityState !== 'visible') {
+      stopRouteRefresh();
+      return;
+    }
     refreshActiveRoute({ reason:'visibility' }).catch(() => {});
     configureRouteRefresh(state.route);
   });
@@ -5861,6 +5869,17 @@ function init() {
     refreshActiveRoute({ reason:'focus' }).catch(() => {});
     configureRouteRefresh(state.route);
   });
+  window.addEventListener('pagehide', () => {
+    stopRouteRefresh();
+    disposeTrackingMap();
+    window.FS?.disposeOutletMap?.();
+    clearTimeout(trackingFilterTimer);
+    trackingFilterTimer = null;
+    if (renderFrame) {
+      cancelAnimationFrame(renderFrame);
+      renderFrame = 0;
+    }
+  }, { once:true });
   render();
 }
 

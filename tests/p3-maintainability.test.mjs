@@ -124,7 +124,7 @@ test('conflicted offline snapshots remain blocked until explicit resolution', as
 
 test('P3 runtime and PWA baseline wires maintenance modules explicitly', async () => {
   const [bootstrap, sw] = await Promise.all([read('src/bootstrap.js'), read('sw.js')]);
-  assert.match(bootstrap, /p1-performance-2026-09-25/);
+  assert.match(bootstrap, /p3-performance-2026-09-25/);
   assert.match(bootstrap, /\.\/lib\/ui-events\.js/);
   assert.match(bootstrap, /uiEvents: Boolean\(window\.ProQUIEvents\)/);
   assert.match(sw, /proqtrack-v12\.44/);

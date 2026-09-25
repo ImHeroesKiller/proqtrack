@@ -2,7 +2,7 @@
 // P1 Performance: keep login/app authority on the critical path and defer route-only enhancers.
 
 const boot = {
-  version: 'p1-performance-2026-09-25',
+  version: 'p3-performance-2026-09-25',
   stage: 'loading',
   modules: [],
   lazyModules: [],
@@ -69,6 +69,7 @@ function scheduleIdleRuntime() {
   idleRuntimeScheduled = true;
   const run = async () => {
     const modules = [
+      ['./lib/performance-monitor.js', 'performance-monitor'],
       ['./operational-mapping.js', 'operational-mapping'],
       ['./dashboard-deep-links.js', 'dashboard-deep-links'],
       ['./client-logo-auto.js', 'client-logo-auto'],
