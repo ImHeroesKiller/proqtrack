@@ -54,6 +54,16 @@ test('P1 evidence queue uses IndexedDB indexes for scoped rows and counts', asyn
   assert.doesNotMatch(stats, /listEvidence\(organizationId\)/);
 });
 
+test('P1 evidence previews create object URLs only for visible previews and revoke them', async () => {
+  const source = await read('src/lib/evidence-client.js');
+  const queueStart = source.indexOf('export async function queueEvidence');
+  const uploadStart = source.indexOf('async function uploadQueuedEvidence', queueStart);
+  const queueBody = source.slice(queueStart, uploadStart);
+  assert.doesNotMatch(queueBody, /URL\.createObjectURL/);
+  assert.match(source, /const previewUrl = URL\.createObjectURL\(file\)/);
+  assert.match(source, /URL\.revokeObjectURL\(previewUrl\)/);
+});
+
 test('P1 photo evidence gallery renders in bounded lazy-decoded batches', async () => {
   const [app, fieldSales] = await Promise.all([
     read('src/app.js'),
