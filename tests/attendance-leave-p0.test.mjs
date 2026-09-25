@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const worker = readFileSync(new URL('../worker/operations.js', import.meta.url), 'utf8');
 const db = readFileSync(new URL('../src/lib/db.js', import.meta.url), 'utf8');
+const attendanceDomain = readFileSync(new URL('../src/lib/db-attendance-leave.js', import.meta.url), 'utf8');
 const field = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const projects = readFileSync(new URL('../src/types/index.js', import.meta.url), 'utf8');
@@ -20,7 +21,7 @@ test('P0 project config exposes manual or visit attendance source', () => {
 test('P0 manual attendance is project-scoped and cloud-confirmed', () => {
   assert.match(db, /getProjectAttendancePolicy\(projectId\)/);
   assert.match(db, /getEmployeeAttendanceProjects/);
-  assert.match(db, /Absensi project ini dihitung otomatis dari kunjungan/);
+  assert.match(attendanceDomain, /Absensi project ini dihitung otomatis dari kunjungan/);
   assert.match(field, /getProjectAttendancePolicy\(projectId\)\.sourceMode !== 'manual'/);
   assert.match(field, /await waitForOperationalSync\(\)/);
   assert.match(field, /await refreshOperationalData\(getDB\(\), getActor\(\)\)/);
@@ -49,9 +50,9 @@ test('P0 attendance round-trip preserves check-in aliases and coordinates', () =
 });
 
 test('P0 leave create cannot forge approval metadata', () => {
-  const createStart = db.indexOf('export function createLeave(data)');
-  const createEnd = db.indexOf('export function updateLeave', createStart);
-  const createBlock = db.slice(createStart, createEnd);
+  const createStart = attendanceDomain.indexOf('function createLeave(data)');
+  const createEnd = attendanceDomain.indexOf('function updateLeave', createStart);
+  const createBlock = attendanceDomain.slice(createStart, createEnd);
   assert.match(createBlock, /\.\.\.withOrg\(data\)/);
   assert.match(createBlock, /status:'pending'/);
   assert.match(createBlock, /approverId:null/);
