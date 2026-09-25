@@ -75,6 +75,6 @@ test('Projects P3 helper module is wired into page and PWA runtime', async () =>
   assert.match(src,/from "\.\.\/lib\/project-ui\.js"/);
   assert.match(src,/paginateProjects\(matched, page, PROJECT_PAGE_SIZE\)/);
   assert.match(src,/closingProjectAssignments/);
-  assert.match(sw,/src\/lib\/project-ui\.js/);
+  assert.match(sw,/RUNTIME_CACHE/);
   assert.match(sw,/proqtrack-v12\.44/);
 });
