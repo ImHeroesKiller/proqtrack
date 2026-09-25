@@ -1,32 +1,7 @@
-// ProQTrack local brand asset registration. Production runtime bootstrap lives in src/bootstrap.js.
+// ProQTrack local brand asset registration.
+// Critical styles, manifest and icons are declared statically in index.html so
+// the browser can discover them before JavaScript executes.
 export const LOGO_DARK = './assets/logo-dark.svg';
 export const LOGO_LIGHT = './assets/logo-light.svg';
 export const PWA_ICON = './assets/icon-proqtrack.svg';
 export const CANVA_LOGO_EMBED = LOGO_LIGHT;
-
-function ensureLink(rel, href, attrs = {}) {
-  if (document.querySelector(`link[rel="${rel}"][href="${href}"]`)) return;
-  const link = document.createElement('link');
-  link.rel = rel;
-  link.href = href;
-  Object.entries(attrs).forEach(([key, value]) => link.setAttribute(key, value));
-  document.head.appendChild(link);
-}
-
-ensureLink('stylesheet', './assets/phase0.css');
-ensureLink('stylesheet', './assets/phase0-v2.css');
-ensureLink('stylesheet', './assets/sidebar-collapse.css');
-ensureLink('stylesheet', './assets/field-mobile.css');
-ensureLink('stylesheet', './assets/ui-2026.css');
-ensureLink('stylesheet', './assets/mobile-sales.css');
-ensureLink('stylesheet', './assets/org-theme.css');
-ensureLink('manifest', './manifest.webmanifest');
-ensureLink('icon', PWA_ICON, { type: 'image/svg+xml' });
-ensureLink('apple-touch-icon', PWA_ICON);
-let theme = document.querySelector('meta[name="theme-color"]');
-if (!theme) {
-  theme = document.createElement('meta');
-  theme.name = 'theme-color';
-  document.head.appendChild(theme);
-}
-theme.content = '#ef5000';
