@@ -1673,6 +1673,17 @@ window.FT.closeSidebar = function() {
 const visitCheckInInFlight = new Set();
 const visitCheckOutInFlight = new Set();
 
+function visitExecutionErrorMessage(error, fallback = 'Proses kunjungan gagal') {
+  const code = error?.code || error?.message || '';
+  return {
+    VISIT_APPROVED_LEAVE_CONFLICT:'Check-in tidak dapat dilakukan karena ijin/cuti pada tanggal ini sudah disetujui.',
+    VISIT_OUTSIDE_GEOFENCE:'Check-in berada di luar radius outlet.',
+    VISIT_GPS_REQUIRED:'Lokasi GPS wajib tersedia untuk check-in.',
+    VISIT_GEOFENCE_UNAVAILABLE:'Geofence outlet belum tersedia atau tidak valid.',
+    REVISION_CONFLICT:'Data kunjungan berubah dari perangkat lain. Muat ulang lalu coba kembali.',
+  }[code] || error?.message || fallback;
+}
+
 async function checkInVisitWithEvidence(id) {
   const key = String(id || '');
   if (!key || visitCheckInInFlight.has(key)) return null;
@@ -1760,7 +1771,7 @@ window.FT.checkInVisit = async function(id) {
     showToast('Check-in berhasil dengan GPS dan geofence valid', 'success');
     render();
   } catch (error) {
-    showToast(error.message || 'Check-in gagal', 'error');
+    showToast(visitExecutionErrorMessage(error,'Check-in gagal'), 'error');
   }
 };
 
@@ -1772,7 +1783,7 @@ window.FT.checkOutVisit = async function(id) {
     showToast('Check-out berhasil dengan bukti GPS', 'success');
     render();
   } catch (error) {
-    showToast(error.message || 'Check-out gagal', 'error');
+    showToast(visitExecutionErrorMessage(error,'Check-out gagal'), 'error');
   }
 };
 
@@ -3768,7 +3779,7 @@ function renderMyLeaves() {
         <table class="table">
           <thead><tr><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Diajukan</th><th></th></tr></thead>
           <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
+            ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
             leaves.map(l => `
               <tr>
                 <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
@@ -3808,7 +3819,7 @@ window.FT.openMyLeaveModal = function() {
       </div>
       <div class="form-group">
         <label class="label">Alasan</label>
-        <textarea class="textarea" name="reason" placeholder="Jelaskan alasan pengajuan..." required></textarea>
+        <textarea class="textarea" name="reason" minlength="5" placeholder="Jelaskan alasan pengajuan..." required></textarea>
       </div>
       <div class="modal-footer" style="padding:0; margin-top:8px;">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
@@ -3849,6 +3860,9 @@ window.FT.createMyLeave = async function(e) {
     const message = {
       LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
       LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
+      LEAVE_TYPE_REQUIRED:'Tipe ijin/cuti wajib dipilih.',
+      LEAVE_REASON_REQUIRED:'Alasan ijin/cuti wajib minimal 5 karakter.',
+      LEAVE_PAST_PERIOD_SELF_SERVICE_FORBIDDEN:'Pengajuan yang seluruh periodenya sudah lewat tidak dapat dibuat.',
       LEAVE_SELF_ONLY:'Pengajuan hanya dapat dibuat untuk akun sendiri.',
       REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
     }[error?.code || error?.message] || error?.message || 'Pengajuan ijin/cuti gagal dikirim.';
