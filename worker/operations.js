@@ -291,7 +291,7 @@ async function activeProjectAssignment(env, organizationId, projectId, employeeI
   ).bind(organizationId,projectId,employeeId,workDate,workDate,workDate,workDate).first();
 }
 
-async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
+export async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
   if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
   const projectId=str(row.projectId || existing?.project_id);
   const employeeId=str(row.employeeId || existing?.employee_id);
@@ -358,7 +358,7 @@ async function validateAttendanceMutation(env, organizationId, claims, row, exis
   return null;
 }
 
-async function validateLeaveMutation(env, organizationId, row, existing, op) {
+export async function validateLeaveMutation(env, organizationId, row, existing, op) {
   if (op === 'delete') return { error:'LEAVE_DELETE_FORBIDDEN', status:409 };
   const projectId=str(row.projectId || existing?.project_id);
   const employeeId=str(row.employeeId || existing?.employee_id);
@@ -395,7 +395,7 @@ async function validateLeaveMutation(env, organizationId, row, existing, op) {
   return null;
 }
 
-function visitAttendanceStatements(env, organizationId, row, existing, attendanceSource = 'manual') {
+export function visitAttendanceStatements(env, organizationId, row, existing, attendanceSource = 'manual') {
   if (!existing || attendanceSource !== 'visit') return [];
   const currentStatus=canonicalVisitStatus(existing.status);
   const nextStatus=canonicalVisitStatus(row.status || existing.status);
