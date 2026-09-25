@@ -252,3 +252,17 @@ P1 Settings menutup lima area setelah P0 authority:
 - Account UX/security: Account Management tidak mengubah credential global atau employee full name pada edit existing account; nama/email/password existing dikunci di form dengan arahan ke Profile/Security/Employee authority.
 - Profile/password/session actions memiliki duplicate-submit guard dan error mapping yang lebih operasional.
 - Migration: `0028_settings_p1_profile_identity.sql`; regression guard: `tests/settings-p1.test.mjs`.
+
+
+## Settings P2 UX & operational hardening — 25 September 2026
+
+P2 Settings menutup UX/operational backlog tanpa mengubah authority P0/P1:
+
+- Destructive actions (logout semua perangkat, reset device, suspend account) memakai in-app confirmation modal; native `confirm()` di Settings dihapus.
+- Semua form utama Settings memakai busy/disabled/aria-busy state yang konsisten untuk mencegah double-submit dan memberi feedback saat cloud action berjalan.
+- Organization refresh dan Accounts refresh memiliki inline loading/error/last-sync state serta retry manual; auto-refresh hanya mencoba sekali per organization agar failure tidak menjadi toast/re-render loop.
+- Accounts search di-debounce, focus dipulihkan setelah render, filter dapat di-reset, dan result count/empty state menjelaskan kondisi filter.
+- Accounts desktop table berubah menjadi card-style rows pada mobile; action buttons wrap/stack dan tidak lagi bergantung pada raw local device fields.
+- Settings tabs memakai tablist/tab/tabpanel semantics dan horizontal scrolling pada mobile.
+- Copy Settings/Katalog/Accounts dirapikan ke Bahasa Indonesia; katalog tanpa project aktif memiliki empty state eksplisit.
+- Regression guard: `tests/settings-p2.test.mjs`.
