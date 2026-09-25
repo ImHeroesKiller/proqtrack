@@ -281,14 +281,14 @@ async function projectAttendancePolicy(env, organizationId, projectId) {
   };
 }
 
-async function activeProjectAssignment(env, organizationId, projectId, employeeId, workDate = '') {
+async function activeProjectAssignment(env, organizationId, projectId, employeeId, workDate = '', throughDate = workDate) {
   return env.DB.prepare(
     `SELECT id FROM core_employee_project_assignments
       WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active'
         AND (?='' OR starts_on IS NULL OR date(starts_on)<=date(?))
         AND (?='' OR ends_on IS NULL OR date(ends_on)>=date(?))
       LIMIT 1`
-  ).bind(organizationId,projectId,employeeId,workDate,workDate,workDate,workDate).first();
+  ).bind(organizationId,projectId,employeeId,workDate,workDate,throughDate,throughDate).first();
 }
 
 export async function validateAttendancePointMutation(row, existing, op) {
@@ -392,7 +392,7 @@ export async function validateLeaveMutation(env, organizationId, row, existing, 
   if (!project) return { error:'LEAVE_PROJECT_NOT_FOUND', status:422 };
   const projectMeta=parseMetadata(project.metadata_json);
   if (projectMeta.modules?.leaves === false) return { error:'LEAVE_MODULE_DISABLED', status:409 };
-  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,startDate);
+  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,startDate,endDate);
   if (!assignment) return { error:'LEAVE_ASSIGNMENT_REQUIRED', status:403 };
 
   const expectedDays=Math.floor((Date.parse(endDate)-Date.parse(startDate))/86400000)+1;
@@ -550,41 +550,40 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return ['draft','finalized'].includes(str(row.status || existing.status || 'draft'));
   }
 
-  if (BROAD_ROLES.has(role)) return true;
-  if (!existing) return op === 'upsert';
-  if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
-
   if (entity === 'attendance') {
-    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['workDate','date','work_date'], ['work_date','workDate','date'])) return false;
-    if (!unchangedIfProvided(row, existing, ['status'], ['status'])) return false;
+    if (!existing) return op === 'upsert';
+    // Client-originated attendance is immutable after first authoritative write.
+    // Visit-derived checkout is updated internally by visitAttendanceStatements().
+    return false;
+  }
+
+  if (entity === 'leaves') {
+    if (!existing) return op === 'upsert';
+    if (op === 'delete' || finalLeaveStatuses.has(str(existing.status))) return false;
     for (const pair of [
-      [['checkInAt','checkInTime','check_in_at'],['check_in_at','checkInAt','checkInTime']],
-      [['checkInLatitude','lat','check_in_latitude'],['check_in_latitude','checkInLatitude','lat']],
-      [['checkInLongitude','lng','check_in_longitude'],['check_in_longitude','checkInLongitude','lng']],
-      [['checkOutAt','checkOutTime','check_out_at'],['check_out_at','checkOutAt','checkOutTime']],
-      [['checkOutLatitude','check_out_latitude'],['check_out_latitude','checkOutLatitude']],
-      [['checkOutLongitude','check_out_longitude'],['check_out_longitude','checkOutLongitude']],
+      [['projectId','project_id'],['project_id','projectId']],
+      [['employeeId','employee_id'],['employee_id','employeeId']],
+      [['startDate','start_date'],['start_date','startDate']],
+      [['endDate','end_date'],['end_date','endDate']],
+      [['type'],['type']],
+      [['reason'],['reason']],
+      [['days'],['days']],
+      [['submittedAt','submitted_at'],['submitted_at','submittedAt']],
     ]) {
-      const current = firstValue(existing, pair[1]);
-      if (current !== null && !unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+      if (!unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+    }
+    const nextStatus = str(row.status || existing.status || 'pending');
+    if (!['pending','approved','rejected'].includes(nextStatus)) return false;
+    if (role === 'employee') {
+      if (nextStatus !== 'pending') return false;
+      if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
+      if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
     }
     return true;
   }
 
-  if (entity === 'leaves') {
-    if (finalLeaveStatuses.has(str(existing.status))) return false;
-    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['submittedAt','submitted_at'], ['submitted_at','submittedAt'])) return false;
-    const nextStatus = str(row.status || existing.status || 'pending');
-    if (role === 'employee') {
-      if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
-      if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
-      return nextStatus === 'pending';
-    }
-    return ['pending','approved','rejected'].includes(nextStatus);
-  }
+  if (BROAD_ROLES.has(role)) return true;
+  if (!existing) return op === 'upsert';
 
   if (entity === 'outletProposals') {
     if (['approved','rejected'].includes(str(existing.status))) return false;
