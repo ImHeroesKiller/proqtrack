@@ -2265,6 +2265,10 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (!ENTITY_TABLES[entity] || !['upsert','delete'].includes(op)) return json({ error: 'INVALID_CHANGE', entity, op }, 400);
     const row = { ...(change.row || {}) };
     const existing = await existingRow(env, entity, organizationId, row);
+    if (entity === 'projects' && existing) {
+      const incoming = { ...row };
+      Object.assign(row, parseMetadata(existing.metadata_json), incoming);
+    }
     let existingProjectIds = [];
     if (entity === 'outlets' && existing) {
       const links = await allRows(env.DB.prepare(
