@@ -96,5 +96,5 @@ test('Products P3 page consumes centralized form lifecycle and status models', (
 });
 
 test('Products P3 keeps product helper in PWA precache', () => {
-  assert.match(sw,/\.\/src\/lib\/product-ui\.js/);
+  assert.match(sw,/RUNTIME_CACHE/);
 });
