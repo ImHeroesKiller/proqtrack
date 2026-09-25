@@ -41,6 +41,8 @@ let evidenceHydrationPromise = null;
 let evidenceHydrationToken = '';
 let evidenceHydrationOrganizationId = '';
 let evidenceHydratedAt = 0;
+let refreshPromise = null;
+let refreshKey = '';
 
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -699,8 +701,7 @@ export async function bootstrapOperationalData(localDb, account = {}) {
   return { mode: 'cloud', data: clone(remote.data || {}), revision, cutoverMode };
 }
 
-export async function refreshOperationalData(localDb, account = {}) {
-  const refreshToken = getApiToken();
+async function performOperationalRefresh(localDb, account = {}, refreshToken = getApiToken()) {
   if (!refreshToken || !ready || cutoverMode !== 'cloud') {
     return { refreshed:false, reason:'not-ready' };
   }
@@ -723,7 +724,12 @@ export async function refreshOperationalData(localDb, account = {}) {
     return { refreshed:false, reason:'not-cloud' };
   }
   if (remote.notModified === true) {
-    return { refreshed:false, reason:'not-modified', revision:Number(remote.revision || revision), refreshedAt:new Date().toISOString() };
+    return {
+      refreshed:false,
+      reason:'not-modified',
+      revision:Number(remote.revision || revision),
+      refreshedAt:new Date().toISOString(),
+    };
   }
 
   cutoverMode = 'cloud';
@@ -732,8 +738,31 @@ export async function refreshOperationalData(localDb, account = {}) {
   baseline = snapshotCollections(data);
   applyRemoteDataToLocal(localDb,data);
   lastError = null;
-  emitStatus('refreshed',{ source:'home' });
+  emitStatus('refreshed',{ source:'runtime-refresh' });
   return { refreshed:true, revision, refreshedAt:new Date().toISOString() };
+}
+
+export async function refreshOperationalData(localDb, account = {}) {
+  const token = getApiToken();
+  const key = [
+    token || '',
+    String(account?.organizationId || ''),
+    String(revision),
+  ].join('|');
+
+  if (refreshPromise && refreshKey === key) return refreshPromise;
+
+  const request = performOperationalRefresh(localDb, account, token);
+  refreshPromise = request;
+  refreshKey = key;
+  const clearRequest = () => {
+    if (refreshPromise === request) {
+      refreshPromise = null;
+      refreshKey = '';
+    }
+  };
+  request.then(clearRequest, clearRequest);
+  return request;
 }
 
 async function flush() {
@@ -845,22 +874,75 @@ export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
     error.code = 'CLOUD_SYNC_UNAVAILABLE';
     throw error;
   }
-  const startedAt = Date.now();
-  while (true) {
-    if (lastError) {
-      const error = new Error(lastError);
-      error.code = lastError;
-      throw error;
+  if (lastError) {
+    const error = new Error(lastError);
+    error.code = lastError;
+    throw error;
+  }
+  if (!syncing && !queuedSnapshot) return { ok:true, revision };
+
+  if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+    const startedAt = Date.now();
+    while (syncing || queuedSnapshot) {
+      if (lastError) {
+        const error = new Error(lastError);
+        error.code = lastError;
+        throw error;
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        const error = new Error('CLOUD_SYNC_TIMEOUT');
+        error.code = 'CLOUD_SYNC_TIMEOUT';
+        throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
-    if (!syncing && !queuedSnapshot) return { ok:true, revision };
-    if (Date.now() - startedAt >= timeoutMs) {
+    return { ok:true, revision };
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      window.removeEventListener('proqtrack:cloud-status', onStatus);
+      if (error) reject(error);
+      else resolve({ ok:true, revision });
+    };
+    const onStatus = event => {
+      const status = event.detail?.status;
+      if (['error','conflict','legacy-master-migration-error','reset'].includes(status) || lastError) {
+        const error = new Error(lastError || status || 'CLOUD_SYNC_FAILED');
+        error.code = lastError || String(status || 'CLOUD_SYNC_FAILED').toUpperCase();
+        finish(error);
+        return;
+      }
+      if (!syncing && !queuedSnapshot) {
+        finish();
+        return;
+      }
+      if (status === 'synced') {
+        queueMicrotask(() => {
+          if (!syncing && !queuedSnapshot) finish();
+        });
+      }
+    };
+    const timeout = setTimeout(() => {
       const error = new Error('CLOUD_SYNC_TIMEOUT');
       error.code = 'CLOUD_SYNC_TIMEOUT';
-      throw error;
-    }
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
+      finish(error);
+    }, timeoutMs);
+    window.addEventListener('proqtrack:cloud-status', onStatus);
+    queueMicrotask(() => {
+      if (lastError) {
+        const error = new Error(lastError);
+        error.code = lastError;
+        finish(error);
+      } else if (!syncing && !queuedSnapshot) finish();
+    });
+  });
 }
+
 export function restoreOperationalBaseline(localDb) {
   clearTimeout(timer);
   timer = null;
@@ -887,6 +969,8 @@ export function resetCloudDataBridge() {
   lastError = null;
   clearTimeout(timer);
   timer = null;
+  refreshPromise = null;
+  refreshKey = '';
   emitStatus('reset');
 }
 

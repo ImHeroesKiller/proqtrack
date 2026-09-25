@@ -83,13 +83,13 @@ const state = {
   selectedMobileEmp: 'EMP001',
   mobileTab: 'home',
   livePolling: null,
-  homeRefreshTimer: null,
+  routeRefreshTimer: null,
+  routeRefreshRoute: '',
+  lastPassiveRefreshAt: 0,
   homeRefreshInFlight: false,
   homeRefreshedAt: null,
-  trackingRefreshTimer: null,
   trackingRefreshInFlight: false,
   trackingRefreshedAt: null,
-  visitsRefreshTimer: null,
   visitsRefreshInFlight: false,
   visitsRefreshedAt: null,
 };
@@ -328,6 +328,17 @@ function navigate(route) {
   location.hash = route;
 }
 
+let renderFrame = 0;
+function scheduleRender() {
+  if (renderFrame) return false;
+  renderFrame = requestAnimationFrame(() => {
+    renderFrame = 0;
+    render();
+  });
+  return true;
+}
+window.FT.scheduleRender = scheduleRender;
+
 window.FT.goNav = function(event, route) {
   event?.preventDefault?.();
   if (state.account?.mustChangePassword && route !== '#/settings') {
@@ -339,7 +350,7 @@ window.FT.goNav = function(event, route) {
   if (nav) state._sidebarScroll = nav.scrollTop;
   state.sidebarOpen = false;
   if (location.hash === route) {
-    render();
+    scheduleRender();
     return false;
   }
   location.hash = route;
@@ -353,7 +364,7 @@ window.addEventListener('hashchange', () => {
   }
   state.route = getRoute();
   state.sidebarOpen = false;
-  render();
+  scheduleRender();
 });
 
 // ===== Toast =====
@@ -396,7 +407,7 @@ async function refreshHomeData({ manual = false } = {}) {
     if (result?.refreshed) {
       state.homeRefreshedAt = result.refreshedAt || new Date().toISOString();
       if (manual) showToast('Data Home diperbarui', 'success');
-      if (isHomeRoute()) render();
+      if (isHomeRoute()) scheduleRender();
       return true;
     }
     if (manual) {
@@ -414,22 +425,6 @@ async function refreshHomeData({ manual = false } = {}) {
     return false;
   } finally {
     state.homeRefreshInFlight = false;
-  }
-}
-
-function configureHomeRefresh(route = state.route) {
-  const shouldRun = state.loggedIn && isHomeRoute(route)
-    && (isProjectAdmin() || isSupervisor())
-    && !!getActor()?.organizationId;
-  if (!shouldRun) {
-    if (state.homeRefreshTimer) clearInterval(state.homeRefreshTimer);
-    state.homeRefreshTimer = null;
-    return;
-  }
-  if (!state.homeRefreshTimer) {
-    state.homeRefreshTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') refreshHomeData().catch(() => {});
-    }, HOME_REFRESH_MS);
   }
 }
 
@@ -465,7 +460,7 @@ async function refreshTrackingData({ manual = false } = {}) {
     if (result?.refreshed) {
       state.trackingRefreshedAt = result.refreshedAt || new Date().toISOString();
       if (manual) showToast('Last Location diperbarui', 'success');
-      if (isTrackingRoute()) render();
+      if (isTrackingRoute()) scheduleRender();
       return true;
     }
     if (manual) {
@@ -483,20 +478,6 @@ async function refreshTrackingData({ manual = false } = {}) {
     return false;
   } finally {
     state.trackingRefreshInFlight = false;
-  }
-}
-
-function configureTrackingRefresh(route = state.route) {
-  const shouldRun = state.loggedIn && isTrackingRoute(route) && !!getActor()?.organizationId;
-  if (!shouldRun) {
-    if (state.trackingRefreshTimer) clearInterval(state.trackingRefreshTimer);
-    state.trackingRefreshTimer = null;
-    return;
-  }
-  if (!state.trackingRefreshTimer) {
-    state.trackingRefreshTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') refreshTrackingData().catch(() => {});
-    }, TRACKING_REFRESH_MS);
   }
 }
 
@@ -532,7 +513,7 @@ async function refreshVisitsData({ manual = false } = {}) {
     if (result?.refreshed) {
       state.visitsRefreshedAt = result.refreshedAt || new Date().toISOString();
       if (manual) showToast('Data kunjungan diperbarui', 'success');
-      if (isVisitsRoute()) render();
+      if (isVisitsRoute()) scheduleRender();
       return true;
     }
     if (manual) {
@@ -553,25 +534,65 @@ async function refreshVisitsData({ manual = false } = {}) {
   }
 }
 
-function configureVisitsRefresh(route = state.route) {
-  const shouldRun = state.loggedIn && isVisitsRoute(route) && !!getActor()?.organizationId;
-  if (!shouldRun) {
-    if (state.visitsRefreshTimer) clearInterval(state.visitsRefreshTimer);
-    state.visitsRefreshTimer = null;
-    return;
+window.FT.refreshVisits = () => refreshVisitsData({ manual:true });
+
+const PASSIVE_REFRESH_COOLDOWN_MS = 5000;
+
+function routeRefreshConfig(route = state.route) {
+  if (!state.loggedIn || !getActor()?.organizationId) return null;
+  if (isHomeRoute(route) && (isProjectAdmin() || isSupervisor())) {
+    return { interval:HOME_REFRESH_MS, run:refreshHomeData };
   }
-  if (!state.visitsRefreshTimer) {
-    state.visitsRefreshTimer = setInterval(() => {
-      if (document.visibilityState === 'visible') refreshVisitsData().catch(() => {});
-    }, VISITS_REFRESH_MS);
+  if (isTrackingRoute(route)) {
+    return { interval:TRACKING_REFRESH_MS, run:refreshTrackingData };
   }
+  if (isVisitsRoute(route)) {
+    return { interval:VISITS_REFRESH_MS, run:refreshVisitsData };
+  }
+  return null;
 }
 
-window.FT.refreshVisits = () => refreshVisitsData({ manual:true });
+function stopRouteRefresh() {
+  if (state.routeRefreshTimer) clearTimeout(state.routeRefreshTimer);
+  state.routeRefreshTimer = null;
+  state.routeRefreshRoute = '';
+}
+
+function configureRouteRefresh(route = state.route) {
+  const config = routeRefreshConfig(route);
+  if (!config) {
+    stopRouteRefresh();
+    return;
+  }
+  if (state.routeRefreshTimer && state.routeRefreshRoute === route) return;
+  stopRouteRefresh();
+  state.routeRefreshRoute = route;
+  state.routeRefreshTimer = setTimeout(async () => {
+    state.routeRefreshTimer = null;
+    if (document.visibilityState === 'visible' && state.route === route) {
+      await refreshActiveRoute({ reason:'timer' }).catch(() => {});
+    }
+    if (state.loggedIn && state.route === route) configureRouteRefresh(route);
+  }, config.interval);
+}
+
+async function refreshActiveRoute({ manual = false, reason = 'passive' } = {}) {
+  const config = routeRefreshConfig(state.route);
+  if (!config) return false;
+  if (!manual && document.visibilityState !== 'visible') return false;
+  const now = Date.now();
+  if (!manual && now - state.lastPassiveRefreshAt < PASSIVE_REFRESH_COOLDOWN_MS) return false;
+  if (!manual) state.lastPassiveRefreshAt = now;
+  return config.run({ manual });
+}
 
 
 // ===== Main Render =====
 function render() {
+  if (renderFrame) {
+    cancelAnimationFrame(renderFrame);
+    renderFrame = 0;
+  }
   const app = document.getElementById('app');
   const currentBrand = getOrganization(getCurrentOrgId()) || null;
   applyOrganizationBranding(currentBrand);
@@ -590,9 +611,8 @@ function render() {
   }
 
   if (!state.loggedIn) {
-    configureHomeRefresh('#/login');
-    configureTrackingRefresh('#/login');
-    configureVisitsRefresh('#/login');
+    stopRouteRefresh();
+    disposeTrackingMap();
     app.innerHTML = renderLogin();
     return;
   }
@@ -603,6 +623,7 @@ function render() {
   }
 
   const route = state.route;
+  if (route !== '#/tracking') disposeTrackingMap();
   let pageContent = '';
   let pageTitle = '';
   let pageSubtitle = '';
@@ -797,15 +818,13 @@ function render() {
   if (route === '#/tracking') initMap();
   if (route === '#/field-photos' || route === '#/myphotos') {
     ensureEvidenceMetadataHydrated(getDB()).then(changed => {
-      if (changed && state.loggedIn && state.route === route) render();
+      if (changed && state.loggedIn && state.route === route) scheduleRender();
     }).catch(error => {
       console.warn('evidence_metadata_route_hydrate_failed', error?.message || error);
     });
   }
   if (route === '#/new-outlet') setTimeout(() => window.FS?.initOutletMap?.(), 50);
-  configureHomeRefresh(route);
-  configureTrackingRefresh(route);
-  configureVisitsRefresh(route);
+  configureRouteRefresh(route);
   const nav = document.querySelector('.sidebar-nav');
   if (nav) nav.scrollTop = state._sidebarScroll || 0;
 }
@@ -998,13 +1017,18 @@ window.FT.resetDB = function() {
 window.FT.logout = function() {
   closeModal();
   clearApiToken();
+  if (renderFrame) {
+    cancelAnimationFrame(renderFrame);
+    renderFrame = 0;
+  }
   state.loggedIn = false;
   state.account = null;
   state.route = '#/login';
   if (state.livePolling) { clearInterval(state.livePolling); state.livePolling = null; }
-  if (state.homeRefreshTimer) { clearInterval(state.homeRefreshTimer); state.homeRefreshTimer = null; }
-  if (state.trackingRefreshTimer) { clearInterval(state.trackingRefreshTimer); state.trackingRefreshTimer = null; }
-  if (state.visitsRefreshTimer) { clearInterval(state.visitsRefreshTimer); state.visitsRefreshTimer = null; }
+  stopRouteRefresh();
+  disposeTrackingMap();
+  clearTimeout(trackingFilterTimer);
+  trackingFilterTimer = null;
   state.homeRefreshedAt = null;
   state.trackingRefreshedAt = null;
   state.visitsRefreshedAt = null;
@@ -1261,6 +1285,16 @@ function renderTracking() {
 
 let _map = null;
 let _markers = {};
+let trackingFilterTimer = null;
+
+function disposeTrackingMap() {
+  if (_map) {
+    _map.remove();
+    _map = null;
+  }
+  _markers = {};
+}
+window.FT.disposeTrackingMap = disposeTrackingMap;
 
 async function initMap() {
   const mapElement = document.getElementById('trackingMap');
@@ -1277,7 +1311,7 @@ async function initMap() {
   if (state.route !== '#/tracking' || !document.getElementById('trackingMap')) return;
   const employees = trackingEmployees();
 
-  if (_map) { _map.remove(); _map = null; _markers = {}; }
+  disposeTrackingMap();
   _map = Leaflet.map('trackingMap', { zoomControl: true }).setView([-6.2, 106.85], 12);
   Leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap', maxZoom: 19
@@ -1326,14 +1360,21 @@ async function initMap() {
 window.FT.openTrackingEmployee = function(event, empId) {
   event?.preventDefault?.();
   state._trackFocus = String(empId || '');
-  if (state.route === '#/tracking') render();
+  if (state.route === '#/tracking') scheduleRender();
   else location.hash = '#/tracking';
   return false;
 };
 
-window.FT.filterTracking = function(value) { state._trackQuery = value; render(); };
-window.FT.filterTrackingArea = function(value) { state._trackArea = value; render(); };
-window.FT.filterTrackingField = function(value) { state._trackField = value; render(); };
+window.FT.filterTracking = function(value) {
+  state._trackQuery = value;
+  clearTimeout(trackingFilterTimer);
+  trackingFilterTimer = setTimeout(() => {
+    trackingFilterTimer = null;
+    scheduleRender();
+  }, 120);
+};
+window.FT.filterTrackingArea = function(value) { state._trackArea = value; scheduleRender(); };
+window.FT.filterTrackingField = function(value) { state._trackField = value; scheduleRender(); };
 window.FT.fitTracking = function() {
   const Leaflet = window.L;
   if (!_map || !Leaflet) return;
@@ -5775,6 +5816,7 @@ window.FT.mobileCheckOut = async function(visitId) {
 
 // ===== Modal Helper =====
 function openModal(title, content) {
+  window.FS?.disposeOutletMap?.();
   const root = document.getElementById('modalRoot');
   root.innerHTML = `
     <div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()">
@@ -5790,7 +5832,11 @@ function openModal(title, content) {
   `;
   bindAssetFields(root);
 }
-function closeModal() { const root = document.getElementById('modalRoot'); if (root) root.innerHTML = ''; }
+function closeModal() {
+  window.FS?.disposeOutletMap?.();
+  const root = document.getElementById('modalRoot');
+  if (root) root.innerHTML = '';
+}
 window.FT.closeModal = closeModal;
 
 // ===== Page-specific handler attachments =====
@@ -5808,14 +5854,12 @@ function init() {
   state.route = getRoute();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
-    if (isHomeRoute()) refreshHomeData().catch(() => {});
-    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
-    if (isVisitsRoute()) refreshVisitsData().catch(() => {});
+    refreshActiveRoute({ reason:'visibility' }).catch(() => {});
+    configureRouteRefresh(state.route);
   });
   window.addEventListener('focus', () => {
-    if (isHomeRoute()) refreshHomeData().catch(() => {});
-    if (isTrackingRoute()) refreshTrackingData().catch(() => {});
-    if (isVisitsRoute()) refreshVisitsData().catch(() => {});
+    refreshActiveRoute({ reason:'focus' }).catch(() => {});
+    configureRouteRefresh(state.route);
   });
   render();
 }

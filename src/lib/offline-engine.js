@@ -9,6 +9,7 @@ const OPERATIONAL_KEYS = Object.freeze([
   'priceObservations','competitorIntel','outletProposals',
 ]);
 let installed = false;
+let runtimeController = null;
 let recovering = false;
 let replaying = false;
 const lastSignatures = new Map();
@@ -186,27 +187,33 @@ export async function recoverCloudConflict(organizationId = '') {
 export function installOfflineEngine() {
   if (installed || typeof window === 'undefined') return false;
   installed = true;
+  runtimeController = new AbortController();
+  const { signal } = runtimeController;
   observeLocalCache();
-  window.addEventListener('proqtrack:db-persisted', event => observeLocalCache(event.detail?.db || null));
+  window.addEventListener('proqtrack:db-persisted', event => observeLocalCache(event.detail?.db || null), { signal });
   window.addEventListener('online', () => {
     observeLocalCache();
     replayLatestSnapshot().catch(() => {});
-  });
+  }, { signal });
   document?.addEventListener?.('visibilitychange', () => {
     if (document.visibilityState === 'visible') observeLocalCache();
-  });
+  }, { signal });
   window.addEventListener('proqtrack:cloud-status', event => {
     const orgId = String(event.detail?.organizationId || window.FT?.state?.account?.organizationId || '');
     if (!orgId) return;
     if (event.detail?.status === 'synced') clearSyncedSnapshot(orgId).catch(() => {});
     if (event.detail?.status === 'conflict') recoverCloudConflict(orgId).catch(() => {});
     if (event.detail?.status === 'ready' && !recovering) replayLatestSnapshot(orgId).catch(() => {});
-  });
+  }, { signal });
   return true;
 }
 
 export function stopOfflineObserver() {
-  // P0 performance: observer is event-driven; retained for compatibility.
+  runtimeController?.abort();
+  runtimeController = null;
+  installed = false;
+  lastSignatures.clear();
+  return true;
 }
 
 installOfflineEngine();

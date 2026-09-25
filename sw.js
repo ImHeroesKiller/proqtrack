@@ -8,6 +8,9 @@
 // Previous fixed-cache baseline retained only as a regression marker: proqtrack-v12.44
 const RELEASE = '__PROQTRACK_RELEASE__';
 const CACHE = `proqtrack-shell-${RELEASE}`;
+const RUNTIME_CACHE = `proqtrack-runtime-${RELEASE}`;
+const CACHE_PREFIXES = ['proqtrack-shell-', 'proqtrack-runtime-'];
+const RUNTIME_MAX_ENTRIES = 80;
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
@@ -78,7 +81,12 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))
+      .then(keys => Promise.all(
+        keys
+          .filter(key => CACHE_PREFIXES.some(prefix => key.startsWith(prefix)))
+          .filter(key => ![CACHE, RUNTIME_CACHE].includes(key))
+          .map(key => caches.delete(key)),
+      ))
       .then(() => self.clients.claim()),
   );
 });
@@ -98,12 +106,39 @@ async function navigationResponse(request) {
   }
 }
 
+function isRuntimeCacheable(url) {
+  return /\.(?:js|css|svg|png|jpe?g|webp|ico|json|webmanifest)$/i.test(url.pathname);
+}
+
+async function trimRuntimeCache(cache) {
+  const keys = await cache.keys();
+  const excess = keys.length - RUNTIME_MAX_ENTRIES;
+  if (excess <= 0) return;
+  await Promise.all(keys.slice(0, excess).map(request => cache.delete(request)));
+}
+
+async function putRuntimeCache(request, response) {
+  if (!response?.ok) return;
+  const cache = await caches.open(RUNTIME_CACHE);
+  await cache.put(request, response.clone());
+  await trimRuntimeCache(cache);
+}
+
 async function staticResponse(request) {
-  const cache = await caches.open(CACHE);
-  const cached = await cache.match(request);
-  if (cached) return cached;
+  const shell = await caches.open(CACHE);
+  const shellHit = await shell.match(request);
+  if (shellHit) return shellHit;
+
+  const runtime = await caches.open(RUNTIME_CACHE);
+  const runtimeHit = await runtime.match(request);
+  if (runtimeHit) return runtimeHit;
+
   try {
-    return await fetch(request);
+    const response = await fetch(request);
+    if (isRuntimeCacheable(new URL(request.url))) {
+      await putRuntimeCache(request, response).catch(() => {});
+    }
+    return response;
   } catch {
     return Response.error();
   }

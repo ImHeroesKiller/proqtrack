@@ -92,9 +92,11 @@ test('Visits live refresh is guarded on route, visibility and focus', async () =
   assert.match(app,/const VISITS_REFRESH_MS = 30000/);
   assert.match(app,/function isVisitsRoute/);
   assert.match(app,/window\.FT\.refreshVisits/);
-  assert.match(app,/configureVisitsRefresh\(route\)/);
-  assert.match(app,/if \(isVisitsRoute\(\)\) refreshVisitsData/);
-  assert.match(app,/visitsRefreshTimer/);
+  assert.match(app,/function configureRouteRefresh/);
+  assert.match(app,/if \(isVisitsRoute\(route\)\)/);
+  assert.match(app,/run:refreshVisitsData/);
+  assert.match(app,/refreshActiveRoute\(\{ reason:'visibility' \}\)/);
+  assert.match(app,/routeRefreshTimer/);
 });
 
 test('visit detail never borrows evidence from another visit at the same outlet/day', async () => {
