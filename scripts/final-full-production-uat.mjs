@@ -198,8 +198,8 @@ try {
       ('${ids.extraEmp}','${ids.org}',NULL,'FINAL-EXTRA','Final UAT Extra Employee',NULL,'active','{"synthetic":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
 
     INSERT INTO core_employee_project_assignments(id,organization_id,project_id,employee_id,supervisor_user_id,position_name,status,starts_on,ends_on,metadata_json,created_at,updated_at) VALUES
-      ('ASG-FINAL-SPV-${key}','${ids.org}','${ids.project}','${ids.supervisorEmp}',NULL,'Supervisor','active','2026-09-01','2027-12-31','{"synthetic":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
-      ('ASG-FINAL-EMP-${key}','${ids.org}','${ids.project}','${ids.employeeEmp}','${actors.supervisor.id}','Field Sales','active','2026-09-01','2027-12-31','{"synthetic":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
+      ('ASG-FINAL-SPV-${key}','${ids.org}','${ids.project}','${ids.supervisorEmp}',NULL,'supervisor','active','2026-09-01','2027-12-31','{"synthetic":true,"roleOnProject":"supervisor","allocationPercent":100}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
+      ('ASG-FINAL-EMP-${key}','${ids.org}','${ids.project}','${ids.employeeEmp}','${actors.supervisor.id}','sales','active','2026-09-01','2027-12-31','{"synthetic":true,"roleOnProject":"sales","supervisorId":"${ids.supervisorEmp}","allocationPercent":100}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
   `);
 
   await login('head');
@@ -232,15 +232,20 @@ try {
   await sync('admin','admin-project-update',[{entity:'projects',op:'upsert',row:{...project,name:'Final Production UAT Project Updated',outletApprovalMode:'auto'}}]);
   await sync('manager','manager-client-denied',[{entity:'clients',op:'upsert',row:{...client,name:'Forbidden Manager Client'}}],{status:403,error:'CHANGE_FORBIDDEN'});
 
-  // Employees + Assignment.
-  await sync('admin','admin-extra-assignment',[{
-    entity:'projectAssignments',op:'upsert',row:{
-      id:`ASG-FINAL-EXTRA-${key}`,projectId:ids.project,employeeId:ids.extraEmp,
-      supervisorUserId:actors.supervisor.id,positionName:'Backup Field Sales',status:'active',startsOn:'2026-09-01',endsOn:'2027-12-31'
-    }
-  }]);
+  // Employees + Assignment. Use canonical project roles enforced by production authority.
+  await sync('admin','admin-employee-assignment-update',[
+    {entity:'employees',op:'upsert',row:{
+      id:ids.extraEmp,employeeCode:'FINAL-EXTRA',name:'Final UAT Extra Employee Updated',status:'active'
+    }},
+    {entity:'projectAssignments',op:'upsert',row:{
+      id:`ASG-FINAL-EMP-${key}`,projectId:ids.project,employeeId:ids.employeeEmp,
+      roleOnProject:'sales',supervisorId:ids.supervisorEmp,status:'active',
+      startDate:'2026-09-01',endDate:'2027-12-31',allocationPercent:100
+    }}
+  ]);
   const adminAfterAssignment=await bootstrap('admin');
-  expect(adminAfterAssignment.data.projectAssignments?.some(row=>row.employeeId===ids.extraEmp),'assignment module did not persist');
+  expect(adminAfterAssignment.data.employees?.some(row=>row.id===ids.extraEmp && row.name==='Final UAT Extra Employee Updated'),'employee module update did not persist');
+  expect(adminAfterAssignment.data.projectAssignments?.some(row=>row.employeeId===ids.employeeEmp && (row.roleOnProject==='sales' || row.positionName==='sales')),'assignment module update did not persist');
 
   // Outlets + Products.
   await sync('manager','manager-outlet-create',[{entity:'outlets',op:'upsert',row:{
@@ -375,7 +380,8 @@ try {
   const final=d1Row(`SELECT
     (SELECT COUNT(*) FROM core_clients WHERE organization_id='${ids.org}' AND id='${ids.client}' AND name='Final UAT Client Updated') client_ok,
     (SELECT COUNT(*) FROM core_projects WHERE organization_id='${ids.org}' AND id='${ids.project}' AND name='Final Production UAT Project Updated') project_ok,
-    (SELECT COUNT(*) FROM core_employee_project_assignments WHERE organization_id='${ids.org}' AND employee_id='${ids.extraEmp}' AND status='active') assignment_ok,
+    (SELECT COUNT(*) FROM core_employees WHERE organization_id='${ids.org}' AND id='${ids.extraEmp}' AND full_name='Final UAT Extra Employee Updated') employee_ok,
+    (SELECT COUNT(*) FROM core_employee_project_assignments WHERE organization_id='${ids.org}' AND id='ASG-FINAL-EMP-${key}' AND employee_id='${ids.employeeEmp}' AND position_name='sales' AND status='active' AND row_version>=2) assignment_ok,
     (SELECT COUNT(*) FROM core_outlets WHERE organization_id='${ids.org}' AND id IN ('${ids.outlet}','${ids.proposedOutlet}') AND status='active') outlets_ok,
     (SELECT COUNT(*) FROM core_products WHERE organization_id='${ids.org}' AND id='${ids.product}' AND status='active') product_ok,
     (SELECT COUNT(*) FROM core_competitors WHERE organization_id='${ids.org}' AND id='${ids.competitor}') competitor_ok,
@@ -383,6 +389,7 @@ try {
     (SELECT COUNT(*) FROM core_survey_responses WHERE organization_id='${ids.org}' AND id='${ids.response}' AND status='submitted') survey_ok;`);
   expect(Number(final.client_ok)===1,'client invariant failed');
   expect(Number(final.project_ok)===1,'project invariant failed');
+  expect(Number(final.employee_ok)===1,'employee invariant failed');
   expect(Number(final.assignment_ok)===1,'assignment invariant failed');
   expect(Number(final.outlets_ok)===2,'outlet invariant failed');
   expect(Number(final.product_ok)===1,'product invariant failed');
