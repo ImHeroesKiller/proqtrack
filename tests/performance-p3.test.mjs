@@ -18,7 +18,7 @@ test('P3 production profiler is lazy, bounded, local-only, and disposable', asyn
   assert.match(monitor, /const LONG_TASK_THRESHOLD_MS = 50/);
   assert.match(monitor, /while \(samples\.length > MAX_SAMPLES\) samples\.shift\(\)/);
   assert.match(monitor, /PerformanceObserver/);
-  assert.match(monitor, /observer\.disconnect\(\)/);
+  assert.match(monitor, /observer\?\.disconnect\(\)/);
   assert.match(monitor, /controller\?\.abort\(\)/);
   assert.match(monitor, /pagehide/);
   assert.doesNotMatch(monitor, /fetch\(/);
