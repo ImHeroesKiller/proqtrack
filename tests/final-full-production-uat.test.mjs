@@ -20,8 +20,8 @@ test('final UAT covers every production role below global superadmin', async () 
   for (const role of ['head','admin','manager','supervisor','employee']) {
     assert.ok(script.includes(`role:'${role}'`), `missing role ${role}`);
     assert.ok(script.includes(`login('${role}'`), `missing login ${role}`);
-    assert.ok(script.includes(`session('${role}'`), `missing session ${role}`);
   }
+  assert.match(script, /for\(const name of Object\.keys\(actors\)\) await session\(name\)/);
   assert.match(script, /DEVICE_ACCESS_DENIED/);
   assert.match(script, /cross-tenant employee login/);
 });
