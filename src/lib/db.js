@@ -1028,6 +1028,35 @@ export function getAttendancePolicy() {
   };
 }
 
+export function getProjectAttendancePolicy(projectId) {
+  const project = (getDB().projects || []).find(row => String(row.id) === String(projectId)) || {};
+  const sourceMode = project.attendanceSourceMode === 'visit' ? 'visit' : 'manual';
+  const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(project.attendanceLateAfter || ''))
+    ? String(project.attendanceLateAfter)
+    : '09:00';
+  return { ...getAttendancePolicy(), projectId:String(projectId || ''), sourceMode, lateAfter };
+}
+
+export function getEmployeeAttendanceProjects(employeeId = getActor()?.employeeId) {
+  if (!employeeId) return [];
+  const db = getDB();
+  const today = todayISO();
+  const projectIds = new Set(
+    (db.projectAssignments || [])
+      .filter(row =>
+        String(row.employeeId) === String(employeeId)
+        && ['active','assigned'].includes(String(row.status || 'active'))
+        && (!row.startDate || String(row.startDate) <= today)
+        && (!row.endDate || String(row.endDate) >= today)
+      )
+      .map(row => String(row.projectId))
+  );
+  return scoped(db.projects || []).filter(project =>
+    projectIds.has(String(project.id))
+    && ['active','draft'].includes(String(project.status || 'active'))
+  );
+}
+
 export function updateAppSettings(partial) {
   const actor = assertLoggedIn();
   const privileged = [
@@ -1873,9 +1902,50 @@ export function getAttendanceByEmployee(empId) {
 }
 
 export function createAttendance(data) {
-  assertCanAccessEmployee(data.employeeId);
-  const att = { id: uid('ATT'), ...withOrg(data) };
-  getDB().attendance.push(att);
+  const actor = assertLoggedIn();
+  const employeeId = String(data.employeeId || '');
+  const projectId = String(data.projectId || '');
+  const date = String(data.workDate || data.date || todayISO()).slice(0,10);
+  if (!employeeId || !projectId) throw new Error('Project dan karyawan absensi wajib tersedia.');
+  assertCanAccessEmployee(employeeId);
+  if (actor.role === 'employee' && String(actor.employeeId || '') !== employeeId) throw new Error('Akses ditolak');
+
+  const db = getDB();
+  const assignment = (db.projectAssignments || []).find(row =>
+    String(row.employeeId) === employeeId
+    && String(row.projectId) === projectId
+    && ['active','assigned'].includes(String(row.status || 'active'))
+    && (!row.startDate || String(row.startDate) <= date)
+    && (!row.endDate || String(row.endDate) >= date)
+  );
+  if (!assignment) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  const policy = getProjectAttendancePolicy(projectId);
+  if (policy.sourceMode === 'visit') throw new Error('Absensi project ini dihitung otomatis dari kunjungan.');
+
+  if ((db.attendance || []).some(row =>
+    String(row.employeeId) === employeeId
+    && String(row.projectId) === projectId
+    && String(row.date || row.workDate || '').slice(0,10) === date
+  )) throw new Error('Absensi project ini untuk hari tersebut sudah tercatat.');
+
+  const checkInAt = String(data.checkInAt || data.checkInTime || '').trim();
+  if (!checkInAt) throw new Error('Waktu check-in wajib tersedia.');
+  const clock = (checkInAt.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || checkInAt.slice(0,5);
+  const status = clock >= policy.lateAfter ? 'terlambat' : 'hadir';
+  const att = {
+    ...withOrg(data),
+    id:uid('ATT'),
+    employeeId,
+    projectId,
+    date,
+    workDate:date,
+    checkInAt,
+    checkInTime:clock,
+    status,
+    attendanceSource:'manual',
+    createdBy:actor.id,
+  };
+  db.attendance.push(att);
   saveDB();
   return att;
 }
@@ -2195,10 +2265,29 @@ export function getLeaveTypes() {
 }
 
 export function createLeave(data) {
-  assertCanAccessEmployee(data.employeeId);
-  const actor = getActor();
-  if (actor.role === 'employee' && data.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
-  const leave = { id: uid('LV'), status: 'pending', submittedAt: new Date().toISOString().slice(0,10), approverId: null, approvedAt: null, ...withOrg(data) };
+  const actor = assertLoggedIn();
+  const employeeId = String(data.employeeId || '');
+  assertCanAccessEmployee(employeeId);
+  if (actor.role === 'employee' && employeeId !== String(actor.employeeId || '')) throw new Error('Akses ditolak');
+  const startDate = String(data.startDate || '');
+  const endDate = String(data.endDate || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < startDate) {
+    throw new Error('Periode ijin/cuti tidak valid.');
+  }
+  const days = Math.floor((Date.parse(endDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000) + 1;
+  const leave = {
+    ...withOrg(data),
+    id:uid('LV'),
+    employeeId,
+    startDate,
+    endDate,
+    days,
+    status:'pending',
+    submittedAt:new Date().toISOString().slice(0,10),
+    approverId:null,
+    approvedAt:null,
+    submittedBy:actor.id,
+  };
   getDB().leaves.push(leave);
   saveDB();
   return leave;
