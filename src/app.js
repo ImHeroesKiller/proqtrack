@@ -627,6 +627,113 @@ async function refreshActiveRoute({ manual = false, reason = 'passive' } = {}) {
 }
 
 
+// ===== P1 Performance: persistent shell + cached navigation metrics =====
+let navMetricsCache = null;
+let navMetricsRevision = 0;
+
+function invalidateNavigationMetrics() {
+  navMetricsCache = null;
+  navMetricsRevision += 1;
+}
+
+function navigationMetrics() {
+  if (navMetricsCache) return navMetricsCache;
+  const today = todayISO();
+  const settings = getAppSettings();
+  const visits = getVisits();
+  const leaves = getLeaves();
+  const stocks = isProjectAdmin() ? getStocks() : [];
+  navMetricsCache = {
+    revision: navMetricsRevision,
+    fieldNow: canViewTeamOps()
+      ? visits.filter(v => visitDay(v) === today && ['checked-in','in_progress'].includes(String(v.status || ''))).length
+      : 0,
+    pendingLeaves: canViewTeamOps() && settings.notifyLeave !== false
+      ? leaves.filter(l => l.status === 'pending').length
+      : 0,
+    lowStocks: isProjectAdmin() && settings.notifyLowStock !== false
+      ? stocks.filter(row => Number(row.quantity || 0) <= Number(row.minStock || 0)).length
+      : 0,
+  };
+  return navMetricsCache;
+}
+
+window.addEventListener('proqtrack:db-updated', invalidateNavigationMetrics);
+window.addEventListener('proqtrack:cloud-status', event => {
+  if (['ready','synced','refreshed'].includes(String(event.detail?.status || ''))) invalidateNavigationMetrics();
+});
+
+function shellSignature(fieldRole, roleSkin) {
+  const org = getOrganization(getCurrentOrgId()) || {};
+  return [
+    state.account?.id || '',
+    state.account?.role || '',
+    state.account?.organizationId || '',
+    org.id || '',
+    org.name || '',
+    org.logo || '',
+    fieldRole ? 'field' : 'desk',
+    roleSkin,
+    hasManualOutletApprovalProjects() ? 'manual-approval' : 'auto-approval',
+  ].join('|');
+}
+
+function ensureAuthenticatedShell({ fieldRole, roleSkin }) {
+  const app = document.getElementById('app');
+  const signature = shellSignature(fieldRole, roleSkin);
+  let layout = app.querySelector('.app-layout[data-persistent-shell="1"]');
+  if (!layout || layout.dataset.shellSignature !== signature) {
+    const metrics = navigationMetrics();
+    app.innerHTML = `
+      <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${roleSkin}" data-persistent-shell="1" data-shell-signature="${esc(signature)}">
+        ${renderSidebar(metrics)}
+        <div class="sidebar-backdrop" data-pqt-onclick="FT.closeSidebar()" style="display:none;"></div>
+        <div class="main-area">
+          <div class="topbar"></div>
+          <div class="content" data-route-content="1"></div>
+          <div data-field-dock-root="1"></div>
+        </div>
+      </div>
+    `;
+    layout = app.querySelector('.app-layout[data-persistent-shell="1"]');
+  }
+  layout.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+  return layout;
+}
+
+function updatePersistentSidebar(route) {
+  const nav = document.querySelector('.sidebar-nav');
+  if (!nav) return;
+  nav.querySelectorAll('.nav-item').forEach(item => {
+    const href = item.getAttribute('href') || '';
+    const dashboard = href === '#/' && (route === '#/' || route === '#');
+    const myday = href === '#/myday' && (route === '#/myday' || route === '#');
+    item.classList.toggle('active', href === route || dashboard || myday);
+  });
+  const metrics = navigationMetrics();
+  const badgeMap = {
+    '#/tracking': metrics.fieldNow,
+    '#/leaves': metrics.pendingLeaves,
+    '#/stocks': metrics.lowStocks,
+  };
+  for (const [href,value] of Object.entries(badgeMap)) {
+    const item = nav.querySelector(`.nav-item[href="${href}"]`);
+    if (!item) continue;
+    let badge = item.querySelector('.nav-badge');
+    if (value > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'nav-badge';
+        item.appendChild(badge);
+      }
+      badge.textContent = String(value);
+      badge.hidden = false;
+    } else if (badge) {
+      badge.hidden = true;
+    }
+  }
+}
+
 // ===== Main Render =====
 function renderSessionRestoring() {
   return `
@@ -861,40 +968,37 @@ function render() {
 
   const fieldRole = !isProjectAdmin();
   const roleSkin = fieldRole ? `role-field ${isSupervisor() ? 'role-supervisor' : 'role-sales'}` : 'role-desk';
-  app.innerHTML = `
-    <div class="app-layout ${state.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${roleSkin}">
-      ${renderSidebar()}
-      <div class="sidebar-backdrop" data-pqt-onclick="FT.closeSidebar()" style="display:none;"></div>
-      <div class="main-area">
-        <div class="topbar ${fieldRole && route === '#/myday' ? 'topbar-hidden-mobile' : ''}">
-          <button class="mobile-menu-btn" data-pqt-onclick="FT.toggleSidebar()">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-          <div>
-            <div class="topbar-title">${pageTitle}</div>
-            ${pageSubtitle ? `<div class="topbar-subtitle">${pageSubtitle}</div>` : ''}
-          </div>
-          <div class="topbar-spacer"></div>
-          <div class="topbar-actions">
-            ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
-            ${isTrackingRoute(route) ? `<span class="tracking-freshness">${esc(formatTrackingRefreshTime(state.trackingRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
-            ${isVisitsRoute(route) ? `<span class="tracking-freshness">${esc(formatVisitsRefreshTime(state.visitsRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshVisits()" ${state.visitsRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
-          </div>
-        </div>
-        <div class="content">
-          ${pageContent}
-        </div>
-        ${fieldRole ? renderFieldDock(route) : ''}
-      </div>
+  const layout = ensureAuthenticatedShell({ fieldRole, roleSkin });
+  const topbar = layout.querySelector('.topbar');
+  const contentRoot = layout.querySelector('[data-route-content="1"]');
+  const dockRoot = layout.querySelector('[data-field-dock-root="1"]');
+
+  topbar.className = `topbar ${fieldRole && route === '#/myday' ? 'topbar-hidden-mobile' : ''}`;
+  topbar.innerHTML = `
+    <button class="mobile-menu-btn" data-pqt-onclick="FT.toggleSidebar()">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div>
+      <div class="topbar-title">${pageTitle}</div>
+      ${pageSubtitle ? `<div class="topbar-subtitle">${pageSubtitle}</div>` : ''}
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-actions">
+      ${isHomeRoute(route) ? `<span class="home-freshness">${esc(formatHomeRefreshTime(state.homeRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshHome()" ${state.homeRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
+      ${isTrackingRoute(route) ? `<span class="tracking-freshness">${esc(formatTrackingRefreshTime(state.trackingRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshTracking()" ${state.trackingRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
+      ${isVisitsRoute(route) ? `<span class="tracking-freshness">${esc(formatVisitsRefreshTime(state.visitsRefreshedAt))}</span><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.refreshVisits()" ${state.visitsRefreshInFlight ? 'disabled' : ''}>Refresh</button>` : ''}
     </div>
   `;
+  contentRoot.innerHTML = pageContent;
+  dockRoot.innerHTML = fieldRole ? renderFieldDock(route) : '';
+  updatePersistentSidebar(route);
 
   if (PROJECT_MANAGEMENT_ROUTES.has(route)) {
     window.PM?.renderRoute?.();
   }
 
   attachPageHandlers();
-  bindAssetFields(document);
+  bindAssetFields(contentRoot);
   if (route === '#/tracking') initMap();
   if (route === '#/field-photos' || route === '#/myphotos') {
     ensureEvidenceMetadataHydrated(getDB()).then(changed => {
@@ -914,7 +1018,7 @@ function render() {
 }
 
 // ===== Sidebar =====
-function renderSidebar() {
+function renderSidebar(metrics = navigationMetrics()) {
   const currentRoute = state.route;
   const activeBrand = getOrganization(getCurrentOrgId()) || {};
   const brandLogo = activeBrand.logo || './assets/logo-light.svg';
@@ -931,19 +1035,14 @@ function renderSidebar() {
         || (item.id === 'dashboard' && (currentRoute === '#/' || currentRoute === '#'))
         || (item.id === 'myday' && (currentRoute === '#/myday' || currentRoute === '#'));
       let badge = '';
-      if (canViewTeamOps() && item.id === 'tracking') {
-        const fieldNow = getVisits().filter(v =>
-          visitDay(v) === todayISO() && ['checked-in','in_progress'].includes(String(v.status || ''))
-        ).length;
-        if (fieldNow > 0) badge = `<span class="nav-badge" title="Sedang di lapangan">${fieldNow}</span>`;
+      if (item.id === 'tracking' && metrics.fieldNow > 0) {
+        badge = `<span class="nav-badge" title="Sedang di lapangan">${metrics.fieldNow}</span>`;
       }
-      if (canViewTeamOps() && item.id === 'leaves' && getAppSettings().notifyLeave !== false) {
-        const pending = getLeaves().filter(l => l.status === 'pending').length;
-        if (pending > 0) badge = `<span class="nav-badge" style="background:var(--amber-500);">${pending}</span>`;
+      if (item.id === 'leaves' && metrics.pendingLeaves > 0) {
+        badge = `<span class="nav-badge" style="background:var(--amber-500);">${metrics.pendingLeaves}</span>`;
       }
-      if (isProjectAdmin() && item.id === 'stocks' && getAppSettings().notifyLowStock !== false) {
-        const low = getStocks().filter(s => s.quantity <= s.minStock).length;
-        if (low > 0) badge = `<span class="nav-badge" style="background:var(--red-500);">${low}</span>`;
+      if (item.id === 'stocks' && metrics.lowStocks > 0) {
+        badge = `<span class="nav-badge" style="background:var(--red-500);">${metrics.lowStocks}</span>`;
       }
       navHTML += `<a href="${item.route}" class="nav-item ${active ? 'active' : ''}" title="${esc(item.label)}" data-pqt-onclick="return FT.goNav(event,'${item.route}')">
         <span class="nav-icon" data-vector="1" data-icon="${item.icon}">${iconSvg(item.icon)}</span>
