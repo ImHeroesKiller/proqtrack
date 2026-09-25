@@ -2,7 +2,7 @@
 // P1 Performance: keep login/app authority on the critical path and defer route-only enhancers.
 
 const boot = {
-  version: 'p5-root-soft-nav-lcp-2026-09-26',
+  version: 'p6-persistent-shell-route-split-2026-09-26',
   stage: 'loading',
   modules: [],
   lazyModules: [],
@@ -54,8 +54,17 @@ async function loadReportRuntime() {
 async function ensureRouteRuntime(route = location.hash) {
   if (!window.FT?.state?.loggedIn) return false;
   const current = String(route || '#/');
-  if (PROJECT_ROUTES.has(current)) await loadProjectRuntime();
-  if (isReportRoute(current)) await loadReportRuntime();
+  const tasks = [];
+  if (PROJECT_ROUTES.has(current)) tasks.push(loadProjectRuntime());
+  if (isReportRoute(current)) tasks.push(loadReportRuntime());
+  if (current === '#/' || current === '#') tasks.push(load('./dashboard-deep-links.js', 'dashboard-deep-links', { lazy:true }));
+  if (current === '#/projects') {
+    tasks.push(load('./operational-mapping.js', 'operational-mapping', { lazy:true }));
+    tasks.push(load('./project-client-logos.js', 'project-client-logos', { lazy:true }));
+  }
+  if (current === '#/clients' || current === '#/projects') tasks.push(load('./client-logo-auto.js', 'client-logo-auto', { lazy:true }));
+  if (current === '#/employees' || current.startsWith('#/employee/')) tasks.push(load('./employee-avatars.js', 'employee-avatars', { lazy:true }));
+  if (tasks.length) await Promise.all(tasks);
   return true;
 }
 
@@ -82,11 +91,6 @@ function scheduleIdleRuntime() {
     await afterAuthenticatedPaint();
     const modules = [
       ['./lib/performance-monitor.js', 'performance-monitor'],
-      ['./operational-mapping.js', 'operational-mapping'],
-      ['./dashboard-deep-links.js', 'dashboard-deep-links'],
-      ['./client-logo-auto.js', 'client-logo-auto'],
-      ['./project-client-logos.js', 'project-client-logos'],
-      ['./employee-avatars.js', 'employee-avatars'],
       ['./pwa-install.js', 'pwa-install'],
     ];
     for (const [path, name] of modules) {
