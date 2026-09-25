@@ -1,12 +1,10 @@
 import {
   getAccounts, getEmployees, getAppSettings, updateAppSettings,
-  updateOwnProfile,
   getDB, getOrganization, getCurrentOrgId,
   getProjectStoreSettings, saveProjectStoreSettings, saveProjectAttendanceSettings, defaultStoreCatalog,
-  getAttendancePoints, createAttendancePoint, isTestDevice,
+  getAttendancePoints, createAttendancePoint,
 } from './lib/db.js';
-import { getDeviceIdentity, isSuperadminHostDevice } from './lib/device.js';
-import { getApiToken } from './lib/uploads.js';
+import { getApiToken, revokeApiSession } from './lib/uploads.js';
 import {
   syncCloudAccounts, createCloudAccount, updateCloudAccount,
   resetCloudAccountDevice, changeCloudPassword, updateCloudProfile,
@@ -50,6 +48,28 @@ function canManageAccount(actor, target) {
 
 function canChangeAccountStatus(actor, target) {
   return canManageAccount(actor,target) && String(actor?.id || '') !== String(target?.id || '');
+}
+
+function profileErrorMessage(error) {
+  const messages = {
+    EMAIL_ALREADY_USED:'Email sudah digunakan akun lain.',
+    EMAIL_INVALID:'Format email tidak valid.',
+    PROFILE_NAME_REQUIRED:'Nama tampilan wajib diisi.',
+    AUTH_REQUIRED:'Sesi sudah berakhir. Silakan login kembali.',
+    SESSION_REVOKED:'Sesi sudah dicabut. Silakan login kembali.',
+  };
+  return messages[error?.code] || error?.message || String(error || 'Profil gagal disimpan.');
+}
+
+function passwordErrorMessage(error) {
+  const messages = {
+    INVALID_CURRENT_PASSWORD:'Password saat ini tidak sesuai.',
+    PASSWORD_UNCHANGED:'Password baru harus berbeda dari password saat ini.',
+    PASSWORD_TOO_SHORT:'Password baru minimal 8 karakter.',
+    AUTH_REQUIRED:'Sesi sudah berakhir. Silakan login kembali.',
+    SESSION_REVOKED:'Sesi sudah dicabut. Silakan login kembali.',
+  };
+  return messages[error?.code] || error?.message || String(error || 'Password gagal diperbarui.');
 }
 
 function accountErrorMessage(error) {
@@ -294,12 +314,12 @@ export function renderSettings() {
             </div>
           </div>
           <form class="am-form" data-pqt-onsubmit="AM.saveProfile(event)">
-            <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" required></div>
+            <div class="form-group"><label class="label">Nama tampilan</label><input class="input" name="name" value="${esc(acc.name)}" maxlength="180" required></div>
             <div class="form-group"><label class="label">Email login</label><input class="input" type="email" name="email" value="${esc(acc.email)}" required></div>
             ${emp ? `
               <div class="form-row">
-                <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" value="${esc(emp.phone || '')}"></div>
-                <div class="form-group"><label class="label">Area</label><input class="input" name="area" value="${esc(emp.area || '')}"></div>
+                <div class="form-group"><label class="label">Telepon</label><input class="input" name="phone" maxlength="64" value="${esc(emp.phone || '')}"></div>
+                <div class="form-group"><label class="label">Area</label><input class="input" name="area" maxlength="120" value="${esc(emp.area || '')}"></div>
               </div>
             ` : ''}
             <button class="btn btn-primary" type="submit">Simpan profil</button>
@@ -379,35 +399,28 @@ export function renderSettings() {
         ${acc.role === 'employee' ? `
         <section ${pane('perangkat')}>
           <div class="card-title">Perangkat terpasang</div>
-          <div class="card-subtitle">Login pertama mengunci akun ke perangkat ini. Ganti HP hanya setelah manager mereset perangkat.</div>
-          ${acc.deviceId ? `
+          <div class="card-subtitle">Status ini berasal dari binding perangkat server. Login pertama memasangkan perangkat; pergantian perangkat memerlukan reset oleh administrator.</div>
+          ${acc.deviceBound ? `
             <div class="detail-grid">
-              <div class="detail-label">Device ID</div><div class="detail-value">${esc(acc.deviceId)}</div>
-              <div class="detail-label">Fingerprint</div><div class="detail-value">${esc(acc.deviceImei || '—')}</div>
-              <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || '—')}</div>
+              <div class="detail-label">Status</div><div class="detail-value"><strong>Terpasang</strong></div>
+              <div class="detail-label">Perangkat</div><div class="detail-value">${esc(acc.deviceLabel || 'Perangkat field')}</div>
               <div class="detail-label">Dipasang</div><div class="detail-value">${acc.devicePairedAt ? formatDate(acc.devicePairedAt) : '—'}</div>
+              <div class="detail-label">Aktivitas terakhir</div><div class="detail-value">${acc.deviceLastSeenAt ? formatDate(acc.deviceLastSeenAt) : '—'}</div>
             </div>
-          ` : `<p class="am-muted">Belum terpasang. Login berikutnya dari perangkat ini akan menjadi perangkat resmi.</p>`}
+          ` : `<p class="am-muted">Belum ada binding perangkat aktif pada server. Login field berikutnya akan melakukan pairing sesuai policy server.</p>`}
         </section>` : ''}
 
         <section ${pane('sesi')}>
-          <div class="card-title">Sesi & data lokal</div>
-          <p class="am-muted">Snapshot browser sekitar <strong>${storageKb()} KB</strong>. Data belum tersinkron ke server.</p>
-          ${acc.role === 'superadmin' ? (() => {
-            const dev = getDeviceIdentity();
-            const host = isSuperadminHostDevice(dev.id) || isTestDevice(dev.id);
-            return `<div class="card" style="margin:14px 0;padding:14px;border:1px solid ${host ? '#86efac' : 'var(--gray-200)'};background:${host ? '#f0fdf4' : 'var(--gray-50)'}">
-              <div class="card-title">Superadmin test device</div>
-              <div class="card-subtitle">This Mac can sign in as any paired sales account without changing their device lock.</div>
-              <div class="detail-grid" style="margin-top:8px">
-                <div class="detail-label">Device ID</div><div class="detail-value">${esc(dev.id)}</div>
-                <div class="detail-label">Status</div><div class="detail-value">${host ? 'Registered host — bypass on' : 'Not registered'}</div>
-              </div>
-            </div>`;
-          })() : ''}
-          ${canAccounts ? `<p class="am-muted">Kelola semua login di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
+          <div class="card-title">Sesi</div>
+          <p class="am-muted">Data operasional menggunakan cloud sebagai authority. Browser menyimpan cache sekitar <strong>${storageKb()} KB</strong> untuk performa dan kompatibilitas.</p>
+          ${canAccounts ? `<p class="am-muted">Kelola akun organisasi di <a href="#/accounts">Manajemen Akun</a>.</p>` : ''}
+          <div class="am-session-warning">
+            <strong>Keluar dari semua perangkat</strong>
+            <div class="am-muted">Mencabut seluruh sesi aktif untuk identitas login ini di semua organisasi. Gunakan bila perangkat hilang atau ada sesi yang tidak dikenali.</div>
+          </div>
           <div class="am-actions">
-            <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.logout()">Keluar</button>
+            <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.logout()">Keluar dari perangkat ini</button>
+            <button class="btn btn-danger" type="button" data-pqt-onclick="AM.logoutAllSessions()">Keluar dari semua perangkat</button>
           </div>
         </section>
       </div>
@@ -514,7 +527,7 @@ function accountForm(existing) {
   const statuses = isSelf ? ['active'] : ['active','suspended','inactive'];
   return `
     <form data-pqt-onsubmit="AM.saveAccount(event,'${existing?.id || ''}')">
-      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" required></div>
+      <div class="form-group"><label class="label">Nama</label><input class="input" name="name" value="${esc(existing?.name || '')}" ${existing ? 'disabled' : 'required'}>${existing ? '<div class="am-muted">Nama profil diubah oleh pemilik akun dari Settings → Profile atau melalui data Karyawan yang tertaut.</div>' : ''}</div>
       <div class="form-group"><label class="label">Email</label><input class="input" type="email" name="email" value="${esc(existing?.email || '')}" ${existing ? 'disabled' : 'required'}>${existing ? '<div class="am-muted">Email adalah identitas global. Pemilik akun mengubahnya dari Settings → Profile.</div>' : ''}</div>
       <div class="form-row">
         <div class="form-group"><label class="label">Role</label>
@@ -565,6 +578,9 @@ function formData(event) {
 }
 
 let accountSaveInFlight = false;
+let profileSaveInFlight = false;
+let passwordSaveInFlight = false;
+let sessionActionInFlight = false;
 const accountActionInFlight = new Set();
 const settingsProjectSaveInFlight = new Set();
 let settingsPointSaveInFlight = false;
@@ -575,31 +591,53 @@ window.AM = {
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
   async saveProfile(event) {
+    event.preventDefault();
+    if (profileSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    profileSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const data = formData(event);
-      await updateCloudProfile({ email: data.email, name: data.name });
-      const next = updateOwnProfile(account().id, data);
-      const fresh = getAccounts().find(a => a.id === next.id) || next;
+      const data = Object.fromEntries(new FormData(form).entries());
+      const saved = await updateCloudProfile({
+        email:data.email,
+        name:data.name,
+        phone:data.phone || '',
+        area:data.area || '',
+      });
+      const fresh = getAccounts().find(row => String(row.id) === String(saved?.id || account()?.id)) || { ...account(), ...saved };
       window.FT.state.account = fresh;
-      window.FT.state.user = { name: fresh.name, role: window.FT.state.user.role, email: fresh.email };
+      window.FT.state.user = { name:fresh.name, role:window.FT.state.user.role, email:fresh.email };
       toast('Profil tersimpan di cloud');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(profileErrorMessage(error), 'error');
+    } finally {
+      profileSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   async savePassword(event) {
+    event.preventDefault();
+    if (passwordSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    passwordSaveInFlight = true;
+    if (submit) submit.disabled = true;
     try {
-      const data = formData(event);
+      const data = Object.fromEntries(new FormData(form).entries());
       if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
       await changeCloudPassword(data.currentPassword, data.nextPassword);
-      const next = getAccounts().find(a => a.id === account().id);
+      const next = getAccounts().find(row => String(row.id) === String(account()?.id));
       if (next && window.FT?.state) window.FT.state.account = next;
-      toast('Password cloud diperbarui');
-      event.target.reset();
+      toast('Password cloud diperbarui. Sesi lain sudah dicabut.');
+      form.reset();
       if (location.hash === '#/settings') window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
-      toast(error.message || error, 'error');
+      toast(passwordErrorMessage(error), 'error');
+    } finally {
+      passwordSaveInFlight = false;
+      if (submit?.isConnected) submit.disabled = false;
     }
   },
   savePrefs(event) {
@@ -616,6 +654,20 @@ window.AM = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
+    }
+  },
+  async logoutAllSessions() {
+    if (sessionActionInFlight) return;
+    if (!confirm('Keluar dari semua perangkat? Semua sesi aktif untuk akun ini akan dicabut dan Anda harus login kembali.')) return;
+    sessionActionInFlight = true;
+    try {
+      await revokeApiSession({ all:true });
+      toast('Semua sesi telah dicabut.');
+      await window.FT.logout?.();
+    } catch (error) {
+      toast(error?.message || String(error),'error');
+    } finally {
+      sessionActionInFlight = false;
     }
   },
   pickAttendanceSettingsProject(id) {
@@ -933,6 +985,7 @@ function installStyles() {
     .am-actions{display:flex;gap:8px;margin-top:12px}
     .am-section-divider{margin:20px 0;border:0;border-top:1px solid var(--gray-200)}
     .am-master-list{margin-top:12px}
+    .am-session-warning{margin-top:14px;padding:12px;border:1px solid var(--gray-200);border-radius:12px;background:var(--gray-50)}
     body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
     @media(max-width:800px){.am-grid{grid-template-columns:1fr}}
   `;
