@@ -581,7 +581,10 @@ function migrateDB(parsed) {
       recordedBy,
       employeeId: photo.employeeId || recordedBy,
       recordedAt,
-      dataUrl: photo.dataUrl || photo.photoUrl || '',
+      dataUrl: String(photo.photoUrl || '').startsWith('data:image/')
+        ? (photo.dataUrl || photo.photoUrl || '')
+        : (photo.dataUrl && !photo.photoUrl ? photo.dataUrl : null),
+      photoUrl: String(photo.photoUrl || '').startsWith('data:image/') ? '' : (photo.photoUrl || ''),
       caption: photo.caption || photo.title || photo.note || '',
     };
   });
