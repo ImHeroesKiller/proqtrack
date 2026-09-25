@@ -7,10 +7,10 @@ import { PASSWORD_KDF_ITERATIONS, PASSWORD_KDF_RUNTIME_MAX_ITERATIONS, passwordN
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('competitor UI encodes stored user content before HTML rendering', async () => {
-  const [app, competitorUi, db] = await Promise.all([
+  const [app, competitorUi, competitorDomain] = await Promise.all([
     read('src/app.js'),
     read('src/routes/competitor-pages.js'),
-    read('src/lib/db.js'),
+    read('src/lib/db-competitor-photo.js'),
   ]);
   assert.match(app, /import\('\.\/routes\/competitor-pages\.js'\)/);
   const section = competitorUi;
@@ -22,8 +22,8 @@ test('competitor UI encodes stored user content before HTML rendering', async ()
   assert.match(section, /esc\(p\.unit/);
   assert.match(section, /jsArg\(c\.id\)/);
   assert.match(section, /jsArg\(p\.id\)/);
-  assert.match(db, /sanitizeCompetitorInput/);
-  assert.match(db, /sanitizePlainText/);
+  assert.match(competitorDomain, /sanitizeCompetitorInput/);
+  assert.match(competitorDomain, /sanitizePlainText/);
 });
 
 test('password policy stays inside the Cloudflare PBKDF2 runtime ceiling', async () => {
