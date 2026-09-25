@@ -389,6 +389,7 @@ window.FT.goNav = function(event, route) {
   const nav = document.querySelector('.sidebar-nav');
   if (nav) state._sidebarScroll = nav.scrollTop;
   state.sidebarOpen = false;
+  window.FT.closeSidebar?.();
   if (location.hash === route) {
     scheduleRender();
     return false;
@@ -2085,12 +2086,14 @@ window.FT.toggleSidebar = function() {
   const bd = document.querySelector('.sidebar-backdrop');
   if (!sb) return;
   const open = sb.classList.toggle('open');
+  state.sidebarOpen = open;
   if (bd) {
     if (open) { bd.classList.add('show'); bd.style.display = 'block'; }
     else { bd.classList.remove('show'); setTimeout(() => { if (!sb.classList.contains('open')) bd.style.display = 'none'; }, 250); }
   }
 };
 window.FT.closeSidebar = function() {
+  state.sidebarOpen = false;
   const sb = document.querySelector('.sidebar');
   const bd = document.querySelector('.sidebar-backdrop');
   if (sb) sb.classList.remove('open');
