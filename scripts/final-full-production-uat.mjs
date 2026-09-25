@@ -113,7 +113,6 @@ function cleanup() {
   if(cleaned) return;
   try {
     d1(`
-      DELETE FROM core_workflow_decisions WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_workflow_requests WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_report_schedules WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM report_generation_jobs WHERE organization_id='${sqlq(ids.org)}';
