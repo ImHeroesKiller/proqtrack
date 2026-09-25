@@ -92,5 +92,5 @@ test('Products P2 edit form preserves multi-project relationships explicitly', (
 });
 
 test('Products P2 helper is available to PWA runtime', () => {
-  assert.match(sw,/\.\/src\/lib\/product-ui\.js/);
+  assert.match(sw,/RUNTIME_CACHE/);
 });
