@@ -1,9 +1,42 @@
 import './lib/offline-engine.js';
-import './lib/evidence-client.js';
-import './lib/field-photo-evidence.js';
 import { installOfflineLogin } from './lib/offline-login.js';
 
 let activeConflictOrganizationId = '';
+let evidenceRuntimePromise = null;
+let evidenceRuntimeScheduled = false;
+
+export function ensureEvidenceRuntime() {
+  if (evidenceRuntimePromise) return evidenceRuntimePromise;
+  evidenceRuntimePromise = Promise.all([
+    import('./lib/evidence-client.js'),
+    import('./lib/field-photo-evidence.js'),
+  ]).then(([evidence, fieldPhoto]) => {
+    evidence.installEvidenceClient?.();
+    fieldPhoto.installFieldPhotoEvidenceBridge?.();
+    return true;
+  }).catch(error => {
+    evidenceRuntimePromise = null;
+    console.warn('m4_evidence_runtime_failed', error?.message || error);
+    throw error;
+  });
+  return evidenceRuntimePromise;
+}
+
+function scheduleEvidenceRuntime() {
+  if (evidenceRuntimeScheduled) return;
+  evidenceRuntimeScheduled = true;
+  const run = () => ensureEvidenceRuntime().catch(() => {});
+  if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:2200 });
+  else setTimeout(run, 900);
+}
+
+function primeEvidenceRuntime(event) {
+  const target = event?.target;
+  if (!(target instanceof Element)) return;
+  if (target.closest('[data-r2-input],#photoFileInput,[data-pqt-onclick*="openVisitPhotoInput"]')) {
+    ensureEvidenceRuntime().catch(() => {});
+  }
+}
 
 function closeConflictResolver() {
   const root = document.getElementById('modalRoot');
@@ -100,6 +133,14 @@ function installStatusBridge() {
 
 installConflictResolver();
 installStatusBridge();
+
+document.addEventListener('pointerdown', primeEvidenceRuntime, true);
+document.addEventListener('focusin', primeEvidenceRuntime, true);
+window.addEventListener('proqtrack:cloud-status', event => {
+  if (event.detail?.status === 'ready' || event.detail?.status === 'synced') scheduleEvidenceRuntime();
+});
+window.addEventListener('online', scheduleEvidenceRuntime);
+scheduleEvidenceRuntime();
 
 if (typeof window !== 'undefined') {
   window.__PROQTRACK_M4_BOOTSTRAP_LOADED__ = true;
