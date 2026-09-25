@@ -1877,9 +1877,7 @@ function enhanceProjectSelector() {
     form.dataset.pmProject = "1";
   });
 }
-let queued = false;
 function sync() {
-  queued = false;
   injectStyles();
   ensureNav();
   const content = document.querySelector(".content");
@@ -1892,14 +1890,20 @@ function sync() {
     enhanceProjectSelector();
   }
 }
-new MutationObserver(() => {
-  if (!queued) {
-    queued = true;
-    requestAnimationFrame(sync);
-  }
-}).observe(document.documentElement, { childList: true, subtree: true });
-window.addEventListener("hashchange", () => setTimeout(sync));
-window.addEventListener("storage", sync);
+let syncQueued = false;
+function scheduleSync() {
+  if (syncQueued) return;
+  syncQueued = true;
+  requestAnimationFrame(() => {
+    syncQueued = false;
+    sync();
+  });
+}
+window.addEventListener("hashchange", scheduleSync);
+window.addEventListener("storage", scheduleSync);
+window.addEventListener("proqtrack:db-persisted", () => {
+  if (PROJECT_ROUTES.has(location.hash)) scheduleSync();
+});
 window.addEventListener("proqtrack:cloud-status", () => {
   if (location.hash === "#/clients") {
     const target = document.getElementById("clientSyncState");

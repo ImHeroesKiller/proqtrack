@@ -43,7 +43,8 @@ test('field photo metadata hydrates from authoritative evidence without becoming
   ]);
   assert.match(client, /fetchCloudFieldPhotos/);
   assert.match(client, /\/api\/evidence\?limit=250&offset=/);
-  assert.match(client, /remote\.data\.fieldPhotos/);
+  assert.match(client, /applyRemoteDataToLocal\(localDb, \{ fieldPhotos: rows \}\)/);
+  assert.match(client, /ensureEvidenceMetadataHydrated/);
   const collections = client.slice(client.indexOf('export const CLOUD_COLLECTIONS'), client.indexOf('const DB_KEY'));
   assert.doesNotMatch(collections, /'fieldPhotos'/);
   assert.match(evidence, /nextOffset/);
@@ -79,7 +80,7 @@ test('executable runtime is self-hosted and CSP can be tightened beyond the P2 b
   const [html, headers, hardening, exportSource] = await Promise.all([
     read('index.html'), read('_headers'), read('worker/hardening.js'), read('src/types/reports-export.js'),
   ]);
-  assert.match(html, /\.\/assets\/vendor\/leaflet\/leaflet\.js/);
+  assert.doesNotMatch(html, /assets\/vendor\/leaflet\/leaflet\.js/);
   assert.match(html, /\.\/src\/entry\.js/);
   assert.doesNotMatch(html, /https:\/\/unpkg\.com/);
   assert.doesNotMatch(html, /<script type="module">/);

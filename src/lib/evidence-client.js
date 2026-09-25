@@ -76,7 +76,7 @@ export async function queueEvidence(file, metadata = {}) {
   });
   emit('queued', { organizationId, evidenceId: id });
   if (navigator.onLine !== false && getApiToken()) queueMicrotask(() => flushEvidenceQueue(organizationId));
-  return { ...row, previewUrl: URL.createObjectURL(file) };
+  return row;
 }
 
 async function uploadQueuedEvidence(item) {
@@ -163,9 +163,17 @@ async function handleFieldChange(event) {
     });
     if (hidden) hidden.value = `evidence:${queued.id}`;
     if (preview) {
+      const previewUrl = URL.createObjectURL(file);
       preview.classList.remove('r2-preview-empty');
-      if (preview.tagName === 'IMG') preview.src = queued.previewUrl;
-      else preview.innerHTML = `<img alt="Preview evidence" src="${queued.previewUrl}">`;
+      let image = preview;
+      if (preview.tagName === 'IMG') preview.src = previewUrl;
+      else {
+        preview.innerHTML = `<img alt="Preview evidence" src="${previewUrl}">`;
+        image = preview.querySelector('img');
+      }
+      const release = () => URL.revokeObjectURL(previewUrl);
+      image?.addEventListener('load', release, { once:true });
+      image?.addEventListener('error', release, { once:true });
     }
     if (status) status.textContent = navigator.onLine === false ? 'Tersimpan offline · akan disinkronkan' : 'Evidence masuk antrean sinkronisasi';
     window.showToast?.(navigator.onLine === false ? 'Foto aman di perangkat dan akan diunggah saat online.' : 'Foto masuk antrean evidence.', 'success');

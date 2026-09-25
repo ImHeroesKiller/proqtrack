@@ -100,8 +100,10 @@ function nav(){const n=document.querySelector('.sidebar-nav');if(!n)return;const
 let renderedRoute='';
 function render(force=false){if(!canSeeReports()||!ROUTES.has(location.hash))return false;const root=document.querySelector('.content');if(!root)return false;if(!force&&renderedRoute===location.hash&&root.dataset.reportCore==='v2')return true;let html=overview();if(location.hash==='#/reports/attendance')html=attendancePage();else if(location.hash==='#/reports/employees')html=employeesPage();else if(location.hash==='#/reports/projects')html=projectsPage();else if(location.hash==='#/reports/field')html=fieldPage();else if(location.hash==='#/reports/stocks')html=stocksPage();else if(location.hash==='#/reports/prices')html=pricesPage();else if(location.hash==='#/reports/competitors')html=competitorsPage();else if(location.hash==='#/reports/custom')html=customPage();else if(location.hash==='#/reports/supervisors')html=supervisorsPage();else if(location.hash==='#/reports/audit')html=auditPage();root.innerHTML=html;root.dataset.reportCore='v2';renderedRoute=location.hash;const t=document.querySelector('.topbar-title');if(t)t.textContent='Reports';const st=document.querySelector('.topbar-subtitle');if(st){st.textContent='Operational analytics and custom extracts';st.style.display='block'}return true}
 function sync(force=false){styles();nav();render(force);document.querySelectorAll('[data-reports-nav] .nav-item').forEach(x=>x.classList.toggle('active',location.hash.startsWith('#/reports')))}
-const shellObserver=new MutationObserver(()=>{if(!document.querySelector('.sidebar-nav')||!document.querySelector('.content'))return;sync(false)});
-shellObserver.observe(document.documentElement,{childList:true,subtree:true});
-window.addEventListener('hashchange',()=>{renderedRoute='';setTimeout(()=>sync(true))});
-window.addEventListener('storage',()=>sync(true));
+let syncQueued=false;
+function scheduleSync(force=false){if(syncQueued)return;syncQueued=true;requestAnimationFrame(()=>{syncQueued=false;if(force)renderedRoute='';sync(force)})}
+window.addEventListener('hashchange',()=>scheduleSync(true));
+window.addEventListener('storage',()=>scheduleSync(true));
+window.addEventListener('proqtrack:db-persisted',()=>{if(location.hash.startsWith('#/reports'))scheduleSync(true)});
+window.addEventListener('proqtrack:cloud-status',()=>{if(location.hash.startsWith('#/reports'))scheduleSync(true)});
 init();sync(true);export {};

@@ -15,7 +15,7 @@ test('CSP keeps executable scripts self-hosted with no inline event execution', 
     assert.doesNotMatch(source, /https:\/\/(?:unpkg\.com|cdn\.jsdelivr\.net)/);
     assert.doesNotMatch(source, /script-src 'self' 'unsafe-inline'/);
   }
-  assert.match(html, /\.\/assets\/vendor\/leaflet\/leaflet\.js/);
+  assert.doesNotMatch(html, /assets\/vendor\/leaflet\/leaflet\.js/);
   assert.doesNotMatch(html, /<script type="module">/);
   assert.match(headers, /Content-Security-Policy:/);
   assert.doesNotMatch(headers, /Content-Security-Policy-Report-Only/);
@@ -125,10 +125,14 @@ test('successful cloud login refreshes only the hashed offline credential', asyn
 });
 
 
-test('evidence bootstrap hydration keeps the restored bearer token stable', async () => {
+test('evidence hydration keeps the restored bearer token stable without blocking cloud readiness', async () => {
   const bridge = await read('src/lib/cloud-data.js');
   assert.match(bridge, /const bootstrapToken = getApiToken\(\)/);
   assert.match(bridge, /getApiToken\(\) === bootstrapToken/);
-  assert.match(bridge, /fetchCloudFieldPhotos\(bootstrapToken\)/);
-  assert.match(bridge, /authorization: `Bearer \${sessionToken}`/);
+  assert.match(bridge, /scheduleEvidenceMetadataHydration\(localDb, bootstrapToken\)/);
+  assert.match(bridge, /fetchCloudFieldPhotos\(token\)/);
+  assert.match(bridge, /authorization: `Bearer \$\{sessionToken\}`/);
+  const bootstrapStart = bridge.indexOf('export async function bootstrapOperationalData');
+  const bootstrapEnd = bridge.indexOf('export async function refreshOperationalData', bootstrapStart);
+  assert.doesNotMatch(bridge.slice(bootstrapStart, bootstrapEnd), /await fetchCloudFieldPhotos/);
 });

@@ -293,3 +293,18 @@ P0 performance menutup hot-path utama untuk menjaga ProQTrack tetap cepat/stabil
 - Service Worker tidak lagi memakai fixed release cache sebagai runtime key. Build membuat SHA-256 content release dan mengganti `__PROQTRACK_RELEASE__`, sehingga shell/index/module satu deploy berada dalam cache atomik yang sama dan browser tidak mencampur asset antar-release.
 - Private `/api/` tetap tidak pernah dicache Service Worker.
 - Regression guard utama: `tests/performance-p0.test.mjs`, dengan update pada runtime/offline/product regression contracts agar mengunci behavior baru, bukan implementasi hot-path lama.
+
+
+## Performance P1 — startup, lazy runtime & evidence rendering — 25 September 2026
+
+P1 performance memindahkan pekerjaan non-kritis keluar dari startup/login path dan membatasi hydration/rendering media berat:
+
+- Critical bootstrap sekarang hanya memuat UI event authority, seed compatibility, cloud cutover, offline runtime, M6 client, dan `app.js`. Project Management dan Reports baru dimuat ketika route terkait dibuka; cosmetic/secondary enhancers dimuat bertahap pada browser idle setelah user authenticated.
+- Leaflet CSS/JS dihapus dari `index.html`. Runtime peta memakai `src/lib/leaflet-loader.js` dan baru memuat Leaflet saat Last Location/Tracking atau outlet map benar-benar dibuka; polling `setTimeout(initMap, 200)` dihapus.
+- Evidence client + field-photo evidence bridge tidak lagi menjadi static import M4 startup. Runtime evidence diprime saat idle/online atau ketika user berinteraksi dengan input evidence.
+- Cloud bootstrap tidak lagi menunggu pagination metadata evidence sebelum status `ready`; metadata evidence dihydrate terpisah saat idle dan on-demand saat halaman Field Photos/My Photos dibuka, dengan token/tenant guard.
+- IndexedDB evidence queue menggunakan index `organization_status` untuk mengambil pending/failed record dan menghitung queue tanpa membaca seluruh record/blob hanya untuk status count.
+- Field Photos merender batch awal 24 item, thumbnail memakai native lazy loading + async decoding, dan menyediakan `Muat lebih banyak`; filter mereset visible window.
+- Evidence preview object URL hanya dibuat jika preview benar-benar ditampilkan dan selalu direvoke setelah load/error.
+- Long-lived document-wide `MutationObserver` di Project Management dan Reports dihapus menjadi event-driven; startup branding observer diputus setelah bootstrap; legacy visual observer dibatasi ke `#app` dan disconnect saat `pagehide`.
+- Regression guard utama: `tests/performance-p1.test.mjs`, plus pembaruan kontrak runtime/CSP/maintainability yang sebelumnya mengunci eager Leaflet dan runtime version lama.

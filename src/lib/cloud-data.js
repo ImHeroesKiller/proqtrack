@@ -37,6 +37,10 @@ let queuedSnapshot = null;
 let lastError = null;
 let suppressStorageHook = false;
 let storageHookInstalled = false;
+let evidenceHydrationPromise = null;
+let evidenceHydrationToken = '';
+let evidenceHydrationOrganizationId = '';
+let evidenceHydratedAt = 0;
 
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -278,6 +282,66 @@ async function fetchCloudFieldPhotos(sessionToken = '') {
   }
   return rows;
 }
+
+export function ensureEvidenceMetadataHydrated(localDb, sessionToken = getApiToken(), { force = false } = {}) {
+  const token = String(sessionToken || '');
+  const organizationId = String(
+    (typeof window !== 'undefined' ? window.FT?.state?.account?.organizationId : '')
+    || localDb?.currentOrganizationId
+    || '',
+  );
+  if (!token || !organizationId) return Promise.resolve(false);
+
+  const fresh = token === evidenceHydrationToken
+    && organizationId === evidenceHydrationOrganizationId
+    && (Date.now() - evidenceHydratedAt) < 60_000;
+  if (!force && fresh) return Promise.resolve(false);
+  if (evidenceHydrationPromise
+    && token === evidenceHydrationToken
+    && organizationId === evidenceHydrationOrganizationId) {
+    return evidenceHydrationPromise;
+  }
+
+  evidenceHydrationToken = token;
+  evidenceHydrationOrganizationId = organizationId;
+  evidenceHydrationPromise = fetchCloudFieldPhotos(token)
+    .then(rows => {
+      const activeOrganizationId = String(
+        (typeof window !== 'undefined' ? window.FT?.state?.account?.organizationId : '')
+        || localDb?.currentOrganizationId
+        || '',
+      );
+      if (getApiToken() !== token || activeOrganizationId !== organizationId) return false;
+      applyRemoteDataToLocal(localDb, { fieldPhotos: rows });
+      evidenceHydratedAt = Date.now();
+      if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+        window.dispatchEvent(new CustomEvent('proqtrack:evidence-metadata-hydrated', {
+          detail: { organizationId, count: rows.length },
+        }));
+      }
+      return true;
+    })
+    .catch(error => {
+      if (![401,403].includes(Number(error?.status || 0))) {
+        console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
+      }
+      return false;
+    })
+    .finally(() => {
+      evidenceHydrationPromise = null;
+    });
+  return evidenceHydrationPromise;
+}
+
+function scheduleEvidenceMetadataHydration(localDb, sessionToken = getApiToken()) {
+  const run = () => ensureEvidenceMetadataHydrated(localDb, sessionToken).catch(() => {});
+  if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+    window.requestIdleCallback(run, { timeout:2500 });
+  } else {
+    setTimeout(run, 900);
+  }
+}
+
 function stableMutationSuffix(changes = []) {
   const input = changes.map(change => change.entity + ':' + (change.row?.id || '')).sort().join('|');
   let hash = 2166136261;
@@ -619,15 +683,6 @@ export async function bootstrapOperationalData(localDb, account = {}) {
     remote = await migrateP2OperationalCollections(localDb, remote, account);
     revision = Number(remote.revision || revision);
     remote.data = remote.data || {};
-    if (getApiToken() === bootstrapToken) {
-      try {
-        remote.data.fieldPhotos = await fetchCloudFieldPhotos(bootstrapToken);
-      } catch (error) {
-        if (![401, 403].includes(Number(error?.status || 0))) {
-          console.warn('evidence_metadata_hydrate_failed', error?.code || error?.message || error);
-        }
-      }
-    }
   } catch (error) {
     ready = false;
     lastError = error.code || error.message || String(error);
@@ -640,6 +695,7 @@ export async function bootstrapOperationalData(localDb, account = {}) {
   lastError = null;
   rememberCutover(account.organizationId || account.organization?.id || null);
   emitStatus('ready');
+  if (getApiToken() === bootstrapToken) scheduleEvidenceMetadataHydration(localDb, bootstrapToken);
   return { mode: 'cloud', data: clone(remote.data || {}), revision, cutoverMode };
 }
 
