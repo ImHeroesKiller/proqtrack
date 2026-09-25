@@ -1855,19 +1855,25 @@ export function getAttendancePoints() {
 export function createAttendancePoint(data) {
   const actor = assertLoggedIn();
   if (!isProjectAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
+  const lat = data.lat === '' || data.lat == null ? null : Number(data.lat);
+  const lng = data.lng === '' || data.lng == null ? null : Number(data.lng);
+  const radiusM = data.radiusM === '' || data.radiusM == null ? 150 : Number(data.radiusM);
   const point = {
     id: uid('APT'),
     type: ['office', 'meeting', 'store', 'point'].includes(data.type) ? data.type : 'point',
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address || ''),
     outletId: data.outletId || null,
-    lat: data.lat === '' || data.lat == null ? null : Number(data.lat),
-    lng: data.lng === '' || data.lng == null ? null : Number(data.lng),
-    radiusM: data.radiusM === '' || data.radiusM == null ? null : Number(data.radiusM),
+    lat, lng, radiusM,
+    status:'active',
     ...withOrg(data),
+    lat, lng, radiusM,
     createdBy: actor.id,
   };
   if (!point.name) throw new Error('Nama titik absensi wajib diisi.');
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error('Latitude titik absensi tidak valid.');
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Longitude titik absensi tidak valid.');
+  if (!Number.isFinite(radiusM) || radiusM < 10) throw new Error('Radius titik absensi minimal 10 meter.');
   const db = getDB();
   db.attendancePoints = db.attendancePoints || [];
   db.attendancePoints.push(point);
