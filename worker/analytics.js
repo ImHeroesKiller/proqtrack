@@ -19,10 +19,17 @@ function dateOnly(value, fallback) {
   return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : fallback;
 }
 
-function defaultRange() {
-  const to = new Date();
-  const from = new Date(to.getTime() - 29 * 86400000);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+function localDateAt(timestamp, timeZone = 'Asia/Jakarta') {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone, year:'numeric', month:'2-digit', day:'2-digit',
+  }).format(timestamp);
+}
+
+function defaultRange(timeZone = 'Asia/Jakarta') {
+  const toDate = new Date();
+  const to = localDateAt(toDate, timeZone);
+  const from = addUtcDays(to, -29);
+  return { from, to };
 }
 
 function addUtcDays(dateOnlyValue, days = 1) {
@@ -122,7 +129,11 @@ export async function analyticsOverview(env, claims, url, requestId) {
   if (!['supervisor', 'manager', 'head', 'admin', 'superadmin'].includes(roleOf(claims))) {
     return json({ error: 'FORBIDDEN', requestId }, 403);
   }
-  const defaults = defaultRange();
+  const organization = await env.DB.prepare(
+    'SELECT timezone FROM core_organizations WHERE id=? LIMIT 1'
+  ).bind(organizationId).first();
+  const timeZone = normalize(organization?.timezone) || 'Asia/Jakarta';
+  const defaults = defaultRange(timeZone);
   const from = dateOnly(url.searchParams.get('from'), defaults.from);
   const to = dateOnly(url.searchParams.get('to'), defaults.to);
   if (Date.parse(`${to}T00:00:00Z`) < Date.parse(`${from}T00:00:00Z`)) return json({ error: 'INVALID_DATE_RANGE', requestId }, 400);
@@ -133,10 +144,6 @@ export async function analyticsOverview(env, claims, url, requestId) {
   if (projects != null && !projects.length) return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
   const p = projectClause(projects);
 
-  const organization = await env.DB.prepare(
-    'SELECT timezone FROM core_organizations WHERE id=? LIMIT 1'
-  ).bind(organizationId).first();
-  const timeZone = normalize(organization?.timezone) || 'Asia/Jakarta';
   let fromUtc;
   let toExclusiveUtc;
   let timezoneModifier;
@@ -210,7 +217,7 @@ export async function analyticsOverview(env, claims, url, requestId) {
       FROM core_product_sales s JOIN core_products pd ON pd.id=s.product_id AND pd.organization_id=s.organization_id
       WHERE s.organization_id=?${projectClause(projects, 's.project_id').sql}
         AND COALESCE(json_extract(s.metadata_json,'$.lifecycleStatus'),'active')<>'voided'
-        AND date(s.sold_at) BETWEEN date(?) AND date(?)
+        AND datetime(s.sold_at) >= datetime(?) AND datetime(s.sold_at) < datetime(?)
       GROUP BY s.product_id,pd.sku,pd.name ORDER BY amount DESC,quantity DESC LIMIT 10
     `).bind(organizationId, ...(projects == null ? [] : projects), fromUtc, toExclusiveUtc)),
   ]);
@@ -261,7 +268,7 @@ const QUERY_DEFINITIONS = Object.freeze({
   attendance: {
     select: `a.id,a.project_id,a.employee_id,e.full_name AS employee_name,a.work_date,a.status,a.check_in_at,a.check_out_at,a.updated_at`,
     from: `core_attendance a JOIN core_employees e ON e.id=a.employee_id AND e.organization_id=a.organization_id`,
-    org: 'a.organization_id', project: 'a.project_id', sort: 'a.work_date', id: 'a.id', date: 'a.work_date',
+    org: 'a.organization_id', project: 'a.project_id', sort: 'a.work_date', id: 'a.id', date: 'a.work_date', localDateOnly: true,
   },
   sales: {
     select: `s.id,s.project_id,s.outlet_id,o.name AS outlet_name,s.employee_id,e.full_name AS employee_name,s.product_id,p.sku,p.name AS product_name,s.quantity,s.unit_price,s.total_amount,s.sold_at,s.updated_at`,
@@ -284,16 +291,35 @@ export async function cursorQuery(env, claims, entity, url, requestId) {
   const projects = scopedProjects(claims, url.searchParams.get('projectId'));
   if (projects != null && !projects.length) return json({ error: 'PROJECT_ACCESS_DENIED', requestId }, 403);
   const limit = clamp(url.searchParams.get('limit'), 50, 1, 200);
-  const defaults = defaultRange();
+  const organization = await env.DB.prepare(
+    'SELECT timezone FROM core_organizations WHERE id=? LIMIT 1'
+  ).bind(organizationId).first();
+  const timeZone = normalize(organization?.timezone) || 'Asia/Jakarta';
+  const defaults = defaultRange(timeZone);
   const from = dateOnly(url.searchParams.get('from'), defaults.from);
   const to = dateOnly(url.searchParams.get('to'), defaults.to);
+  let fromUtc;
+  let toExclusiveUtc;
+  try {
+    fromUtc = zonedMidnightUtc(from, timeZone);
+    toExclusiveUtc = zonedMidnightUtc(addUtcDays(to, 1), timeZone);
+  } catch {
+    fromUtc = `${from}T00:00:00.000Z`;
+    toExclusiveUtc = `${addUtcDays(to, 1)}T00:00:00.000Z`;
+  }
   const cursor = b64urlDecode(normalize(url.searchParams.get('cursor')));
   const clauses = [`${definition.org}=?`];
   const binds = [organizationId];
   if (definition.fixedClause) clauses.push(definition.fixedClause);
   const pc = projectClause(projects, definition.project);
   if (pc.sql) { clauses.push(pc.sql.replace(/^ AND /, '')); binds.push(...pc.binds); }
-  clauses.push(`date(${definition.date}) BETWEEN date(?) AND date(?)`); binds.push(from, to);
+  if (definition.localDateOnly) {
+    clauses.push(`date(${definition.date}) BETWEEN date(?) AND date(?)`);
+    binds.push(from, to);
+  } else {
+    clauses.push(`datetime(${definition.date}) >= datetime(?) AND datetime(${definition.date}) < datetime(?)`);
+    binds.push(fromUtc, toExclusiveUtc);
+  }
   if (cursor?.sort && cursor?.id) {
     clauses.push(`(${definition.sort} < ? OR (${definition.sort}=? AND ${definition.id}<?))`);
     binds.push(cursor.sort, cursor.sort, cursor.id);
@@ -329,4 +355,4 @@ export async function handleAnalyticsRoute(request, env, claims, url = new URL(r
   return null;
 }
 
-export const __test = { scopedProjects, projectClause, b64urlEncode, b64urlDecode, QUERY_DEFINITIONS, dateOnly };
+export const __test = { scopedProjects, projectClause, b64urlEncode, b64urlDecode, QUERY_DEFINITIONS, dateOnly, defaultRange, localDateAt, addUtcDays, zonedMidnightUtc, timezoneOffsetMinutes };
