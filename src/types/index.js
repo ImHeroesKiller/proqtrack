@@ -270,14 +270,6 @@ function ensureNav() {
   }
   nav.querySelectorAll("[data-pm-nav]").forEach((x) => x.remove());
   applyModuleVisibility();
-  return;
-  let items = [];
-  const frag = document.createElement("div");
-  frag.dataset.pmNav = "1";
-  frag.dataset.pmSignature = signature;
-  frag.innerHTML = `<div class="nav-section-label">Project</div>${items.map(([ic, l, h]) => `<a class="nav-item" href="${h}"><span class="nav-icon">${svg(ic)}</span><span>${l}</span></a>`).join("")}`;
-  nav.appendChild(frag);
-  applyModuleVisibility();
 }
 function applyModuleVisibility() {
   if (role() === "manager" || !account()) return;

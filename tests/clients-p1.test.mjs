@@ -31,11 +31,10 @@ test('Client P1 fails closed when logo upload fails', async () => {
   assert.doesNotMatch(src, /Logo belum dapat diunggah\. Coba lagi\.', 'error'\);\s*finish\(\)/);
 });
 
-test('Client P1 blocks legacy demo seed on production hosts', async () => {
+test('Client P1 ships no legacy demo client seed in production runtime', async () => {
   const migration = await read('src/types/project-management-migration.js');
-  assert.match(migration, /allowLegacyDemoSeed/);
-  assert.match(migration, /\["localhost", "127\.0\.0\.1"\]\.includes\(location\.hostname\)/);
-  assert.match(migration, /allowLegacyDemoSeed && !db\.clients\.length/);
+  assert.doesNotMatch(migration, /allowLegacyDemoSeed|demoSeed/);
+  assert.doesNotMatch(migration, /Nusantara Distribusi Prima|CL001/);
 });
 
 test('Client P1 enforces canonical validation and uniqueness in Worker', async () => {
