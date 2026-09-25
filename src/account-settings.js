@@ -145,6 +145,9 @@ function renderProjectStoreSettings() {
   const acc = account();
   let projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
   if (acc?.role === 'manager' && acc.projectId) projects = projects.filter(p => p.id === acc.projectId);
+  if (!projects.length) {
+    return '<div class="card-title">Katalog outlet per project</div><div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur katalog outlet.</p></div>';
+  }
   const selected = acc?.role === 'manager' && acc.projectId ? acc.projectId : (window.FT.state._storeProjectId || projects[0]?.id || '');
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
@@ -988,6 +991,13 @@ window.AM = {
     clearTimeout(accountFilterTimer);
     accountFilterTimer = setTimeout(() => {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
+      requestAnimationFrame(() => {
+        const input = document.querySelector('.am-account-filters .search-input');
+        if (!input) return;
+        input.focus({ preventScroll:true });
+        const end = input.value.length;
+        try { input.setSelectionRange(end,end); } catch { /* unsupported input type */ }
+      });
     },180);
   },
   filterRole(value) {
@@ -1014,7 +1024,7 @@ window.AM = {
     window.FT.closeModal?.();
     const root = document.getElementById('modalRoot');
     if (!root) return;
-    root.innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
+    root.innerHTML = `<div class="modal-overlay" role="presentation" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle"><div class="modal-handle"></div><div class="modal-header"><h3 id="accountModalTitle">${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button type="button" class="modal-close" aria-label="Tutup" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
   },
   async refreshAccounts() {
     if (accountSyncInFlight) return;
