@@ -25,6 +25,50 @@ function toast(msg, type = 'success') {
   window.showToast?.(msg, type);
 }
 
+function setSubmitBusy(form, busy, busyLabel = 'Menyimpan…') {
+  const submit = form?.querySelector?.('button[type="submit"]');
+  if (!submit) return null;
+  if (busy) {
+    if (!submit.dataset.idleLabel) submit.dataset.idleLabel = submit.textContent || 'Simpan';
+    submit.disabled = true;
+    submit.setAttribute('aria-busy','true');
+    submit.textContent = busyLabel;
+  } else {
+    submit.disabled = false;
+    submit.removeAttribute('aria-busy');
+    if (submit.dataset.idleLabel) {
+      submit.textContent = submit.dataset.idleLabel;
+      delete submit.dataset.idleLabel;
+    }
+  }
+  return submit;
+}
+
+let pendingConfirmAction = null;
+
+function openSettingsConfirm({ title, message, confirmLabel = 'Lanjutkan', tone = 'danger', action, id = '', value = '' } = {}) {
+  const root = document.getElementById('modalRoot');
+  if (!root) return;
+  pendingConfirmAction = { action, id, value };
+  root.innerHTML = `
+    <div class="modal-overlay" role="presentation" data-pqt-onclick="if(event.target===this)FT.closeModal()">
+      <div class="modal animate-up am-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="settingsConfirmTitle">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <h3 id="settingsConfirmTitle">${esc(title || 'Konfirmasi')}</h3>
+          <button type="button" class="modal-close" aria-label="Tutup" data-pqt-onclick="FT.closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="am-confirm-copy">${esc(message || '')}</p>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
+            <button type="button" class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}" data-pqt-onclick="AM.runPendingConfirm()">${esc(confirmLabel)}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function roleLabel(role) {
   return { superadmin: 'Superadmin', head: 'Head', admin: 'Admin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
@@ -101,12 +145,15 @@ function renderProjectStoreSettings() {
   const acc = account();
   let projects = (db.projects || []).filter(p => !['completed', 'cancelled'].includes(p.status));
   if (acc?.role === 'manager' && acc.projectId) projects = projects.filter(p => p.id === acc.projectId);
+  if (!projects.length) {
+    return '<div class="card-title">Katalog outlet per project</div><div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur katalog outlet.</p></div>';
+  }
   const selected = acc?.role === 'manager' && acc.projectId ? acc.projectId : (window.FT.state._storeProjectId || projects[0]?.id || '');
   const cat = selected ? getProjectStoreSettings(selected) : defaultStoreCatalog();
   const lines = arr => (arr || []).join('\n');
   return `
-        <div class="card-title">Outlet catalog per project</div>
-        <div class="card-subtitle">Enable New Outlet and set Segment, Type, Ownership, and Notes options for this project.</div>
+        <div class="card-title">Katalog outlet per project</div>
+        <div class="card-subtitle">Atur izin penambahan outlet baru serta pilihan Segmen, Tipe, Kepemilikan, dan Catatan untuk project ini.</div>
         <form class="am-form" data-pqt-onsubmit="AM.saveStoreCatalog(event)">
           <div class="form-group">
             <label class="label">Project</label>
@@ -114,19 +161,19 @@ function renderProjectStoreSettings() {
               ${projects.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
             </select>
           </div>
-          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Allow field sales to add a new outlet on this project</label>
-          <div class="form-group"><label class="label">Segment (one option per line)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
-          <div class="form-group"><label class="label">Outlet type</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
-          <div class="form-group"><label class="label">Ownership / account</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
+          <label class="am-check"><input type="checkbox" name="allowNewOutlet" ${cat.allowNewOutlet ? 'checked' : ''}> Izinkan Field Sales menambahkan outlet baru pada project ini</label>
+          <div class="form-group"><label class="label">Segmen (satu opsi per baris)</label><textarea class="textarea" name="segments">${esc(lines(cat.segments))}</textarea></div>
+          <div class="form-group"><label class="label">Tipe outlet</label><textarea class="textarea" name="types">${esc(lines(cat.types))}</textarea></div>
+          <div class="form-group"><label class="label">Kepemilikan / account</label><textarea class="textarea" name="ownerships">${esc(lines(cat.ownerships))}</textarea></div>
           <div class="form-group">
-            <label class="label">Notes field on New Outlet form</label>
+            <label class="label">Format catatan pada form Outlet Baru</label>
             <select class="select" name="notesMode">
-              <option value="freetext" ${cat.notesMode !== 'dropdown' ? 'selected' : ''}>Free text</option>
+              <option value="freetext" ${cat.notesMode !== 'dropdown' ? 'selected' : ''}>Teks bebas</option>
               <option value="dropdown" ${cat.notesMode === 'dropdown' ? 'selected' : ''}>Dropdown</option>
             </select>
           </div>
-          <div class="form-group"><label class="label">Notes dropdown options (one per line)</label><textarea class="textarea" name="notesOptions">${esc(lines(cat.notesOptions))}</textarea></div>
-          <button class="btn btn-primary" type="submit">Save outlet catalog</button>
+          <div class="form-group"><label class="label">Pilihan catatan dropdown (satu opsi per baris)</label><textarea class="textarea" name="notesOptions">${esc(lines(cat.notesOptions))}</textarea></div>
+          <button class="btn btn-primary" type="submit">Simpan katalog outlet</button>
         </form>`;
 }
 
@@ -220,6 +267,9 @@ const THEME_PRESETS = ['#ef5000','#2563eb','#0f766e','#7c3aed','#be123c','#33415
 
 let organizationProfileSyncInFlight = false;
 let organizationProfileSyncedOrg = '';
+let organizationProfileAttemptedOrg = '';
+let organizationProfileSyncError = '';
+let organizationProfileLastSyncedAt = null;
 let organizationSaveInFlight = false;
 
 function organizationErrorMessage(error) {
@@ -245,17 +295,20 @@ function dataUrlBytes(value) {
 
 function scheduleOrganizationProfileRefresh(acc) {
   const orgId = String(acc?.organizationId || getCurrentOrgId() || '');
-  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId) return;
+  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId || organizationProfileAttemptedOrg === orgId) return;
   organizationProfileSyncInFlight = true;
+  organizationProfileAttemptedOrg = orgId;
   queueMicrotask(async () => {
     try {
       await syncCurrentOrganizationProfile();
       organizationProfileSyncedOrg = orgId;
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      organizationProfileSyncError = '';
+      organizationProfileLastSyncedAt = new Date();
     } catch (error) {
-      toast(organizationErrorMessage(error), 'error');
+      organizationProfileSyncError = organizationErrorMessage(error);
     } finally {
       organizationProfileSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   });
 }
@@ -280,16 +333,16 @@ export function renderSettings() {
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
   const tabs = [
-    ['profil', 'Profile'],
-    ['keamanan', 'Security'],
-    ['tampilan', 'Display'],
-    ...(isOrgAdmin ? [['organisasi', 'Organization'], ['katalog', 'Outlet catalog'], ['absensi', 'Attendance']] : []),
-    ...(acc.role === 'manager' ? [['katalog', 'Outlet catalog']] : []),
-    ...(acc.role === 'employee' ? [['perangkat', 'Device']] : []),
-    ['sesi', 'Session'],
+    ['profil', 'Profil'],
+    ['keamanan', 'Keamanan'],
+    ['tampilan', 'Tampilan'],
+    ...(isOrgAdmin ? [['organisasi', 'Organisasi'], ['katalog', 'Katalog Outlet'], ['absensi', 'Attendance']] : []),
+    ...(acc.role === 'manager' ? [['katalog', 'Katalog Outlet']] : []),
+    ...(acc.role === 'employee' ? [['perangkat', 'Perangkat']] : []),
+    ['sesi', 'Sesi'],
   ];
   const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
-  const pane = id => `class="am-pane ${tab === id ? 'active' : ''}"`;
+  const pane = id => `id="settings-pane-${id}" class="am-pane ${tab === id ? 'active' : ''}" role="tabpanel" aria-labelledby="settings-tab-${id}"`;
 
   return `
     <div class="am-settings">
@@ -298,8 +351,8 @@ export function renderSettings() {
         <div class="card-title">Wajib ganti password</div>
         <div class="card-subtitle">Ganti password di tab Keamanan sebelum memakai menu lain.</div>
       </section>` : ''}
-      <nav class="am-tabs" aria-label="Pengaturan">
-        ${tabs.map(([id, label]) => `<button type="button" class="am-tab ${tab === id ? 'active' : ''}" data-pqt-onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
+      <nav class="am-tabs" role="tablist" aria-label="Pengaturan">
+        ${tabs.map(([id, label]) => `<button id="settings-tab-${id}" type="button" role="tab" aria-controls="settings-pane-${id}" aria-selected="${tab === id ? 'true' : 'false'}" tabindex="${tab === id ? '0' : '-1'}" class="am-tab ${tab === id ? 'active' : ''}" data-pqt-onclick="AM.setTab('${id}')">${esc(label)}</button>`).join('')}
       </nav>
       <div class="card am-tab-body">
         <section ${pane('profil')}>
@@ -339,6 +392,7 @@ export function renderSettings() {
 
         <section ${pane('tampilan')}>
           <div class="card-title">Preferensi tampilan</div>
+          <div class="card-subtitle">Preferensi ini berlaku pada browser/perangkat yang sedang digunakan dan tidak mengubah data operasional.</div>
           <form class="am-form" data-pqt-onsubmit="AM.savePrefs(event)">
             <label class="am-check"><input type="checkbox" name="compactTables" ${settings.compactTables ? 'checked' : ''}> Tabel lebih rapat</label>
             <label class="am-check"><input type="checkbox" name="notifyLeave" ${settings.notifyLeave !== false ? 'checked' : ''}> Tampilkan badge ijin/cuti pending</label>
@@ -351,6 +405,16 @@ export function renderSettings() {
         <section ${pane('organisasi')}>
           <div class="card-title">Organisasi</div>
           <div class="card-subtitle">Profil tenant aktif. Perubahan berlaku untuk seluruh pengguna organisasi ini.</div>
+          <div class="am-sync-row ${organizationProfileSyncError ? 'is-error' : ''}" aria-live="polite">
+            <span>${organizationProfileSyncInFlight
+              ? 'Menyegarkan profil organisasi…'
+              : organizationProfileSyncError
+                ? `Gagal menyegarkan: ${esc(organizationProfileSyncError)}`
+                : organizationProfileLastSyncedAt
+                  ? `Terakhir disegarkan ${esc(formatDate(organizationProfileLastSyncedAt))}`
+                  : 'Profil organisasi menggunakan data cloud.'}</span>
+            <button type="button" class="btn btn-secondary btn-sm" ${organizationProfileSyncInFlight ? 'disabled' : ''} data-pqt-onclick="AM.refreshOrganizationProfile()">Segarkan</button>
+          </div>
           <form class="am-form" data-pqt-onsubmit="AM.saveOrg(event)">
             <div class="form-row">
               <div class="form-group"><label class="label">Nama organisasi</label><input class="input" name="name" value="${esc(activeOrg.name || '')}" required></div>
@@ -430,20 +494,27 @@ export function renderSettings() {
 
 let accountSyncInFlight = false;
 let accountSyncedOrg = '';
+let accountSyncAttemptedOrg = '';
+let accountSyncError = '';
+let accountSyncLastAt = null;
+let accountFilterTimer = null;
 
 function scheduleAccountRefresh(acc) {
   const orgId = String(acc?.organizationId || getDB().currentOrganizationId || '');
-  if (!getApiToken() || !orgId || accountSyncInFlight || accountSyncedOrg === orgId) return;
+  if (!getApiToken() || !orgId || accountSyncInFlight || accountSyncedOrg === orgId || accountSyncAttemptedOrg === orgId) return;
   accountSyncInFlight = true;
+  accountSyncAttemptedOrg = orgId;
   queueMicrotask(async () => {
     try {
       await syncCloudAccounts();
       accountSyncedOrg = orgId;
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      accountSyncError = '';
+      accountSyncLastAt = new Date();
     } catch (error) {
-      toast(`Sinkronisasi akun gagal: ${error.message || error}`, 'error');
+      accountSyncError = accountErrorMessage(error);
     } finally {
       accountSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   });
 }
@@ -452,63 +523,87 @@ export function renderAccounts() {
   const acc = account();
   scheduleAccountRefresh(acc);
   if (!['head','admin','superadmin'].includes(acc?.role)) {
-    return '<div class="card"><p>Only Superadmin, Head, and Admin can manage organization accounts.</p></div>';
+    return '<div class="card"><div class="empty-state"><h3>Akses dibatasi</h3><p>Hanya Superadmin, Head, dan Admin yang dapat mengelola akun organisasi.</p></div></div>';
   }
-  const q = (window.FT.state._accountQuery || '').toLowerCase();
+  const queryRaw = String(window.FT.state._accountQuery || '');
+  const q = queryRaw.toLowerCase();
   const roleFilter = window.FT.state._accountRole || '';
   const statusFilter = window.FT.state._accountStatus || '';
   const employees = getEmployees();
-  let rows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
+  const allRows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
+  let rows = allRows.slice();
   if (q) rows = rows.filter(a => `${a.name} ${a.email} ${a.role}`.toLowerCase().includes(q));
   if (roleFilter) rows = rows.filter(a => a.role === roleFilter);
   if (statusFilter) rows = rows.filter(a => a.status === statusFilter);
+  const filtered = !!(q || roleFilter || statusFilter);
 
   return `
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" placeholder="Cari nama atau email" value="${esc(window.FT.state._accountQuery || '')}" data-pqt-oninput="AM.filterAccounts(this.value)">
-        <select class="select" style="width:auto" data-pqt-onchange="AM.filterRole(this.value)">
+    <div class="card am-accounts-card">
+      <div class="am-section-head">
+        <div>
+          <div class="card-title">Manajemen Akun</div>
+          <div class="card-subtitle">Kelola role, status, relasi karyawan, project Manager, dan binding perangkat untuk tenant aktif.</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" type="button" ${accountSyncInFlight ? 'disabled' : ''} data-pqt-onclick="AM.refreshAccounts()">${accountSyncInFlight ? 'Menyegarkan…' : 'Segarkan'}</button>
+      </div>
+      <div class="am-sync-row ${accountSyncError ? 'is-error' : ''}" aria-live="polite">
+        <span>${accountSyncInFlight
+          ? 'Menyinkronkan daftar akun dari cloud…'
+          : accountSyncError
+            ? `Sinkronisasi gagal: ${esc(accountSyncError)}`
+            : accountSyncLastAt
+              ? `Data cloud disegarkan ${esc(formatDate(accountSyncLastAt))}`
+              : 'Daftar akun menggunakan authority cloud.'}</span>
+      </div>
+      <div class="am-account-filters">
+        <input class="input search-input" aria-label="Cari akun" placeholder="Cari nama, email, atau role" value="${esc(queryRaw)}" data-pqt-oninput="AM.filterAccounts(this.value)">
+        <select class="select" aria-label="Filter role" data-pqt-onchange="AM.filterRole(this.value)">
           <option value="">Semua role</option>
           <option value="head" ${roleFilter === 'head' ? 'selected' : ''}>Head</option>
-          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>\n          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
+          <option value="admin" ${roleFilter === 'admin' ? 'selected' : ''}>Admin</option>
+          <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>Manager</option>
           <option value="supervisor" ${roleFilter === 'supervisor' ? 'selected' : ''}>Supervisor</option>
           <option value="employee" ${roleFilter === 'employee' ? 'selected' : ''}>Field Sales</option>
         </select>
-        <select class="select" style="width:auto" data-pqt-onchange="AM.filterStatus(this.value)">
+        <select class="select" aria-label="Filter status" data-pqt-onchange="AM.filterStatus(this.value)">
           <option value="">Semua status</option>
           <option value="active" ${statusFilter === 'active' ? 'selected' : ''}>Aktif</option>
           <option value="suspended" ${statusFilter === 'suspended' ? 'selected' : ''}>Ditangguhkan</option>
           <option value="inactive" ${statusFilter === 'inactive' ? 'selected' : ''}>Nonaktif</option>
         </select>
-        <div class="spacer"></div>
-        <button class="btn btn-primary" data-pqt-onclick="AM.openAccount()">+ Tambah Akun</button>
+        <button class="btn btn-secondary" type="button" ${filtered ? '' : 'disabled'} data-pqt-onclick="AM.clearAccountFilters()">Reset filter</button>
+        <button class="btn btn-primary am-account-add" type="button" data-pqt-onclick="AM.openAccount()">+ Tambah Akun</button>
       </div>
-      <div class="visits-table-wrapper">
-        <table class="table">
-          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Perangkat pertama</th><th></th></tr></thead>
+      <div class="am-result-row" aria-live="polite">
+        <span><strong>${rows.length}</strong> dari ${allRows.length} akun</span>
+        ${filtered ? '<span>Filter aktif</span>' : ''}
+      </div>
+      <div class="visits-table-wrapper am-account-table-wrap">
+        <table class="table am-account-table">
+          <thead><tr><th>Akun</th><th>Role</th><th>Karyawan</th><th>Status</th><th>Perangkat</th><th>Aksi</th></tr></thead>
           <tbody>
             ${rows.length ? rows.map(a => {
               const emp = employees.find(e => e.id === a.employeeId);
               const device = a.role === 'employee'
-                ? ((a.deviceBound || a.deviceId) ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · login pertama ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : '—'}</div>` : '<span class="am-muted">Belum pairing</span>')
+                ? (a.deviceBound ? `<strong>Terpasang</strong><div class="am-muted">${esc(a.deviceLabel || 'Perangkat field')} · ${a.devicePairedAt ? formatDateShort(a.devicePairedAt) : 'waktu pairing tidak tersedia'}</div>` : '<span class="am-muted">Belum pairing</span>')
                 : '—';
               const manageable = canManageAccount(acc,a);
               const statusManageable = canChangeAccountStatus(acc,a);
               return `<tr>
-                <td><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
-                <td>${esc(roleLabel(a.role))}</td>
-                <td>${emp ? esc(emp.name) : '—'}</td>
-                <td>${statusBadge(a.status)}</td>
-                <td>${device}</td>
-                <td>
-                  ${manageable ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>` : ''}
-                  ${manageable && a.role === 'employee' && (a.deviceBound || a.deviceId) ? `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
+                <td data-label="Akun"><strong>${esc(a.name)}</strong><div class="am-muted">${esc(a.email)}</div></td>
+                <td data-label="Role">${esc(roleLabel(a.role))}</td>
+                <td data-label="Karyawan">${emp ? esc(emp.name) : '—'}</td>
+                <td data-label="Status">${statusBadge(a.status)}</td>
+                <td data-label="Perangkat">${device}</td>
+                <td data-label="Aksi"><div class="am-account-actions">
+                  ${manageable ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.openAccount('${a.id}')">Edit</button>` : ''}
+                  ${manageable && a.role === 'employee' && a.deviceBound ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.resetDevice('${a.id}')">Reset perangkat</button>` : ''}
                   ${statusManageable ? (a.status === 'active'
-                    ? `<button class="btn btn-danger btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
-                    : `<button class="btn btn-secondary btn-sm" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`) : ''}
-                </td>
+                    ? `<button class="btn btn-danger btn-sm" type="button" data-pqt-onclick="AM.toggleStatus('${a.id}','suspended')">Tangguhkan</button>`
+                    : `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="AM.toggleStatus('${a.id}','active')">Aktifkan</button>`) : ''}
+                </div></td>
               </tr>`;
-            }).join('') : '<tr><td colspan="6"><div class="empty-state"><h3>Tidak ada akun</h3></div></td></tr>'}
+            }).join('') : `<tr><td colspan="6"><div class="empty-state"><h3>${filtered ? 'Tidak ada akun sesuai filter' : 'Belum ada akun'}</h3><p>${filtered ? 'Ubah atau reset filter untuk melihat akun lain.' : 'Tambahkan akun organisasi untuk memulai.'}</p>${filtered ? '<button type="button" class="btn btn-secondary" data-pqt-onclick="AM.clearAccountFilters()">Reset filter</button>' : ''}</div></td></tr>`}
           </tbody>
         </table>
       </div>
@@ -541,7 +636,7 @@ function accountForm(existing) {
           </select>
         </div>
       </div>
-      <div class="form-group"><label class="label">Project (required for Manager)</label>
+      <div class="form-group"><label class="label">Project (wajib untuk Manager)</label>
         <select class="select" name="projectId">
           <option value="">—</option>
           ${projects.map(p => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
@@ -561,8 +656,8 @@ function accountForm(existing) {
       ${existing?.role === 'employee' ? `
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
-        ${(existing.deviceBound || existing.deviceId) ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" data-pqt-onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
+        ${existing.deviceBound ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
+        <button type="button" class="btn btn-secondary btn-sm am-inline-action" data-pqt-onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing aktif di server. Login Field Sales berikutnya akan melakukan pairing.</div>'}
       </div>` : ''}
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
@@ -580,6 +675,7 @@ function formData(event) {
 let accountSaveInFlight = false;
 let profileSaveInFlight = false;
 let passwordSaveInFlight = false;
+let preferenceSaveInFlight = false;
 let sessionActionInFlight = false;
 const accountActionInFlight = new Set();
 const settingsProjectSaveInFlight = new Set();
@@ -594,9 +690,8 @@ window.AM = {
     event.preventDefault();
     if (profileSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     profileSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan profil…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const saved = await updateCloudProfile({
@@ -614,16 +709,15 @@ window.AM = {
       toast(profileErrorMessage(error), 'error');
     } finally {
       profileSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async savePassword(event) {
     event.preventDefault();
     if (passwordSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     passwordSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Memperbarui…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
@@ -637,12 +731,15 @@ window.AM = {
       toast(passwordErrorMessage(error), 'error');
     } finally {
       passwordSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   savePrefs(event) {
     event.preventDefault();
+    if (preferenceSaveInFlight) return;
     const form = event.target;
+    preferenceSaveInFlight = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       updateAppSettings({
         compactTables: form.compactTables.checked,
@@ -654,11 +751,22 @@ window.AM = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
+    } finally {
+      preferenceSaveInFlight = false;
+      setSubmitBusy(form,false);
     }
   },
   async logoutAllSessions() {
     if (sessionActionInFlight) return;
-    if (!confirm('Keluar dari semua perangkat? Semua sesi aktif untuk akun ini akan dicabut dan Anda harus login kembali.')) return;
+    openSettingsConfirm({
+      title:'Keluar dari semua perangkat?',
+      message:'Semua sesi aktif untuk identitas login ini, termasuk di organisasi lain, akan dicabut. Anda harus login kembali.',
+      confirmLabel:'Keluar semua',
+      action:'logoutAll',
+    });
+  },
+  async _logoutAllSessionsConfirmed() {
+    if (sessionActionInFlight) return;
     sessionActionInFlight = true;
     try {
       await revokeApiSession({ all:true });
@@ -668,6 +776,33 @@ window.AM = {
       toast(error?.message || String(error),'error');
     } finally {
       sessionActionInFlight = false;
+    }
+  },
+  async runPendingConfirm() {
+    const pending = pendingConfirmAction;
+    pendingConfirmAction = null;
+    window.FT.closeModal?.();
+    if (!pending) return;
+    if (pending.action === 'logoutAll') return this._logoutAllSessionsConfirmed();
+    if (pending.action === 'resetDevice') return this._resetDeviceConfirmed(pending.id);
+    if (pending.action === 'toggleStatus') return this._toggleStatusConfirmed(pending.id,pending.value);
+  },
+  async refreshOrganizationProfile() {
+    const orgId = String(account()?.organizationId || getCurrentOrgId() || '');
+    if (!orgId || organizationProfileSyncInFlight) return;
+    organizationProfileSyncInFlight = true;
+    organizationProfileSyncError = '';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    try {
+      await syncCurrentOrganizationProfile();
+      organizationProfileSyncedOrg = orgId;
+      organizationProfileAttemptedOrg = orgId;
+      organizationProfileLastSyncedAt = new Date();
+    } catch (error) {
+      organizationProfileSyncError = organizationErrorMessage(error);
+    } finally {
+      organizationProfileSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   },
   pickAttendanceSettingsProject(id) {
@@ -685,12 +820,11 @@ window.AM = {
       toast('Project tidak ditemukan.', 'error');
       return;
     }
-    const submit = form.querySelector('button[type="submit"]');
     const sourceMode = form.sourceMode.value === 'visit' ? 'visit' : 'manual';
     const lateAfter = String(form.lateAfter.value || '');
     const nextProject = { ...project, attendanceSourceMode:sourceMode, attendanceLateAfter:lateAfter };
     settingsProjectSaveInFlight.add(key);
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
       saveProjectAttendanceSettings(projectId,{ sourceMode, lateAfter });
@@ -706,14 +840,13 @@ window.AM = {
       toast(messages[error?.code || error?.message] || error?.message || String(error), 'error');
     } finally {
       settingsProjectSaveInFlight.delete(key);
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async addAttendancePoint(event) {
     event.preventDefault();
     if (settingsPointSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     const fd = Object.fromEntries(new FormData(form).entries());
     const row = {
       id:`APT-${crypto.randomUUID()}`,
@@ -725,7 +858,7 @@ window.AM = {
       status:'active',
     };
     settingsPointSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menambahkan…');
     try {
       await commitOperationalChanges([{ entity:'attendancePoints', op:'upsert', row }]);
       createAttendancePoint(row);
@@ -736,7 +869,7 @@ window.AM = {
       toast(error?.message || String(error),'error');
     } finally {
       settingsPointSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   pickStoreProject(id) {
@@ -768,9 +901,8 @@ window.AM = {
       modules:{ ...(project.modules || {}), newOutlet:catalog.allowNewOutlet },
       storeCatalog:catalog,
     };
-    const submit = form.querySelector('button[type="submit"]');
     settingsProjectSaveInFlight.add(key);
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       await commitOperationalChanges([{ entity:'projects', op:'upsert', row:nextProject }]);
       saveProjectStoreSettings(projectId,catalog);
@@ -783,7 +915,7 @@ window.AM = {
       toast(message,'error');
     } finally {
       settingsProjectSaveInFlight.delete(key);
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   previewThemeColor(input) {
@@ -815,9 +947,8 @@ window.AM = {
     event.preventDefault();
     if (organizationSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     organizationSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan organisasi…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const file = form.logoFile?.files?.[0];
@@ -843,18 +974,31 @@ window.AM = {
       });
       applyOrganizationBranding(updatedOrganization);
       organizationProfileSyncedOrg = String(account()?.organizationId || getCurrentOrgId() || '');
+      organizationProfileAttemptedOrg = organizationProfileSyncedOrg;
+      organizationProfileSyncError = '';
+      organizationProfileLastSyncedAt = new Date();
       toast('Profil organisasi tersimpan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(organizationErrorMessage(error), 'error');
     } finally {
       organizationSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   filterAccounts(value) {
     window.FT.state._accountQuery = value;
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    clearTimeout(accountFilterTimer);
+    accountFilterTimer = setTimeout(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      requestAnimationFrame(() => {
+        const input = document.querySelector('.am-account-filters .search-input');
+        if (!input) return;
+        input.focus({ preventScroll:true });
+        const end = input.value.length;
+        try { input.setSelectionRange(end,end); } catch { /* unsupported input type */ }
+      });
+    },180);
   },
   filterRole(value) {
     window.FT.state._accountRole = value;
@@ -862,6 +1006,13 @@ window.AM = {
   },
   filterStatus(value) {
     window.FT.state._accountStatus = value;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  clearAccountFilters() {
+    clearTimeout(accountFilterTimer);
+    window.FT.state._accountQuery = '';
+    window.FT.state._accountRole = '';
+    window.FT.state._accountStatus = '';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
   openAccount(id = '') {
@@ -873,28 +1024,32 @@ window.AM = {
     window.FT.closeModal?.();
     const root = document.getElementById('modalRoot');
     if (!root) return;
-    root.innerHTML = `<div class="modal-overlay" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up"><div class="modal-handle"></div><div class="modal-header"><h3>${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button class="modal-close" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
+    root.innerHTML = `<div class="modal-overlay" role="presentation" data-pqt-onclick="if(event.target===this)FT.closeModal()"><div class="modal animate-up" role="dialog" aria-modal="true" aria-labelledby="accountModalTitle"><div class="modal-handle"></div><div class="modal-header"><h3 id="accountModalTitle">${existing ? 'Edit Akun' : 'Tambah Akun'}</h3><button type="button" class="modal-close" aria-label="Tutup" data-pqt-onclick="FT.closeModal()">✕</button></div><div class="modal-body">${accountForm(existing)}</div></div></div>`;
   },
   async refreshAccounts() {
     if (accountSyncInFlight) return;
+    const orgId = String(account()?.organizationId || getDB().currentOrganizationId || '');
     accountSyncInFlight = true;
+    accountSyncError = '';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
     try {
       await syncCloudAccounts();
-      accountSyncedOrg = String(account()?.organizationId || getDB().currentOrganizationId || '');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      accountSyncedOrg = orgId;
+      accountSyncAttemptedOrg = orgId;
+      accountSyncLastAt = new Date();
     } catch (error) {
-      toast(error.message || error, 'error');
+      accountSyncError = accountErrorMessage(error);
     } finally {
       accountSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   },
   async saveAccount(event, id) {
     event.preventDefault();
     if (accountSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     accountSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,id ? 'Menyimpan…' : 'Membuat akun…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const current = id ? getAccounts().find(a => String(a.id) === String(id)) : null;
@@ -914,6 +1069,8 @@ window.AM = {
       const saved = id ? await updateCloudAccount(id, data) : await createCloudAccount(data);
       window.FT.closeModal?.();
       accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
+      accountSyncError = '';
       toast(id
         ? 'Akun cloud diperbarui'
         : saved?.attachedExisting
@@ -924,17 +1081,28 @@ window.AM = {
       toast(accountErrorMessage(error), 'error');
     } finally {
       accountSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async resetDevice(id) {
     if (accountActionInFlight.has(`reset:${id}`)) return;
-    if (!confirm('Reset perangkat akun ini? Field Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+    const target = getAccounts().find(row => String(row.id) === String(id));
+    openSettingsConfirm({
+      title:'Reset perangkat?',
+      message:`Binding perangkat ${target?.name || target?.email || 'akun ini'} akan dihapus. Field Sales harus login ulang untuk memasangkan perangkat berikutnya.`,
+      confirmLabel:'Reset perangkat',
+      action:'resetDevice',
+      id,
+    });
+  },
+  async _resetDeviceConfirmed(id) {
     const key = `reset:${id}`;
+    if (accountActionInFlight.has(key)) return;
     accountActionInFlight.add(key);
     try {
       await resetCloudAccountDevice(id);
-      window.FT.closeModal?.();
+      accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
       toast('Binding perangkat server direset. Login berikutnya akan memasangkan perangkat baru.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
@@ -951,9 +1119,27 @@ window.AM = {
       toast('Anda tidak memiliki izin untuk mengubah status akun ini.', 'error');
       return;
     }
+    if (status === 'suspended') {
+      openSettingsConfirm({
+        title:'Tangguhkan akun?',
+        message:`${target?.name || target?.email || 'Akun ini'} tidak dapat login pada organisasi aktif sampai diaktifkan kembali.`,
+        confirmLabel:'Tangguhkan',
+        action:'toggleStatus',
+        id,
+        value:status,
+      });
+      return;
+    }
+    return this._toggleStatusConfirmed(id,status);
+  },
+  async _toggleStatusConfirmed(id, status) {
+    const key = `status:${id}`;
+    if (accountActionInFlight.has(key)) return;
     accountActionInFlight.add(key);
     try {
       await updateCloudAccount(id, { status });
+      accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
       toast(status === 'active' ? 'Akun cloud diaktifkan' : 'Akun cloud ditangguhkan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
@@ -970,24 +1156,92 @@ function installStyles() {
   style.id = 'account-settings-css';
   style.textContent = `
     .am-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-    .am-settings{display:grid;gap:12px}
-    .am-tabs{display:flex;flex-wrap:wrap;gap:6px}
-    .am-tab{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gray-600);cursor:pointer}
+    .am-settings{display:grid;gap:12px;min-width:0}
+    .am-tabs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+    .am-tab{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gray-600);cursor:pointer;white-space:nowrap}
+    .am-tab:hover{border-color:var(--brand);color:var(--brand)}
+    .am-tab:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
     .am-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
-    .am-tab-body{min-height:280px}
-    .am-pane{display:none}
+    .am-tab-body{min-height:280px;min-width:0}
+    .am-pane{display:none;min-width:0}
     .am-pane.active{display:block}
-    .am-profile{display:flex;gap:14px;align-items:center;margin-bottom:16px}
-    .am-avatar{width:56px;height:56px;border-radius:16px;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:800}
-    .am-muted{font-size:12px;color:var(--gray-400);margin-top:3px}
-    .am-form .form-group{margin-bottom:12px}
-    .am-check{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:13px}
-    .am-actions{display:flex;gap:8px;margin-top:12px}
+    .am-profile{display:flex;gap:14px;align-items:center;margin-bottom:16px;min-width:0}
+    .am-avatar{width:56px;height:56px;border-radius:16px;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:800;flex:0 0 auto}
+    .am-muted{font-size:12px;color:var(--gray-400);margin-top:3px;overflow-wrap:anywhere}
+    .am-form{max-width:860px}
+    .am-form .form-group{margin-bottom:12px;min-width:0}
+    .am-form .form-row{align-items:start}
+    .am-check{display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;font-size:13px;line-height:1.45}
+    .am-check input{margin-top:2px;flex:0 0 auto}
+    .am-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .am-inline-action{margin-top:8px}
     .am-section-divider{margin:20px 0;border:0;border-top:1px solid var(--gray-200)}
-    .am-master-list{margin-top:12px}
+    .am-master-list{margin-top:12px;padding-left:20px}
     .am-session-warning{margin-top:14px;padding:12px;border:1px solid var(--gray-200);border-radius:12px;background:var(--gray-50)}
+    .am-section-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
+    .am-sync-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:10px 12px;border:1px solid var(--gray-200);border-radius:10px;background:var(--gray-50);font-size:12px;color:var(--gray-600)}
+    .am-sync-row.is-error{border-color:#fecaca;background:#fef2f2;color:#991b1b}
+    .am-account-filters{display:grid;grid-template-columns:minmax(220px,1fr) minmax(140px,180px) minmax(140px,180px) auto auto;gap:8px;align-items:center;margin-top:14px}
+    .am-account-filters .input,.am-account-filters .select{width:100%;min-width:0}
+    .am-account-add{white-space:nowrap}
+    .am-result-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 4px;font-size:12px;color:var(--gray-500)}
+    .am-account-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+    .am-account-table td:last-child{min-width:190px}
+    .am-confirm-modal{max-width:520px}
+    .am-confirm-copy{margin:0;color:var(--gray-700);line-height:1.6}
+    .am-theme-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button[aria-busy="true"]{cursor:wait}
     body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
-    @media(max-width:800px){.am-grid{grid-template-columns:1fr}}
+
+    @media(max-width:980px){
+      .am-account-filters{grid-template-columns:minmax(0,1fr) minmax(130px,170px) minmax(130px,170px)}
+      .am-account-add{grid-column:auto}
+    }
+
+    @media(max-width:800px){
+      .am-grid{grid-template-columns:1fr}
+      .am-tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding:2px 1px 6px;scrollbar-width:none}
+      .am-tabs::-webkit-scrollbar{display:none}
+      .am-tab{flex:0 0 auto}
+      .am-tab-body{padding:16px}
+      .am-profile{align-items:flex-start}
+      .am-actions{flex-direction:column}
+      .am-actions .btn{width:100%}
+      .am-section-head{align-items:center}
+      .am-sync-row{align-items:flex-start}
+      .am-account-filters{grid-template-columns:1fr 1fr}
+      .am-account-filters .search-input{grid-column:1/-1}
+      .am-account-add{grid-column:1/-1}
+      .am-result-row{align-items:flex-start}
+      .am-account-table-wrap{overflow:visible}
+      .am-account-table,.am-account-table tbody,.am-account-table tr,.am-account-table td{display:block;width:100%}
+      .am-account-table thead{display:none}
+      .am-account-table tbody{display:grid;gap:10px}
+      .am-account-table tr{border:1px solid var(--gray-200);border-radius:14px;padding:10px 12px;background:#fff}
+      .am-account-table td{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;align-items:start;padding:7px 0!important;border:0!important;min-width:0!important}
+      .am-account-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.03em}
+      .am-account-table td[data-label="Aksi"]{grid-template-columns:1fr;padding-top:10px!important;border-top:1px solid var(--gray-100)!important}
+      .am-account-table td[data-label="Aksi"]::before{display:none}
+      .am-account-table td[colspan]{display:block;padding:8px 0!important}
+      .am-account-table td[colspan]::before{display:none}
+      .am-account-actions{justify-content:flex-start}
+      .am-account-actions .btn{flex:1 1 auto}
+      .am-confirm-modal{width:min(94vw,520px)}
+    }
+
+    @media(max-width:520px){
+      .am-tab-body{padding:14px}
+      .am-account-filters{grid-template-columns:1fr}
+      .am-account-filters .search-input,.am-account-add{grid-column:auto}
+      .am-sync-row{flex-direction:column}
+      .am-sync-row .btn{width:100%}
+      .am-section-head{flex-direction:column}
+      .am-section-head .btn{width:100%}
+      .am-result-row{flex-direction:column;gap:4px}
+      .am-account-table td{grid-template-columns:82px minmax(0,1fr)}
+      .am-account-actions{display:grid;grid-template-columns:1fr}
+      .am-account-actions .btn{width:100%}
+    }
   `;
   document.head.appendChild(style);
 }
