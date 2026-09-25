@@ -3,7 +3,7 @@ import {
   updateOwnProfile,
   getDB, getOrganization, getCurrentOrgId,
   getProjectStoreSettings, saveProjectStoreSettings, saveProjectAttendanceSettings, defaultStoreCatalog,
-  isTestDevice,
+  getAttendancePoints, createAttendancePoint, isTestDevice,
 } from './lib/db.js';
 import { getDeviceIdentity, isSuperadminHostDevice } from './lib/device.js';
 import { getApiToken } from './lib/uploads.js';
@@ -157,7 +157,31 @@ function renderAttendanceSettings() {
           <div class="am-muted">Perubahan sumber attendance dapat ditolak bila attendance hari ini sudah tercatat, untuk mencegah campuran Manual dan Visit dalam project yang sama.</div>
           <button class="btn btn-primary" type="submit">Simpan pengaturan attendance</button>
         </form>
-        ` : '<div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur attendance.</p></div>'}`;
+        ` : '<div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur attendance.</p></div>'}
+        <hr class="am-section-divider">
+        <div class="filter-row">
+          <div>
+            <div class="card-title">Attendance points</div>
+            <div class="card-subtitle">Master titik referensi tetap cloud-authoritative dan dapat dipakai oleh data employee/project yang memerlukannya.</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
+        </div>
+        <form class="am-form" data-pqt-onsubmit="AM.addAttendancePoint(event)">
+          <div class="form-row">
+            <div class="form-group"><label class="label">Nama</label><input class="input" name="pointName" required></div>
+            <div class="form-group"><label class="label">Tipe</label>
+              <select class="select" name="pointType"><option value="point">Point</option><option value="office">Office</option><option value="store">Outlet</option><option value="meeting">Meeting</option></select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="label">Latitude</label><input class="input" name="pointLat"></div>
+            <div class="form-group"><label class="label">Longitude</label><input class="input" name="pointLng"></div>
+          </div>
+          <div class="form-group"><label class="label">Alamat</label><input class="input" name="pointAddress"></div>
+          <button class="btn btn-secondary" type="submit">Tambah titik</button>
+        </form>
+        <ul class="am-master-list">${getAttendancePoints().map(point => `<li><strong>${esc(point.name)}</strong> · ${esc(point.type)}${point.lat != null ? ` · ${esc(point.lat)}, ${esc(point.lng)}` : ''}</li>`).join('') || '<li class="am-muted">Belum ada attendance point.</li>'}</ul>`;
 }
 
 function linkedEmployee(acc) {
@@ -543,6 +567,7 @@ function formData(event) {
 let accountSaveInFlight = false;
 const accountActionInFlight = new Set();
 const settingsProjectSaveInFlight = new Set();
+let settingsPointSaveInFlight = false;
 
 window.AM = {
   setTab(id) {
@@ -629,6 +654,36 @@ window.AM = {
       toast(messages[error?.code || error?.message] || error?.message || String(error), 'error');
     } finally {
       settingsProjectSaveInFlight.delete(key);
+      if (submit?.isConnected) submit.disabled = false;
+    }
+  },
+  async addAttendancePoint(event) {
+    event.preventDefault();
+    if (settingsPointSaveInFlight) return;
+    const form = event.target;
+    const submit = form.querySelector('button[type="submit"]');
+    const fd = Object.fromEntries(new FormData(form).entries());
+    const row = {
+      id:`APT-${crypto.randomUUID()}`,
+      name:String(fd.pointName || '').trim(),
+      type:String(fd.pointType || 'point'),
+      lat:fd.pointLat === '' ? null : Number(fd.pointLat),
+      lng:fd.pointLng === '' ? null : Number(fd.pointLng),
+      address:String(fd.pointAddress || '').trim(),
+      status:'active',
+    };
+    settingsPointSaveInFlight = true;
+    if (submit) submit.disabled = true;
+    try {
+      await commitOperationalChanges([{ entity:'attendancePoints', op:'upsert', row }]);
+      createAttendancePoint(row);
+      toast('Attendance point tersimpan di cloud');
+      form.reset();
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (error) {
+      toast(error?.message || String(error),'error');
+    } finally {
+      settingsPointSaveInFlight = false;
       if (submit?.isConnected) submit.disabled = false;
     }
   },
@@ -876,6 +931,8 @@ function installStyles() {
     .am-form .form-group{margin-bottom:12px}
     .am-check{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:13px}
     .am-actions{display:flex;gap:8px;margin-top:12px}
+    .am-section-divider{margin:20px 0;border:0;border-top:1px solid var(--gray-200)}
+    .am-master-list{margin-top:12px}
     body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
     @media(max-width:800px){.am-grid{grid-template-columns:1fr}}
   `;
