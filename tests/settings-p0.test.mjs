@@ -61,9 +61,14 @@ test('Settings P0 outlet catalog persists through project cloud metadata', async
 });
 
 test('Settings P0 project writes keep duplicate-action guards', async () => {
-  const ui = await read('src/account-settings.js');
+  const [ui, helper] = await Promise.all([
+    read('src/account-settings.js'),
+    read('src/lib/settings-ui.js'),
+  ]);
   assert.match(ui, /const settingsProjectSaveInFlight = new Set\(\)/);
   assert.match(ui, /settingsProjectSaveInFlight\.has\(key\)/);
-  assert.match(ui, /submit\.disabled = true/);
+  assert.match(ui, /setSubmitBusy\(form,true,'Menyimpan…'\)/);
   assert.match(ui, /settingsProjectSaveInFlight\.delete\(key\)/);
+  assert.match(helper, /submit\.disabled = true/);
+  assert.match(helper, /submit\.setAttribute\('aria-busy','true'\)/);
 });
