@@ -584,11 +584,44 @@ window.FS.reviewOutlet = async function(id, decision) {
 
 
 
-async function reverseGeocode(lat, lng) {
-  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) return null;
-  return res.json();
+const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
+const GEOCODE_CACHE_MAX = 50;
+const reverseGeocodeCache = new Map();
+const reverseGeocodeInFlight = new Map();
+
+function geocodeKey(lat, lng) {
+  return `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`;
+}
+
+function rememberGeocode(key, data) {
+  reverseGeocodeCache.delete(key);
+  reverseGeocodeCache.set(key, { at:Date.now(), data });
+  while (reverseGeocodeCache.size > GEOCODE_CACHE_MAX) {
+    reverseGeocodeCache.delete(reverseGeocodeCache.keys().next().value);
+  }
+}
+
+async function reverseGeocode(lat, lng, { signal } = {}) {
+  const key = geocodeKey(lat, lng);
+  const cached = reverseGeocodeCache.get(key);
+  if (cached && Date.now() - cached.at < GEOCODE_CACHE_TTL_MS) return cached.data;
+  if (reverseGeocodeInFlight.has(key)) return reverseGeocodeInFlight.get(key);
+
+  const request = (async () => {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    rememberGeocode(key, data);
+    return data;
+  })();
+
+  reverseGeocodeInFlight.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (reverseGeocodeInFlight.get(key) === request) reverseGeocodeInFlight.delete(key);
+  }
 }
 
 function applyGeocode(data, lat, lng) {
@@ -627,6 +660,21 @@ function showMapsLink(lat, lng) {
 
 let _outletMap = null;
 let _outletMarker = null;
+let _outletGeocodeController = null;
+let _outletSearchController = null;
+
+window.FS.disposeOutletMap = function() {
+  _outletGeocodeController?.abort();
+  _outletSearchController?.abort();
+  _outletGeocodeController = null;
+  _outletSearchController = null;
+  if (_outletMap) {
+    _outletMap.off();
+    _outletMap.remove();
+  }
+  _outletMap = null;
+  _outletMarker = null;
+};
 
 window.FS.initOutletMap = async function() {
   const el = document.getElementById('outletPickMap');
@@ -640,11 +688,7 @@ window.FS.initOutletMap = async function() {
     return;
   }
   if (!el.isConnected || !window.L) return;
-  if (_outletMap) {
-    _outletMap.remove();
-    _outletMap = null;
-    _outletMarker = null;
-  }
+  window.FS.disposeOutletMap();
   const currentLat = Number(document.getElementById('outletLat')?.value);
   const currentLng = Number(document.getElementById('outletLng')?.value);
   const hasCurrent = Number.isFinite(currentLat) && Number.isFinite(currentLng)
@@ -665,13 +709,20 @@ window.FS.initOutletMap = async function() {
     const { lat, lng } = ev.latlng;
     if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
     else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
+    _outletGeocodeController?.abort();
+    const controller = new AbortController();
+    _outletGeocodeController = controller;
     try {
-      const geo = await reverseGeocode(lat, lng);
-      applyGeocode(geo, lat, lng);
-    } catch {
-      applyGeocode(null, lat, lng);
+      const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
+      if (!controller.signal.aborted && document.getElementById('outletPickMap')) applyGeocode(geo, lat, lng);
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !controller.signal.aborted && document.getElementById('outletPickMap')) {
+        applyGeocode(null, lat, lng);
+      }
+    } finally {
+      if (_outletGeocodeController === controller) _outletGeocodeController = null;
     }
-    showMapsLink(lat, lng);
+    if (!controller.signal.aborted) showMapsLink(lat, lng);
   });
   setTimeout(() => _outletMap?.invalidateSize(), 220);
 };
@@ -679,10 +730,18 @@ window.FS.initOutletMap = async function() {
 window.FS.searchOutletMap = async function() {
   const q = document.getElementById('outletMapSearch')?.value?.trim();
   if (!q) return;
+  _outletSearchController?.abort();
+  const controller = new AbortController();
+  _outletSearchController = controller;
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = await res.json();
+    if (controller.signal.aborted) return;
     const hit = rows[0];
     if (!hit) { window.showToast?.('Alamat tidak ditemukan', 'error'); return; }
     const lat = Number(hit.lat);
@@ -693,9 +752,12 @@ window.FS.searchOutletMap = async function() {
       else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
     }
     applyGeocode(hit, lat, lng);
+    rememberGeocode(geocodeKey(lat, lng), hit);
     showMapsLink(lat, lng);
-  } catch {
-    window.showToast?.('Gagal mencari lokasi', 'error');
+  } catch (error) {
+    if (error?.name !== 'AbortError') window.showToast?.('Gagal mencari lokasi', 'error');
+  } finally {
+    if (_outletSearchController === controller) _outletSearchController = null;
   }
 };
 
@@ -713,11 +775,16 @@ window.FS.captureOutletLocation = function() {
   navigator.geolocation.getCurrentPosition(async pos => {
     const lat = pos.coords.latitude;
     const lng = pos.coords.longitude;
+    _outletGeocodeController?.abort();
+    const controller = new AbortController();
+    _outletGeocodeController = controller;
     try {
-      const geo = await reverseGeocode(lat, lng);
-      applyGeocode(geo, lat, lng);
-    } catch {
-      applyGeocode(null, lat, lng);
+      const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
+      if (!controller.signal.aborted) applyGeocode(geo, lat, lng);
+    } catch (error) {
+      if (error?.name !== 'AbortError' && !controller.signal.aborted) applyGeocode(null, lat, lng);
+    } finally {
+      if (_outletGeocodeController === controller) _outletGeocodeController = null;
     }
     showMapsLink(lat, lng);
     if (btn) btn.disabled = false;
