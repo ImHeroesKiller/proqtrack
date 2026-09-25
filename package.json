@@ -21,7 +21,7 @@
     "perf:budget": "node scripts/performance-budget.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.123.0",
+    "wrangler": "^4.135.0",
     "leaflet": "1.9.4"
   }
 }
