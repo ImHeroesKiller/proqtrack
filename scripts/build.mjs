@@ -47,11 +47,11 @@ async function fileExists(path) {
   try { await access(path); return true; } catch { return false; }
 }
 
-function localDependencies(source) {
+function staticLocalDependencies(source) {
   const deps = new Set();
   const patterns = [
-    /(?:import\s+(?:[^'"]*?\s+from\s+)?|export\s+[^'"]*?\s+from\s+|import\s*\()\s*['"]([^'"]+)['"]/g,
-    /\bload\(\s*['"]([^'"]+)['"]/g,
+    /import\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g,
+    /export\s+[^'"]*?\s+from\s+['"]([^'"]+)['"]/g,
   ];
   for (const pattern of patterns) {
     let match;
@@ -68,16 +68,16 @@ async function resolveModule(from, specifier) {
   return (await fileExists(`dist/${candidate}`)) ? candidate : null;
 }
 
-async function runtimeGraph(entry) {
+async function runtimeGraph(entries) {
   const seen = new Set();
-  const queue = [entry];
+  const queue = [...entries];
   while (queue.length) {
     const path = queue.shift();
     if (!path || seen.has(path)) continue;
     seen.add(path);
     if (!path.endsWith(".js")) continue;
     const source = await readFile(`dist/${path}`, "utf8");
-    for (const specifier of localDependencies(source)) {
+    for (const specifier of staticLocalDependencies(source)) {
       const resolved = await resolveModule(path, specifier);
       if (resolved && !seen.has(resolved)) queue.push(resolved);
     }
@@ -85,8 +85,18 @@ async function runtimeGraph(entry) {
   return seen;
 }
 
+const criticalRuntimeEntries = [
+  "src/entry.js",
+  "src/bootstrap.js",
+  "src/lib/ui-events.js",
+  "src/cloud-cutover.js",
+  "src/m4-bootstrap.js",
+  "src/lib/m6-client.js",
+  "src/app.js",
+];
+
 const copied = await collectFiles("dist");
-const runtime = await runtimeGraph("src/entry.js");
+const runtime = await runtimeGraph(criticalRuntimeEntries);
 const assetFiles = copied.filter(path => path.startsWith("assets/"));
 const shell = new Set([
   "index.html",
