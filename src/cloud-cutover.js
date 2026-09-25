@@ -14,6 +14,7 @@ import {
   establishCloudSession,
   installStorageWriteThrough,
   logoutCloudSession,
+  resetCloudDataBridge,
   restoreCloudSession,
 } from './lib/cloud-data.js';
 
@@ -44,6 +45,9 @@ async function cloudFirstLogin(event) {
   loginInFlight = true;
 
   try {
+    // Abort queued/in-flight writes from any previous session before rotating
+    // the bearer token. This prevents unauthenticated /api/core/sync races.
+    resetCloudDataBridge();
     clearApiToken();
     if (navigator.onLine === false) {
       window.showToast?.('Login offline hanya tersedia untuk akun yang pernah digunakan di perangkat ini.', 'error');
@@ -229,6 +233,26 @@ export function installCloudCutover() {
     } else if (status === 'synced') {
       lastNotice = '';
     }
+  });
+
+  window.addEventListener('proqtrack:session-invalid', event => {
+    const state = window.FT?.state;
+    if (!state?.loggedIn) return;
+    state.loggedIn = false;
+    state.account = null;
+    state.route = '#/login';
+    if (state.livePolling) {
+      clearInterval(state.livePolling);
+      state.livePolling = null;
+    }
+    forceRoute('#/login');
+    const code = String(event.detail?.code || 'AUTH_REQUIRED');
+    window.showToast?.(
+      code === 'SESSION_EXPIRED' || code === 'TOKEN_EXPIRED'
+        ? 'Sesi telah berakhir. Silakan login kembali.'
+        : 'Sesi tidak lagi valid. Silakan login kembali.',
+      'error',
+    );
   });
   return true;
 }
