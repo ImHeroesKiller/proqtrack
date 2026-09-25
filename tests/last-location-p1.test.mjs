@@ -86,9 +86,11 @@ test('Last Location refresh is guarded and active on route focus', async () => {
   assert.match(app, /const TRACKING_REFRESH_MS = 30000/);
   assert.match(app, /refreshOperationalData\(getDB\(\), actor\)/);
   assert.match(app, /window\.FT\.refreshTracking/);
-  assert.match(app, /configureTrackingRefresh\(route\)/);
-  assert.match(app, /if \(isTrackingRoute\(\)\) refreshTrackingData/);
-  assert.match(app, /trackingRefreshTimer/);
+  assert.match(app, /function configureRouteRefresh/);
+  assert.match(app, /if \(isTrackingRoute\(route\)\)/);
+  assert.match(app, /run:refreshTrackingData/);
+  assert.match(app, /refreshActiveRoute\(\{ reason:'focus' \}\)/);
+  assert.match(app, /routeRefreshTimer/);
 });
 
 test('cloud visit authority maps UI checked-in to D1 in_progress and preserves GPS columns', async () => {
