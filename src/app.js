@@ -622,6 +622,16 @@ function render() {
     renderFrame = 0;
   }
   const app = document.getElementById('app');
+
+  // Do not parse/migrate the local operational DB before the first restore paint.
+  // Cloud restore owns hydration; this shell can paint using only sessionStorage.
+  if (!state.loggedIn && state.sessionRestoring && getApiToken()) {
+    stopRouteRefresh();
+    disposeTrackingMap();
+    app.innerHTML = renderSessionRestoring();
+    return;
+  }
+
   const currentBrand = getOrganization(getCurrentOrgId()) || null;
   applyOrganizationBranding(currentBrand);
   const sidebarScroll = document.querySelector('.sidebar-nav')?.scrollTop || state._sidebarScroll || 0;
@@ -636,13 +646,6 @@ function render() {
       state.account = actor;
       state.user = { name: actor.name, role: displayRole(actor), email: actor.email };
     }
-  }
-
-  if (!state.loggedIn && state.sessionRestoring && getApiToken()) {
-    stopRouteRefresh();
-    disposeTrackingMap();
-    app.innerHTML = renderSessionRestoring();
-    return;
   }
 
   if (!state.loggedIn) {
@@ -6058,8 +6061,9 @@ function attachMobileHandlers() {
 
 // ===== Init =====
 function init() {
-  // Initialize DB
-  getDB();
+  // Authenticated restore paints before local DB parsing. For normal logged-out
+  // entry we still initialize immediately so login/public pages keep legacy behavior.
+  if (!state.sessionRestoring) getDB();
   state.route = getRoute();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') {
