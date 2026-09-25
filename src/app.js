@@ -35,7 +35,7 @@ import {
   compressImage, photoTypeLabel, todayISO, esc, safePhotoUrl, displayValue,
   normalizeAttendanceStatus,
 } from './lib/utils.js';
-import { issueUploadSession, clearApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
+import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
@@ -74,6 +74,7 @@ window.FT = {
 // ===== Global State =====
 const state = {
   loggedIn: false,
+  sessionRestoring: Boolean(getApiToken()),
   account: null,
   user: { name: 'Manager Demo', role: 'Manager', email: 'manager@proqtrack.id' },
   route: '#/',
@@ -588,6 +589,32 @@ async function refreshActiveRoute({ manual = false, reason = 'passive' } = {}) {
 
 
 // ===== Main Render =====
+function renderSessionRestoring() {
+  return `
+    <main class="session-restore-page" aria-live="polite" aria-busy="true">
+      <div class="session-restore-shell">
+        <aside class="session-restore-side" aria-hidden="true">
+          <div class="session-restore-brand">PQ</div>
+        </aside>
+        <section class="session-restore-main" role="status">
+          <h1>Mempersiapkan workspace</h1>
+          <p>Memvalidasi sesi dan memuat data operasional terbaru.</p>
+          <div class="session-restore-kpis" aria-hidden="true">
+            <div class="session-restore-block"></div>
+            <div class="session-restore-block"></div>
+            <div class="session-restore-block"></div>
+            <div class="session-restore-block"></div>
+          </div>
+          <div class="session-restore-panels" aria-hidden="true">
+            <div class="session-restore-block"></div>
+            <div class="session-restore-block"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  `;
+}
+
 function render() {
   const renderStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
   if (renderFrame) {
@@ -609,6 +636,13 @@ function render() {
       state.account = actor;
       state.user = { name: actor.name, role: displayRole(actor), email: actor.email };
     }
+  }
+
+  if (!state.loggedIn && state.sessionRestoring && getApiToken()) {
+    stopRouteRefresh();
+    disposeTrackingMap();
+    app.innerHTML = renderSessionRestoring();
+    return;
   }
 
   if (!state.loggedIn) {
