@@ -1363,11 +1363,18 @@ async function importAuthStatements(env, snapshot, claims, organizationId) {
   return { statements, userIdByEmployee };
 }
 
-async function handleBootstrap(env, claims) {
+async function handleBootstrap(request, env, claims) {
   const state = await syncState(env, claims.organizationId);
+  const revision = Number(state.revision || 0);
+  const cutoverMode = state.cutover_mode || 'pending';
+  const url = new URL(request.url);
+  const requestedRevision = Number(url.searchParams.get('revision') || request.headers.get('if-revision') || -1);
+  if (cutoverMode === 'cloud' && Number.isFinite(requestedRevision) && requestedRevision >= 0 && requestedRevision === revision) {
+    return json({ ok:true, revision, cutoverMode, notModified:true, data:null });
+  }
   const data = await bootstrapData(env, claims);
   const rowCount = Object.values(data).filter(Array.isArray).reduce((sum, rows) => sum + rows.length, 0);
-  return json({ ok: true, revision: Number(state.revision || 0), cutoverMode: state.cutover_mode || 'pending', empty: rowCount === 0, data });
+  return json({ ok: true, revision, cutoverMode, empty: rowCount === 0, data });
 }
 
 async function handleImport(request, env, claims) {
@@ -2403,7 +2410,7 @@ export async function handleOperationalRoute(request, env, claims, url = new URL
   if (!url.pathname.startsWith('/api/core/')) return null;
   if (env.CORE_DATA_API_ENABLED !== 'true') return json({ error: 'CORE_DATA_API_LOCKED' }, 503);
   if (!claims?.organizationId) return json({ error: 'ORGANIZATION_REQUIRED' }, 409);
-  if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(env, claims);
+  if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(request, env, claims);
   if (url.pathname === '/api/core/import' && request.method === 'POST') return handleImport(request, env, claims);
   if (url.pathname === '/api/core/sync' && request.method === 'POST') return handleSync(request, env, claims, bulkReceipt);
   return json({ error: 'NOT_FOUND' }, 404);
