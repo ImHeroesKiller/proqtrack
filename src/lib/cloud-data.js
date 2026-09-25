@@ -449,7 +449,7 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
     ...existing,
     id,
     email: cloudAccount.email || existing.email || '',
-    name: existing.name || employee?.name || cloudAccount.email || id,
+    name: cloudAccount.name || existing.name || employee?.name || cloudAccount.email || id,
     role: cloudAccount.role || existing.role || 'employee',
     organizationId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
       ? null
@@ -463,7 +463,13 @@ export function ensureCloudIdentity(localDb, cloudAccount = {}, localAccount = n
     projectId: cloudAccount.role === 'superadmin' && !cloudAccount.organizationId
       ? null
       : (cloudAccount.role === 'manager' ? (cloudAccount.projectIds?.[0] || existing.projectId || null) : (existing.projectId || null)),
-    employeeId: employee?.id || existing.employeeId || null,
+    employeeId: cloudAccount.employeeId || employee?.id || existing.employeeId || null,
+    phone: cloudAccount.phone ?? existing.phone ?? employee?.phone ?? '',
+    area: cloudAccount.area ?? existing.area ?? employee?.area ?? '',
+    deviceBound: cloudAccount.deviceBound === true,
+    deviceLabel: cloudAccount.deviceLabel || '',
+    devicePairedAt: cloudAccount.devicePairedAt || null,
+    deviceLastSeenAt: cloudAccount.deviceLastSeenAt || null,
     status: 'active',
     cloudIdentity: true,
     cloudSyncedAt: new Date().toISOString(),
