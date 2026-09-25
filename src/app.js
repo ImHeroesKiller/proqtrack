@@ -5412,9 +5412,10 @@ window.FT.saveFieldPhoto = async function(e, visitId, outletId) {
     caption: fd.get('caption') || '',
     productId: fd.get('productId') || null,
     competitorId: type === 'competitor' ? (fd.get('competitorId') || null) : (fd.get('competitorId') || null),
-    dataUrl,
-    photoUrl: photoUrl || dataUrl,
+    dataUrl: photoUrl ? null : dataUrl,
+    photoUrl: photoUrl || '',
     r2Key,
+    evidenceStatus: r2Key ? 'ready' : 'queued',
     recordedBy: empId || state.account?.id || 'manager',
     recordedAt: new Date().toISOString(),
   });
