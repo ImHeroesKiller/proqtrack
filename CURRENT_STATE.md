@@ -279,3 +279,17 @@ P3 menutup maintainability backlog tanpa mengubah authority atau behavior P0–P
 - Account filtering dan Settings tab composition memiliki pure unit coverage untuk memudahkan refactor berikutnya.
 - Regression P0–P2 diperbarui agar menguji invariant lintas module setelah extraction, bukan bergantung pada bentuk monolitik lama.
 - Regression guard: `tests/settings-p3.test.mjs`.
+
+## Performance P0 — production hot-path hardening — 25 September 2026
+
+P0 performance menutup hot-path utama untuk menjaga ProQTrack tetap cepat/stabil saat volume tenant bertambah, tanpa memperluas authority:
+
+- Refresh Home/Visits/Last Location memakai revision-aware bootstrap. Bila `core_sync_state.revision` belum berubah, Worker mengembalikan `notModified` sebelum membaca 22 kelompok data operasional sehingga polling tidak melakukan full tenant hydrate atau full-page rerender tanpa perubahan.
+- Bootstrap Manager/Supervisor/Employee melakukan D1 query scoping berdasarkan project dan employee authority sebelum decode; broad role Superadmin/Head/Admin tetap memperoleh workspace organisasi sesuai kewenangannya. Post-decode defense-in-depth filtering tetap dipertahankan.
+- Visits, Employees, Outlets, dan Products memakai true active-page DOM pagination. Filter bekerja terhadap cached row models dan hanya baris halaman aktif yang masuk ke `tbody`, bukan membuat seluruh ribuan row lalu menyembunyikannya.
+- Hot aggregate CPU dikurangi: employee monthly sales dihitung sekali per render, outlet visit count/last visit dibuat single-pass, dan product operational reference count dibuat single-pass.
+- Offline operational snapshot berubah dari polling/parsing localStorage setiap 5 detik menjadi event-driven melalui `proqtrack:db-persisted`; online/visibility tetap menyediakan recovery observation.
+- Legacy `proqtrack_db_v7` mirror ditunda/coalesced pada browser idle path, sementara primary `proqtrack_db_v6` tetap ditulis sinkron untuk local authority/offline safety.
+- Service Worker tidak lagi memakai fixed release cache sebagai runtime key. Build membuat SHA-256 content release dan mengganti `__PROQTRACK_RELEASE__`, sehingga shell/index/module satu deploy berada dalam cache atomik yang sama dan browser tidak mencampur asset antar-release.
+- Private `/api/` tetap tidak pernah dicache Service Worker.
+- Regression guard utama: `tests/performance-p0.test.mjs`, dengan update pada runtime/offline/product regression contracts agar mengunci behavior baru, bukan implementasi hot-path lama.
