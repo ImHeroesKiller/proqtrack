@@ -145,3 +145,17 @@ test('P0 worker stores leave project scope and decodes it back to clients', () =
   assert.match(worker,/INSERT INTO core_leaves\(id,organization_id,project_id,employee_id/);
   assert.match(worker,/case 'leaves': return \{ \.\.\.common, projectId: dbRow\.project_id/);
 });
+
+
+test('P0 supervisors cannot redefine attendance geofence points', () => {
+  assert.match(db,/if \(!isProjectAdminRole\(actor\.role\)\) throw new Error\('Akses ditolak'\)/);
+  assert.match(worker,/if \(role === 'supervisor' && entity === 'attendancePoints'\) return false/);
+});
+
+test('P0 cloud bootstrap isolates leaves by both project and employee', () => {
+  assert.match(worker,/data\.leaves = data\.leaves\.filter\(row => allowedProjects\.has\(str\(row\.projectId\)\) && employeesAllowed\.has\(str\(row\.employeeId\)\)\)/);
+});
+
+test('P0 visit checkout keeps attendance on original visit start day', () => {
+  assert.match(worker,/isCheckOut\s*\? \(existing\.started_at/);
+});
