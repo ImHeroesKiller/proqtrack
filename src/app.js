@@ -44,6 +44,7 @@ import {
   locationSourceLabel, visitLocationEvidence, assertVisitGeofence, visitGeofenceEvidence,
 } from './lib/location-evidence.js';
 import { getDeviceIdentity, markSuperadminHost } from './lib/device.js';
+import { ensureLeaflet } from './lib/leaflet-loader.js';
 import { VISITS_PAGE_SIZE, visitMatchesFilters, paginateVisits, visitCorrectionErrorMessage } from './lib/visit-ui.js';
 import { EMPLOYEE_PAGE_SIZE, employeeSyncState, activeProjectIdsForEmployee, employeeMatchesFilters, paginateEmployees, employeeOperationalCounts, employeeProjectOptions, employeeListModel, employeeFilterSnapshot, employeeDeactivationImpact } from './lib/team-employee-ui.js';
 import { OUTLET_PAGE_SIZE, outletOperationalModel, outletFilterOptions, outletMatchesFilters, outletFilterSnapshot, paginateOutlets, outletStatusSummary, outletSyncPresentation, normalizeOutletCatalog, outletFormModel, outletLifecycleAction } from './lib/outlet-ui.js';
@@ -1254,16 +1255,24 @@ function renderTracking() {
 let _map = null;
 let _markers = {};
 
-function initMap() {
-  if (typeof L === 'undefined') {
-    setTimeout(initMap, 200);
+async function initMap() {
+  const mapElement = document.getElementById('trackingMap');
+  if (!mapElement) return;
+  let Leaflet;
+  try {
+    Leaflet = await ensureLeaflet();
+  } catch (error) {
+    const target = document.getElementById('trackingMap');
+    if (target) target.innerHTML = '<div class="empty-state"><p>Peta tidak dapat dimuat. Data lokasi tetap tersedia di daftar tim.</p></div>';
+    console.warn('tracking_map_load_failed', error?.message || error);
     return;
   }
+  if (state.route !== '#/tracking' || !document.getElementById('trackingMap')) return;
   const employees = trackingEmployees();
 
   if (_map) { _map.remove(); _map = null; _markers = {}; }
-  _map = L.map('trackingMap', { zoomControl: true }).setView([-6.2, 106.85], 12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  _map = Leaflet.map('trackingMap', { zoomControl: true }).setView([-6.2, 106.85], 12);
+  Leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap', maxZoom: 19
   }).addTo(_map);
 
@@ -1278,12 +1287,12 @@ function initMap() {
     const status = trackingLocationStatus(loc);
     const actual = loc.evidence.actual;
     const fresh = status.key === 'fresh';
-    const icon = L.divIcon({
+    const icon = Leaflet.divIcon({
       className: 'ft-marker',
       html: `<div style="width:36px;height:36px;border-radius:50%;background:${actual ? color : '#94a3b8'};border:4px ${actual ? 'solid' : 'dashed'} ${fresh ? '#10b981' : actual ? 'white' : '#e2e8f0'};box-shadow:0 2px 8px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">${getInitials(e.name)}</div>`,
       iconSize: [36,36], iconAnchor: [18,18]
     });
-    const m = L.marker([loc.lat, loc.lng], { icon }).addTo(_map);
+    const m = Leaflet.marker([loc.lat, loc.lng], { icon }).addTo(_map);
     const accuracy = loc.evidence.accuracyM != null ? ` · akurasi ±${Math.round(loc.evidence.accuracyM)} m` : '';
     const referenceWarning = actual ? '' : '<div style="margin-top:6px;color:#92400e;font-weight:600;">Referensi outlet — bukan posisi aktual perangkat.</div>';
     m.bindPopup(`
@@ -1319,10 +1328,11 @@ window.FT.filterTracking = function(value) { state._trackQuery = value; render()
 window.FT.filterTrackingArea = function(value) { state._trackArea = value; render(); };
 window.FT.filterTrackingField = function(value) { state._trackField = value; render(); };
 window.FT.fitTracking = function() {
-  if (!_map) return;
+  const Leaflet = window.L;
+  if (!_map || !Leaflet) return;
   const marks = Object.values(_markers);
   if (!marks.length) return;
-  const group = L.featureGroup(marks);
+  const group = Leaflet.featureGroup(marks);
   _map.fitBounds(group.getBounds().pad(0.2));
 };
 window.FT.focusEmployee = function(empId) {
@@ -5234,14 +5244,21 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
 };
 
 // ===== Field Photos =====
+const PHOTO_PAGE_SIZE = 24;
+
 function renderFieldPhotosGallery({ managerView }) {
   const empId = myEmployeeId();
-  let photos = managerView
+  const basePhotos = managerView
     ? [...getFieldPhotos()]
     : [...getFieldPhotosByEmployee(empId)];
+  let photos = [...basePhotos];
   photos.sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
   photos = applyPhotoFilters(photos);
-  const filterType = state._photoFilters?.type || state._photoFilterType || '';
+  const visibleCount = Math.min(
+    photos.length,
+    Math.max(PHOTO_PAGE_SIZE, Number(state._photoVisibleCount) || PHOTO_PAGE_SIZE),
+  );
+  const visiblePhotos = photos.slice(0, visibleCount);
 
   const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
@@ -5251,9 +5268,14 @@ function renderFieldPhotosGallery({ managerView }) {
     ? getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in')
     : [];
 
+  const typeCounts = new Map();
+  for (const photo of basePhotos) {
+    const key = photo.photoType || photo.type || '';
+    typeCounts.set(key, (typeCounts.get(key) || 0) + 1);
+  }
   const byType = FIELD_PHOTO_TYPES.map(t => ({
     ...t,
-    count: (managerView ? getFieldPhotos() : getFieldPhotosByEmployee(empId)).filter(p => (p.photoType || p.type) === t.code).length,
+    count: typeCounts.get(t.code) || 0,
   }));
 
   return `
@@ -5280,7 +5302,7 @@ function renderFieldPhotosGallery({ managerView }) {
       <div class="stat-card">
         <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">▣</div>
         <div class="stat-label">Total Foto</div>
-        <div class="stat-value">${managerView ? getFieldPhotos().length : getFieldPhotosByEmployee(empId).length}</div>
+        <div class="stat-value">${basePhotos.length}</div>
       </div>
       ${byType.slice(0, 3).map(t => `
         <div class="stat-card">
@@ -5303,14 +5325,14 @@ function renderFieldPhotosGallery({ managerView }) {
         </div>
       ` : `
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:14px;">
-          ${photos.map(p => {
+          ${visiblePhotos.map(p => {
             const o = outletMap[p.outletId];
             const emp = empMap[p.recordedBy || p.employeeId];
             const prod = p.productId ? productMap[p.productId] : null;
             const comp = p.competitorId ? compMap[p.competitorId] : null;
             const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
             const thumb = imageSrc
-              ? `<img src="${imageSrc}" alt="" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
+              ? `<img src="${imageSrc}" alt="" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
               : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
             return `
               <div style="border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:white;">
@@ -5331,6 +5353,11 @@ function renderFieldPhotosGallery({ managerView }) {
             `;
           }).join('')}
         </div>
+        ${visiblePhotos.length < photos.length ? `
+          <div style="display:flex;justify-content:center;margin-top:16px;">
+            <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.loadMorePhotos()">Muat lebih banyak (${photos.length - visiblePhotos.length} tersisa)</button>
+          </div>
+        ` : ''}
       `}
     </div>
   `;
@@ -5338,6 +5365,12 @@ function renderFieldPhotosGallery({ managerView }) {
 
 window.FT.setPhotoFilter = function(type) {
   state._photoFilterType = type || '';
+  state._photoVisibleCount = PHOTO_PAGE_SIZE;
+  render();
+};
+
+window.FT.loadMorePhotos = function() {
+  state._photoVisibleCount = (Number(state._photoVisibleCount) || PHOTO_PAGE_SIZE) + PHOTO_PAGE_SIZE;
   render();
 };
 
