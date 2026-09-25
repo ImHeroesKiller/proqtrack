@@ -5,22 +5,29 @@ import { readFile } from 'node:fs/promises';
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('Settings P2 replaces native destructive confirms with in-app confirmation flow', async () => {
-  const settings = await read('src/account-settings.js');
+  const [settings, helper] = await Promise.all([
+    read('src/account-settings.js'),
+    read('src/lib/settings-ui.js'),
+  ]);
   assert.doesNotMatch(settings, /\bconfirm\(/);
   assert.match(settings, /function openSettingsConfirm/);
+  assert.match(settings, /settingsConfirmMarkup\(view\)/);
   assert.match(settings, /async runPendingConfirm\(\)/);
   assert.match(settings, /action:'logoutAll'/);
   assert.match(settings, /action:'resetDevice'/);
   assert.match(settings, /action:'toggleStatus'/);
-  assert.match(settings, /role="dialog"/);
-  assert.match(settings, /aria-modal="true"/);
+  assert.match(helper, /role="dialog"/);
+  assert.match(helper, /aria-modal="true"/);
 });
 
 test('Settings P2 standardizes form busy states and duplicate action feedback', async () => {
-  const settings = await read('src/account-settings.js');
-  assert.match(settings, /function setSubmitBusy/);
-  assert.match(settings, /submit\.disabled = true/);
-  assert.match(settings, /submit\.setAttribute\('aria-busy','true'\)/);
+  const [settings, helper] = await Promise.all([
+    read('src/account-settings.js'),
+    read('src/lib/settings-ui.js'),
+  ]);
+  assert.match(helper, /export function setSubmitBusy/);
+  assert.match(helper, /submit\.disabled = true/);
+  assert.match(helper, /submit\.setAttribute\('aria-busy','true'\)/);
   assert.match(settings, /preferenceSaveInFlight/);
   assert.match(settings, /setSubmitBusy\(form,true,'Menyimpan profil…'\)/);
   assert.match(settings, /setSubmitBusy\(form,true,'Memperbarui…'\)/);
@@ -53,25 +60,31 @@ test('Settings P2 account filtering is debounced, resettable and result-aware', 
 });
 
 test('Settings P2 Accounts uses server device status only and mobile card semantics', async () => {
-  const settings = await read('src/account-settings.js');
+  const [settings, css] = await Promise.all([
+    read('src/account-settings.js'),
+    read('assets/settings.css'),
+  ]);
   assert.doesNotMatch(settings, /deviceId/);
   assert.match(settings, /a\.deviceBound/);
   assert.match(settings, /data-label="Akun"/);
   assert.match(settings, /data-label="Aksi"/);
-  assert.match(settings, /\.am-account-table thead\{display:none\}/);
-  assert.match(settings, /\.am-account-table td::before\{content:attr\(data-label\)/);
-  assert.match(settings, /@media\(max-width:520px\)/);
-  assert.match(settings, /\.am-account-actions\{display:grid;grid-template-columns:1fr\}/);
+  assert.match(css, /\.am-account-table thead\{display:none\}/);
+  assert.match(css, /\.am-account-table td::before\{content:attr\(data-label\)/);
+  assert.match(css, /@media\(max-width:520px\)/);
+  assert.match(css, /\.am-account-actions\{display:grid;grid-template-columns:1fr\}/);
 });
 
 test('Settings P2 mobile Settings tabs are accessible and horizontally scrollable', async () => {
-  const settings = await read('src/account-settings.js');
+  const [settings, css] = await Promise.all([
+    read('src/account-settings.js'),
+    read('assets/settings.css'),
+  ]);
   assert.match(settings, /role="tablist"/);
   assert.match(settings, /role="tab"/);
   assert.match(settings, /aria-selected=/);
   assert.match(settings, /role="tabpanel"/);
-  assert.match(settings, /\.am-tabs\{flex-wrap:nowrap;overflow-x:auto/);
-  assert.match(settings, /\.am-tab\{flex:0 0 auto\}/);
+  assert.match(css, /\.am-tabs\{flex-wrap:nowrap;overflow-x:auto/);
+  assert.match(css, /\.am-tab\{flex:0 0 auto\}/);
 });
 
 test('Settings P2 closes copy and empty-state dead ends', async () => {

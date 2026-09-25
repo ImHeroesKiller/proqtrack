@@ -266,3 +266,16 @@ P2 Settings menutup UX/operational backlog tanpa mengubah authority P0/P1:
 - Settings tabs memakai tablist/tab/tabpanel semantics dan horizontal scrolling pada mobile.
 - Copy Settings/Katalog/Accounts dirapikan ke Bahasa Indonesia; katalog tanpa project aktif memiliki empty state eksplisit.
 - Regression guard: `tests/settings-p2.test.mjs`.
+
+
+## Settings P3 maintainability/refactor & quality polish — 25 September 2026
+
+P3 menutup maintainability backlog tanpa mengubah authority atau behavior P0–P2:
+
+- Pure Settings presentation/policy helper dipindahkan ke `src/lib/settings-ui.js`: label role/status, frontend least-privilege role matrix, account action eligibility, error mapping, busy-state helper, confirmation markup, account filtering, tab composition, timezone/theme constants, dan logo byte helper.
+- `src/account-settings.js` kembali fokus pada rendering dan cloud orchestration; runtime CSS injection, duplicate role/error helpers, duplicate tab construction, dan manual account filtering dihapus.
+- CSS Settings dipindahkan ke `assets/settings.css` dan dimuat statis dari `index.html`, sehingga responsive/mobile polish tidak lagi tertanam dalam JavaScript.
+- Frontend role matrix tetap presentation-only; server `worker/accounts.js` tetap menjadi authority. P3 regression mengunci agar helper UI tidak memberi privilege melebihi hierarchy server.
+- Account filtering dan Settings tab composition memiliki pure unit coverage untuk memudahkan refactor berikutnya.
+- Regression P0–P2 diperbarui agar menguji invariant lintas module setelah extraction, bukan bergantung pada bentuk monolitik lama.
+- Regression guard: `tests/settings-p3.test.mjs`.

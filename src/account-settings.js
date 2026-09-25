@@ -16,6 +16,12 @@ import { applyOrganizationBranding, normalizeThemeColor } from './lib/organizati
 import { commitOperationalChanges } from './lib/cloud-data.js';
 
 import { esc, formatDate, formatDateShort, getInitials, statusBadge, safePhotoUrl, compressImage } from './lib/utils.js';
+import {
+  TIMEZONES, THEME_PRESETS,
+  roleLabel, statusLabel, managedRoles, canManageAccount, canChangeAccountStatus,
+  profileErrorMessage, passwordErrorMessage, accountErrorMessage, organizationErrorMessage,
+  dataUrlBytes, setSubmitBusy, settingsConfirmMarkup, filterAccountRows, settingsTabsFor,
+} from './lib/settings-ui.js';
 
 function account() {
   return window.FT?.state?.account || null;
@@ -25,119 +31,13 @@ function toast(msg, type = 'success') {
   window.showToast?.(msg, type);
 }
 
-function setSubmitBusy(form, busy, busyLabel = 'Menyimpan…') {
-  const submit = form?.querySelector?.('button[type="submit"]');
-  if (!submit) return null;
-  if (busy) {
-    if (!submit.dataset.idleLabel) submit.dataset.idleLabel = submit.textContent || 'Simpan';
-    submit.disabled = true;
-    submit.setAttribute('aria-busy','true');
-    submit.textContent = busyLabel;
-  } else {
-    submit.disabled = false;
-    submit.removeAttribute('aria-busy');
-    if (submit.dataset.idleLabel) {
-      submit.textContent = submit.dataset.idleLabel;
-      delete submit.dataset.idleLabel;
-    }
-  }
-  return submit;
-}
-
 let pendingConfirmAction = null;
 
-function openSettingsConfirm({ title, message, confirmLabel = 'Lanjutkan', tone = 'danger', action, id = '', value = '' } = {}) {
+function openSettingsConfirm({ action, id = '', value = '', ...view } = {}) {
   const root = document.getElementById('modalRoot');
   if (!root) return;
   pendingConfirmAction = { action, id, value };
-  root.innerHTML = `
-    <div class="modal-overlay" role="presentation" data-pqt-onclick="if(event.target===this)FT.closeModal()">
-      <div class="modal animate-up am-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="settingsConfirmTitle">
-        <div class="modal-handle"></div>
-        <div class="modal-header">
-          <h3 id="settingsConfirmTitle">${esc(title || 'Konfirmasi')}</h3>
-          <button type="button" class="modal-close" aria-label="Tutup" data-pqt-onclick="FT.closeModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <p class="am-confirm-copy">${esc(message || '')}</p>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
-            <button type="button" class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}" data-pqt-onclick="AM.runPendingConfirm()">${esc(confirmLabel)}</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function roleLabel(role) {
-  return { superadmin: 'Superadmin', head: 'Head', admin: 'Admin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
-}
-
-function statusLabel(status) {
-  return { active: 'Aktif', inactive: 'Nonaktif', suspended: 'Ditangguhkan' }[status] || status || '—';
-}
-
-function managedRoles(actorRole) {
-  if (actorRole === 'superadmin') return ['head','admin','manager','supervisor','employee'];
-  if (actorRole === 'head') return ['admin','manager','supervisor','employee'];
-  if (actorRole === 'admin') return ['manager','supervisor','employee'];
-  return [];
-}
-
-function canManageAccount(actor, target) {
-  if (!actor || !target) return false;
-  if (String(actor.id) === String(target.id)) return ['superadmin','head','admin'].includes(actor.role);
-  return managedRoles(actor.role).includes(target.role);
-}
-
-function canChangeAccountStatus(actor, target) {
-  return canManageAccount(actor,target) && String(actor?.id || '') !== String(target?.id || '');
-}
-
-function profileErrorMessage(error) {
-  const messages = {
-    EMAIL_ALREADY_USED:'Email sudah digunakan akun lain.',
-    EMAIL_INVALID:'Format email tidak valid.',
-    PROFILE_NAME_REQUIRED:'Nama tampilan wajib diisi.',
-    AUTH_REQUIRED:'Sesi sudah berakhir. Silakan login kembali.',
-    SESSION_REVOKED:'Sesi sudah dicabut. Silakan login kembali.',
-  };
-  return messages[error?.code] || error?.message || String(error || 'Profil gagal disimpan.');
-}
-
-function passwordErrorMessage(error) {
-  const messages = {
-    INVALID_CURRENT_PASSWORD:'Password saat ini tidak sesuai.',
-    PASSWORD_UNCHANGED:'Password baru harus berbeda dari password saat ini.',
-    PASSWORD_TOO_SHORT:'Password baru minimal 8 karakter.',
-    AUTH_REQUIRED:'Sesi sudah berakhir. Silakan login kembali.',
-    SESSION_REVOKED:'Sesi sudah dicabut. Silakan login kembali.',
-  };
-  return messages[error?.code] || error?.message || String(error || 'Password gagal diperbarui.');
-}
-
-function accountErrorMessage(error) {
-  const messages = {
-    EMAIL_ALREADY_USED: 'Email sudah terdaftar. Segarkan daftar akun lalu gunakan akun yang sudah ada.',
-    ACCOUNT_ALREADY_IN_ORGANIZATION: 'Email ini sudah menjadi akun di organisasi ini. Gunakan Edit, bukan Tambah Akun.',
-    ACCOUNT_IS_GLOBAL_SUPERADMIN: 'Akun Superadmin global tidak dapat ditautkan melalui form ini.',
-    EXISTING_ACCOUNT_DISABLED: 'Akun existing sedang dinonaktifkan secara global.',
-    EMPLOYEE_ALREADY_LINKED: 'Karyawan tersebut sudah tertaut ke akun lain.',
-    EMPLOYEE_NOT_FOUND: 'Karyawan yang dipilih tidak ditemukan.',
-    PROJECT_REQUIRED: 'Project wajib dipilih untuk role Manager.',
-    PROJECT_NOT_FOUND: 'Project yang dipilih tidak ditemukan atau tidak aktif.',
-    ACCOUNT_FORBIDDEN: 'Anda tidak memiliki izin untuk mengubah akun ini.',
-    ACCOUNT_ROLE_FORBIDDEN: 'Anda tidak memiliki izin untuk menetapkan role tersebut.',
-    SELF_ROLE_CHANGE_FORBIDDEN: 'Role akun Anda sendiri tidak dapat diubah dari halaman ini.',
-    SELF_DISABLE_FORBIDDEN: 'Akun yang sedang digunakan tidak dapat dinonaktifkan.',
-    PASSWORD_TOO_SHORT: 'Password minimal 8 karakter.',
-    EMAIL_INVALID: 'Format email tidak valid.',
-    ACCOUNT_GLOBAL_EMAIL_EDIT_FORBIDDEN: 'Email login adalah identitas global. Ubah email hanya dari Profil pemilik akun.',
-    ACCOUNT_GLOBAL_PASSWORD_EDIT_FORBIDDEN: 'Password adalah credential global. Pemilik akun harus mengubahnya dari tab Keamanan.',
-  };
-  const message = messages[error?.code] || error?.message || String(error || 'Aksi akun gagal.');
-  const requestId = error?.payload?.requestId;
-  return requestId ? `${message} Ref: ${requestId}` : message;
+  root.innerHTML = settingsConfirmMarkup(view);
 }
 
 function renderProjectStoreSettings() {
@@ -256,42 +156,12 @@ function linkedEmployee(acc) {
   return getEmployees().find(e => e.id === acc.employeeId) || null;
 }
 
-const TIMEZONES = [
-  ['Asia/Jakarta', 'WIB — Jakarta'],
-  ['Asia/Makassar', 'WITA — Makassar'],
-  ['Asia/Jayapura', 'WIT — Jayapura'],
-  ['UTC', 'UTC'],
-];
-
-const THEME_PRESETS = ['#ef5000','#2563eb','#0f766e','#7c3aed','#be123c','#334155'];
-
 let organizationProfileSyncInFlight = false;
 let organizationProfileSyncedOrg = '';
 let organizationProfileAttemptedOrg = '';
 let organizationProfileSyncError = '';
 let organizationProfileLastSyncedAt = null;
 let organizationSaveInFlight = false;
-
-function organizationErrorMessage(error) {
-  const messages = {
-    ORGANIZATION_PROFILE_FORBIDDEN: 'Anda tidak memiliki izin untuk mengubah profil organisasi.',
-    ORGANIZATION_NOT_FOUND: 'Organisasi aktif tidak ditemukan.',
-    ORGANIZATION_NAME_REQUIRED: 'Nama organisasi wajib diisi.',
-    ORGANIZATION_TIMEZONE_INVALID: 'Zona waktu organisasi tidak valid.',
-    ORGANIZATION_LOGO_INVALID: 'Format logo tidak didukung. Gunakan JPG, PNG, atau WebP.',
-    ORGANIZATION_LOGO_TOO_LARGE: 'Logo terlalu besar setelah kompresi.',
-    ORGANIZATION_THEME_INVALID: 'Warna tema organisasi tidak valid.',
-  };
-  const message = messages[error?.code] || error?.message || String(error || 'Profil organisasi gagal diperbarui.');
-  const requestId = error?.payload?.requestId;
-  return requestId ? `${message} Ref: ${requestId}` : message;
-}
-
-function dataUrlBytes(value) {
-  const match = String(value || '').match(/^data:image\/(?:jpeg|png|webp);base64,(.+)$/i);
-  if (!match) return 0;
-  return Math.floor(match[1].replace(/=+$/,'').length * 3 / 4);
-}
 
 function scheduleOrganizationProfileRefresh(acc) {
   const orgId = String(acc?.organizationId || getCurrentOrgId() || '');
@@ -332,15 +202,7 @@ export function renderSettings() {
   const activeOrg = getOrganization(acc.organizationId || getCurrentOrgId()) || {};
   const canAccounts = isOrgAdmin;
   const photo = safePhotoUrl(emp?.photo);
-  const tabs = [
-    ['profil', 'Profil'],
-    ['keamanan', 'Keamanan'],
-    ['tampilan', 'Tampilan'],
-    ...(isOrgAdmin ? [['organisasi', 'Organisasi'], ['katalog', 'Katalog Outlet'], ['absensi', 'Attendance']] : []),
-    ...(acc.role === 'manager' ? [['katalog', 'Katalog Outlet']] : []),
-    ...(acc.role === 'employee' ? [['perangkat', 'Perangkat']] : []),
-    ['sesi', 'Sesi'],
-  ];
+  const tabs = settingsTabsFor(acc);
   const tab = tabs.some(([id]) => id === window.FT.state._settingsTab) ? window.FT.state._settingsTab : (acc.mustChangePassword ? 'keamanan' : 'profil');
   const pane = id => `id="settings-pane-${id}" class="am-pane ${tab === id ? 'active' : ''}" role="tabpanel" aria-labelledby="settings-tab-${id}"`;
 
@@ -531,10 +393,7 @@ export function renderAccounts() {
   const statusFilter = window.FT.state._accountStatus || '';
   const employees = getEmployees();
   const allRows = getAccounts().slice().sort((a, b) => String(a.email).localeCompare(b.email));
-  let rows = allRows.slice();
-  if (q) rows = rows.filter(a => `${a.name} ${a.email} ${a.role}`.toLowerCase().includes(q));
-  if (roleFilter) rows = rows.filter(a => a.role === roleFilter);
-  if (statusFilter) rows = rows.filter(a => a.status === statusFilter);
+  const rows = filterAccountRows(allRows,{ query:queryRaw, role:roleFilter, status:statusFilter });
   const filtered = !!(q || roleFilter || statusFilter);
 
   return `
@@ -665,11 +524,6 @@ function accountForm(existing) {
       </div>
     </form>
   `;
-}
-
-function formData(event) {
-  event.preventDefault();
-  return Object.fromEntries(new FormData(event.target).entries());
 }
 
 let accountSaveInFlight = false;
@@ -1150,108 +1004,11 @@ window.AM = {
   },
 };
 
-function installStyles() {
-  if (document.getElementById('account-settings-css')) return;
-  const style = document.createElement('style');
-  style.id = 'account-settings-css';
-  style.textContent = `
-    .am-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
-    .am-settings{display:grid;gap:12px;min-width:0}
-    .am-tabs{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
-    .am-tab{border:1px solid var(--gray-200);background:#fff;border-radius:999px;padding:8px 14px;font-size:13px;font-weight:600;color:var(--gray-600);cursor:pointer;white-space:nowrap}
-    .am-tab:hover{border-color:var(--brand);color:var(--brand)}
-    .am-tab:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
-    .am-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}
-    .am-tab-body{min-height:280px;min-width:0}
-    .am-pane{display:none;min-width:0}
-    .am-pane.active{display:block}
-    .am-profile{display:flex;gap:14px;align-items:center;margin-bottom:16px;min-width:0}
-    .am-avatar{width:56px;height:56px;border-radius:16px;background:var(--brand-light);color:var(--brand-dark);display:flex;align-items:center;justify-content:center;font-weight:800;flex:0 0 auto}
-    .am-muted{font-size:12px;color:var(--gray-400);margin-top:3px;overflow-wrap:anywhere}
-    .am-form{max-width:860px}
-    .am-form .form-group{margin-bottom:12px;min-width:0}
-    .am-form .form-row{align-items:start}
-    .am-check{display:flex;gap:8px;align-items:flex-start;margin-bottom:10px;font-size:13px;line-height:1.45}
-    .am-check input{margin-top:2px;flex:0 0 auto}
-    .am-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .am-inline-action{margin-top:8px}
-    .am-section-divider{margin:20px 0;border:0;border-top:1px solid var(--gray-200)}
-    .am-master-list{margin-top:12px;padding-left:20px}
-    .am-session-warning{margin-top:14px;padding:12px;border:1px solid var(--gray-200);border-radius:12px;background:var(--gray-50)}
-    .am-section-head{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:12px}
-    .am-sync-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;padding:10px 12px;border:1px solid var(--gray-200);border-radius:10px;background:var(--gray-50);font-size:12px;color:var(--gray-600)}
-    .am-sync-row.is-error{border-color:#fecaca;background:#fef2f2;color:#991b1b}
-    .am-account-filters{display:grid;grid-template-columns:minmax(220px,1fr) minmax(140px,180px) minmax(140px,180px) auto auto;gap:8px;align-items:center;margin-top:14px}
-    .am-account-filters .input,.am-account-filters .select{width:100%;min-width:0}
-    .am-account-add{white-space:nowrap}
-    .am-result-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:10px 0 4px;font-size:12px;color:var(--gray-500)}
-    .am-account-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-    .am-account-table td:last-child{min-width:190px}
-    .am-confirm-modal{max-width:520px}
-    .am-confirm-copy{margin:0;color:var(--gray-700);line-height:1.6}
-    .am-theme-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    button[aria-busy="true"]{cursor:wait}
-    body.am-compact .table td,body.am-compact .table th{padding:7px 10px}
-
-    @media(max-width:980px){
-      .am-account-filters{grid-template-columns:minmax(0,1fr) minmax(130px,170px) minmax(130px,170px)}
-      .am-account-add{grid-column:auto}
-    }
-
-    @media(max-width:800px){
-      .am-grid{grid-template-columns:1fr}
-      .am-tabs{flex-wrap:nowrap;overflow-x:auto;overscroll-behavior-x:contain;padding:2px 1px 6px;scrollbar-width:none}
-      .am-tabs::-webkit-scrollbar{display:none}
-      .am-tab{flex:0 0 auto}
-      .am-tab-body{padding:16px}
-      .am-profile{align-items:flex-start}
-      .am-actions{flex-direction:column}
-      .am-actions .btn{width:100%}
-      .am-section-head{align-items:center}
-      .am-sync-row{align-items:flex-start}
-      .am-account-filters{grid-template-columns:1fr 1fr}
-      .am-account-filters .search-input{grid-column:1/-1}
-      .am-account-add{grid-column:1/-1}
-      .am-result-row{align-items:flex-start}
-      .am-account-table-wrap{overflow:visible}
-      .am-account-table,.am-account-table tbody,.am-account-table tr,.am-account-table td{display:block;width:100%}
-      .am-account-table thead{display:none}
-      .am-account-table tbody{display:grid;gap:10px}
-      .am-account-table tr{border:1px solid var(--gray-200);border-radius:14px;padding:10px 12px;background:#fff}
-      .am-account-table td{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;align-items:start;padding:7px 0!important;border:0!important;min-width:0!important}
-      .am-account-table td::before{content:attr(data-label);font-size:11px;font-weight:700;color:var(--gray-400);text-transform:uppercase;letter-spacing:.03em}
-      .am-account-table td[data-label="Aksi"]{grid-template-columns:1fr;padding-top:10px!important;border-top:1px solid var(--gray-100)!important}
-      .am-account-table td[data-label="Aksi"]::before{display:none}
-      .am-account-table td[colspan]{display:block;padding:8px 0!important}
-      .am-account-table td[colspan]::before{display:none}
-      .am-account-actions{justify-content:flex-start}
-      .am-account-actions .btn{flex:1 1 auto}
-      .am-confirm-modal{width:min(94vw,520px)}
-    }
-
-    @media(max-width:520px){
-      .am-tab-body{padding:14px}
-      .am-account-filters{grid-template-columns:1fr}
-      .am-account-filters .search-input,.am-account-add{grid-column:auto}
-      .am-sync-row{flex-direction:column}
-      .am-sync-row .btn{width:100%}
-      .am-section-head{flex-direction:column}
-      .am-section-head .btn{width:100%}
-      .am-result-row{flex-direction:column;gap:4px}
-      .am-account-table td{grid-template-columns:82px minmax(0,1fr)}
-      .am-account-actions{display:grid;grid-template-columns:1fr}
-      .am-account-actions .btn{width:100%}
-    }
-  `;
-  document.head.appendChild(style);
-}
-
 function applyPrefs() {
   try {
     document.body.classList.toggle('am-compact', !!getAppSettings().compactTables);
   } catch { /* ignore */ }
 }
 
-installStyles();
 applyPrefs();
 export {};
