@@ -159,6 +159,16 @@ async function cloudFirstLogin(event) {
 
 let restoreInFlight = false;
 
+function afterAuthenticatedPaint() {
+  return new Promise(resolve => {
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(resolve, 0);
+      return;
+    }
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
+}
+
 async function restoreCloudSessionOnReload() {
   const restoreToken = getApiToken();
   if (restoreInFlight || !restoreToken || window.FT?.state?.loggedIn) return false;
@@ -167,7 +177,33 @@ async function restoreCloudSessionOnReload() {
   state.sessionRestoring = true;
   window.FT.scheduleRender?.();
   try {
-    const restored = await restoreCloudSession(getDB());
+    let paintedValidatedShell = false;
+    const restored = await restoreCloudSession(getDB(), {
+      onValidated: async ({ account }) => {
+        if (!account || getApiToken() !== restoreToken) return;
+
+        // P0: token validation is the security boundary. Paint the cached,
+        // tenant-scoped shell immediately after that boundary instead of
+        // waiting for bootstrap, migration, and operational reconciliation.
+        state.loggedIn = true;
+        state.sessionRestoring = false;
+        state.account = account;
+        state.user = { name: account.name, role: displayRole(account), email: account.email };
+
+        const current = String(location.hash || '');
+        const preserved = current && current !== '#/login' ? current : '';
+        const globalSuperadmin = account.role === 'superadmin' && !account.organizationId;
+        state.route = account.mustChangePassword
+          ? '#/settings'
+          : (globalSuperadmin ? '#/organizations' : (preserved || defaultRouteFor(account)));
+        forceRoute(state.route);
+        paintedValidatedShell = true;
+
+        // Give the browser two frames to commit the authenticated LCP before
+        // bootstrap/migration work is allowed back onto the main thread.
+        await afterAuthenticatedPaint();
+      },
+    });
     const account = restored?.account;
     if (!account) return false;
 
@@ -176,13 +212,18 @@ async function restoreCloudSessionOnReload() {
     state.account = account;
     state.user = { name: account.name, role: displayRole(account), email: account.email };
 
-    const current = String(location.hash || '');
-    const preserved = current && current !== '#/login' ? current : '';
-    const globalSuperadmin = account.role === 'superadmin' && !account.organizationId;
-    state.route = account.mustChangePassword
-      ? '#/settings'
-      : (globalSuperadmin ? '#/organizations' : (preserved || defaultRouteFor(account)));
-    forceRoute(state.route);
+    // When the validated shell already painted, do not replace the entire root
+    // DOM again at bootstrap completion. A late full innerHTML replacement was
+    // creating a new LCP candidate at the end of slow bootstrap calls.
+    if (!paintedValidatedShell) {
+      const current = String(location.hash || '');
+      const preserved = current && current !== '#/login' ? current : '';
+      const globalSuperadmin = account.role === 'superadmin' && !account.organizationId;
+      state.route = account.mustChangePassword
+        ? '#/settings'
+        : (globalSuperadmin ? '#/organizations' : (preserved || defaultRouteFor(account)));
+      forceRoute(state.route);
+    }
 
     // Branding/profile refresh is not required to paint the authenticated shell.
     // Keep it off the root LCP path and reconcile immediately after first render.
@@ -195,7 +236,11 @@ async function restoreCloudSessionOnReload() {
     }
     return true;
   } catch (error) {
+    // If bootstrap failed after the provisional authenticated paint, restore
+    // the previous fail-closed behavior instead of leaving a half-ready shell.
+    state.loggedIn = false;
     state.sessionRestoring = false;
+    state.account = null;
     window.FT.scheduleRender?.();
     if (navigator.onLine !== false) {
       console.warn('cloud_session_restore_failed', error?.code || error?.message || error);
