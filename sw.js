@@ -4,6 +4,7 @@
 // Attendance + Leave P0 authority refresh
 // Attendance + Leave P1 lifecycle refresh
 // Attendance + Leave P2 operational UX refresh
+// Attendance + Leave P3 maintainability refresh
 const CACHE = 'proqtrack-v12.44';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
