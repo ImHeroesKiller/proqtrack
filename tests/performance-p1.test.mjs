@@ -77,13 +77,15 @@ test('P1 evidence previews create object URLs only for visible previews and revo
 });
 
 test('P1 photo evidence gallery renders in bounded lazy-decoded batches', async () => {
-  const [app, fieldSales] = await Promise.all([
+  const [app, photoPage, fieldSales] = await Promise.all([
     read('src/app.js'),
+    read('src/routes/field-photos-page.js'),
     read('src/field-sales.js'),
   ]);
-  assert.match(app, /const PHOTO_PAGE_SIZE = 24/);
-  assert.match(app, /const visiblePhotos = photos\.slice\(0, visibleCount\)/);
-  assert.match(app, /loading="lazy" decoding="async" fetchpriority="low"/);
+  assert.match(app, /import\('\.\/routes\/field-photos-page\.js'\)/);
+  assert.match(photoPage, /const PHOTO_PAGE_SIZE = 24/);
+  assert.match(photoPage, /const visiblePhotos = photos\.slice\(0, visibleCount\)/);
+  assert.match(photoPage, /loading="lazy" decoding="async" fetchpriority="low"/);
   assert.match(app, /FT\.loadMorePhotos/);
   assert.match(fieldSales, /state\._photoVisibleCount = 0/);
 });
