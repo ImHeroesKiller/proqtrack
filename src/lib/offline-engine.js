@@ -12,7 +12,18 @@ let installed = false;
 let runtimeController = null;
 let recovering = false;
 let replaying = false;
+const MAX_SIGNATURE_TENANTS = 20;
 const lastSignatures = new Map();
+
+function rememberSignature(organizationId, value) {
+  const key = String(organizationId || '');
+  if (!key) return;
+  lastSignatures.delete(key);
+  lastSignatures.set(key, value);
+  while (lastSignatures.size > MAX_SIGNATURE_TENANTS) {
+    lastSignatures.delete(lastSignatures.keys().next().value);
+  }
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -56,7 +67,7 @@ async function persistOperationalSnapshot(db) {
   const snapshot = operationalSnapshot(db);
   const nextSignature = signature(snapshot);
   if (nextSignature === lastSignatures.get(organizationId)) return false;
-  lastSignatures.set(organizationId, nextSignature);
+  rememberSignature(organizationId, nextSignature);
   const id = `${SNAPSHOT_PREFIX}${organizationId}`;
   await enqueueMutation({
     id,
@@ -131,7 +142,7 @@ export async function discardHeldSnapshot(organizationId = '') {
   await deleteMutation(`${SNAPSHOT_PREFIX}${orgId}`);
   try {
     const { getDB } = await import('./db.js');
-    lastSignatures.set(orgId, signature(operationalSnapshot(getDB())));
+    rememberSignature(orgId, signature(operationalSnapshot(getDB())));
   } catch { /* cache signature is best effort */ }
   emit('conflict-resolved-server', orgId, { resolution: 'server-wins' });
   return true;
