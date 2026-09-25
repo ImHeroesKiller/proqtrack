@@ -200,6 +200,29 @@ try {
   expect(employeeProfile.phone==='081234567890','settings employee phone not authoritative');
   expect(employeeProfile.area==='Jakarta UAT','settings employee area not authoritative');
 
+  const headProfile=await api('/api/auth/profile',{
+    method:'PATCH',
+    token:actors.head.token,
+    body:{email:actors.head.email,name:'Settings UAT head',phone:'',area:''},
+  });
+  expect(headProfile.status===200 && headProfile.data.account?.name==='Settings UAT head',
+    `settings profile head failed: ${headProfile.status} ${JSON.stringify(headProfile.data)}`);
+
+  const headOrganization=await api('/api/organization/profile',{
+    method:'PATCH',
+    token:actors.head.token,
+    body:{name:'Attendance Leave Final UAT',timezone:'Asia/Jakarta',themeColor:'#ef5000',notes:'Head Settings final UAT'},
+  });
+  expect(headOrganization.status===200,
+    `settings organization head failed: ${headOrganization.status} ${JSON.stringify(headOrganization.data)}`);
+
+  const headAccounts=await api('/api/admin/accounts',{token:actors.head.token});
+  expect(headAccounts.status===200,`settings accounts head HTTP ${headAccounts.status}`);
+  const headVisibleIds=new Set((headAccounts.data.accounts||[]).map(row=>row.id));
+  expect(!headVisibleIds.has(ids.head),'settings head must not manage Head row');
+  expect(headVisibleIds.has(ids.manager)&&headVisibleIds.has(ids.supervisor)&&headVisibleIds.has(ids.manualUser),
+    'settings head account scope incomplete');
+
   const managerSettingsBootstrap=await bootstrap('manager');
   const managerManualProject=managerSettingsBootstrap.data?.projects?.find(row=>row.id===ids.manual);
   expect(managerManualProject,'settings manager manual project missing');
@@ -289,11 +312,11 @@ try {
   cleanup();
   const residual=d1Row(`SELECT
     (SELECT COUNT(*) FROM core_organizations WHERE id='${ids.org}') organizations,
-    (SELECT COUNT(*) FROM auth_users WHERE id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}')) users,
+    (SELECT COUNT(*) FROM auth_users WHERE id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}')) users,
     (SELECT COUNT(*) FROM core_attendance WHERE organization_id='${ids.org}') attendance,
     (SELECT COUNT(*) FROM core_leaves WHERE organization_id='${ids.org}') leaves;`);
   expect(Object.values(residual).every(v=>Number(v)===0),`cleanup residual ${JSON.stringify(residual)}`);
-  console.log('Attendance + Leave final production UAT PASS: Manager/Supervisor/Employee, Manual/Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
+  console.log('Attendance + Leave final production UAT PASS: Head/Manager/Supervisor/Employee, Settings boundaries, Manual/Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
 } catch(error) {
   console.error('Attendance + Leave final production UAT FAILED:',error?.stack||error);
   process.exitCode=1;
