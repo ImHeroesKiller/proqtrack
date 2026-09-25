@@ -587,7 +587,6 @@ window.FS.reviewOutlet = async function(id, decision) {
 const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
 const GEOCODE_CACHE_MAX = 50;
 const reverseGeocodeCache = new Map();
-const reverseGeocodeInFlight = new Map();
 
 function geocodeKey(lat, lng) {
   return `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`;
@@ -605,23 +604,13 @@ async function reverseGeocode(lat, lng, { signal } = {}) {
   const key = geocodeKey(lat, lng);
   const cached = reverseGeocodeCache.get(key);
   if (cached && Date.now() - cached.at < GEOCODE_CACHE_TTL_MS) return cached.data;
-  if (reverseGeocodeInFlight.has(key)) return reverseGeocodeInFlight.get(key);
 
-  const request = (async () => {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
-    if (!res.ok) return null;
-    const data = await res.json();
-    rememberGeocode(key, data);
-    return data;
-  })();
-
-  reverseGeocodeInFlight.set(key, request);
-  try {
-    return await request;
-  } finally {
-    if (reverseGeocodeInFlight.get(key) === request) reverseGeocodeInFlight.delete(key);
-  }
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&addressdetails=1`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal });
+  if (!res.ok) return null;
+  const data = await res.json();
+  rememberGeocode(key, data);
+  return data;
 }
 
 function applyGeocode(data, lat, lng) {
