@@ -28,8 +28,10 @@ test('Projects P1 prevents manager client reassignment in UI and Worker', async 
   const worker = await read('worker/operations.js');
   assert.match(src, /type="hidden" name="clientId"/);
   assert.match(worker, /currentClientId/);
-  assert.match(worker, /nextClientId === currentClientId/);
+  assert.match(worker, /nextClientId !== currentClientId/);
   assert.match(worker, /clientAllowed\(claims, currentClientId\)/);
+  assert.match(worker, /nextAttendanceSource !== currentAttendanceSource/);
+  assert.match(worker, /nextLateAfter !== currentLateAfter/);
 });
 
 test('Projects P1 validates project identity client period values and lifecycle in Worker', async () => {
