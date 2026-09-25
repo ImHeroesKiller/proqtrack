@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { authorizeOperationalChange } from '../worker/operations.js';
 import { settingsTabsFor } from '../src/lib/settings-ui.js';
 
@@ -67,3 +68,8 @@ test('manager project authority permits catalog metadata but blocks Attendance p
   );
 });
 
+
+test('final Settings production smoke scripts pass syntax checks', () => {
+  execFileSync('bash',['-n','scripts/settings-admin-smoke.sh'],{ stdio:'pipe' });
+  execFileSync(process.execPath,['--check','scripts/attendance-leave-production-uat.mjs'],{ stdio:'pipe' });
+});
