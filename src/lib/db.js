@@ -1909,8 +1909,14 @@ export function createAttendance(data) {
   if (!employeeId || !projectId) throw new Error('Project dan karyawan absensi wajib tersedia.');
   assertCanAccessEmployee(employeeId);
   if (actor.role === 'employee' && String(actor.employeeId || '') !== employeeId) throw new Error('Akses ditolak');
+  if (actor.role === 'employee' && date !== todayISO()) throw new Error('Absensi mandiri hanya dapat dilakukan untuk hari ini.');
 
   const db = getDB();
+  const project = (db.projects || []).find(row => String(row.id) === projectId);
+  if (!project || !['active','draft'].includes(String(project.status || ''))) throw new Error('Project attendance tidak aktif.');
+  if ((project.startDate && date < String(project.startDate)) || (project.endDate && date > String(project.endDate))) {
+    throw new Error('Tanggal absensi berada di luar periode project.');
+  }
   const assignment = (db.projectAssignments || []).find(row =>
     String(row.employeeId) === employeeId
     && String(row.projectId) === projectId
@@ -1922,6 +1928,13 @@ export function createAttendance(data) {
   const policy = getProjectAttendancePolicy(projectId);
   if (policy.sourceMode === 'visit') throw new Error('Absensi project ini dihitung otomatis dari kunjungan.');
 
+  if ((db.leaves || []).some(row =>
+    String(row.employeeId) === employeeId
+    && String(row.status) === 'approved'
+    && String(row.startDate || '') <= date
+    && String(row.endDate || '') >= date
+  )) throw new Error('Absensi tidak dapat dibuat karena terdapat ijin/cuti yang sudah disetujui.');
+
   if ((db.attendance || []).some(row =>
     String(row.employeeId) === employeeId
     && String(row.projectId) === projectId
@@ -1929,8 +1942,8 @@ export function createAttendance(data) {
   )) throw new Error('Absensi project ini untuk hari tersebut sudah tercatat.');
 
   const checkInAt = String(data.checkInAt || data.checkInTime || '').trim();
-  if (!checkInAt) throw new Error('Waktu check-in wajib tersedia.');
-  const clock = (checkInAt.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || checkInAt.slice(0,5);
+  const clock = (checkInAt.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || '';
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(clock)) throw new Error('Waktu check-in tidak valid.');
   const status = clock >= policy.lateAfter ? 'terlambat' : 'hadir';
   const att = {
     ...withOrg(data),
@@ -1941,9 +1954,12 @@ export function createAttendance(data) {
     workDate:date,
     checkInAt,
     checkInTime:clock,
+    checkOutAt:null,
+    checkOutTime:null,
     status,
     attendanceSource:'manual',
     createdBy:actor.id,
+    createdAt:new Date().toISOString(),
   };
   db.attendance.push(att);
   saveDB();
@@ -1953,25 +1969,100 @@ export function createAttendance(data) {
 export function updateAttendance(id, data) {
   const db = getDB();
   const idx = db.attendance.findIndex(a => a.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) throw new Error('Absensi tidak ditemukan.');
   const actor = assertLoggedIn();
   const current = db.attendance[idx];
   assertCanAccessEmployee(current.employeeId);
-  if (!isOrgAdminRole(actor.role)) {
-    for (const key of ['employeeId','projectId','date','workDate','status','checkInAt','checkInTime','lat','lng','checkInLatitude','checkInLongitude']) {
-      if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
-        throw new Error('Absensi tercatat tidak dapat dikoreksi langsung. Gunakan workflow koreksi.');
-      }
-    }
-    for (const key of ['checkOutAt','checkOutTime','checkOutLatitude','checkOutLongitude']) {
-      if (current[key] !== undefined && current[key] !== null && current[key] !== '' && data[key] !== undefined && String(data[key]) !== String(current[key])) {
-        throw new Error('Check-out yang sudah tercatat tidak dapat diubah.');
-      }
+
+  const source = String(current.attendanceSource || 'manual') === 'visit' ? 'visit' : 'manual';
+  const correctionReason = sanitizePlainText(data.correctionReason || '');
+  const canCorrect = isOrgAdminRole(actor.role) || actor.role === 'manager' || actor.role === 'supervisor';
+
+  for (const key of ['employeeId','projectId','date','workDate']) {
+    if (data[key] !== undefined && String(data[key]) !== String(current[key] || '')) {
+      throw new Error('Identitas absensi tidak dapat diubah.');
     }
   }
-  db.attendance[idx] = { ...current, ...data };
+
+  if (correctionReason) {
+    if (!canCorrect) throw new Error('Akses koreksi absensi ditolak.');
+    if (source === 'visit') throw new Error('Absensi turunan Visit harus dikoreksi dari workflow Visit.');
+    if (correctionReason.length < 10) throw new Error('Alasan koreksi wajib minimal 10 karakter.');
+    const nextStatus = String(data.status || current.status || '').toLowerCase();
+    const allowed = new Set(['present','late','absent','hadir','terlambat','tidak hadir']);
+    if (!allowed.has(nextStatus)) throw new Error('Status koreksi absensi tidak valid.');
+
+    const checkInAt = String(data.checkInAt ?? data.checkInTime ?? current.checkInAt ?? current.checkInTime ?? '').trim();
+    const checkOutAt = String(data.checkOutAt ?? data.checkOutTime ?? current.checkOutAt ?? current.checkOutTime ?? '').trim();
+    const inClock = (checkInAt.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || '';
+    const outClock = (checkOutAt.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || '';
+    const absent = ['absent','tidak hadir'].includes(nextStatus);
+    if (!absent && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(inClock)) throw new Error('Waktu check-in koreksi tidak valid.');
+    if (checkOutAt && !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(outClock)) throw new Error('Waktu check-out koreksi tidak valid.');
+    if (inClock && outClock && outClock < inClock) throw new Error('Check-out tidak boleh lebih awal dari check-in.');
+
+    db.attendance[idx] = {
+      ...current,
+      ...data,
+      checkInAt:checkInAt || null,
+      checkInTime:inClock || null,
+      checkOutAt:checkOutAt || null,
+      checkOutTime:outClock || null,
+      correctionReason,
+      correctionPrevious:{
+        status:current.status,
+        checkInAt:current.checkInAt || current.checkInTime || null,
+        checkOutAt:current.checkOutAt || current.checkOutTime || null,
+        correctedAt:current.correctedAt || null,
+      },
+      correctionCount:Math.max(0,Number(current.correctionCount)||0)+1,
+      correctedBy:actor.id,
+      correctedAt:new Date().toISOString(),
+    };
+    saveDB();
+    return db.attendance[idx];
+  }
+
+  if (source === 'visit') throw new Error('Absensi turunan Visit bersifat read-only.');
+  if (actor.role === 'employee' && String(actor.employeeId || '') !== String(current.employeeId)) throw new Error('Akses ditolak.');
+  if (actor.role === 'employee' && String(current.date || current.workDate || '') !== todayISO()) {
+    throw new Error('Check-out mandiri hanya dapat dilakukan pada hari yang sama.');
+  }
+  for (const key of ['status','checkInAt','checkInTime','lat','lng','checkInLatitude','checkInLongitude']) {
+    if (data[key] !== undefined && current[key] !== undefined && String(data[key]) !== String(current[key])) {
+      throw new Error('Absensi tercatat tidak dapat dikoreksi langsung. Gunakan workflow koreksi.');
+    }
+  }
+  const existingCheckout = String(current.checkOutAt || current.checkOutTime || '').trim();
+  const requestedCheckout = String(data.checkOutAt || data.checkOutTime || '').trim();
+  if (existingCheckout) {
+    if (requestedCheckout && requestedCheckout !== existingCheckout) throw new Error('Check-out yang sudah tercatat tidak dapat diubah.');
+    return current;
+  }
+  if (!requestedCheckout) return current;
+  const inClock = (String(current.checkInAt || current.checkInTime || '').match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || '';
+  const outClock = (requestedCheckout.match(/(?:T|^)(\d{2}:\d{2})/) || [])[1] || '';
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(outClock)) throw new Error('Waktu check-out tidak valid.');
+  if (inClock && outClock < inClock) throw new Error('Check-out tidak boleh lebih awal dari check-in.');
+
+  db.attendance[idx] = {
+    ...current,
+    ...data,
+    checkOutAt:requestedCheckout,
+    checkOutTime:outClock,
+    checkedOutBy:actor.id,
+    checkedOutAt:new Date().toISOString(),
+  };
   saveDB();
   return db.attendance[idx];
+}
+
+export function checkOutAttendance(id, checkOutAt) {
+  return updateAttendance(id, { checkOutAt, checkOutTime:checkOutAt });
+}
+
+export function correctAttendance(id, data = {}) {
+  return updateAttendance(id, data);
 }
 
 export function getDashboardStats() {
@@ -2269,26 +2360,42 @@ export function createLeave(data) {
   const employeeId = String(data.employeeId || '');
   assertCanAccessEmployee(employeeId);
   if (actor.role === 'employee' && employeeId !== String(actor.employeeId || '')) throw new Error('Akses ditolak');
+  const type = sanitizePlainText(data.type || '');
+  const reason = sanitizePlainText(data.reason || '');
   const startDate = String(data.startDate || '');
   const endDate = String(data.endDate || '');
+  if (!type) throw new Error('Tipe ijin/cuti wajib diisi.');
+  if (reason.length < 5) throw new Error('Alasan ijin/cuti wajib diisi minimal 5 karakter.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < startDate) {
     throw new Error('Periode ijin/cuti tidak valid.');
   }
+  if (actor.role === 'employee' && endDate < todayISO()) throw new Error('Pengajuan ijin/cuti yang seluruh periodenya sudah lewat tidak dapat dibuat.');
+  const db = getDB();
+  const conflict = (db.leaves || []).some(row =>
+    String(row.employeeId) === employeeId
+    && ['pending','approved'].includes(String(row.status || ''))
+    && !(String(row.endDate || '') < startDate || String(row.startDate || '') > endDate)
+  );
+  if (conflict) throw new Error('Periode ijin/cuti bertabrakan dengan pengajuan lain.');
   const days = Math.floor((Date.parse(endDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000) + 1;
   const leave = {
     ...withOrg(data),
     id:uid('LV'),
     employeeId,
+    type,
+    reason,
     startDate,
     endDate,
     days,
     status:'pending',
-    submittedAt:new Date().toISOString().slice(0,10),
+    submittedAt:todayISO(),
     approverId:null,
     approvedAt:null,
     submittedBy:actor.id,
+    decisionKind:null,
+    decisionNote:null,
   };
-  getDB().leaves.push(leave);
+  db.leaves.push(leave);
   saveDB();
   return leave;
 }
@@ -2296,31 +2403,85 @@ export function createLeave(data) {
 export function updateLeave(id, data) {
   const db = getDB();
   const idx = db.leaves.findIndex(l => l.id === id);
-  if (idx === -1) return null;
+  if (idx === -1) throw new Error('Pengajuan ijin/cuti tidak ditemukan.');
   const actor = assertLoggedIn();
   const current = db.leaves[idx];
   assertCanAccessEmployee(current.employeeId);
-  const nextStatus = data.status || current.status;
-  if (!isOrgAdminRole(actor.role) && ['approved','rejected'].includes(String(current.status || ''))) {
+  if (['approved','rejected'].includes(String(current.status || ''))) {
     throw new Error('Pengajuan cuti final tidak dapat diubah.');
   }
-  if (nextStatus !== current.status && !isProjectAdminRole(actor.role) && actor.role !== 'supervisor') {
-    throw new Error('Akses ditolak');
+
+  const nextStatus = String(data.status || current.status || 'pending');
+  if (actor.role === 'employee') {
+    if (String(actor.employeeId || '') !== String(current.employeeId)) throw new Error('Akses ditolak.');
+    if (nextStatus === 'rejected' && String(data.decisionKind || '') === 'withdrawn') {
+      db.leaves[idx] = {
+        ...current,
+        status:'rejected',
+        approverId:null,
+        approvedAt:null,
+        decisionKind:'withdrawn',
+        decisionNote:sanitizePlainText(data.decisionNote || 'Dibatalkan oleh pengaju'),
+        withdrawnBy:actor.id,
+        withdrawnAt:new Date().toISOString(),
+      };
+      saveDB();
+      return db.leaves[idx];
+    }
+    if (nextStatus !== 'pending') throw new Error('Akses ditolak.');
+    if (String(current.startDate || '') <= todayISO()) throw new Error('Pengajuan yang sudah mulai tidak dapat diedit.');
+    const type = sanitizePlainText(data.type ?? current.type ?? '');
+    const reason = sanitizePlainText(data.reason ?? current.reason ?? '');
+    const startDate = String(data.startDate ?? current.startDate ?? '');
+    const endDate = String(data.endDate ?? current.endDate ?? '');
+    if (!type) throw new Error('Tipe ijin/cuti wajib diisi.');
+    if (reason.length < 5) throw new Error('Alasan ijin/cuti wajib diisi minimal 5 karakter.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < startDate) throw new Error('Periode ijin/cuti tidak valid.');
+    const conflict = (db.leaves || []).some(row =>
+      row.id !== id
+      && String(row.employeeId) === String(current.employeeId)
+      && ['pending','approved'].includes(String(row.status || ''))
+      && !(String(row.endDate || '') < startDate || String(row.startDate || '') > endDate)
+    );
+    if (conflict) throw new Error('Periode ijin/cuti bertabrakan dengan pengajuan lain.');
+    const days = Math.floor((Date.parse(endDate + 'T00:00:00Z') - Date.parse(startDate + 'T00:00:00Z')) / 86400000) + 1;
+    db.leaves[idx] = { ...current, type, reason, startDate, endDate, days };
+    saveDB();
+    return db.leaves[idx];
   }
-  if (actor.role === 'employee' && nextStatus !== 'pending') throw new Error('Akses ditolak');
-  db.leaves[idx] = { ...current, ...data };
+
+  if (!(isProjectAdminRole(actor.role) || actor.role === 'supervisor')) throw new Error('Akses ditolak.');
+  if (actor.employeeId && String(actor.employeeId) === String(current.employeeId)) throw new Error('Pengajuan tidak boleh direview oleh pengaju sendiri.');
+  if (!['approved','rejected'].includes(nextStatus)) throw new Error('Keputusan approval tidak valid.');
+  const decisionNote = sanitizePlainText(data.decisionNote || '');
+  if (nextStatus === 'rejected' && decisionNote.length < 5) throw new Error('Alasan penolakan wajib minimal 5 karakter.');
+  if (nextStatus === 'approved') {
+    const attendanceConflict = (db.attendance || []).find(row =>
+      String(row.employeeId) === String(current.employeeId)
+      && String(row.date || row.workDate || '') >= String(current.startDate || '')
+      && String(row.date || row.workDate || '') <= String(current.endDate || '')
+      && ['hadir','terlambat','present','late'].includes(String(row.status || '').toLowerCase())
+    );
+    if (attendanceConflict) throw new Error('Pengajuan tidak dapat disetujui karena sudah ada attendance pada periode tersebut.');
+  }
+  db.leaves[idx] = {
+    ...current,
+    status:nextStatus,
+    approverId:actor.id,
+    approvedAt:new Date().toISOString(),
+    decisionKind:nextStatus,
+    decisionNote,
+  };
   saveDB();
   return db.leaves[idx];
 }
 
-export function deleteLeave(id) {
-  const actor = assertLoggedIn();
-  if (!isOrgAdminRole(actor.role)) throw new Error('Pengajuan cuti tidak dapat dihapus. Gunakan status persetujuan.');
-  const db = getDB();
-  const leave = (db.leaves || []).find(l => l.id === id);
-  if (!leave) return;
-  db.leaves = db.leaves.filter(l => l.id !== id);
-  saveDB();
+export function withdrawLeave(id, note = '') {
+  return updateLeave(id, { status:'rejected', decisionKind:'withdrawn', decisionNote:note });
+}
+
+export function deleteLeave() {
+  throw new Error('Pengajuan ijin/cuti tidak dapat dihapus. Gunakan withdrawal atau keputusan approval agar audit trail tetap utuh.');
 }
 
 export function getStocks() {
