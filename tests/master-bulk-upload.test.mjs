@@ -167,13 +167,16 @@ test('master data cloud authority is wired through operations, health and migrat
 });
 
 test('all master pages expose bulk upload and UI permissions match server roles', async () => {
-  const [app, projectUi, settings] = await Promise.all([
-    read('src/app.js'), read('src/types/index.js'), read('src/account-settings.js'),
+  const [app, competitorUi, projectUi, settings] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/competitor-pages.js'),
+    read('src/types/index.js'),
+    read('src/account-settings.js'),
   ]);
   assert.match(app, /FT\.openBulkMaster\('outlets'\)/);
   assert.match(app, /FT\.openBulkMaster\('products'\)/);
-  assert.match(app, /FT\.openBulkMaster\('competitors'\)/);
-  assert.match(app, /FT\.openBulkMaster\('competitorProducts'\)/);
+  assert.match(competitorUi, /FT\.openBulkMaster\('competitors'\)/);
+  assert.match(competitorUi, /FT\.openBulkMaster\('competitorProducts'\)/);
   assert.match(projectUi, /FT\.openBulkMaster\('clients'\)/);
   assert.match(projectUi, /FT\.openBulkMaster\('projects'\)/);
   assert.match(settings, /FT\.openBulkMaster\('attendancePoints'\)/);

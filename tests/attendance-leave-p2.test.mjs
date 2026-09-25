@@ -4,16 +4,17 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const field = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
+const attendancePages = readFileSync(new URL('../src/routes/attendance-leave-pages.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../assets/ui-2026.css', import.meta.url), 'utf8');
 const ui = readFileSync(new URL('../src/lib/attendance-leave-ui.js', import.meta.url), 'utf8');
 
 test('P2 attendance manager exposes operational filters and result count', () => {
-  assert.match(app, /id="attProjectFilter"/);
-  assert.match(app, /id="attStatusFilter"/);
-  assert.match(app, /id="attSourceFilter"/);
-  assert.match(app, /id="attDateFrom"/);
-  assert.match(app, /id="attDateTo"/);
-  assert.match(app, /id="attResultCount"/);
+  assert.match(attendancePages, /id="attProjectFilter"/);
+  assert.match(attendancePages, /id="attStatusFilter"/);
+  assert.match(attendancePages, /id="attSourceFilter"/);
+  assert.match(attendancePages, /id="attDateFrom"/);
+  assert.match(attendancePages, /id="attDateTo"/);
+  assert.match(attendancePages, /id="attResultCount"/);
   assert.match(app, /FT\.resetAttendanceFilters/);
 });
 
@@ -26,13 +27,13 @@ test('P2 attendance detail exposes source and correction audit', () => {
 });
 
 test('P2 leave queue can filter status type and overlapping period', () => {
-  assert.match(app, /id="leaveStatusFilter"/);
-  assert.match(app, /id="leaveTypeFilter"/);
-  assert.match(app, /id="leaveDateFrom"/);
-  assert.match(app, /id="leaveDateTo"/);
+  assert.match(attendancePages, /id="leaveStatusFilter"/);
+  assert.match(attendancePages, /id="leaveTypeFilter"/);
+  assert.match(attendancePages, /id="leaveDateFrom"/);
+  assert.match(attendancePages, /id="leaveDateTo"/);
   assert.match(ui, /const overlaps = \(!filters\.from \|\| end >= filters\.from\)/);
   assert.match(app, /leaveMatchesFilters/);
-  assert.match(app, /ops-priority-note/);
+  assert.match(attendancePages, /ops-priority-note/);
 });
 
 test('P2 leave decisions and withdrawals are guarded against duplicate actions', () => {

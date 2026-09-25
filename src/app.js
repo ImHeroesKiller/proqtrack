@@ -61,6 +61,76 @@ import { icon as appIcon, iconSvg } from '../assets/icons.js';
 const safeColor = value => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : '#64748b';
 const jsArg = value => esc(JSON.stringify(String(value ?? '')));
 
+
+let competitorPagesChunk = null;
+let competitorPagesPromise = null;
+let attendanceLeaveChunk = null;
+let attendanceLeavePromise = null;
+let fieldPhotosChunk = null;
+let fieldPhotosPromise = null;
+
+function loadCompetitorPagesChunk() {
+  if (competitorPagesChunk) return Promise.resolve(competitorPagesChunk);
+  if (!competitorPagesPromise) {
+    competitorPagesPromise = import('./routes/competitor-pages.js')
+      .then(module => {
+        competitorPagesChunk = module;
+        competitorPagesPromise = null;
+        if (state.loggedIn && ['#/competitors','#/competitor-analysis'].includes(state.route)) scheduleRender();
+        return module;
+      })
+      .catch(error => {
+        competitorPagesPromise = null;
+        console.warn('competitor_pages_chunk_failed', error?.message || error);
+        throw error;
+      });
+  }
+  return competitorPagesPromise;
+}
+
+function loadFieldPhotosChunk() {
+  if (fieldPhotosChunk) return Promise.resolve(fieldPhotosChunk);
+  if (!fieldPhotosPromise) {
+    fieldPhotosPromise = import('./routes/field-photos-page.js')
+      .then(module => {
+        fieldPhotosChunk = module;
+        fieldPhotosPromise = null;
+        if (state.loggedIn && ['#/field-photos','#/myphotos'].includes(state.route)) scheduleRender();
+        return module;
+      })
+      .catch(error => {
+        fieldPhotosPromise = null;
+        console.warn('field_photos_chunk_failed', error?.message || error);
+        throw error;
+      });
+  }
+  return fieldPhotosPromise;
+}
+
+
+function loadAttendanceLeaveChunk() {
+  if (attendanceLeaveChunk) return Promise.resolve(attendanceLeaveChunk);
+  if (!attendanceLeavePromise) {
+    attendanceLeavePromise = import('./routes/attendance-leave-pages.js')
+      .then(module => {
+        attendanceLeaveChunk = module;
+        attendanceLeavePromise = null;
+        if (state.loggedIn && ['#/attendance','#/leaves'].includes(state.route)) scheduleRender();
+        return module;
+      })
+      .catch(error => {
+        attendanceLeavePromise = null;
+        console.warn('attendance_leave_chunk_failed', error?.message || error);
+        throw error;
+      });
+  }
+  return attendanceLeavePromise;
+}
+
+function routeChunkLoading(label) {
+  return `<div class="card"><div class="empty-state"><p>Memuat ${esc(label)}...</p></div></div>`;
+}
+
 let bulkEmployeesRuntimePromise = null;
 let bulkMasterRuntimePromise = null;
 
@@ -3869,78 +3939,11 @@ window.FT.deleteStock = function() {
 
 // ===== Attendance Manager Page =====
 function renderAttendanceManager() {
-  const attendance = getAttendance().slice().sort((a,b) => String(b.date || b.workDate || '').localeCompare(String(a.date || a.workDate || '')));
-  const db = getDB();
-  const today = todayISO();
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const projects = (db.projects || []).filter(project => attendance.some(row => String(row.projectId) === String(project.id)));
-  const projectMap = Object.fromEntries((db.projects || []).map(project => [String(project.id), project]));
-  const summary = attendanceOperationalSummary(attendance,today);
-  return `
-    <div class="ops-kpi-grid">
-      <div class="ops-kpi"><span>Hari ini</span><strong>${summary.today}</strong><small>attendance tercatat</small></div>
-      <div class="ops-kpi"><span>Belum check-out</span><strong>${summary.openCheckout}</strong><small>manual hari ini</small></div>
-      <div class="ops-kpi"><span>Koreksi</span><strong>${summary.corrected}</strong><small>memiliki audit correction</small></div>
-      <div class="ops-kpi"><span>Total</span><strong>${summary.total}</strong><small>record terlihat</small></div>
-    </div>
-    <div class="card ops-card">
-      <div class="ops-toolbar">
-        <div class="ops-toolbar-main">
-          <input class="input search-input" id="attSearch" placeholder="Cari karyawan / project..." data-pqt-oninput="FT.filterAttendance()">
-          <select class="select" id="attProjectFilter" data-pqt-onchange="FT.filterAttendance()">
-            <option value="">Semua Project</option>
-            ${projects.map(project => `<option value="${esc(project.id)}">${esc(project.code || project.id)} — ${esc(project.name || '')}</option>`).join('')}
-          </select>
-          <select class="select" id="attStatusFilter" data-pqt-onchange="FT.filterAttendance()">
-            <option value="">Semua Status</option>
-            <option value="hadir">Hadir</option><option value="terlambat">Terlambat</option><option value="tidak hadir">Tidak Hadir</option>
-          </select>
-          <select class="select" id="attSourceFilter" data-pqt-onchange="FT.filterAttendance()">
-            <option value="">Semua Source</option><option value="manual">Manual</option><option value="visit">Visit</option>
-          </select>
-          <input class="input" id="attDateFrom" type="date" aria-label="Tanggal attendance dari" data-pqt-onchange="FT.filterAttendance()">
-          <input class="input" id="attDateTo" type="date" aria-label="Tanggal attendance sampai" data-pqt-onchange="FT.filterAttendance()">
-        </div>
-        <div class="ops-toolbar-actions">
-          <span class="ops-result-count" id="attResultCount" aria-live="polite">${attendance.length} record</span>
-          <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetAttendanceFilters()">Reset</button>
-          <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.openAttendancePointModal()">+ Titik absensi</button>
-        </div>
-      </div>
-      <div class="visits-table-wrapper">
-        <table class="table" id="attTable">
-          <thead><tr><th>Karyawan</th><th>Project</th><th>Tanggal</th><th>Check In</th><th>Check Out</th><th>Source</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            ${attendance.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">✅</div><h3>Belum ada data absensi</h3></div></td></tr>` :
-            attendance.map(a => {
-              const emp = empMap[a.employeeId];
-              if (!emp) return '';
-              const project = projectMap[String(a.projectId)] || {};
-              const source = attendanceSourceLabel(a);
-              const corrected = a.correctionCount ? `<div class="am-muted">Koreksi ${a.correctionCount}x</div>` : '';
-              return `
-                <tr data-att-row="1" data-project="${esc(String(a.projectId || ''))}" data-status="${esc(attendanceStatusKey(a))}" data-source="${attendanceSourceKey(a)}" data-date="${esc(String(a.date || a.workDate || ''))}">
-                  <td><div class="ops-employee-cell"><div class="avatar ops-avatar-sm">${getInitials(emp.name)}</div><span class="ops-employee-name">${esc(emp.name)}</span></div></td>
-                  <td><strong>${esc(project.code || a.projectId || '-')}</strong><div class="am-muted">${esc(project.name || '')}</div></td>
-                  <td>${formatDateShort(a.date || a.workDate)}</td>
-                  <td>${esc(a.checkInTime || a.checkInAt || '—')}</td>
-                  <td>${esc(a.checkOutTime || a.checkOutAt || '—')}</td>
-                  <td>${esc(source)}${corrected}</td>
-                  <td>${statusBadge(a.status)}</td>
-                  <td><div class="ops-row-actions">
-                    <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewAttendance('${a.id}')">Detail</button>
-                    ${attendanceSourceKey(a) === 'visit'
-                      ? '<span class="ops-chip">Visit read-only</span>'
-                      : `<button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openAttendanceCorrection('${a.id}')">Koreksi</button>`}
-                  </div></td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  `;
+  if (!attendanceLeaveChunk) {
+    loadAttendanceLeaveChunk().catch(() => {});
+    return routeChunkLoading('attendance');
+  }
+  return attendanceLeaveChunk.renderAttendanceManager();
 }
 
 window.FT.viewAttendance = function(id) {
@@ -4081,70 +4084,11 @@ function leaveStatusHtml(row) {
 }
 
 function renderLeavesManager() {
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const leaves = getLeaves().filter(l => empMap[l.employeeId]).sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
-  const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
-  const summary = leaveOperationalSummary(leaves);
-  const leaveTypes = [...new Set(leaves.map(l => String(l.type || '')).filter(Boolean))].sort();
-  return `
-    <div class="ops-kpi-grid">
-      <div class="ops-kpi"><span>Menunggu</span><strong>${summary.pending}</strong><small>butuh keputusan</small></div>
-      <div class="ops-kpi"><span>Disetujui</span><strong>${summary.approved}</strong><small>approved</small></div>
-      <div class="ops-kpi"><span>Ditolak</span><strong>${summary.rejected}</strong><small>rejected</small></div>
-      <div class="ops-kpi"><span>Dibatalkan</span><strong>${summary.withdrawn}</strong><small>oleh pengaju</small></div>
-    </div>
-    <div class="card ops-card">
-      <div class="ops-toolbar">
-        <div class="ops-toolbar-main">
-          <input class="input search-input" id="leaveSearch" placeholder="Cari karyawan / alasan..." data-pqt-oninput="FT.filterLeaves()">
-          <select class="select" id="leaveStatusFilter" data-pqt-onchange="FT.filterLeaves()">
-            <option value="">Semua Status</option>
-            <option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="withdrawn">Dibatalkan</option>
-          </select>
-          <select class="select" id="leaveTypeFilter" data-pqt-onchange="FT.filterLeaves()">
-            <option value="">Semua Tipe</option>
-            ${leaveTypes.map(type => `<option value="${esc(type)}">${esc(type)}</option>`).join('')}
-          </select>
-          <input class="input" id="leaveDateFrom" type="date" aria-label="Periode leave dari" data-pqt-onchange="FT.filterLeaves()">
-          <input class="input" id="leaveDateTo" type="date" aria-label="Periode leave sampai" data-pqt-onchange="FT.filterLeaves()">
-        </div>
-        <div class="ops-toolbar-actions">
-          <span class="ops-result-count" id="leaveResultCount" aria-live="polite">${leaves.length} pengajuan</span>
-          <button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FT.resetLeaveFilters()">Reset</button>
-        </div>
-      </div>
-      <div class="visits-table-wrapper">
-        <table class="table" id="leaveTable">
-          <thead><tr><th>Karyawan</th><th>Tipe</th><th>Periode</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
-          <tbody>
-            ${leaves.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><h3>Belum ada pengajuan</h3></div></td></tr>` :
-            leaves.map(l => {
-              const emp=empMap[l.employeeId];
-              if(!emp) return '';
-              const selfReview = state.account?.employeeId && String(state.account.employeeId) === String(l.employeeId);
-              const pendingDays = leavePendingAgeDays(l,todayISO());
-              const filterStatus = leaveDisplayStatus(l);
-              return `<tr data-leave-row="1" data-status="${esc(filterStatus)}" data-type="${esc(String(l.type || ''))}" data-start="${esc(String(l.startDate || ''))}" data-end="${esc(String(l.endDate || ''))}">
-                <td><strong>${esc(emp.name)}</strong>${pendingDays >= 3 ? `<div class="ops-priority-note">Menunggu ${pendingDays} hari</div>` : ''}</td>
-                <td>${esc(l.type)}</td>
-                <td>${formatDateShort(l.startDate)} – ${formatDateShort(l.endDate)}</td>
-                <td>${l.days}</td>
-                <td class="ops-reason-cell">${esc(l.reason)}</td>
-                <td>${leaveStatusHtml(l)}</td>
-                <td>${l.status === 'pending' ? '—' : esc(accMap[l.approverId] || (l.decisionKind === 'withdrawn' ? 'Pengaju' : '—'))}</td>
-                <td><div class="ops-row-actions">
-                  <button type="button" class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewLeave('${l.id}')">Detail</button>
-                  ${l.status === 'pending' && !selfReview
-                    ? `<button type="button" class="btn btn-primary btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','approved')">Setujui</button><button type="button" class="btn btn-danger btn-sm" data-pqt-onclick="FT.openLeaveDecision('${l.id}','rejected')">Tolak</button>`
-                    : ''}
-                </div></td>
-              </tr>`;
-            }).join('')}
-            ${leaves.length ? '<tr id="leaveFilteredEmpty" hidden><td colspan="8"><div class="empty-state"><h3>Tidak ada pengajuan sesuai filter</h3><p>Ubah atau reset filter Leave.</p></div></td></tr>' : ''}
-          </tbody>
-        </table>
-      </div>
-    </div>`;
+  if (!attendanceLeaveChunk) {
+    loadAttendanceLeaveChunk().catch(() => {});
+    return routeChunkLoading('leave');
+  }
+  return attendanceLeaveChunk.renderLeavesManager();
 }
 
 window.FT.filterLeaves = function() {
@@ -4954,86 +4898,11 @@ window.FT.saveStandalonePrice = function(e) {
 
 // ===== COMPETITORS (Manager) =====
 function renderCompetitors() {
-  const competitors = getCompetitors();
-  const cpd = getCompetitorProducts();
-  const byComp = {};
-  cpd.forEach(p => { if (!byComp[p.competitorId]) byComp[p.competitorId] = []; byComp[p.competitorId].push(p); });
-
-  return `
-    <div class="grid-2" style="margin-bottom:14px;">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--purple-50);color:var(--purple);">◇</div>
-        <div class="stat-label">Merek Kompetitor</div>
-        <div class="stat-value">${competitors.length}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber);">▦</div>
-        <div class="stat-label">Produk Kompetitor</div>
-        <div class="stat-value">${cpd.length}</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="filter-row">
-        <div class="card-title" style="margin:0;">Master Kompetitor</div>
-        <div class="spacer"></div>
-        ${isOrgAdmin() ? `
-        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('competitors')">Bulk Merek</button>
-        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('competitorProducts')">Bulk Produk</button>
-        <button class="btn btn-secondary" data-pqt-onclick="FT.openCompetitorProductModal()">+ Produk Kompetitor</button>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openCompetitorModal()">+ Merek Kompetitor</button>
-        ` : ''}
-      </div>
-      <div class="card-subtitle">Kelola merek pesaing & katalog produknya</div>
-
-      ${competitors.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada kompetitor</h3></div>` : `
-      <div style="display:flex; flex-direction:column; gap:12px; margin-top:12px;">
-        ${competitors.map(c => {
-          const prods = byComp[c.id] || [];
-          return `
-            <div style="border:1px solid var(--gray-200); border-radius:var(--radius); padding:14px; background:var(--gray-50);">
-              <div style="display:flex; align-items:flex-start; gap:12px; flex-wrap:wrap;">
-                <div style="width:14px;height:14px;border-radius:4px;background:${safeColor(c.color)};margin-top:4px;flex-shrink:0;"></div>
-                <div style="flex:1;min-width:140px;">
-                  <div style="font-weight:700;font-size:15px;color:var(--gray-900);">${esc(c.name)} ${statusBadge(c.status)}</div>
-                  <div style="font-size:12px;color:var(--gray-400);margin-top:2px;">${esc(c.category || '—')} · ${prods.length} produk</div>
-                  ${c.notes ? `<div style="font-size:12px;color:var(--gray-500);margin-top:6px;">${esc(c.notes)}</div>` : ''}
-                </div>
-                <div style="display:${isOrgAdmin() ? 'flex' : 'none'};gap:6px;flex-wrap:wrap;">
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.openCompetitorProductModal(${jsArg(c.id)})">+ Produk</button>
-                  <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editCompetitor(${jsArg(c.id)})">Edit</button>
-                  <button class="btn btn-danger btn-sm" data-pqt-onclick="FT.deleteCompetitorConfirm(${jsArg(c.id)})">Arsipkan</button>
-                </div>
-              </div>
-              ${prods.length ? `
-                <div class="visits-table-wrapper" style="margin-top:12px;">
-                  <table class="table" style="min-width:400px;background:white;border-radius:8px;">
-                    <thead><tr><th>SKU</th><th>Nama</th><th>Harga Tipikal</th><th>Unit</th><th>Status</th><th></th></tr></thead>
-                    <tbody>
-                      ${prods.map(p => `
-                        <tr>
-                          <td style="font-family:monospace;font-size:11px;color:var(--gray-500);">${esc(p.sku||'—')}</td>
-                          <td style="font-weight:600;">${esc(p.name)}</td>
-                          <td>${formatCurrency(p.typicalPrice)}</td>
-                          <td>${esc(p.unit)}</td>
-                          <td>${statusBadge(p.status)}</td>
-                          <td style="display:${isOrgAdmin() ? 'table-cell' : 'none'};">
-                            <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.editCompetitorProduct(${jsArg(p.id)})">Edit</button>
-                            <button class="btn btn-danger btn-sm" style="margin-left:4px;" data-pqt-onclick="FT.deleteCompetitorProductConfirm(${jsArg(p.id)})">Arsipkan</button>
-                          </td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                </div>
-              ` : `<div style="margin-top:10px;font-size:12px;color:var(--gray-400);">Belum ada produk kompetitor</div>`}
-            </div>
-          `;
-        }).join('')}
-      </div>
-      `}
-    </div>
-  `;
+  if (!competitorPagesChunk) {
+    loadCompetitorPagesChunk().catch(() => {});
+    return routeChunkLoading('master kompetitor');
+  }
+  return competitorPagesChunk.renderCompetitors();
 }
 
 window.FT.openCompetitorModal = function() {
@@ -5185,141 +5054,11 @@ window.FT.deleteCompetitorProductConfirm = function(id) {
 
 // ===== Competitor Analysis (Manager) =====
 function renderCompetitorAnalysis() {
-  const summary = getCompetitorAnalysisSummary();
-  const intel = [...getCompetitorIntel()].sort((a, b) => (b.recordedAt||'').localeCompare(a.recordedAt||''));
-  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
-  const cpdMap = Object.fromEntries(getCompetitorProducts().map(p => [p.id, p]));
-  const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-
-  const totalIntel = intel.length;
-  const avgShare = totalIntel ? Math.round(intel.reduce((s, i) => s + (i.shelfShare || 0), 0) / totalIntel) : 0;
-  const promoCount = intel.filter(i => i.hasPromo).length;
-  const weLosePrice = intel.filter(i => i.ourPrice > i.competitorPrice).length;
-
-  return `
-    <div class="grid-4" style="margin-bottom:14px;">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">◇</div>
-        <div class="stat-label">Total Intel</div>
-        <div class="stat-value">${totalIntel}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--green-50);color:var(--green-600);">▥</div>
-        <div class="stat-label">Avg Shelf Share Kita</div>
-        <div class="stat-value">${avgShare}%</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--amber-50);color:var(--amber);">▣</div>
-        <div class="stat-label">Intel Ada Promo</div>
-        <div class="stat-value">${promoCount}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--red-50);color:var(--red);">↓</div>
-        <div class="stat-label">Kita Lebih Mahal</div>
-        <div class="stat-value">${weLosePrice}</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Ringkasan per Merek</div>
-      <div class="card-subtitle">Avg price gap = harga kita − harga kompetitor (positif = kita lebih mahal)</div>
-      <div class="visits-table-wrapper">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Merek</th><th>Kategori</th><th>Intel</th>
-              <th>Avg Price Gap</th><th>Avg Shelf Share</th>
-              <th>Promo</th><th>Lebih Murah</th><th>Lebih Mahal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${summary.length === 0 ? `<tr><td colspan="8"><div class="empty-state"><h3>Belum ada data</h3></div></td></tr>` :
-            summary.map(s => {
-              const gapColor = s.avgPriceGap > 0 ? 'var(--red)' : s.avgPriceGap < 0 ? 'var(--green)' : 'var(--gray-500)';
-              const gapLabel = s.intelCount
-                ? (s.avgPriceGap > 0 ? `+${formatCurrency(s.avgPriceGap)}` : formatCurrency(s.avgPriceGap))
-                : '—';
-              return `
-                <tr>
-                  <td>
-                    <span style="display:inline-flex;align-items:center;gap:8px;font-weight:700;">
-                      <span style="width:10px;height:10px;border-radius:3px;background:${s.color||'#94a3b8'};"></span>
-                      ${s.name}
-                    </span>
-                  </td>
-                  <td style="font-size:12px;color:var(--gray-500);">${s.category||'—'}</td>
-                  <td style="font-weight:700;">${s.intelCount}</td>
-                  <td style="font-weight:600;color:${gapColor};">${gapLabel}</td>
-                  <td>
-                    ${s.intelCount ? `
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        <div class="progress-bar" style="width:64px;"><div class="progress-fill" style="width:${Math.min(100,s.avgShelfShare)}%;"></div></div>
-                        <span style="font-weight:600;">${s.avgShelfShare}%</span>
-                      </div>
-                    ` : '—'}
-                  </td>
-                  <td>${s.promoCount}</td>
-                  <td style="color:var(--red);font-weight:600;" title="Berapa kali harga kompetitor lebih murah">${s.cheaperCount}</td>
-                  <td style="color:var(--green);font-weight:600;">${s.moreExpensiveCount}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Riwayat Intel Lapangan</div>
-      <div class="card-subtitle">Semua observasi dari field sales & supervisor</div>
-      ${intel.length === 0 ? `<div class="empty-state"><div class="empty-icon">◇</div><h3>Belum ada intel</h3></div>` : `
-      <div class="visits-table-wrapper">
-        <table class="table" style="min-width:720px;">
-          <thead>
-            <tr>
-              <th>Tanggal</th><th>Sales</th><th>Outlet</th>
-              <th>Produk Kita</th><th>Kompetitor</th>
-              <th>Harga Kita</th><th>Harga Kompetitor</th>
-              <th>Gap</th><th>Shelf %</th><th>Vis</th><th>Promo</th><th>Catatan</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${intel.map(i => {
-              const our = productMap[i.productId];
-              const cp = cpdMap[i.competitorProductId];
-              const comp = cp ? compMap[cp.competitorId] : null;
-              const o = outletMap[i.outletId];
-              const emp = empMap[i.recordedBy || i.employeeId];
-              const gap = (i.ourPrice || 0) - (i.competitorPrice || 0);
-              const gapColor = gap > 0 ? 'var(--red)' : gap < 0 ? 'var(--green)' : 'var(--gray-400)';
-              return `
-                <tr>
-                  <td style="font-size:12px;">${formatDateShort(i.recordedAt)}</td>
-                  <td style="font-size:12px;">${esc(emp?.name?.split(' ')[0] || '—')}</td>
-                  <td>${o ? outletIcon(o.type)+' '+o.name : i.outletId}</td>
-                  <td><span style="font-weight:600;">${our?.name || '—'}</span><br><span style="font-size:11px;color:var(--gray-400);">${our?.brand||''}</span></td>
-                  <td>
-                    <span style="font-weight:600;">${cp?.name || '—'}</span>
-                    <br><span style="font-size:11px;color:${comp?.color||'var(--gray-400)'};">${comp?.name||''}</span>
-                  </td>
-                  <td style="font-weight:600;">${formatCurrency(i.ourPrice)}</td>
-                  <td style="font-weight:600;">${formatCurrency(i.competitorPrice)}</td>
-                  <td style="font-weight:700;color:${gapColor};">${gap===0?'—':(gap>0?'+':'')+formatCurrency(gap).replace('Rp ','Rp ')}</td>
-                  <td style="font-weight:600;">${i.shelfShare != null && i.shelfShare !== '' ? `${i.shelfShare}%` : '—'}</td>
-                  <td>${visibilityBadge(i.visibility)}</td>
-                  <td>${promoBadgeHTML(i)}</td>
-                  <td style="font-size:11px;color:var(--gray-500);max-width:140px;">${i.promoNotes || i.notes || '—'}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      `}
-    </div>
-  `;
+  if (!competitorPagesChunk) {
+    loadCompetitorPagesChunk().catch(() => {});
+    return routeChunkLoading('analisis kompetitor');
+  }
+  return competitorPagesChunk.renderCompetitorAnalysis();
 }
 
 function promoBadgeHTML(intel) {
@@ -5673,120 +5412,11 @@ window.FT.saveCompetitorIntel = function(e, visitId, outletId) {
 const PHOTO_PAGE_SIZE = 24;
 
 function renderFieldPhotosGallery({ managerView }) {
-  const empId = myEmployeeId();
-  const basePhotos = managerView
-    ? [...getFieldPhotos()]
-    : [...getFieldPhotosByEmployee(empId)];
-  let photos = [...basePhotos];
-  photos.sort((a, b) => (b.recordedAt || '').localeCompare(a.recordedAt || ''));
-  photos = applyPhotoFilters(photos);
-  const visibleCount = Math.min(
-    photos.length,
-    Math.max(PHOTO_PAGE_SIZE, Number(state._photoVisibleCount) || PHOTO_PAGE_SIZE),
-  );
-  const visiblePhotos = photos.slice(0, visibleCount);
-
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
-  const productMap = Object.fromEntries(getProducts().map(p => [p.id, p]));
-  const compMap = Object.fromEntries(getCompetitors().map(c => [c.id, c]));
-  const activeVisits = !managerView && empId
-    ? getVisits().filter(v => v.employeeId === empId && v.status === 'checked-in')
-    : [];
-
-  const typeCounts = new Map();
-  for (const photo of basePhotos) {
-    const key = photo.photoType || photo.type || '';
-    typeCounts.set(key, (typeCounts.get(key) || 0) + 1);
+  if (!fieldPhotosChunk) {
+    loadFieldPhotosChunk().catch(() => {});
+    return routeChunkLoading('galeri foto');
   }
-  const byType = FIELD_PHOTO_TYPES.map(t => ({
-    ...t,
-    count: typeCounts.get(t.code) || 0,
-  }));
-
-  return `
-    ${!managerView && activeVisits.length > 0 ? `
-      <div class="card" style="margin-bottom:16px;border-color:#93c5fd;background:var(--blue-50);">
-        <div style="font-size:15px;font-weight:700;color:var(--blue-600);margin-bottom:8px;">Ambil foto saat visit aktif</div>
-        ${activeVisits.map(v => {
-          const o = outletMap[v.outletId];
-          return `
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:white;border-radius:10px;margin-bottom:8px;">
-              <div style="font-size:22px;">${o ? outletIcon(o.type) : '🏪'}</div>
-              <div style="flex:1;">
-                <div style="font-weight:600;">${o?.name || v.outletId}</div>
-                <div style="font-size:12px;color:var(--gray-400);">Check in: ${v.checkInTime || '—'}</div>
-              </div>
-              <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.openVisitPhotoInput('${v.id}','${v.outletId}')">+ Foto</button>
-            </div>
-          `;
-        }).join('')}
-      </div>
-    ` : ''}
-
-    <div class="grid-4" style="margin-bottom:14px;">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:var(--blue-50);color:var(--blue-600);">▣</div>
-        <div class="stat-label">Total Foto</div>
-        <div class="stat-value">${basePhotos.length}</div>
-      </div>
-      ${byType.slice(0, 3).map(t => `
-        <div class="stat-card">
-          <div class="stat-label">${t.label}</div>
-          <div class="stat-value" style="font-size:22px;">${t.count}</div>
-        </div>
-      `).join('')}
-    </div>
-
-    <div class="card">
-      <div class="card-title" style="margin:0 0 10px">${managerView ? 'Galeri Tim' : 'Galeri Saya'}</div>
-      ${photoFilterBar(managerView)}
-      <div class="card-subtitle">${managerView ? 'Semua foto field sales & supervisor' : 'Hanya foto yang Anda ambil'}</div>
-
-      ${photos.length === 0 ? `
-        <div class="empty-state">
-          <div class="empty-icon">▣</div>
-          <h3>Belum ada foto</h3>
-          <p>${managerView ? 'Tim belum mengunggah foto lapangan' : 'Ambil foto saat check-in di outlet'}</p>
-        </div>
-      ` : `
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:14px;">
-          ${visiblePhotos.map(p => {
-            const o = outletMap[p.outletId];
-            const emp = empMap[p.recordedBy || p.employeeId];
-            const prod = p.productId ? productMap[p.productId] : null;
-            const comp = p.competitorId ? compMap[p.competitorId] : null;
-            const imageSrc = safePhotoUrl(p.dataUrl || p.photoUrl);
-            const thumb = imageSrc
-              ? `<img src="${imageSrc}" alt="" loading="lazy" decoding="async" fetchpriority="low" style="width:100%;height:120px;object-fit:cover;border-radius:10px 10px 0 0;display:block;">`
-              : `<div style="width:100%;height:120px;border-radius:10px 10px 0 0;background:linear-gradient(135deg,#e2e8f0,#f1f5f9);display:flex;align-items:center;justify-content:center;color:var(--gray-400);font-size:13px;font-weight:600;">${photoTypeLabel(p.photoType || p.type)}</div>`;
-            return `
-              <div style="border:1px solid var(--gray-200);border-radius:12px;overflow:hidden;background:white;">
-                ${thumb}
-                <div style="padding:10px;">
-                  <div style="font-size:11px;font-weight:700;color:var(--blue-600);margin-bottom:2px;">${photoTypeLabel(p.type)}</div>
-                  <div style="font-size:12px;font-weight:600;color:var(--gray-800);line-height:1.3;min-height:32px;">${esc(p.caption || p.title || 'Tanpa caption')}</div>
-                  <div style="font-size:11px;color:var(--gray-400);margin-top:4px;">${o ? outletIcon(o.type) + ' ' + esc(o.name) : esc(p.outletId || '—')}</div>
-                  ${managerView ? `<div style="font-size:11px;color:var(--gray-400);">${esc(emp?.name || '—')}</div>` : ''}
-                  ${prod ? `<div style="font-size:10px;color:var(--gray-500);margin-top:2px;">📦 ${esc(prod.name)}</div>` : ''}
-                  ${comp ? `<div style="font-size:10px;color:${comp.color || 'var(--gray-500)'};">◇ ${esc(comp.name)}</div>` : ''}
-                  <div style="font-size:10px;color:var(--gray-400);margin-top:4px;">${formatDateShort((p.recordedAt || p.createdAt || '').slice(0, 10))}</div>
-                  ${(!managerView || isProjectAdmin()) ? `
-                    <button class="btn btn-secondary btn-sm" style="margin-top:6px;width:100%;" data-pqt-onclick="FT.deleteFieldPhotoConfirm('${p.id}')">Hapus</button>
-                  ` : ''}
-                </div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-        ${visiblePhotos.length < photos.length ? `
-          <div style="display:flex;justify-content:center;margin-top:16px;">
-            <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.loadMorePhotos()">Muat lebih banyak (${photos.length - visiblePhotos.length} tersisa)</button>
-          </div>
-        ` : ''}
-      `}
-    </div>
-  `;
+  return fieldPhotosChunk.renderFieldPhotosGallery({ managerView });
 }
 
 window.FT.setPhotoFilter = function(type) {
@@ -5968,207 +5598,9 @@ window.FT.deleteFieldPhotoConfirm = function(id) {
   render();
 };
 
-// ===== Mobile Simulation (legacy, not linked in nav) =====
-function renderMobileSim() {
-  const employees = getEmployees().filter(e => e.role === 'Field Sales');
-  const myId = myEmployeeId();
-  if (!isProjectAdmin() && myId) {
-    state.selectedMobileEmp = myId;
-  }
-  const current = employees.find(e => e.id === state.selectedMobileEmp) || employees[0];
-  if (current) state.selectedMobileEmp = current.id;
-  const visits = getVisits().filter(v => v.employeeId === (current?.id) && v.date === todayISO());
-  const outletMap = Object.fromEntries(getOutlets().map(o => [o.id, o]));
-  const att = getAttendance().find(a => a.employeeId === current?.id && a.date === todayISO());
-
-  const tabs = [
-    { id: 'home',   icon: '🏠', label: 'Beranda' },
-    { id: 'visits', icon: '📋', label: 'Kunjungan' },
-    { id: 'route',  icon: '🗺️', label: 'Rute' },
-    { id: 'profile', icon: '👤', label: 'Profil' },
-  ];
-
-  let screenContent = '';
-  if (state.mobileTab === 'home') {
-    screenContent = `
-      <div class="mobile-sim-header">
-        <div>
-          <div style="font-size:12px; opacity:0.8;">Selamat datang,</div>
-          <h2>${current?.name || 'Field Sales'}</h2>
-        </div>
-        <div class="avatar avatar-lg" style="background:rgba(255,255,255,0.2);">${current ? getInitials(current.name) : '?'}</div>
-      </div>
-      <div class="mobile-sim-body">
-        <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
-        </div>
-
-        <div class="mobile-card" style="background:linear-gradient(135deg,#ea580c,#c2410c); color:white; border:none;">
-          <div style="font-size:12px; opacity:0.8;">Status Absensi</div>
-          ${att ? `
-            <div style="font-size:20px; font-weight:800; margin-top:4px;">${att.status === 'hadir' ? '✅ Hadir' : att.status === 'terlambat' ? '⏰ Terlambat' : '❌ Tidak Hadir'}</div>
-            <div style="font-size:13px; opacity:0.8; margin-top:4px;">Check in: ${att.checkInTime || '-'} · ${att.checkInLocation || '-'}</div>
-          ` : '<div style="margin-top:8px; font-size:14px;">Belum check in hari ini</div>'}
-        </div>
-
-        <div class="mobile-section-title">Statistik Hari Ini</div>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
-          <div class="mobile-card" style="text-align:center;">
-            <div style="font-size:28px; font-weight:800; color:var(--blue-600);">${current?.todayVisits || 0}</div>
-            <div style="font-size:12px; color:var(--gray-400);">Kunjungan</div>
-          </div>
-          <div class="mobile-card" style="text-align:center;">
-            <div style="font-size:28px; font-weight:800; color:var(--green-600);">${visits.filter(v => v.status === 'completed').length}</div>
-            <div style="font-size:12px; color:var(--gray-400);">Selesai</div>
-          </div>
-        </div>
-
-        <div class="mobile-section-title">Kunjungan Mendatang</div>
-        ${visits.filter(v => v.status === 'planned').length === 0 ? `<div class="mobile-card" style="text-align:center; color:var(--gray-400); font-size:13px;">Tidak ada kunjungan terjadwal</div>` :
-          visits.filter(v => v.status === 'planned').map(v => { const o = outletMap[v.outletId]; return `
-            <div class="mobile-card">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div style="font-size:24px;">${o ? outletIcon(o.type) : '🏪'}</div>
-                <div style="flex:1;">
-                  <div style="font-size:14px; font-weight:600;">${o?.name || '?'}</div>
-                  <div style="font-size:12px; color:var(--gray-400);">${o?.address || ''}</div>
-                </div>
-                <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.mobileCheckIn('${v.id}')">Check In</button>
-              </div>
-            </div>
-          `; }).join('')
-        }
-
-        <div class="mobile-section-title">Sedang Berlangsung</div>
-        ${visits.filter(v => v.status === 'checked-in').length === 0 ? `<div class="mobile-card" style="text-align:center; color:var(--gray-400); font-size:13px;">Tidak ada kunjungan aktif</div>` :
-          visits.filter(v => v.status === 'checked-in').map(v => { const o = outletMap[v.outletId]; return `
-            <div class="mobile-card" style="border-color:var(--blue-300); background:var(--blue-50);">
-              <div style="display:flex; align-items:center; gap:10px;">
-                <div style="font-size:24px;">${o ? outletIcon(o.type) : '🏪'}</div>
-                <div style="flex:1;">
-                  <div style="font-size:14px; font-weight:600;">${o?.name || '?'}</div>
-                  <div style="font-size:12px; color:var(--blue-600);">⏱️ Check in: ${v.checkInTime}</div>
-                </div>
-                <button class="btn btn-primary btn-sm" data-pqt-onclick="FT.mobileCheckOut('${v.id}')">Check Out</button>
-              </div>
-            </div>
-          `; }).join('')
-        }
-      </div>
-    `;
-  } else if (state.mobileTab === 'visits') {
-    screenContent = `
-      <div class="mobile-sim-header"><h2>Kunjungan Saya</h2></div>
-      <div class="mobile-sim-body">
-        <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
-        </div>
-        <div class="mobile-section-title">Hari Ini (27 Jul 2024)</div>
-        ${visits.length === 0 ? `<div class="mobile-card" style="text-align:center; color:var(--gray-400);">Belum ada kunjungan</div>` :
-          visits.map(v => { const o = outletMap[v.outletId]; return `
-            <div class="mobile-card">
-              <div style="display:flex; align-items:flex-start; gap:10px;">
-                <div style="font-size:24px;">${o ? outletIcon(o.type) : '🏪'}</div>
-                <div style="flex:1;">
-                  <div style="font-size:14px; font-weight:600;">${o?.name || '?'}</div>
-                  <div style="font-size:12px; color:var(--gray-400); margin-bottom:6px;">${o?.address || ''}</div>
-                  <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                    ${statusBadge(v.status)}
-                    ${v.checkInTime ? `<span style="font-size:11px; color:var(--gray-400);">⏱ ${v.checkInTime}${v.checkOutTime ? ` → ${v.checkOutTime}` : ''}</span>` : ''}
-                  </div>
-                  ${v.notes ? `<div style="font-size:12px; color:var(--gray-500); margin-top:6px; font-style:italic;">"${v.notes}"</div>` : ''}
-                </div>
-              </div>
-            </div>
-          `; }).join('')
-        }
-      </div>
-    `;
-  } else if (state.mobileTab === 'route') {
-      const todayPlanned = visits.filter(v => v.status === 'planned' || v.status === 'checked-in');
-      const completed = visits.filter(v => v.status === 'completed');
-      screenContent = `
-      <div class="mobile-sim-header"><h2>Rute Kunjungan</h2></div>
-      <div class="mobile-sim-body">
-        <div style="display:flex; gap:8px; margin-bottom:16px; overflow-x:auto;">
-          ${employees.map(e => `<button class="btn ${e.id===current?.id?'btn-primary':'btn-secondary'} btn-sm" style="white-space:nowrap;" data-pqt-onclick="FT.selectMobileEmp('${e.id}')">${e.name.split(' ')[0]}</button>`).join('')}
-        </div>
-        <div class="mobile-card" style="background:var(--blue-50); border-color:var(--blue-200); margin-bottom:16px;">
-          <div style="font-size:13px; color:var(--blue-700); font-weight:600;">📍 ${todayPlanned.length} kunjungan tersisa · ${completed.length} selesai</div>
-        </div>
-        <div style="position:relative; padding-left:24px;">
-          <div style="position:absolute; left:7px; top:8px; bottom:8px; width:2px; background:var(--gray-200);"></div>
-          ${visits.map((v, i) => {
-            const o = outletMap[v.outletId];
-            const dotColor = v.status === 'completed' ? 'var(--green-500)' : v.status === 'checked-in' ? 'var(--blue-500)' : 'var(--gray-300)';
-            return `
-              <div style="position:relative; margin-bottom:16px; padding-left:8px;">
-                <div style="position:absolute; left:-22px; top:4px; width:14px; height:14px; border-radius:50%; background:${dotColor}; border:3px solid white; box-shadow:0 0 0 1px var(--gray-200);"></div>
-                <div style="font-size:11px; color:var(--gray-400); font-weight:600;">STOP #${i+1}</div>
-                <div style="font-size:14px; font-weight:600; color:var(--gray-800);">${o ? outletIcon(o.type)+' '+o.name : '?'}</div>
-                <div style="font-size:12px; color:var(--gray-400);">${o?.address || ''}</div>
-                <div style="margin-top:4px;">${statusBadge(v.status)} ${v.checkInTime ? `<span style="font-size:11px; color:var(--gray-400);">· ${v.checkInTime}</span>` : ''}</div>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
-  } else if (state.mobileTab === 'profile') {
-      const myVisits = getVisits().filter(v => v.employeeId === current?.id);
-      screenContent = `
-      <div class="mobile-sim-header"><h2>Profil Saya</h2></div>
-      <div class="mobile-sim-body">
-        <div style="text-align:center; margin-bottom:20px;">
-          <div class="avatar avatar-lg" style="background:var(--blue-600); margin:0 auto 12px;">${current ? getInitials(current.name) : '?'}</div>
-          <div style="font-size:18px; font-weight:800;">${current?.name || '-'}</div>
-          <div style="font-size:13px; color:var(--gray-400);">${current?.role} · ${current?.area}</div>
-        </div>
-        <div class="mobile-card">
-          <div class="mobile-section-title" style="font-size:14px; margin-bottom:8px;">Informasi</div>
-          <div class="mobile-info-row"><span class="label">ID Karyawan</span><span class="value">${current?.id}</span></div>
-          <div class="mobile-info-row"><span class="label">Email</span><span class="value" style="font-size:12px;">${current?.email}</span></div>
-          <div class="mobile-info-row"><span class="label">Telepon</span><span class="value">${current?.phone}</span></div>
-          <div class="mobile-info-row"><span class="label">Bergabung</span><span class="value">${current ? formatDateShort(current.joinDate) : '-'}</span></div>
-        </div>
-        <div class="mobile-card">
-          <div class="mobile-section-title" style="font-size:14px; margin-bottom:8px;">Statistik</div>
-          <div class="mobile-info-row"><span class="label">Kunjungan Hari Ini</span><span class="value">${current?.todayVisits} / ${current?.targetVisits}</span></div>
-          <div class="mobile-info-row"><span class="label">Total Kunjungan</span><span class="value">${current?.totalVisits}</span></div>
-          <div class="mobile-info-row"><span class="label">Total Riwayat</span><span class="value">${myVisits.length}</span></div>
-          <div style="margin-top:12px;">
-            <div style="font-size:12px; color:var(--gray-400); margin-bottom:6px;">Progress hari ini</div>
-            <div class="progress-bar"><div class="progress-fill" style="width:${current ? Math.round(current.todayVisits/current.targetVisits*100) : 0}%;"></div></div>
-          </div>
-        </div>
-        <button class="btn btn-danger" style="width:100%; justify-content:center;" data-pqt-onclick="FT.logout()">Keluar</button>
-      </div>
-    `;
-  }
-
-  return `
-    <div style="padding:32px 20px;">
-      <div style="text-align:center; margin-bottom:24px;">
-        <h1 style="font-size:20px; font-weight:800; color:var(--gray-900);">Simulasi Mobile App</h1>
-        <p style="font-size:14px; color:var(--gray-400);">Tampilan field sales di perangkat mobile</p>
-      </div>
-      <div class="mobile-sim-frame">
-        <div class="mobile-sim-screen">${screenContent}</div>
-        <div class="mobile-bottom-nav">
-          ${tabs.map(t => `
-            <button class="mobile-nav-item ${state.mobileTab === t.id ? 'active' : ''}" data-pqt-onclick="FT.setMobileTab('${t.id}')">
-              <span class="mobile-nav-icon">${t.icon}</span>
-              <span>${t.label}</span>
-            </button>
-          `).join('')}
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-window.FT.setMobileTab = function(tab) { state.mobileTab = tab; render(); };
-window.FT.selectMobileEmp = function(id) { state.selectedMobileEmp = id; render(); };
+// ===== Mobile execution actions =====
+// Legacy simulator renderer was removed from the production critical bundle.
+// mobileCheckIn/mobileCheckOut remain because the live field UI uses them.
 
 window.FT.mobileCheckIn = async function(visitId) {
   try {

@@ -7,8 +7,13 @@ import { PASSWORD_KDF_ITERATIONS, PASSWORD_KDF_RUNTIME_MAX_ITERATIONS, passwordN
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
 test('competitor UI encodes stored user content before HTML rendering', async () => {
-  const [app, db] = await Promise.all([read('src/app.js'), read('src/lib/db.js')]);
-  const section = app.slice(app.indexOf('// ===== COMPETITORS'), app.indexOf('// ===== Competitor Analysis'));
+  const [app, competitorUi, db] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/competitor-pages.js'),
+    read('src/lib/db.js'),
+  ]);
+  assert.match(app, /import\('\.\/routes\/competitor-pages\.js'\)/);
+  const section = competitorUi;
   assert.match(section, /esc\(c\.name\)/);
   assert.match(section, /esc\(c\.category/);
   assert.match(section, /esc\(c\.notes/);
