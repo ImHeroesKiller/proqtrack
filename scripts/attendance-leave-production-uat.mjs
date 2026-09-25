@@ -7,7 +7,7 @@ const ids = {
   org:`ORG-UAT-AL-${runKey}`, client:`CL-UAT-AL-${runKey}`,
   manual:`PRJ-UAT-AL-MANUAL-${runKey}`, visit:`PRJ-UAT-AL-VISIT-${runKey}`,
   outlet:`OUT-UAT-AL-${runKey}`,
-  manager:`USR-UAT-AL-MANAGER-${runKey}`, supervisor:`USR-UAT-AL-SUPERVISOR-${runKey}`,
+  head:`USR-UAT-AL-HEAD-${runKey}`, manager:`USR-UAT-AL-MANAGER-${runKey}`, supervisor:`USR-UAT-AL-SUPERVISOR-${runKey}`,
   manualUser:`USR-UAT-AL-EMP-MANUAL-${runKey}`, visitUser:`USR-UAT-AL-EMP-VISIT-${runKey}`,
   manualEmp:`EMP-UAT-AL-MANUAL-${runKey}`, visitEmp:`EMP-UAT-AL-VISIT-${runKey}`, otherEmp:`EMP-UAT-AL-OTHER-${runKey}`,
   manualAtt:`UAT-AL-ATT-MANUAL-${runKey}`, visitDirect:`UAT-AL-ATT-VISIT-DIRECT-${runKey}`,
@@ -29,6 +29,7 @@ const hashPassword = plain => {
   return `pbkdf2$sha256$100000$${salt.toString('base64url')}$${derived.toString('base64url')}`;
 };
 const actors = {
+  head:{id:ids.head,email:`uat.al.head.${runKey}@proqtrack.id`,role:'head',pass:password()},
   manager:{id:ids.manager,email:`uat.al.manager.${runKey}@proqtrack.id`,role:'manager',pass:password()},
   supervisor:{id:ids.supervisor,email:`uat.al.supervisor.${runKey}@proqtrack.id`,role:'supervisor',pass:password()},
   manual:{id:ids.manualUser,email:`uat.al.manual.${runKey}@proqtrack.id`,role:'employee',pass:password(),employeeId:ids.manualEmp},
@@ -106,11 +107,11 @@ function cleanup() {
       DELETE FROM core_projects WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_clients WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_auth_devices WHERE organization_id='${sqlq(ids.org)}';
-      DELETE FROM core_auth_sessions WHERE user_id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
+      DELETE FROM core_auth_sessions WHERE user_id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
       DELETE FROM core_sync_state WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_organization_users WHERE organization_id='${sqlq(ids.org)}';
       DELETE FROM core_organizations WHERE id='${sqlq(ids.org)}';
-      DELETE FROM auth_users WHERE id IN ('${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
+      DELETE FROM auth_users WHERE id IN ('${ids.head}','${ids.manager}','${ids.supervisor}','${ids.manualUser}','${ids.visitUser}');
     `);
     cleaned=true;
   } catch(error) { console.error('UAT cleanup failed',error.message); }
@@ -126,11 +127,13 @@ try {
     VALUES('${ids.org}','UATAL-${runKey}','Attendance Leave Final UAT','active','Asia/Jakarta','{"synthetic":true,"attendanceLeaveFinalUat":true}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP);
     INSERT INTO core_sync_state(organization_id,revision,cutover_mode,updated_at) VALUES('${ids.org}',0,'cloud',CURRENT_TIMESTAMP);
     INSERT INTO auth_users(id,email,password_hash,role,status,project_ids,client_ids,created_at) VALUES
+      ('${actors.head.id}','${actors.head.email}','${actors.head.hash}','head','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.manager.id}','${actors.manager.email}','${actors.manager.hash}','manager','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.supervisor.id}','${actors.supervisor.email}','${actors.supervisor.hash}','supervisor','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.manual.id}','${actors.manual.email}','${actors.manual.hash}','employee','active','[]','[]',CURRENT_TIMESTAMP),
       ('${actors.visit.id}','${actors.visit.email}','${actors.visit.hash}','employee','active','[]','[]',CURRENT_TIMESTAMP);
     INSERT INTO core_organization_users(organization_id,user_id,role,status,created_at,updated_at) VALUES
+      ('${ids.org}','${ids.head}','head','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.manager}','manager','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.supervisor}','supervisor','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
       ('${ids.org}','${ids.manualUser}','employee','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),
@@ -161,8 +164,8 @@ try {
       VALUES('${ids.org}','${ids.visit}','${ids.outlet}','active',CURRENT_TIMESTAMP);
   `);
 
-  await login('manager'); await login('supervisor'); await login('manual',true); await login('visit',true);
-  await session('manager',[ids.manual,ids.visit]); await session('supervisor',[ids.manual,ids.visit]);
+  await login('head'); await login('manager'); await login('supervisor'); await login('manual',true); await login('visit',true);
+  await session('head',[ids.manual,ids.visit]); await session('manager',[ids.manual,ids.visit]); await session('supervisor',[ids.manual,ids.visit]);
   await session('manual',[ids.manual]); await session('visit',[ids.visit]);
 
   // Integrated Settings regression for project roles.
