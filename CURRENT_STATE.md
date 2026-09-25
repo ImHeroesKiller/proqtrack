@@ -165,3 +165,18 @@ Fokus sementara dialihkan dari pengembangan fitur baru ke konsistensi dan stabil
 - Migration live terakhir adalah `0027_inventory_cycle_correction_uat.sql`.
 - Service Worker cache baseline dinaikkan ke `proqtrack-v12.44` untuk memastikan shell terbaru menggantikan cache lama.
 - Semua perubahan stabilisasi harus melewati full CI, build, migration-from-empty, dan Worker dry-run sebelum merge.
+
+
+## Attendance + Leave P0 authority — 25 September 2026
+
+P0 authority untuk Attendance dan Leave ditutup dengan prinsip cloud-authoritative dan project-scoped:
+
+- Setiap project memiliki `attendanceSourceMode`: `manual` atau `visit`, serta `attendanceLateAfter` dengan default `09:00`.
+- Attendance manual wajib terkait project dan assignment aktif; employee hanya dapat membuat attendance miliknya sendiri.
+- Project dengan mode `visit` menolak direct attendance. Attendance harian dibuat idempotent dari check-in Visit yang lolos authority/geofence.
+- Round-trip Attendance mempertahankan check-in/check-out time dan koordinat sehingga hydrate cloud tidak menghilangkan data UI.
+- Leave baru selalu dipaksa `pending` oleh server; client tidak dapat menentukan approver atau timestamp approval.
+- Approval/rejection Leave distempel dari session actor di server. Leave final immutable dan delete ditolak untuk menjaga audit trail.
+- Overlap pengajuan Leave berstatus pending/approved diblokir.
+- UI Attendance/Leave baru menyatakan sukses setelah sync dan authoritative refresh selesai.
+- Regression guard: `tests/attendance-leave-p0.test.mjs`.

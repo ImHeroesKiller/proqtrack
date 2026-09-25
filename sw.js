@@ -1,6 +1,7 @@
 // Employees P2 operational refresh
 // Employees P3 maintainability refresh
 // Outlets P3 maintainability refresh
+// Attendance + Leave P0 authority refresh
 const CACHE = 'proqtrack-v12.44';
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [

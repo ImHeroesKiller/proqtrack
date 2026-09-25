@@ -3542,14 +3542,35 @@ window.FT.filterLeaves = function() {
   });
 };
 
+async function reviewLeaveAuthoritatively(id, status) {
+  let cloudCommitted = false;
+  try {
+    updateLeave(id, { status });
+    await waitForOperationalSync();
+    cloudCommitted = true;
+    await refreshOperationalData(getDB(), getActor());
+    showToast(status === 'approved' ? 'Pengajuan disetujui.' : 'Pengajuan ditolak.', 'success');
+    render();
+  } catch (error) {
+    if (!cloudCommitted) restoreOperationalBaseline(getDB());
+    const message = {
+      LEAVE_FINAL_IMMUTABLE:'Pengajuan sudah final dan tidak dapat diubah.',
+      LEAVE_REVIEW_DECISION_REQUIRED:'Keputusan approval tidak valid.',
+      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
+      REVISION_CONFLICT:'Data berubah dari perangkat lain. Data terbaru akan dimuat ulang.',
+    }[error?.code || error?.message] || error?.message || 'Keputusan ijin/cuti gagal disimpan.';
+    showToast(message, 'error');
+    await refreshOperationalData(getDB(), getActor()).catch(() => null);
+    render();
+  }
+}
+
 window.FT.approveLeave = function(id) {
-  updateLeave(id, { status: 'approved', approverId: state.account.id, approvedAt: new Date().toISOString().slice(0,10) });
-  showToast('Pengajuan disetujui', 'success'); render();
+  return reviewLeaveAuthoritatively(id, 'approved');
 };
 
 window.FT.rejectLeave = function(id) {
-  updateLeave(id, { status: 'rejected', approverId: state.account.id, approvedAt: new Date().toISOString().slice(0,10) });
-  showToast('Pengajuan ditolak', 'success'); render();
+  return reviewLeaveAuthoritatively(id, 'rejected');
 };
 
 window.FT.viewLeave = function(id) {
@@ -3696,13 +3717,37 @@ window.FT.calcLeaveDays = function() {
   }
 };
 
-window.FT.createMyLeave = function(e) {
+window.FT.createMyLeave = async function(e) {
   e.preventDefault();
-  const data = Object.fromEntries(new FormData(e.target));
+  const form = e.target;
+  const submit = form.querySelector('button[type="submit"]');
+  const data = Object.fromEntries(new FormData(form));
   data.employeeId = myEmployeeId();
-  data.days = parseInt(data.days);
-  createLeave(data);
-  closeModal(); showToast('Pengajuan terkirim, menunggu approval', 'success'); render();
+  let cloudCommitted = false;
+  try {
+    if (submit) { submit.disabled = true; submit.textContent = 'Mengirim…'; }
+    createLeave(data);
+    if (submit) submit.textContent = 'Sinkronisasi…';
+    await waitForOperationalSync();
+    cloudCommitted = true;
+    await refreshOperationalData(getDB(), getActor());
+    closeModal();
+    showToast('Pengajuan terkirim, menunggu approval.', 'success');
+    render();
+  } catch (error) {
+    if (!cloudCommitted) restoreOperationalBaseline(getDB());
+    const message = {
+      LEAVE_PERIOD_INVALID:'Periode ijin/cuti tidak valid.',
+      LEAVE_PERIOD_CONFLICT:'Periode ijin/cuti bertabrakan dengan pengajuan lain.',
+      LEAVE_SELF_ONLY:'Pengajuan hanya dapat dibuat untuk akun sendiri.',
+      REVISION_CONFLICT:'Data berubah dari perangkat lain. Silakan coba kembali.',
+    }[error?.code || error?.message] || error?.message || 'Pengajuan ijin/cuti gagal dikirim.';
+    showToast(message, 'error');
+    await refreshOperationalData(getDB(), getActor()).catch(() => null);
+    render();
+  } finally {
+    if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Kirim Pengajuan'; }
+  }
 };
 
 // ===== Generic table filter helper =====

@@ -267,6 +267,46 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
 
 const finalLeaveStatuses = new Set(['approved','rejected']);
 
+const canonicalAttendanceStatus = value => ({
+  hadir:'present',
+  present:'present',
+  terlambat:'late',
+  late:'late',
+  'tidak hadir':'absent',
+  absent:'absent',
+  leave:'leave',
+  cuti:'leave',
+  izin:'leave',
+  rejected:'rejected',
+}[str(value).toLowerCase()] || 'present');
+
+function projectAttendancePolicy(project = {}) {
+  const meta = parseMetadata(project?.metadata_json);
+  const sourceMode = str(meta.attendanceSourceMode) === 'visit' ? 'visit' : 'manual';
+  const rawLateAfter = str(meta.attendanceLateAfter || '09:00');
+  const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rawLateAfter) ? rawLateAfter : '09:00';
+  return { sourceMode, lateAfter };
+}
+
+function attendanceClock(value = '') {
+  const raw = str(value);
+  const hhmm = raw.match(/(?:T|^)(\d{2}:\d{2})/);
+  return hhmm?.[1] || '';
+}
+
+function attendanceStatusAt(checkInAt, lateAfter = '09:00') {
+  const clock = attendanceClock(checkInAt);
+  return clock && clock >= lateAfter ? 'late' : 'present';
+}
+
+function leaveSpanDays(startDate, endDate) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate) || endDate < startDate) return 0;
+  const start = Date.parse(startDate + 'T00:00:00Z');
+  const end = Date.parse(endDate + 'T00:00:00Z');
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.floor((end - start) / 86400000) + 1;
+}
+
 const firstValue = (row, keys) => {
   for (const key of keys) {
     if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
@@ -280,6 +320,161 @@ const unchangedIfProvided = (incoming, existing, incomingKeys, existingKeys = in
   const current = firstValue(existing, existingKeys);
   return String(next) === String(current ?? '');
 };
+
+async function validateAttendanceAuthorityMutation(env, organizationId, claims, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
+
+  const projectId = str(row.projectId || row.project_id || existing?.project_id);
+  const employeeId = str(row.employeeId || row.employee_id || existing?.employee_id);
+  const workDate = str(row.workDate || row.date || row.work_date || existing?.work_date);
+  if (!projectId) return { error:'ATTENDANCE_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'ATTENDANCE_EMPLOYEE_REQUIRED', status:422 };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) return { error:'ATTENDANCE_DATE_INVALID', status:422 };
+
+  const project = await env.DB.prepare(
+    'SELECT id,status,starts_on,ends_on,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project || !['active','draft'].includes(str(project.status))) return { error:'ATTENDANCE_PROJECT_NOT_ACTIVE', status:409 };
+
+  const assignment = await env.DB.prepare(
+    "SELECT id FROM core_employee_project_assignments WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active' AND (starts_on IS NULL OR starts_on<=?) AND (ends_on IS NULL OR ends_on>=?) LIMIT 1"
+  ).bind(organizationId,projectId,employeeId,workDate,workDate).first();
+  if (!assignment) return { error:'ATTENDANCE_EMPLOYEE_PROJECT_MISMATCH', status:409 };
+
+  const role = roleOf(claims);
+  if (role === 'employee' && (!context.actorEmployeeId || str(context.actorEmployeeId) !== employeeId)) {
+    return { error:'ATTENDANCE_SELF_ONLY', status:403 };
+  }
+
+  const policy = projectAttendancePolicy(project);
+  if (!existing) {
+    if (policy.sourceMode === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_ONLY', status:409 };
+    const checkInAt = str(row.checkInAt || row.checkInTime || row.check_in_at);
+    if (!checkInAt) return { error:'ATTENDANCE_CHECKIN_REQUIRED', status:422 };
+    row.projectId = projectId;
+    row.employeeId = employeeId;
+    row.workDate = workDate;
+    row.date = workDate;
+    row.checkInAt = checkInAt;
+    row.checkInTime = attendanceClock(checkInAt) || checkInAt;
+    row.status = attendanceStatusAt(checkInAt, policy.lateAfter);
+    row.attendanceSource = 'manual';
+    row.createdBy = claims.sub;
+    row.idempotencyKey = str(row.idempotencyKey) || `attendance:manual:${projectId}:${employeeId}:${workDate}`;
+    return null;
+  }
+
+  const meta = parseMetadata(existing.metadata_json);
+  if (str(meta.attendanceSource) === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_IMMUTABLE', status:409 };
+  return null;
+}
+
+async function validateLeaveAuthorityMutation(env, organizationId, claims, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
+  if (op === 'delete') return { error:'LEAVE_DELETE_FORBIDDEN', status:409 };
+
+  const role = roleOf(claims);
+  const employeeId = str(row.employeeId || row.employee_id || existing?.employee_id);
+  if (!employeeId) return { error:'LEAVE_EMPLOYEE_REQUIRED', status:422 };
+  if (role === 'employee' && (!context.actorEmployeeId || str(context.actorEmployeeId) !== employeeId)) {
+    return { error:'LEAVE_SELF_ONLY', status:403 };
+  }
+
+  if (!existing) {
+    const startDate = str(row.startDate);
+    const endDate = str(row.endDate);
+    const days = leaveSpanDays(startDate,endDate);
+    if (!days) return { error:'LEAVE_PERIOD_INVALID', status:422 };
+    const conflict = await env.DB.prepare(
+      "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND status IN ('pending','approved') AND NOT(end_date<? OR start_date>?) LIMIT 1"
+    ).bind(organizationId,employeeId,startDate,endDate).first();
+    if (conflict) return { error:'LEAVE_PERIOD_CONFLICT', status:409 };
+    row.employeeId = employeeId;
+    row.startDate = startDate;
+    row.endDate = endDate;
+    row.days = days;
+    row.status = 'pending';
+    row.approverId = null;
+    row.approvedAt = null;
+    row.submittedAt = new Date().toISOString().slice(0,10);
+    row.submittedBy = claims.sub;
+    return null;
+  }
+
+  if (finalLeaveStatuses.has(str(existing.status))) return { error:'LEAVE_FINAL_IMMUTABLE', status:409 };
+  const nextStatus = str(row.status || existing.status || 'pending');
+  if (role === 'employee') {
+    if (nextStatus !== 'pending') return { error:'LEAVE_DECISION_FORBIDDEN', status:403 };
+    const startDate = str(row.startDate || existing.start_date);
+    const endDate = str(row.endDate || existing.end_date);
+    const days = leaveSpanDays(startDate,endDate);
+    if (!days) return { error:'LEAVE_PERIOD_INVALID', status:422 };
+    const conflict = await env.DB.prepare(
+      "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND id<>? AND status IN ('pending','approved') AND NOT(end_date<? OR start_date>?) LIMIT 1"
+    ).bind(organizationId,employeeId,str(existing.id),startDate,endDate).first();
+    if (conflict) return { error:'LEAVE_PERIOD_CONFLICT', status:409 };
+    row.status = 'pending';
+    row.approverId = null;
+    row.approvedAt = null;
+    row.submittedAt = str(existing.submitted_at);
+    row.days = days;
+    return null;
+  }
+
+  if (!['approved','rejected'].includes(nextStatus) || nextStatus === str(existing.status)) {
+    return { error:'LEAVE_REVIEW_DECISION_REQUIRED', status:422 };
+  }
+  row.employeeId = str(existing.employee_id);
+  row.type = str(existing.type);
+  row.startDate = str(existing.start_date);
+  row.endDate = str(existing.end_date);
+  row.days = Number(existing.days || 1);
+  row.reason = str(existing.reason);
+  row.submittedAt = str(existing.submitted_at);
+  row.status = nextStatus;
+  row.approverId = claims.sub;
+  row.approvedAt = new Date().toISOString();
+  return null;
+}
+
+async function visitAttendanceStatements(env, organizationId, row) {
+  const nextStatus = canonicalVisitStatus(row.status || 'planned');
+  if (!['in_progress','completed'].includes(nextStatus)) return [];
+  const projectId = str(row.projectId || row.project_id);
+  const employeeId = str(row.employeeId || row.employee_id);
+  const project = await env.DB.prepare(
+    'SELECT metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project || projectAttendancePolicy(project).sourceMode !== 'visit') return [];
+
+  const workDate = str(row.date || row.visitDate || row.scheduledAt).slice(0,10);
+  const checkInAt = str(row.checkInTime || row.checkInAt || row.startedAt || row.checkInCapturedAt);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || !checkInAt) return [];
+  const policy = projectAttendancePolicy(project);
+  const id = `ATT-VIS-${str(row.id)}`;
+  const metadataJson = JSON.stringify({
+    attendanceSource:'visit',
+    provenance:'visit',
+    visitId:str(row.id),
+    locationId:str(row.outletId),
+    locationType:'store',
+    checkInLocation:str(row.outletId),
+  });
+  return [env.DB.prepare(
+    `INSERT OR IGNORE INTO core_attendance(
+      id,organization_id,project_id,employee_id,work_date,status,check_in_at,
+      check_in_latitude,check_in_longitude,idempotency_key,metadata_json,row_version,updated_at
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)`
+  ).bind(
+    id,organizationId,projectId,employeeId,workDate,
+    attendanceStatusAt(checkInAt,policy.lateAfter),checkInAt,
+    num(row.checkInLat ?? row.startLatitude ?? row.lat),
+    num(row.checkInLng ?? row.startLongitude ?? row.lng),
+    `attendance:visit:${projectId}:${employeeId}:${workDate}`,
+    metadataJson
+  )];
+}
 
 export function operationalTransitionAllowed(claims, entity, change, context = {}) {
   const role = roleOf(claims);
@@ -592,7 +787,9 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'projects': {
       const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
       const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
-      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status };
+      const attendanceSourceMode = str(row.attendanceSourceMode) === 'visit' ? 'visit' : 'manual';
+      const attendanceLateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(str(row.attendanceLateAfter)) ? str(row.attendanceLateAfter) : '09:00';
+      return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status, attendanceSourceMode, attendanceLateAfter };
     }
     case 'employees': return { ...base, id: str(row.id), authUserId: extras.authUserId || row.authUserId || null, employeeCode: str(row.employeeCode || row.code || row.id), name: str(row.name || row.fullName), status: safeStatus(row.status, ['active','inactive','terminated'], 'active') };
     case 'projectAssignments': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), status: ({ removed: 'ended', assigned: 'active' }[str(row.status)] || safeStatus(row.status, ['active','inactive','ended'], 'active')) };
@@ -604,7 +801,26 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
         : safeStatus(uiStatus, ['planned','in_progress','completed','cancelled','rejected'], 'planned');
       return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId), uiStatus, status };
     }
-    case 'attendance': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), workDate: str(row.workDate || row.date), status: safeStatus(str(row.status).toLowerCase(), ['present','late','absent','leave','rejected'], 'present') };
+    case 'attendance': {
+      const checkInAt = nullable(str(row.checkInAt || row.checkInTime || row.check_in_at));
+      const checkOutAt = nullable(str(row.checkOutAt || row.checkOutTime || row.check_out_at));
+      return {
+        ...base,
+        id:str(row.id),
+        projectId:str(row.projectId),
+        employeeId:str(row.employeeId),
+        workDate:str(row.workDate || row.date),
+        status:canonicalAttendanceStatus(row.status),
+        checkInAt,
+        checkInTime:checkInAt,
+        checkOutAt,
+        checkOutTime:checkOutAt,
+        checkInLatitude:num(row.checkInLatitude ?? row.lat),
+        checkInLongitude:num(row.checkInLongitude ?? row.lng),
+        checkOutLatitude:num(row.checkOutLatitude),
+        checkOutLongitude:num(row.checkOutLongitude),
+      };
+    }
     case 'products': return { ...base, id: str(row.id), clientId: str(row.clientId), sku: str(row.sku || row.id), name: str(row.name || 'Product'), projectIds: unique(row.projectIds?.length ? row.projectIds : (row.projectId ? [row.projectId] : [])), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'productSales': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), employeeId: str(row.employeeId), productId: str(row.productId), quantity: num(row.quantity ?? row.qty) ?? 0, unitPrice: num(row.unitPrice ?? row.price), totalAmount: num(row.totalAmount ?? row.amount), soldAt: str(row.soldAt || row.date || row.createdAt || new Date().toISOString()), idempotencyKey:nullable(str(row.idempotencyKey)), provenance:str(row.provenance || 'manual_override'), lifecycleStatus:safeStatus(row.lifecycleStatus || row.status,['active','voided'],'active'), manualReason:str(row.manualReason), correctionReason:str(row.correctionReason), correctionOfSaleId:nullable(str(row.correctionOfSaleId)), voidedAt:nullable(str(row.voidedAt)), voidedBy:nullable(str(row.voidedBy)), createdBy:nullable(str(row.createdBy)) };
     case 'surveyTemplates': return { ...base, id: str(row.id), clientId: str(row.clientId), projectId: nullable(str(row.projectId)), name: str(row.name || row.title || 'Survey'), status: safeStatus(row.status, ['draft','active','closed','archived'], 'draft') };
@@ -789,7 +1005,22 @@ function decodeRows(entity, rows, relationMap = new Map()) {
         checkOutLat: meta.checkOutLat ?? dbRow.end_latitude,
         checkOutLng: meta.checkOutLng ?? dbRow.end_longitude,
       };
-      case 'attendance': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, date: dbRow.work_date, workDate: dbRow.work_date, status: dbRow.status, checkInAt: dbRow.check_in_at, checkOutAt: dbRow.check_out_at };
+      case 'attendance': return {
+        ...common,
+        projectId:dbRow.project_id,
+        employeeId:dbRow.employee_id,
+        date:dbRow.work_date,
+        workDate:dbRow.work_date,
+        status:dbRow.status,
+        checkInAt:dbRow.check_in_at,
+        checkInTime:dbRow.check_in_at,
+        checkOutAt:dbRow.check_out_at,
+        checkOutTime:dbRow.check_out_at,
+        checkInLatitude:dbRow.check_in_latitude,
+        checkInLongitude:dbRow.check_in_longitude,
+        checkOutLatitude:dbRow.check_out_latitude,
+        checkOutLongitude:dbRow.check_out_longitude,
+      };
       case 'products': return { ...common, clientId: dbRow.client_id, sku: dbRow.sku, name: dbRow.name, unit: dbRow.unit, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
       case 'productSales': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, employeeId: dbRow.employee_id, productId: dbRow.product_id, quantity: dbRow.quantity, unitPrice: dbRow.unit_price, totalAmount: dbRow.total_amount, amount: dbRow.total_amount, soldAt: dbRow.sold_at };
       case 'surveyTemplates': return { ...common, clientId: dbRow.client_id, projectId: dbRow.project_id, name: dbRow.name, status: dbRow.status, version: dbRow.version };
@@ -1032,6 +1263,10 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   if (!code) return { error:'PROJECT_CODE_REQUIRED', status:422 };
   if (!clientId) return { error:'PROJECT_CLIENT_REQUIRED', status:422 };
   if (!['draft','active','on_hold','completed','cancelled'].includes(nextStatus)) return { error:'PROJECT_INVALID_STATUS', status:422 };
+  const attendanceSourceMode = str(row.attendanceSourceMode || parseMetadata(existing?.metadata_json)?.attendanceSourceMode || 'manual');
+  const attendanceLateAfter = str(row.attendanceLateAfter || parseMetadata(existing?.metadata_json)?.attendanceLateAfter || '09:00');
+  if (!['manual','visit'].includes(attendanceSourceMode)) return { error:'PROJECT_INVALID_ATTENDANCE_SOURCE', status:422 };
+  if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(attendanceLateAfter)) return { error:'PROJECT_INVALID_ATTENDANCE_CUTOFF', status:422 };
 
   const client = await env.DB.prepare(
     'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
@@ -1828,7 +2063,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       ).bind(organizationId,str(existing.id || row.id)));
       existingProjectIds = unique(links.map(link => link.project_id));
     }
-    if ((entity === 'visits' || entity === 'outletProposals') && !actorEmployeeResolved) {
+    if ((entity === 'visits' || entity === 'outletProposals' || entity === 'attendance' || entity === 'leaves') && !actorEmployeeResolved) {
       actorEmployeeResolved = true;
       const actorEmployee = await env.DB.prepare(
         "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
@@ -1838,6 +2073,14 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (entity === 'outletProposals' && op === 'upsert') {
       const proposalError = await applyOutletProposalAuthority(env, claims, organizationId, row, existing, actorEmployeeId);
       if (proposalError) return json({ error:proposalError.error, entity, id:row.id || null }, proposalError.status || 422);
+    }
+    if (entity === 'attendance') {
+      const attendanceError = await validateAttendanceAuthorityMutation(env, organizationId, claims, row, existing, { op, actorEmployeeId });
+      if (attendanceError) return json({ error:attendanceError.error, entity, id:row.id || null }, attendanceError.status || 422);
+    }
+    if (entity === 'leaves') {
+      const leaveError = await validateLeaveAuthorityMutation(env, organizationId, claims, row, existing, { op, actorEmployeeId });
+      if (leaveError) return json({ error:leaveError.error, entity, id:row.id || null }, leaveError.status || 422);
     }
     if (!authorizeOperationalChange(claims, entity, { ...change, row }, { existing, existingProjectIds, accessibleEmployeeIds, batchAssignments, actorEmployeeId })) return json({ error: 'CHANGE_FORBIDDEN', entity, id: row.id || null }, 403);
     if (entity === 'clients' && op === 'upsert') {
@@ -1891,10 +2134,6 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(geofenceError.radiusM != null ? { radiusM:geofenceError.radiusM } : {}),
       }, geofenceError.status || 422);
     }
-    if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
-      row.approverId = claims.sub;
-      row.approvedAt = new Date().toISOString();
-    }
     if (op === 'delete') statements.push(...deleteStatements(env, entity, row, organizationId));
     else {
       let extras = {};
@@ -1903,6 +2142,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         extras = { authUserId: user?.id || null };
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
+      if (entity === 'visits') statements.push(...await visitAttendanceStatements(env, organizationId, row));
       if (entity === 'outletProposals' && str(row.status) === 'approved') {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
