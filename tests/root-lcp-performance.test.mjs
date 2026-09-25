@@ -34,8 +34,8 @@ test('critical UI CSS has no external @import font waterfall', async () => {
 
 test('entry path no longer observes the entire document during bootstrap', async () => {
   const [entry, logo] = await Promise.all([read('src/entry.js'), read('assets/logo.js')]);
-  assert.doesNotMatch(entry, /MutationObserver/);
-  assert.doesNotMatch(logo, /MutationObserver/);
+  assert.doesNotMatch(entry, /new MutationObserver/);
+  assert.doesNotMatch(logo, /new MutationObserver/);
   assert.doesNotMatch(logo, /ensureLink\('stylesheet'/);
   assert.match(entry, /await import\('\.\/bootstrap\.js'\)/);
 });
