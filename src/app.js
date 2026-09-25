@@ -614,7 +614,10 @@ function render() {
   if (!state.loggedIn) {
     stopRouteRefresh();
     disposeTrackingMap();
-    app.innerHTML = renderLogin();
+    const publicRoute = getRoute();
+    if (publicRoute === '#/privacy') app.innerHTML = renderPublicLegalPage('privacy');
+    else if (publicRoute === '#/terms-of-reference') app.innerHTML = renderPublicLegalPage('terms');
+    else app.innerHTML = renderLogin();
     return;
   }
 
@@ -932,39 +935,206 @@ function renderFieldDock(route) {
 }
 
 // ===== Login =====
-function renderLogin() {
+function loginBrandContext() {
   const brand = getOrganization(getCurrentOrgId()) || {};
-  const brandName = brand.name || 'ProQTrack';
-  const brandLogo = brand.logo || '';
+  return {
+    name: brand.name || 'ProQTrack',
+    logo: brand.logo || '',
+  };
+}
+
+function brandMark(name, logo, className = 'login-logo') {
+  return `<div class="${className}">${logo
+    ? `<img src="${esc(logo)}" alt="Logo ${esc(name)}">`
+    : '<span aria-hidden="true">PQ</span>'}</div>`;
+}
+
+function renderLogin() {
+  const brand = loginBrandContext();
   return `
-    <div class="login-page">
-      <div class="login-card">
-        <div class="login-logo">${brandLogo ? `<img src="${esc(brandLogo)}" alt="Logo ${esc(brandName)}">` : 'PQ'}</div>
-        <h1>${esc(brandName)}</h1>
-        <div class="subtitle">Field Team Real-time Monitoring System</div>
-        <form data-pqt-onsubmit="FT.handleLogin(event)" data-pqt-onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
-          <div class="form-group">
-            <label class="label">Email</label>
-            <input class="input" type="email" id="loginEmail" placeholder="email@proqtrack.id" autocomplete="username" required autofocus>
+    <main class="login-page login-page-v2">
+      <div class="login-shell" aria-label="Login ${esc(brand.name)}">
+        <section class="login-showcase" aria-label="ProQTrack field operations workspace">
+          <div class="login-showcase-top">
+            <div class="login-brand-lockup">
+              ${brandMark(brand.name, brand.logo, 'login-showcase-logo')}
+              <div>
+                <div class="login-brand-name">${esc(brand.name)}</div>
+                <div class="login-brand-product">Powered by ProQTrack</div>
+              </div>
+            </div>
+            <span class="login-environment-badge">Field Operations Workspace</span>
           </div>
-          <div class="form-group">
-            <label class="label">Password</label>
-            <div class="password-field">
-              <input class="input" type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password" required>
-              <button class="password-toggle" type="button" data-pqt-onclick="FT.toggleLoginPassword(this)" aria-label="Tampilkan password" aria-pressed="false">
-                <span class="password-eye" aria-hidden="true">${iconSvg('eye')}</span>
-              </button>
+
+          <div class="login-showcase-copy">
+            <div class="login-eyebrow">CONTROL · VISIBILITY · EXECUTION</div>
+            <h2>Operasional lapangan,<br><span>dalam satu kendali.</span></h2>
+            <p>Pantau aktivitas tim, kunjungan, attendance, evidence, outlet, stok, dan penjualan dari satu workspace yang konsisten.</p>
+
+            <div class="login-capability-grid" aria-label="Kapabilitas utama">
+              <div class="login-capability">
+                <span class="login-capability-icon" aria-hidden="true">${iconSvg('location')}</span>
+                <strong>Live Visibility</strong>
+                <small>Aktivitas dan lokasi kerja sesuai scope project.</small>
+              </div>
+              <div class="login-capability">
+                <span class="login-capability-icon" aria-hidden="true">${iconSvg('shield')}</span>
+                <strong>Role Based Access</strong>
+                <small>Akses data mengikuti organisasi, project, dan peran.</small>
+              </div>
+              <div class="login-capability">
+                <span class="login-capability-icon" aria-hidden="true">${iconSvg('chart')}</span>
+                <strong>Operational Control</strong>
+                <small>Data lapangan terhubung ke reporting dan governance.</small>
+              </div>
             </div>
           </div>
-          <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center; margin-top:8px;">
-            Masuk ke Dashboard
-          </button>
-        </form>
-        <div style="text-align:center; margin-top:24px; font-size:12px; color:var(--gray-400);">
-          Hubungi admin untuk akun akses. Jangan bagikan password di perangkat bersama.
+
+          <div class="login-showcase-foot">
+            <span class="login-status-dot" aria-hidden="true"></span>
+            <span>Secure production workspace</span>
+          </div>
+        </section>
+
+        <section class="login-auth-panel">
+          <div class="login-card login-card-v2">
+            <div class="login-mobile-brand">
+              ${brandMark(brand.name, brand.logo)}
+              <div class="login-mobile-brand-copy">
+                <strong>${esc(brand.name)}</strong>
+                <span>Field Team Monitoring</span>
+              </div>
+            </div>
+
+            <div class="login-form-heading">
+              <span class="login-form-kicker">Welcome back</span>
+              <h1>Masuk ke workspace</h1>
+              <p>Gunakan akun yang terdaftar untuk melanjutkan.</p>
+            </div>
+
+            <form class="login-form" data-pqt-onsubmit="FT.handleLogin(event)" data-pqt-onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();this.requestSubmit();}">
+              <div class="form-group login-form-group">
+                <label class="label" for="loginEmail">Email</label>
+                <input class="input" type="email" id="loginEmail" placeholder="nama@perusahaan.com" autocomplete="username" inputmode="email" required autofocus>
+              </div>
+              <div class="form-group login-form-group">
+                <label class="label" for="loginPassword">Password</label>
+                <div class="password-field">
+                  <input class="input" type="password" id="loginPassword" placeholder="Masukkan password" autocomplete="current-password" required>
+                  <button class="password-toggle" type="button" data-pqt-onclick="FT.toggleLoginPassword(this)" aria-label="Tampilkan password" aria-pressed="false">
+                    <span class="password-eye" aria-hidden="true">${iconSvg('eye')}</span>
+                  </button>
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary login-submit">
+                <span>Masuk ke Dashboard</span>
+                <span class="login-submit-arrow" aria-hidden="true">→</span>
+              </button>
+            </form>
+
+            <div class="login-security-note">
+              <span class="login-security-icon" aria-hidden="true">${iconSvg('shield')}</span>
+              <span>Gunakan perangkat pribadi atau perangkat kerja yang telah disetujui organisasi.</span>
+            </div>
+
+            <div class="login-legal-links" aria-label="Dokumen kebijakan">
+              <a href="#/privacy">Privacy Policy</a>
+              <span aria-hidden="true">·</span>
+              <a href="#/terms-of-reference">Terms of Reference</a>
+            </div>
+          </div>
+
+          <div class="login-auth-footer">
+            <span>© 2026 ProQTrack</span>
+            <span>Operational workspace for field teams</span>
+          </div>
+        </section>
+      </div>
+    </main>
+  `;
+}
+
+function legalSections(type) {
+  if (type === 'terms') {
+    return {
+      eyebrow: 'GOVERNANCE',
+      title: 'Terms of Reference',
+      intro: 'Kerangka penggunaan ProQTrack untuk memastikan aktivitas operasional, akses data, dan tanggung jawab pengguna berjalan konsisten dan dapat dipertanggungjawabkan.',
+      sections: [
+        ['1. Tujuan penggunaan', 'ProQTrack digunakan sebagai workspace operasional untuk aktivitas field team, termasuk project assignment, kunjungan, attendance, leave, outlet, produk, stok, penjualan, survey, evidence, dan reporting sesuai konfigurasi organisasi.'],
+        ['2. Pengguna dan kewenangan', 'Akses diberikan hanya kepada pengguna yang diotorisasi. Hak melihat, membuat, memperbarui, menyetujui, atau mengelola data mengikuti role, organisasi, project, dan assignment yang berlaku.'],
+        ['3. Akurasi dan integritas data', 'Pengguna wajib memasukkan data yang benar dan relevan dengan aktivitas kerja. Manipulasi lokasi, evidence, transaksi, approval, atau informasi operasional lainnya tidak diperbolehkan.'],
+        ['4. Perangkat dan keamanan akun', 'Akun bersifat individual. Password tidak boleh dibagikan. Organisasi dapat menerapkan device binding, session control, dan pembatasan akses untuk melindungi data dan mencegah penggunaan yang tidak sah.'],
+        ['5. Lokasi dan evidence lapangan', 'Fitur tertentu dapat menggunakan koordinat, waktu, foto, atau evidence lain saat aktivitas lapangan dilakukan. Penggunaan informasi tersebut dibatasi pada kebutuhan operasional, verifikasi, audit, dan reporting sesuai kewenangan.'],
+        ['6. Availability dan perubahan layanan', 'Fitur dapat diperbarui untuk keamanan, stabilitas, kepatuhan operasional, atau peningkatan layanan. Maintenance dapat dilakukan bila diperlukan dengan menjaga integritas dan keamanan data sebagai prioritas.'],
+        ['7. Tanggung jawab organisasi', 'Organisasi bertanggung jawab menentukan user, role, project scope, kebijakan internal, retention yang relevan, serta memastikan penggunaan ProQTrack sesuai perjanjian dan ketentuan yang berlaku di organisasinya.'],
+      ],
+    };
+  }
+  return {
+    eyebrow: 'PRIVACY',
+    title: 'Privacy Policy',
+    intro: 'Kebijakan ini menjelaskan jenis informasi yang dapat diproses oleh ProQTrack dan bagaimana informasi tersebut digunakan untuk mendukung operasional lapangan secara aman.',
+    sections: [
+      ['1. Informasi yang diproses', 'ProQTrack dapat memproses data akun dan profil kerja, organisasi dan project, aktivitas kunjungan, attendance dan leave, data outlet dan produk, transaksi operasional, lokasi, foto/evidence, device information yang diperlukan untuk keamanan, serta data audit sistem.'],
+      ['2. Tujuan pemrosesan', 'Data digunakan untuk autentikasi dan kontrol akses, pelaksanaan pekerjaan lapangan, validasi aktivitas, monitoring operasional, reporting, audit, troubleshooting, keamanan, serta peningkatan stabilitas layanan.'],
+      ['3. Lokasi, foto, dan evidence', 'Lokasi atau evidence diproses ketika fitur kerja yang relevan digunakan. Informasi tersebut digunakan untuk konteks operasional seperti kunjungan, attendance, verifikasi outlet, atau dokumentasi lapangan sesuai scope pengguna.'],
+      ['4. Akses dan pembatasan data', 'Data dibatasi berdasarkan organisasi, project, role, dan assignment. Pengguna hanya mendapatkan akses sesuai kewenangan yang diberikan. Administrator tertentu dapat memiliki akses yang lebih luas untuk kebutuhan administrasi dan audit.'],
+      ['5. Penyimpanan dan keamanan', 'ProQTrack menggunakan kontrol autentikasi, authorization, session management, tenant isolation, auditability, dan mekanisme keamanan aplikasi untuk membantu melindungi data dari akses yang tidak sah.'],
+      ['6. Retensi dan penghapusan', 'Periode retensi dapat mengikuti kebutuhan operasional dan kebijakan organisasi. Data dapat diarsipkan atau dihapus berdasarkan kewenangan administrator, kebutuhan kontraktual, atau proses operasional yang berlaku.'],
+      ['7. Hak dan pertanyaan pengguna', 'Permintaan terkait koreksi data profil, akses akun, atau pertanyaan privasi dapat disampaikan melalui administrator organisasi. Permintaan akan diproses sesuai kewenangan dan kebijakan yang berlaku.'],
+    ],
+  };
+}
+
+function renderPublicLegalPage(type) {
+  const brand = loginBrandContext();
+  const content = legalSections(type);
+  return `
+    <main class="legal-page">
+      <div class="legal-shell">
+        <header class="legal-topbar">
+          <a class="legal-brand" href="#/login" aria-label="Kembali ke login">
+            ${brandMark(brand.name, brand.logo, 'legal-brand-logo')}
+            <span>
+              <strong>${esc(brand.name)}</strong>
+              <small>Powered by ProQTrack</small>
+            </span>
+          </a>
+          <a class="btn btn-secondary legal-back-button" href="#/login">← Kembali ke Login</a>
+        </header>
+
+        <div class="legal-layout">
+          <aside class="legal-summary">
+            <span class="legal-eyebrow">${content.eyebrow}</span>
+            <h1>${content.title}</h1>
+            <p>${content.intro}</p>
+            <div class="legal-meta">
+              <span>Berlaku sejak</span>
+              <strong>25 September 2026</strong>
+            </div>
+            <div class="legal-switch">
+              <a class="${type === 'privacy' ? 'active' : ''}" href="#/privacy">Privacy Policy</a>
+              <a class="${type === 'terms' ? 'active' : ''}" href="#/terms-of-reference">Terms of Reference</a>
+            </div>
+          </aside>
+
+          <article class="legal-document">
+            ${content.sections.map(([title, body]) => `
+              <section class="legal-section">
+                <h2>${title}</h2>
+                <p>${body}</p>
+              </section>
+            `).join('')}
+            <div class="legal-document-footer">
+              <p>Dokumen ini merupakan bagian dari governance penggunaan ProQTrack. Kebijakan organisasi atau ketentuan kontraktual yang lebih spesifik tetap berlaku sesuai konteks masing-masing.</p>
+              <a href="#/login">Kembali ke halaman login →</a>
+            </div>
+          </article>
         </div>
       </div>
-    </div>
+    </main>
   `;
 }
 
