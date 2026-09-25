@@ -985,7 +985,10 @@ window.AM = {
   },
   filterAccounts(value) {
     window.FT.state._accountQuery = value;
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    clearTimeout(accountFilterTimer);
+    accountFilterTimer = setTimeout(() => {
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    },180);
   },
   filterRole(value) {
     window.FT.state._accountRole = value;
@@ -993,6 +996,13 @@ window.AM = {
   },
   filterStatus(value) {
     window.FT.state._accountStatus = value;
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  },
+  clearAccountFilters() {
+    clearTimeout(accountFilterTimer);
+    window.FT.state._accountQuery = '';
+    window.FT.state._accountRole = '';
+    window.FT.state._accountStatus = '';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   },
   openAccount(id = '') {
@@ -1008,15 +1018,20 @@ window.AM = {
   },
   async refreshAccounts() {
     if (accountSyncInFlight) return;
+    const orgId = String(account()?.organizationId || getDB().currentOrganizationId || '');
     accountSyncInFlight = true;
+    accountSyncError = '';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
     try {
       await syncCloudAccounts();
-      accountSyncedOrg = String(account()?.organizationId || getDB().currentOrganizationId || '');
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      accountSyncedOrg = orgId;
+      accountSyncAttemptedOrg = orgId;
+      accountSyncLastAt = new Date();
     } catch (error) {
-      toast(error.message || error, 'error');
+      accountSyncError = accountErrorMessage(error);
     } finally {
       accountSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   },
   async saveAccount(event, id) {
@@ -1061,12 +1076,23 @@ window.AM = {
   },
   async resetDevice(id) {
     if (accountActionInFlight.has(`reset:${id}`)) return;
-    if (!confirm('Reset perangkat akun ini? Field Sales harus login ulang dari perangkat baru untuk pairing berikutnya.')) return;
+    const target = getAccounts().find(row => String(row.id) === String(id));
+    openSettingsConfirm({
+      title:'Reset perangkat?',
+      message:`Binding perangkat ${target?.name || target?.email || 'akun ini'} akan dihapus. Field Sales harus login ulang untuk memasangkan perangkat berikutnya.`,
+      confirmLabel:'Reset perangkat',
+      action:'resetDevice',
+      id,
+    });
+  },
+  async _resetDeviceConfirmed(id) {
     const key = `reset:${id}`;
+    if (accountActionInFlight.has(key)) return;
     accountActionInFlight.add(key);
     try {
       await resetCloudAccountDevice(id);
-      window.FT.closeModal?.();
+      accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
       toast('Binding perangkat server direset. Login berikutnya akan memasangkan perangkat baru.');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
@@ -1083,9 +1109,27 @@ window.AM = {
       toast('Anda tidak memiliki izin untuk mengubah status akun ini.', 'error');
       return;
     }
+    if (status === 'suspended') {
+      openSettingsConfirm({
+        title:'Tangguhkan akun?',
+        message:`${target?.name || target?.email || 'Akun ini'} tidak dapat login pada organisasi aktif sampai diaktifkan kembali.`,
+        confirmLabel:'Tangguhkan',
+        action:'toggleStatus',
+        id,
+        value:status,
+      });
+      return;
+    }
+    return this._toggleStatusConfirmed(id,status);
+  },
+  async _toggleStatusConfirmed(id, status) {
+    const key = `status:${id}`;
+    if (accountActionInFlight.has(key)) return;
     accountActionInFlight.add(key);
     try {
       await updateCloudAccount(id, { status });
+      accountSyncedOrg = '';
+      accountSyncAttemptedOrg = '';
       toast(status === 'active' ? 'Akun cloud diaktifkan' : 'Akun cloud ditangguhkan');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
