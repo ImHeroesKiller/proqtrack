@@ -64,6 +64,39 @@ async function getAll(storeName) {
   });
 }
 
+async function evidenceRowsByStatus(organizationId, status) {
+  const db = await openDB();
+  if (!db) {
+    return [...MEMORY.evidence.values()]
+      .filter(row => row.organizationId === organizationId && row.status === status);
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('evidence', 'readonly');
+    const index = transaction.objectStore('evidence').index('organization_status');
+    const req = index.getAll(IDBKeyRange.only([organizationId, status]));
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error || new Error('INDEXEDDB_READ_FAILED'));
+  });
+}
+
+async function evidenceCountByStatus(organizationId, status) {
+  const db = await openDB();
+  if (!db) {
+    let count = 0;
+    for (const row of MEMORY.evidence.values()) {
+      if (row.organizationId === organizationId && row.status === status) count += 1;
+    }
+    return count;
+  }
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction('evidence', 'readonly');
+    const index = transaction.objectStore('evidence').index('organization_status');
+    const req = index.count(IDBKeyRange.only([organizationId, status]));
+    req.onsuccess = () => resolve(Number(req.result || 0));
+    req.onerror = () => reject(req.error || new Error('INDEXEDDB_READ_FAILED'));
+  });
+}
+
 export async function enqueueMutation(item) {
   const row = {
     status: 'pending',
@@ -137,11 +170,25 @@ export async function putEvidence(item) {
 }
 
 export async function listEvidence(organizationId = '') {
-  const rows = await getAll('evidence');
-  return rows
-    .filter(row => !organizationId || row.organizationId === organizationId)
-    .filter(row => row.status !== 'done')
-    .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+  const rows = organizationId
+    ? (await Promise.all([
+        evidenceRowsByStatus(organizationId, 'pending'),
+        evidenceRowsByStatus(organizationId, 'failed'),
+      ])).flat()
+    : (await getAll('evidence')).filter(row => row.status !== 'done');
+  return rows.sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+}
+
+export async function countEvidenceQueue(organizationId = '') {
+  if (!organizationId) {
+    const rows = await getAll('evidence');
+    return rows.reduce((count, row) => count + (row.status === 'done' ? 0 : 1), 0);
+  }
+  const [pending, failed] = await Promise.all([
+    evidenceCountByStatus(organizationId, 'pending'),
+    evidenceCountByStatus(organizationId, 'failed'),
+  ]);
+  return pending + failed;
 }
 
 export async function getEvidence(id) {
@@ -200,11 +247,14 @@ export async function getOfflineMeta(key) {
 }
 
 export async function offlineQueueStats(organizationId = '') {
-  const [mutations, evidence] = await Promise.all([listMutations(organizationId), listEvidence(organizationId)]);
+  const [mutations, evidence] = await Promise.all([
+    listMutations(organizationId),
+    countEvidenceQueue(organizationId),
+  ]);
   return {
     mutations: mutations.length,
-    evidence: evidence.length,
-    total: mutations.length + evidence.length,
+    evidence,
+    total: mutations.length + evidence,
   };
 }
 
