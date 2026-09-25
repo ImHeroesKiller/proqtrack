@@ -633,7 +633,7 @@ function accountForm(existing) {
           </select>
         </div>
       </div>
-      <div class="form-group"><label class="label">Project (required for Manager)</label>
+      <div class="form-group"><label class="label">Project (wajib untuk Manager)</label>
         <select class="select" name="projectId">
           <option value="">—</option>
           ${projects.map(p => `<option value="${p.id}" ${existing?.projectId === p.id ? 'selected' : ''}>${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
@@ -653,8 +653,8 @@ function accountForm(existing) {
       ${existing?.role === 'employee' ? `
       <div class="form-group">
         <label class="label">Login perangkat pertama</label>
-        ${(existing.deviceBound || existing.deviceId) ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
-        <button type="button" class="btn btn-secondary btn-sm" style="margin-top:8px" data-pqt-onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing. Login pertama sales akan mengunci perangkat.</div>'}
+        ${existing.deviceBound ? `<div class="am-muted">Status server: terpasang · ${esc(existing.deviceLabel || 'Perangkat field')}<br>Dipasang ${existing.devicePairedAt ? formatDate(existing.devicePairedAt) : '—'}</div>
+        <button type="button" class="btn btn-secondary btn-sm am-inline-action" data-pqt-onclick="AM.resetDevice('${existing.id}')">Reset perangkat</button>` : '<div class="am-muted">Belum ada pairing aktif di server. Login Field Sales berikutnya akan melakukan pairing.</div>'}
       </div>` : ''}
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
@@ -672,6 +672,7 @@ function formData(event) {
 let accountSaveInFlight = false;
 let profileSaveInFlight = false;
 let passwordSaveInFlight = false;
+let preferenceSaveInFlight = false;
 let sessionActionInFlight = false;
 const accountActionInFlight = new Set();
 const settingsProjectSaveInFlight = new Set();
