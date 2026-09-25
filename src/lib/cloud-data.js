@@ -1,4 +1,4 @@
-import { clearApiToken, getApiToken, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
+import { clearApiToken, getApiToken, getApiTokenMeta, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
@@ -655,8 +655,18 @@ async function apiJson(path, options = {}) {
 export async function restoreCloudSession(localDb) {
   if (!getApiToken()) return null;
   try {
-    const session = await apiJson('/api/auth/session');
-    const bootstrap = await bootstrapOperationalData(localDb, session);
+    const meta = getApiTokenMeta();
+    const hasTenantHint = Boolean(meta?.organizationId);
+
+    // For tenant-bound sessions these two reads are independent. Starting them
+    // together removes a full network/Worker/D1 round-trip from root restore.
+    const sessionPromise = apiJson('/api/auth/session');
+    const bootstrapPromise = hasTenantHint ? apiJson('/api/core/bootstrap') : null;
+    const session = await sessionPromise;
+
+    const bootstrap = await bootstrapOperationalData(localDb, session, {
+      prefetchedRemote: bootstrapPromise ? await bootstrapPromise : null,
+    });
     if (bootstrap.mode === 'cloud' && bootstrap.data) {
       applyRemoteDataToLocal(localDb, bootstrap.data);
     } else if (bootstrap.mode !== 'global') {
@@ -717,7 +727,7 @@ export async function importLegacySnapshotForAdmin(localDb) {
   }
 }
 
-export async function bootstrapOperationalData(localDb, account = {}) {
+export async function bootstrapOperationalData(localDb, account = {}, { prefetchedRemote = null } = {}) {
   const bootstrapToken = getApiToken();
   if (!bootstrapToken) return { mode: 'local', data: null };
   if (String(account?.role || '').toLowerCase() === 'superadmin' && !account?.organizationId) {
@@ -733,7 +743,7 @@ export async function bootstrapOperationalData(localDb, account = {}) {
     emitStatus('global-superadmin');
     return { mode: 'global', data: null, revision: 0, cutoverMode: 'global' };
   }
-  let remote = await apiJson('/api/core/bootstrap');
+  let remote = prefetchedRemote || await apiJson('/api/core/bootstrap');
   cutoverMode = remote.cutoverMode || 'pending';
   revision = Number(remote.revision || 0);
 

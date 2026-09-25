@@ -2,7 +2,7 @@
 // P1 Performance: keep login/app authority on the critical path and defer route-only enhancers.
 
 const boot = {
-  version: 'p3-performance-2026-09-25',
+  version: 'p4-root-lcp-2026-09-25',
   stage: 'loading',
   modules: [],
   lazyModules: [],
@@ -91,13 +91,30 @@ function scheduleIdleRuntime() {
   }
 }
 
-// Critical runtime only.
+function shouldLoadUatSeed() {
+  const host = String(location.hostname || '').toLowerCase();
+  if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return true;
+  if (new URLSearchParams(location.search).get('uatSeed') === '1') return true;
+  try { return localStorage.getItem('proqtrack_enable_uat_seed') === '1'; } catch { return false; }
+}
+
+// UI delegation must exist before the user can interact with rendered templates.
 await load('./lib/ui-events.js', 'ui-events');
-await load('./data/uat-seed-v1.js', 'uat-seed');
-const cloudCutoverModule = await load('./cloud-cutover.js', 'cloud-cutover');
-const m4BootstrapModule = await load('./m4-bootstrap.js', 'm4-bootstrap');
-await load('./lib/m6-client.js', 'm6-client');
-await load('./app.js', 'app');
+
+// Synthetic UAT seed is never part of the live production critical path.
+if (shouldLoadUatSeed()) await load('./data/uat-seed-v1.js', 'uat-seed', { lazy:true });
+
+// These modules are independent at evaluation time. Load them concurrently to
+// remove the bootstrap request/compile waterfall, then install bridges after app.js.
+const [
+  cloudCutoverModule,
+  m4BootstrapModule,
+] = await Promise.all([
+  load('./cloud-cutover.js', 'cloud-cutover'),
+  load('./m4-bootstrap.js', 'm4-bootstrap'),
+  load('./lib/m6-client.js', 'm6-client'),
+  load('./app.js', 'app'),
+]);
 
 // cloud-cutover and offline login install only after app.js has created window.FT.
 cloudCutoverModule.installCloudCutover?.();

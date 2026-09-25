@@ -14,6 +14,17 @@ export function getApiToken() {
   try { return sessionStorage.getItem(TOKEN_KEY) || ''; } catch { return ''; }
 }
 
+export function getApiTokenMeta() {
+  try {
+    const raw = sessionStorage.getItem(TOKEN_META);
+    if (!raw) return null;
+    const meta = JSON.parse(raw);
+    return meta && typeof meta === 'object' ? meta : null;
+  } catch {
+    return null;
+  }
+}
+
 function clearStoredToken() {
   try {
     sessionStorage.removeItem(TOKEN_KEY);

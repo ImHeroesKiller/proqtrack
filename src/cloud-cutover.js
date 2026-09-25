@@ -45,6 +45,7 @@ async function cloudFirstLogin(event) {
   loginInFlight = true;
 
   try {
+    if (window.FT?.state) window.FT.state.sessionRestoring = false;
     // Abort queued/in-flight writes from any previous session before rotating
     // the bearer token. This prevents unauthenticated /api/core/sync races.
     resetCloudDataBridge();
@@ -163,19 +164,15 @@ async function restoreCloudSessionOnReload() {
   if (restoreInFlight || !restoreToken || window.FT?.state?.loggedIn) return false;
   restoreInFlight = true;
   const state = window.FT.state;
+  state.sessionRestoring = true;
+  window.FT.scheduleRender?.();
   try {
     const restored = await restoreCloudSession(getDB());
     const account = restored?.account;
     if (!account) return false;
-    if (account.organizationId && getApiToken() === restoreToken) {
-      await syncCurrentOrganizationProfile(restoreToken).catch(error => {
-        if (![401,403].includes(Number(error?.status || 0))) {
-          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
-        }
-      });
-    }
 
     state.loggedIn = true;
+    state.sessionRestoring = false;
     state.account = account;
     state.user = { name: account.name, role: displayRole(account), email: account.email };
 
@@ -186,8 +183,20 @@ async function restoreCloudSessionOnReload() {
       ? '#/settings'
       : (globalSuperadmin ? '#/organizations' : (preserved || defaultRouteFor(account)));
     forceRoute(state.route);
+
+    // Branding/profile refresh is not required to paint the authenticated shell.
+    // Keep it off the root LCP path and reconcile immediately after first render.
+    if (account.organizationId && getApiToken() === restoreToken) {
+      queueMicrotask(() => syncCurrentOrganizationProfile(restoreToken).catch(error => {
+        if (![401,403].includes(Number(error?.status || 0))) {
+          console.warn('organization_profile_refresh_failed', error?.code || error?.message || error);
+        }
+      }));
+    }
     return true;
   } catch (error) {
+    state.sessionRestoring = false;
+    window.FT.scheduleRender?.();
     if (navigator.onLine !== false) {
       console.warn('cloud_session_restore_failed', error?.code || error?.message || error);
     }
@@ -201,6 +210,7 @@ async function cloudLogout() {
   try { await logoutCloudSession(); } catch (error) { console.warn('cloud_logout_failed', error); }
   const state = window.FT.state;
   state.loggedIn = false;
+  state.sessionRestoring = false;
   state.account = null;
   state.route = '#/login';
   if (state.livePolling) {
@@ -239,6 +249,7 @@ export function installCloudCutover() {
     const state = window.FT?.state;
     if (!state?.loggedIn) return;
     state.loggedIn = false;
+    state.sessionRestoring = false;
     state.account = null;
     state.route = '#/login';
     if (state.livePolling) {

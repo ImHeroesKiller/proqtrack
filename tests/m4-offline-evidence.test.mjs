@@ -138,7 +138,7 @@ test('revision conflicts are recorded for manual resolution', async () => {
 
 test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {
   const [runtimeBootstrap, bootstrap] = await Promise.all([read('src/bootstrap.js'), read('src/m4-bootstrap.js')]);
-  assert.match(runtimeBootstrap, /m4BootstrapModule = await load\('\.\/m4-bootstrap\.js'/);
+  assert.match(runtimeBootstrap, /load\('\.\/m4-bootstrap\.js', 'm4-bootstrap'\)/);
   assert.match(runtimeBootstrap, /m4BootstrapModule\.installOfflineRuntime\?\.\(\)/);
   assert.match(bootstrap, /offline-engine\.js/);
   assert.match(bootstrap, /evidence-client\.js/);

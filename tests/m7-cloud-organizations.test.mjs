@@ -111,7 +111,7 @@ test('organization theme color is validated and derives a full tenant palette', 
 });
 
 test('full application branding follows the active organization profile', async () => {
-  const [settings, app, cutover, entry, logo, themeCss, worker] = await Promise.all([
+  const [settings, app, cutover, entry, logo, themeCss, worker, html] = await Promise.all([
     read('src/account-settings.js'),
     read('src/app.js'),
     read('src/cloud-cutover.js'),
@@ -119,6 +119,7 @@ test('full application branding follows the active organization profile', async 
     read('assets/logo.js'),
     read('assets/org-theme.css'),
     read('worker/organizations.js'),
+    read('index.html'),
   ]);
   assert.match(settings, /name="themeColor"/);
   assert.match(settings, /type="color"/);
@@ -128,8 +129,10 @@ test('full application branding follows the active organization profile', async 
   assert.match(app, /applyOrganizationBranding\(currentBrand\)/);
   assert.match(app, /brand\.name \|\| 'ProQTrack'/);
   assert.match(cutover, /syncCurrentOrganizationProfile/);
-  assert.match(entry, /dataset\.orgBranding === '1'/);
-  assert.match(logo, /assets\/org-theme\.css/);
+  assert.match(app, /applyOrganizationBranding\(currentBrand\)/);
+  assert.match(html, /assets\/org-theme\.css/);
+  assert.doesNotMatch(entry, /new MutationObserver/);
+  assert.doesNotMatch(logo, /ensureLink\('stylesheet'/);
   assert.match(themeCss, /--brand-rgb/);
   assert.match(themeCss, /html\[data-org-branding="1"\] \.btn-primary/);
   assert.match(themeCss, /html\[data-org-branding="1"\] \.sidebar-logo img/);

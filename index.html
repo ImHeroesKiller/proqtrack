@@ -454,8 +454,77 @@
     .visit-responsive-table tbody tr[data-visit-id] td:nth-child(9)::before { content:''; }
     .visit-pager { justify-content:space-between; }
   }
+  /* Fast authenticated restore shell: paints before cloud hydration so root LCP
+     is not coupled to /api/auth/session + /api/core/bootstrap latency. */
+  .session-restore-page {
+    min-height:100dvh;
+    display:grid;
+    place-items:center;
+    padding:24px;
+    background:#f3f1ee;
+    color:#14161a;
+  }
+  .session-restore-shell {
+    width:min(100%, 1120px);
+    min-height:min(680px, calc(100dvh - 48px));
+    display:grid;
+    grid-template-columns:250px minmax(0,1fr);
+    overflow:hidden;
+    border:1px solid rgba(20,22,26,.08);
+    border-radius:22px;
+    background:#fff;
+  }
+  .session-restore-side {
+    padding:24px 18px;
+    border-right:1px solid #e2e8f0;
+    background:#fbfbfa;
+  }
+  .session-restore-brand {
+    width:42px;height:42px;border-radius:11px;
+    display:grid;place-items:center;
+    background:var(--brand);color:#fff;font-weight:800;
+  }
+  .session-restore-main { padding:34px; }
+  .session-restore-main h1 {
+    margin:0;
+    font-size:30px;
+    line-height:1.15;
+    letter-spacing:-.04em;
+    color:#14161a;
+  }
+  .session-restore-main p { margin:8px 0 28px;color:#64748b;font-size:13px; }
+  .session-restore-kpis {
+    display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;
+  }
+  .session-restore-block {
+    min-height:92px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;
+  }
+  .session-restore-panels {
+    display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-top:14px;
+  }
+  .session-restore-panels .session-restore-block { min-height:260px; }
+  @media (max-width:899px) {
+    .session-restore-shell { display:block;min-height:520px; }
+    .session-restore-side { display:none; }
+    .session-restore-main { padding:28px 18px; }
+    .session-restore-main h1 { font-size:25px; }
+    .session-restore-kpis { grid-template-columns:1fr 1fr; }
+    .session-restore-panels { grid-template-columns:1fr; }
+    .session-restore-panels .session-restore-block:last-child { display:none; }
+  }
 </style>
+<link rel="stylesheet" href="./assets/phase0.css" />
+<link rel="stylesheet" href="./assets/phase0-v2.css" />
+<link rel="stylesheet" href="./assets/sidebar-collapse.css" />
+<link rel="stylesheet" href="./assets/field-mobile.css" />
+<link rel="stylesheet" href="./assets/ui-2026.css" />
+<link rel="stylesheet" href="./assets/mobile-sales.css" />
+<link rel="stylesheet" href="./assets/org-theme.css" />
 <link rel="stylesheet" href="./assets/settings.css" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" href="./assets/icon-proqtrack.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./assets/icon-proqtrack.svg" />
+<meta name="theme-color" content="#ef5000" />
 </head>
 <body>
 

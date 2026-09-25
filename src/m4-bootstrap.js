@@ -150,11 +150,21 @@ if (typeof window !== 'undefined') {
   window.__PROQTRACK_M4_BOOTSTRAP_LOADED__ = true;
 }
 
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(error => {
-    console.warn('m4_service_worker_register_failed', error?.message || error);
-  });
+function registerServiceWorkerAfterPaint() {
+  if (!('serviceWorker' in navigator)) return false;
+  const register = () => {
+    const run = () => navigator.serviceWorker.register('./sw.js').catch(error => {
+      console.warn('m4_service_worker_register_failed', error?.message || error);
+    });
+    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:5000 });
+    else setTimeout(run, 1200);
+  };
+  if (document.readyState === 'complete') register();
+  else window.addEventListener('load', register, { once:true });
+  return true;
 }
+
+registerServiceWorkerAfterPaint();
 
 export function installOfflineRuntime() {
   return installOfflineLogin();
