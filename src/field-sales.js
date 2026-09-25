@@ -13,7 +13,8 @@ import {
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
-import { locationFreshness, locationSourceLabel, visitLocationEvidence } from './lib/location-evidence.js';
+import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM } from './lib/location-evidence.js';
+import { attendanceLeaveFriendlyErrorMessage, attendanceSourceKey, attendanceSourceLabel } from './lib/attendance-leave-ui.js';
 import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 
 function empId() {
@@ -146,14 +147,14 @@ export function attendanceCheckinCard() {
   const recordedHtml = attendance.length
     ? `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">${attendance.map(att => {
         const project = projectMap[String(att.projectId)] || {};
-        const source = att.attendanceSource === 'visit' ? 'Otomatis dari Visit' : 'Manual';
+        const source = attendanceSourceKey(att) === 'visit' ? 'Otomatis dari Visit' : attendanceSourceLabel(att);
         return `<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:12px;background:#ecfdf5">
           ${appIcon('attendance')}
           <div style="flex:1">
             <strong>${esc(project.code || project.name || att.projectId || 'Project')}</strong>
             <div class="am-muted">Check-in ${esc(att.checkInTime || att.checkInAt || '-')} · Check-out ${esc(att.checkOutTime || att.checkOutAt || 'belum')} · ${esc(source)}</div>
           </div>
-          ${att.attendanceSource !== 'visit' && !att.checkOutAt && !att.checkOutTime
+          ${attendanceSourceKey(att) !== 'visit' && !att.checkOutAt && !att.checkOutTime
             ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.checkOutAttendance('${att.id}')">Check out</button>`
             : statusBadge(att.status)}
         </div>`;
@@ -328,12 +329,8 @@ window.FS = {
       window.showToast?.('Attendance project ini dihitung otomatis dari Visit.', 'error');
       return;
     }
-    const now = new Date();
     const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(now);
-    const hour = parts.find(part => part.type === 'hour')?.value || '00';
-    const minute = parts.find(part => part.type === 'minute')?.value || '00';
-    const checkInTime = `${hour}:${minute}`;
+    const checkInTime = currentTenantTimeHHMM(timeZone);
     let cloudCommitted = false;
     try {
       if (submit) { submit.disabled = true; submit.textContent = 'Menyimpan…'; }
@@ -357,7 +354,7 @@ window.FS = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (err) {
       if (!cloudCommitted) restoreOperationalBaseline(getDB());
-      window.showToast?.(err.message || err, 'error');
+      window.showToast?.(attendanceLeaveFriendlyErrorMessage(err,'Absensi gagal disimpan.'), 'error');
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } finally {
       if (submit?.isConnected) { submit.disabled = false; submit.textContent = 'Check in'; }
@@ -368,14 +365,10 @@ window.FS = {
     if (!key || attendanceCheckoutInFlight.has(key)) return;
     const att = getAttendance().find(row => String(row.id) === key);
     if (!att) { window.showToast?.('Data attendance tidak ditemukan.', 'error'); return; }
-    if (att.attendanceSource === 'visit') { window.showToast?.('Check-out attendance ini mengikuti Visit.', 'error'); return; }
+    if (attendanceSourceKey(att) === 'visit') { window.showToast?.('Check-out attendance ini mengikuti Visit.', 'error'); return; }
     attendanceCheckoutInFlight.add(key);
     const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
-    const now = new Date();
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone, hour:'2-digit', minute:'2-digit', hour12:false }).formatToParts(now);
-    const hour = parts.find(part => part.type === 'hour')?.value || '00';
-    const minute = parts.find(part => part.type === 'minute')?.value || '00';
-    const checkOutTime = `${hour}:${minute}`;
+    const checkOutTime = currentTenantTimeHHMM(timeZone);
     let cloudCommitted = false;
     try {
       checkOutAttendance(id, checkOutTime);
@@ -386,12 +379,7 @@ window.FS = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (err) {
       if (!cloudCommitted) restoreOperationalBaseline(getDB());
-      const message = {
-        ATTENDANCE_CHECKOUT_BEFORE_CHECKIN:'Check-out tidak boleh lebih awal dari check-in.',
-        ATTENDANCE_CHECKOUT_IMMUTABLE:'Check-out attendance sudah tercatat.',
-        ATTENDANCE_SELF_SERVICE_TODAY_ONLY:'Check-out mandiri hanya dapat dilakukan pada hari yang sama.',
-        REVISION_CONFLICT:'Data berubah dari perangkat lain. Muat ulang lalu coba kembali.',
-      }[err?.code || err?.message] || err.message || err;
+      const message = attendanceLeaveFriendlyErrorMessage(err,'Check-out attendance gagal disimpan.');
       window.showToast?.(message, 'error');
       await refreshOperationalData(getDB(), getActor()).catch(() => null);
       window.dispatchEvent(new HashChangeEvent('hashchange'));
