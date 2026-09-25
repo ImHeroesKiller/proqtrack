@@ -25,6 +25,50 @@ function toast(msg, type = 'success') {
   window.showToast?.(msg, type);
 }
 
+function setSubmitBusy(form, busy, busyLabel = 'Menyimpan…') {
+  const submit = form?.querySelector?.('button[type="submit"]');
+  if (!submit) return null;
+  if (busy) {
+    if (!submit.dataset.idleLabel) submit.dataset.idleLabel = submit.textContent || 'Simpan';
+    submit.disabled = true;
+    submit.setAttribute('aria-busy','true');
+    submit.textContent = busyLabel;
+  } else {
+    submit.disabled = false;
+    submit.removeAttribute('aria-busy');
+    if (submit.dataset.idleLabel) {
+      submit.textContent = submit.dataset.idleLabel;
+      delete submit.dataset.idleLabel;
+    }
+  }
+  return submit;
+}
+
+let pendingConfirmAction = null;
+
+function openSettingsConfirm({ title, message, confirmLabel = 'Lanjutkan', tone = 'danger', action, id = '', value = '' } = {}) {
+  const root = document.getElementById('modalRoot');
+  if (!root) return;
+  pendingConfirmAction = { action, id, value };
+  root.innerHTML = `
+    <div class="modal-overlay" role="presentation" data-pqt-onclick="if(event.target===this)FT.closeModal()">
+      <div class="modal animate-up am-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="settingsConfirmTitle">
+        <div class="modal-handle"></div>
+        <div class="modal-header">
+          <h3 id="settingsConfirmTitle">${esc(title || 'Konfirmasi')}</h3>
+          <button type="button" class="modal-close" aria-label="Tutup" data-pqt-onclick="FT.closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+          <p class="am-confirm-copy">${esc(message || '')}</p>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button>
+            <button type="button" class="btn ${tone === 'danger' ? 'btn-danger' : 'btn-primary'}" data-pqt-onclick="AM.runPendingConfirm()">${esc(confirmLabel)}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function roleLabel(role) {
   return { superadmin: 'Superadmin', head: 'Head', admin: 'Admin', manager: 'Manager', supervisor: 'Supervisor', employee: 'Field Sales' }[role] || role || '—';
 }
@@ -220,6 +264,9 @@ const THEME_PRESETS = ['#ef5000','#2563eb','#0f766e','#7c3aed','#be123c','#33415
 
 let organizationProfileSyncInFlight = false;
 let organizationProfileSyncedOrg = '';
+let organizationProfileAttemptedOrg = '';
+let organizationProfileSyncError = '';
+let organizationProfileLastSyncedAt = null;
 let organizationSaveInFlight = false;
 
 function organizationErrorMessage(error) {
@@ -245,17 +292,20 @@ function dataUrlBytes(value) {
 
 function scheduleOrganizationProfileRefresh(acc) {
   const orgId = String(acc?.organizationId || getCurrentOrgId() || '');
-  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId) return;
+  if (!getApiToken() || !orgId || organizationProfileSyncInFlight || organizationProfileSyncedOrg === orgId || organizationProfileAttemptedOrg === orgId) return;
   organizationProfileSyncInFlight = true;
+  organizationProfileAttemptedOrg = orgId;
   queueMicrotask(async () => {
     try {
       await syncCurrentOrganizationProfile();
       organizationProfileSyncedOrg = orgId;
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      organizationProfileSyncError = '';
+      organizationProfileLastSyncedAt = new Date();
     } catch (error) {
-      toast(organizationErrorMessage(error), 'error');
+      organizationProfileSyncError = organizationErrorMessage(error);
     } finally {
       organizationProfileSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   });
 }
