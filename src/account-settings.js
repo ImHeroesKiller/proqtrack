@@ -132,7 +132,7 @@ function renderAttendanceSettings() {
             <div class="card-subtitle">Master titik referensi tetap cloud-authoritative dan dapat dipakai oleh data employee/project yang memerlukannya.</div>
           </div>
           <div class="spacer"></div>
-          <button class="btn btn-secondary" type="button" data-pqt-onclick="BulkMaster.open('attendancePoints')">Bulk Upload</button>
+          <button class="btn btn-secondary" type="button" data-pqt-onclick="FT.openBulkMaster('attendancePoints')">Bulk Upload</button>
         </div>
         <form class="am-form" data-pqt-onsubmit="AM.addAttendancePoint(event)">
           <div class="form-row">
