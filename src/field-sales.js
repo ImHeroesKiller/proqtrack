@@ -241,7 +241,7 @@ export function renderVisitDetailHtml(visitId) {
     ${intel.length ? `<ul>${intel.map(i => `<li>${esc(products[i.productId]?.name || 'Produk')} vs kompetitor · shelf ${i.shelfShare || 0}%</li>`).join('')}</ul>` : '<p class="am-muted">Belum ada intel.</p>'}
     <h4>Foto kunjungan</h4>
     ${photos.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px">${photos.map(p => {
-      const src = safePhotoUrl(p.dataUrl || p.photoUrl);
+      const src = safePhotoUrl(p.photoUrl || p.dataUrl);
       return src ? `<img src="${src}" alt="" style="width:88px;height:88px;object-fit:cover;border-radius:8px">` : `<span class="am-muted">${photoTypeLabel(p.photoType || p.type)}</span>`;
     }).join('')}</div>` : '<p class="am-muted">Belum ada foto.</p>'}
     <div class="modal-footer"><button class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Tutup</button></div>
