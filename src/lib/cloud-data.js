@@ -43,6 +43,40 @@ let evidenceHydrationOrganizationId = '';
 let evidenceHydratedAt = 0;
 let refreshPromise = null;
 let refreshKey = '';
+let bridgeGeneration = 0;
+const bridgeControllers = new Set();
+
+const SESSION_AUTH_ERRORS = new Set([
+  'AUTH_REQUIRED',
+  'INVALID_TOKEN',
+  'TOKEN_EXPIRED',
+  'SESSION_EXPIRED',
+  'SESSION_REVOKED',
+  'SESSION_REAUTH_REQUIRED',
+]);
+
+function bridgeError(code, status = 0, payload = {}) {
+  const error = new Error(code);
+  error.code = code;
+  error.status = status;
+  error.payload = payload;
+  return error;
+}
+
+function abortBridgeRequests() {
+  bridgeGeneration += 1;
+  for (const controller of bridgeControllers) {
+    try { controller.abort('SESSION_CONTEXT_CHANGED'); } catch { /* ignore */ }
+  }
+  bridgeControllers.clear();
+}
+
+function emitSessionInvalid(code) {
+  if (typeof window === 'undefined' || typeof CustomEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('proqtrack:session-invalid', {
+    detail: { code: String(code || 'AUTH_REQUIRED') },
+  }));
+}
 
 function stable(value) {
   if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`;
@@ -570,17 +604,51 @@ export function installStorageWriteThrough() {
 }
 
 async function apiJson(path, options = {}) {
-  const headers = authHeaders({ accept: 'application/json', ...(options.body ? { 'content-type': 'application/json' } : {}), ...(options.headers || {}) });
-  const res = await fetch(path, { ...options, headers });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const error = new Error(data.message || data.error || `HTTP ${res.status}`);
-    error.status = res.status;
-    error.code = data.error;
-    error.payload = data;
+  const token = getApiToken();
+  if (!token) throw bridgeError('AUTH_REQUIRED', 401);
+
+  const generation = bridgeGeneration;
+  const controller = new AbortController();
+  bridgeControllers.add(controller);
+  const headers = {
+    accept: 'application/json',
+    ...(options.body ? { 'content-type': 'application/json' } : {}),
+    ...(options.headers || {}),
+    authorization: `Bearer ${token}`,
+  };
+
+  try {
+    const res = await fetch(path, { ...options, headers, signal: controller.signal });
+    const data = await res.json().catch(() => ({}));
+
+    // A response from a superseded login/logout/organization context must
+    // never mutate the active bridge state, even if the old request completed.
+    if (generation !== bridgeGeneration || getApiToken() !== token) {
+      throw bridgeError('SESSION_STALE', 0);
+    }
+
+    if (!res.ok) {
+      const error = new Error(data.message || data.error || `HTTP ${res.status}`);
+      error.status = res.status;
+      error.code = data.error;
+      error.payload = data;
+
+      if (res.status === 401 && SESSION_AUTH_ERRORS.has(String(data.error || ''))) {
+        clearApiToken();
+        resetCloudDataBridge();
+        emitSessionInvalid(data.error);
+      }
+      throw error;
+    }
+    return data;
+  } catch (error) {
+    if (error?.name === 'AbortError' || generation !== bridgeGeneration) {
+      throw bridgeError('SESSION_STALE', 0);
+    }
     throw error;
+  } finally {
+    bridgeControllers.delete(controller);
   }
-  return data;
 }
 
 export async function restoreCloudSession(localDb) {
@@ -977,6 +1045,7 @@ export function cloudDataStatus() {
 }
 
 export function resetCloudDataBridge() {
+  abortBridgeRequests();
   ready = false;
   syncing = false;
   revision = 0;
