@@ -121,6 +121,20 @@ function visibleEmployeeIds(actor = getActor(), db = getDB()) {
   return new Set(actor.employeeId ? [actor.employeeId] : []);
 }
 
+function visibleProjectIds(actor = getActor(), db = getDB()) {
+  if (!actor || isOrgAdminRole(actor.role)) return null;
+  const ids=new Set([
+    ...(Array.isArray(actor.projectIds) ? actor.projectIds : []),
+    ...(actor.projectId ? [actor.projectId] : []),
+  ].map(String).filter(Boolean));
+  if (actor.employeeId) {
+    (db.projectAssignments || []).forEach(row => {
+      if (String(row.employeeId)===String(actor.employeeId) && row.status==='active' && row.projectId) ids.add(String(row.projectId));
+    });
+  }
+  return ids;
+}
+
 function canAccessEmployee(employeeId, actor = getActor()) {
   if (!actor) return false;
   if (isOrgAdminRole(actor.role)) return true;
@@ -1016,16 +1030,46 @@ export function getAppSettings() {
   return db.appSettings;
 }
 
-export function getAttendancePolicy() {
+export function getProjectAttendancePolicy(projectId) {
+  const project = (getDB().projects || []).find(row => String(row.id) === String(projectId || '')) || {};
+  const source = ['manual','visit'].includes(String(project.attendanceSource || '')) ? String(project.attendanceSource) : 'manual';
   const s = getAppSettings();
   const mode = ['office', 'outlet', 'point'].includes(s.attendanceMode) ? s.attendanceMode : 'office';
   return {
+    projectId:String(projectId || ''),
+    source,
     mode,
-    radiusM: Number(s.attendanceRadiusM) || 150,
-    officeLat: s.officeLat == null || s.officeLat === '' ? null : Number(s.officeLat),
-    officeLng: s.officeLng == null || s.officeLng === '' ? null : Number(s.officeLng),
-    officeName: s.officeName || 'Office',
+    radiusM:Number(s.attendanceRadiusM) || 150,
+    officeLat:s.officeLat == null || s.officeLat === '' ? null : Number(s.officeLat),
+    officeLng:s.officeLng == null || s.officeLng === '' ? null : Number(s.officeLng),
+    officeName:s.officeName || 'Office',
   };
+}
+
+export function getAttendancePolicy(projectId = '') {
+  return getProjectAttendancePolicy(projectId);
+}
+
+export function getActiveProjectsForEmployee(employeeId = getActor()?.employeeId, moduleName = '') {
+  if (!employeeId) return [];
+  const db=getDB();
+  const activeAssignments=(db.projectAssignments || []).filter(row =>
+    String(row.employeeId)===String(employeeId) && row.status==='active'
+  );
+  const allowed=new Set(activeAssignments.map(row=>String(row.projectId)));
+  return (db.projects || []).filter(project =>
+    allowed.has(String(project.id))
+    && project.status==='active'
+    && (!moduleName || project.modules?.[moduleName] !== false)
+  );
+}
+
+export function getAttendanceProjectsForEmployee(employeeId = getActor()?.employeeId) {
+  return getActiveProjectsForEmployee(employeeId,'attendance');
+}
+
+export function getLeaveProjectsForEmployee(employeeId = getActor()?.employeeId) {
+  return getActiveProjectsForEmployee(employeeId,'leaves');
 }
 
 export function updateAppSettings(partial) {
@@ -1834,20 +1878,26 @@ export function getAttendancePoints() {
 
 export function createAttendancePoint(data) {
   const actor = assertLoggedIn();
-  if (!isProjectAdminRole(actor.role) && actor.role !== 'supervisor') throw new Error('Akses ditolak');
+  if (!isProjectAdminRole(actor.role)) throw new Error('Akses ditolak');
+  const lat = data.lat === '' || data.lat == null ? null : Number(data.lat);
+  const lng = data.lng === '' || data.lng == null ? null : Number(data.lng);
+  const radiusM = data.radiusM === '' || data.radiusM == null ? 150 : Number(data.radiusM);
   const point = {
     id: uid('APT'),
     type: ['office', 'meeting', 'store', 'point'].includes(data.type) ? data.type : 'point',
     name: sanitizePlainText(data.name),
     address: sanitizePlainText(data.address || ''),
     outletId: data.outletId || null,
-    lat: data.lat === '' || data.lat == null ? null : Number(data.lat),
-    lng: data.lng === '' || data.lng == null ? null : Number(data.lng),
-    radiusM: data.radiusM === '' || data.radiusM == null ? null : Number(data.radiusM),
+    lat, lng, radiusM,
+    status:'active',
     ...withOrg(data),
+    lat, lng, radiusM,
     createdBy: actor.id,
   };
   if (!point.name) throw new Error('Nama titik absensi wajib diisi.');
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90) throw new Error('Latitude titik absensi tidak valid.');
+  if (!Number.isFinite(lng) || lng < -180 || lng > 180) throw new Error('Longitude titik absensi tidak valid.');
+  if (!Number.isFinite(radiusM) || radiusM < 10) throw new Error('Radius titik absensi minimal 10 meter.');
   const db = getDB();
   db.attendancePoints = db.attendancePoints || [];
   db.attendancePoints.push(point);
@@ -1859,8 +1909,12 @@ export function getAttendance() {
   const rows = scoped(getDB().attendance);
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
-  const ids = visibleEmployeeIds(actor);
-  return rows.filter(a => ids.has(a.employeeId));
+  const employeeIds = visibleEmployeeIds(actor);
+  const projectIds = visibleProjectIds(actor);
+  return rows.filter(a =>
+    employeeIds.has(a.employeeId)
+    && (!projectIds || projectIds.has(String(a.projectId || '')))
+  );
 }
 
 export function getAttendanceByDate(date) {
@@ -1874,7 +1928,37 @@ export function getAttendanceByEmployee(empId) {
 
 export function createAttendance(data) {
   assertCanAccessEmployee(data.employeeId);
-  const att = { id: uid('ATT'), ...withOrg(data) };
+  const db=getDB();
+  const projectId=String(data.projectId || '');
+  if (!projectId) throw new Error('Project absensi wajib dipilih.');
+  const assigned=(db.projectAssignments || []).some(row =>
+    String(row.employeeId)===String(data.employeeId)
+    && String(row.projectId)===projectId
+    && row.status==='active'
+  );
+  if (!assigned) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  const policy=getProjectAttendancePolicy(projectId);
+  if (policy.source !== 'manual') throw new Error('Project ini menggunakan absensi otomatis dari kunjungan.');
+  const canonical = {
+    hadir:'present', present:'present',
+    terlambat:'late', late:'late',
+    'tidak hadir':'absent', absent:'absent',
+    cuti:'leave', leave:'leave',
+  }[String(data.status || 'present').toLowerCase()] || 'present';
+  const duplicate=(db.attendance || []).find(row =>
+    String(row.employeeId)===String(data.employeeId)
+    && String(row.projectId)===projectId
+    && String(row.date || row.workDate)===String(data.date || data.workDate)
+  );
+  if (duplicate) throw new Error('Absensi project hari ini sudah tercatat.');
+  const att = {
+    id: uid('ATT'),
+    source:'manual',
+    status:canonical,
+    ...withOrg(data),
+    projectId,
+    status:canonical,
+  };
   getDB().attendance.push(att);
   saveDB();
   return att;
@@ -2182,7 +2266,11 @@ export function getLeaves() {
   const actor = getActor();
   if (!actor || isOrgAdminRole(actor.role)) return rows;
   const ids = visibleEmployeeIds(actor);
-  return rows.filter(l => ids.has(l.employeeId));
+  const projectIds = visibleProjectIds(actor);
+  return rows.filter(l =>
+    ids.has(l.employeeId)
+    && (!projectIds || projectIds.has(String(l.projectId || '')))
+  );
 }
 
 export function getLeavesByEmployee(empId) {
@@ -2198,7 +2286,34 @@ export function createLeave(data) {
   assertCanAccessEmployee(data.employeeId);
   const actor = getActor();
   if (actor.role === 'employee' && data.employeeId !== actor.employeeId) throw new Error('Akses ditolak');
-  const leave = { id: uid('LV'), status: 'pending', submittedAt: new Date().toISOString().slice(0,10), approverId: null, approvedAt: null, ...withOrg(data) };
+  const db=getDB();
+  const projectId=String(data.projectId || '');
+  if (!projectId) throw new Error('Project cuti wajib dipilih.');
+  const assigned=(db.projectAssignments || []).some(row =>
+    String(row.employeeId)===String(data.employeeId)
+    && String(row.projectId)===projectId
+    && row.status==='active'
+  );
+  if (!assigned) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
+  const startDate=String(data.startDate || '');
+  const endDate=String(data.endDate || '');
+  if (!startDate || !endDate || endDate < startDate) throw new Error('Periode cuti tidak valid.');
+  const overlap=(db.leaves || []).some(row =>
+    String(row.employeeId)===String(data.employeeId)
+    && String(row.projectId || '')===projectId
+    && row.status!=='rejected'
+    && startDate <= String(row.endDate || '')
+    && endDate >= String(row.startDate || '')
+  );
+  if (overlap) throw new Error('Sudah ada pengajuan pada periode yang bertumpang tindih.');
+  const days=Math.floor((Date.parse(endDate)-Date.parse(startDate))/86400000)+1;
+  const leave = {
+    id:uid('LV'), projectId, status:'pending',
+    submittedAt:new Date().toISOString(), approverId:null, approvedAt:null,
+    ...withOrg(data), projectId, startDate, endDate, days,
+    type:sanitizePlainText(data.type || 'Cuti Tahunan'),
+    reason:sanitizePlainText(data.reason || ''),
+  };
   getDB().leaves.push(leave);
   saveDB();
   return leave;

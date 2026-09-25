@@ -267,6 +267,211 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
 
 const finalLeaveStatuses = new Set(['approved','rejected']);
 
+async function projectAttendancePolicy(env, organizationId, projectId) {
+  if (!projectId) return null;
+  const project = await env.DB.prepare(
+    "SELECT id,status,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1"
+  ).bind(organizationId,projectId).first();
+  if (!project) return null;
+  const meta = parseMetadata(project.metadata_json);
+  return {
+    project,
+    enabled:meta.modules?.attendance !== false,
+    source:['manual','visit'].includes(str(meta.attendanceSource)) ? str(meta.attendanceSource) : 'manual',
+  };
+}
+
+async function activeProjectAssignment(env, organizationId, projectId, employeeId, workDate = '', throughDate = workDate) {
+  return env.DB.prepare(
+    `SELECT id FROM core_employee_project_assignments
+      WHERE organization_id=? AND project_id=? AND employee_id=? AND status='active'
+        AND (?='' OR starts_on IS NULL OR date(starts_on)<=date(?))
+        AND (?='' OR ends_on IS NULL OR date(ends_on)>=date(?))
+      LIMIT 1`
+  ).bind(organizationId,projectId,employeeId,workDate,workDate,throughDate,throughDate).first();
+}
+
+export async function validateAttendancePointMutation(row, existing, op) {
+  if (op === 'delete') return null;
+  const name=str(row.name || existing?.name);
+  const lat=num(row.latitude ?? row.lat ?? existing?.latitude);
+  const lng=num(row.longitude ?? row.lng ?? existing?.longitude);
+  const radius=num(row.radiusM ?? existing?.radius_m);
+  if (!name) return { error:'ATTENDANCE_POINT_NAME_REQUIRED', status:422 };
+  if (lat == null || lat < -90 || lat > 90) return { error:'ATTENDANCE_POINT_LATITUDE_INVALID', status:422 };
+  if (lng == null || lng < -180 || lng > 180) return { error:'ATTENDANCE_POINT_LONGITUDE_INVALID', status:422 };
+  if (radius == null || radius < 10) return { error:'ATTENDANCE_POINT_RADIUS_INVALID', status:422 };
+  row.latitude=lat; row.longitude=lng; row.radiusM=radius;
+  return null;
+}
+
+export async function validateAttendanceMutation(env, organizationId, claims, row, existing, op) {
+  if (op === 'delete') return { error:'ATTENDANCE_DELETE_FORBIDDEN', status:409 };
+  const projectId=str(row.projectId || existing?.project_id);
+  const employeeId=str(row.employeeId || existing?.employee_id);
+  const workDate=str(row.workDate || row.date || existing?.work_date);
+  if (!projectId) return { error:'ATTENDANCE_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'ATTENDANCE_EMPLOYEE_REQUIRED', status:422 };
+  if (!workDate) return { error:'ATTENDANCE_DATE_REQUIRED', status:422 };
+
+  const policy=await projectAttendancePolicy(env,organizationId,projectId);
+  if (!policy) return { error:'ATTENDANCE_PROJECT_NOT_FOUND', status:422 };
+  if (!policy.enabled) return { error:'ATTENDANCE_MODULE_DISABLED', status:409 };
+  if (policy.source !== 'manual') return { error:'ATTENDANCE_MANUAL_DISABLED', status:409 };
+
+  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,workDate);
+  if (!assignment) return { error:'ATTENDANCE_ASSIGNMENT_REQUIRED', status:403 };
+
+  if (!existing && !BROAD_ROLES.has(roleOf(claims))) {
+    const targetEmployee=await env.DB.prepare(
+      'SELECT auth_user_id FROM core_employees WHERE organization_id=? AND id=? LIMIT 1'
+    ).bind(organizationId,employeeId).first();
+    if (!targetEmployee?.auth_user_id || str(targetEmployee.auth_user_id) !== str(claims?.sub)) {
+      return { error:'ATTENDANCE_SELF_ONLY', status:403 };
+    }
+  }
+
+  if (!existing) {
+    const duplicate=await env.DB.prepare(
+      'SELECT id FROM core_attendance WHERE organization_id=? AND project_id=? AND employee_id=? AND work_date=? LIMIT 1'
+    ).bind(organizationId,projectId,employeeId,workDate).first();
+    if (duplicate) return { error:'ATTENDANCE_ALREADY_RECORDED', status:409 };
+  }
+
+  const canonical = {
+    hadir:'present',present:'present',
+    terlambat:'late',late:'late',
+  }[str(row.status || existing?.status || 'present').toLowerCase()];
+  if (!canonical) return { error:'ATTENDANCE_INVALID_STATUS', status:422 };
+  row.status=canonical;
+  row.source='manual';
+
+  const lat=Number(row.checkInLatitude ?? row.lat ?? row.check_in_latitude);
+  const lng=Number(row.checkInLongitude ?? row.lng ?? row.check_in_longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { error:'ATTENDANCE_GPS_REQUIRED', status:422 };
+  row.checkInLatitude=lat;
+  row.checkInLongitude=lng;
+
+  const locationType=str(row.locationType || parseMetadata(existing?.metadata_json)?.locationType);
+  const locationId=str(row.locationId || parseMetadata(existing?.metadata_json)?.locationId);
+  if (!locationType || !locationId) return { error:'ATTENDANCE_LOCATION_REQUIRED', status:422 };
+
+  let target=null;
+  if (locationType === 'store') {
+    target=await env.DB.prepare(
+      `SELECT o.latitude,o.longitude,o.geofence_radius_m AS radius_m,o.status
+         FROM core_outlets o
+         JOIN core_project_outlets po
+           ON po.organization_id=o.organization_id AND po.outlet_id=o.id
+        WHERE o.organization_id=? AND o.id=? AND po.project_id=? AND po.status='active' LIMIT 1`
+    ).bind(organizationId,locationId,projectId).first();
+  } else {
+    target=await env.DB.prepare(
+      "SELECT latitude,longitude,radius_m,status FROM core_attendance_points WHERE organization_id=? AND id=? LIMIT 1"
+    ).bind(organizationId,locationId).first();
+  }
+  if (!target || target.status !== 'active' || !finiteCoordinate(target.latitude) || !finiteCoordinate(target.longitude)) {
+    return { error:'ATTENDANCE_LOCATION_UNAVAILABLE', status:409 };
+  }
+  const radiusRaw=Number(target.radius_m);
+  const radiusM=Number.isFinite(radiusRaw) && radiusRaw > 0 ? radiusRaw : 150;
+  const distanceM=visitDistanceMeters(lat,lng,target.latitude,target.longitude);
+  if (distanceM == null || distanceM > radiusM) {
+    return { error:'ATTENDANCE_OUTSIDE_GEOFENCE', status:422, distanceM, radiusM };
+  }
+  row.geofenceDistanceM=distanceM;
+  row.geofenceRadiusM=radiusM;
+  row.geofenceStatus='valid';
+  return null;
+}
+
+export async function validateLeaveMutation(env, organizationId, row, existing, op) {
+  if (op === 'delete') return { error:'LEAVE_DELETE_FORBIDDEN', status:409 };
+  const projectId=str(row.projectId || existing?.project_id);
+  const employeeId=str(row.employeeId || existing?.employee_id);
+  const startDate=str(row.startDate || existing?.start_date);
+  const endDate=str(row.endDate || existing?.end_date);
+  if (!projectId) return { error:'LEAVE_PROJECT_REQUIRED', status:422 };
+  if (!employeeId) return { error:'LEAVE_EMPLOYEE_REQUIRED', status:422 };
+  if (!startDate || !endDate || endDate < startDate) return { error:'LEAVE_INVALID_PERIOD', status:422 };
+
+  const project=await env.DB.prepare(
+    'SELECT id,metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
+  ).bind(organizationId,projectId).first();
+  if (!project) return { error:'LEAVE_PROJECT_NOT_FOUND', status:422 };
+  const projectMeta=parseMetadata(project.metadata_json);
+  if (projectMeta.modules?.leaves === false) return { error:'LEAVE_MODULE_DISABLED', status:409 };
+  const assignment=await activeProjectAssignment(env,organizationId,projectId,employeeId,startDate,endDate);
+  if (!assignment) return { error:'LEAVE_ASSIGNMENT_REQUIRED', status:403 };
+
+  const expectedDays=Math.floor((Date.parse(endDate)-Date.parse(startDate))/86400000)+1;
+  if (!Number.isFinite(expectedDays) || expectedDays < 1) return { error:'LEAVE_INVALID_PERIOD', status:422 };
+  row.projectId=projectId;
+  row.days=expectedDays;
+  row.type=str(row.type || existing?.type || 'Cuti Tahunan');
+  row.reason=str(row.reason || existing?.reason || '');
+  if (!row.type) return { error:'LEAVE_TYPE_REQUIRED', status:422 };
+  if (!row.reason) return { error:'LEAVE_REASON_REQUIRED', status:422 };
+
+  const overlap=await env.DB.prepare(
+    `SELECT id FROM core_leaves
+      WHERE organization_id=? AND project_id=? AND employee_id=? AND status<>'rejected'
+        AND id<>? AND date(start_date)<=date(?) AND date(end_date)>=date(?) LIMIT 1`
+  ).bind(organizationId,projectId,employeeId,str(row.id || existing?.id),endDate,startDate).first();
+  if (overlap) return { error:'LEAVE_PERIOD_OVERLAP', status:409 };
+  return null;
+}
+
+export function visitAttendanceStatements(env, organizationId, row, existing, attendanceSource = 'manual') {
+  if (!existing || attendanceSource !== 'visit') return [];
+  const currentStatus=canonicalVisitStatus(existing.status);
+  const nextStatus=canonicalVisitStatus(row.status || existing.status);
+  const isCheckIn=currentStatus==='planned' && nextStatus==='in_progress';
+  const isCheckOut=currentStatus==='in_progress' && nextStatus==='completed';
+  if (!isCheckIn && !isCheckOut) return [];
+  const projectId=str(row.projectId || existing.project_id);
+  const employeeId=str(row.employeeId || existing.employee_id);
+  const capturedAt=str(isCheckIn
+    ? (row.checkInCapturedAt || row.startedAt || row.checkInAt)
+    : (row.checkOutCapturedAt || row.completedAt || row.checkOutAt));
+  const workDate=str(
+    isCheckOut
+      ? (existing.started_at || row.startedAt || row.date || existing.scheduled_at || capturedAt)
+      : (capturedAt || row.date || row.scheduledAt || existing.scheduled_at)
+  ).slice(0,10);
+  if (!projectId || !employeeId || !workDate) return [];
+
+  const attendanceId=`ATTV-${projectId}-${employeeId}-${workDate}`;
+  const checkInAt=isCheckIn ? capturedAt : null;
+  const checkOutAt=isCheckOut ? capturedAt : null;
+  const lat=isCheckIn ? num(row.checkInLat ?? row.startLatitude ?? row.lat) : null;
+  const lng=isCheckIn ? num(row.checkInLng ?? row.startLongitude ?? row.lng) : null;
+  const outLat=isCheckOut ? num(row.checkOutLat ?? row.endLatitude) : null;
+  const outLng=isCheckOut ? num(row.checkOutLng ?? row.endLongitude) : null;
+  const meta=JSON.stringify({ source:'visit', sourceVisitId:str(row.id || existing.id) });
+  return [env.DB.prepare(
+    `INSERT INTO core_attendance(
+      id,organization_id,project_id,employee_id,work_date,status,
+      check_in_at,check_out_at,check_in_latitude,check_in_longitude,
+      check_out_latitude,check_out_longitude,idempotency_key,metadata_json,row_version,updated_at
+    ) VALUES(?,?,?,?,?,'present',?,?,?,?,?,?,?, ?,1,CURRENT_TIMESTAMP)
+    ON CONFLICT(organization_id,project_id,employee_id,work_date) DO UPDATE SET
+      check_in_at=COALESCE(core_attendance.check_in_at,excluded.check_in_at),
+      check_out_at=COALESCE(excluded.check_out_at,core_attendance.check_out_at),
+      check_in_latitude=COALESCE(core_attendance.check_in_latitude,excluded.check_in_latitude),
+      check_in_longitude=COALESCE(core_attendance.check_in_longitude,excluded.check_in_longitude),
+      check_out_latitude=COALESCE(excluded.check_out_latitude,core_attendance.check_out_latitude),
+      check_out_longitude=COALESCE(excluded.check_out_longitude,core_attendance.check_out_longitude),
+      metadata_json=json_set(COALESCE(NULLIF(core_attendance.metadata_json,''),'{}'),
+        '$.source','visit','$.lastVisitId',json_extract(excluded.metadata_json,'$.sourceVisitId')),
+      row_version=core_attendance.row_version+1,updated_at=CURRENT_TIMESTAMP`
+  ).bind(
+    attendanceId,organizationId,projectId,employeeId,workDate,
+    nullable(checkInAt),nullable(checkOutAt),lat,lng,outLat,outLng,
+    `visit-attendance:${projectId}:${employeeId}:${workDate}`,meta
+  )];
+}
+
 const firstValue = (row, keys) => {
   for (const key of keys) {
     if (row?.[key] !== undefined && row?.[key] !== null && row?.[key] !== '') return row[key];
@@ -354,41 +559,40 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
     return ['draft','finalized'].includes(str(row.status || existing.status || 'draft'));
   }
 
-  if (BROAD_ROLES.has(role)) return true;
-  if (!existing) return op === 'upsert';
-  if (op === 'delete' && ['attendance','leaves'].includes(entity)) return false;
-
   if (entity === 'attendance') {
-    if (!unchangedIfProvided(row, existing, ['projectId','project_id'], ['project_id','projectId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['workDate','date','work_date'], ['work_date','workDate','date'])) return false;
-    if (!unchangedIfProvided(row, existing, ['status'], ['status'])) return false;
+    if (!existing) return op === 'upsert';
+    // Client-originated attendance is immutable after first authoritative write.
+    // Visit-derived checkout is updated internally by visitAttendanceStatements().
+    return false;
+  }
+
+  if (entity === 'leaves') {
+    if (!existing) return op === 'upsert';
+    if (op === 'delete' || finalLeaveStatuses.has(str(existing.status))) return false;
     for (const pair of [
-      [['checkInAt','checkInTime','check_in_at'],['check_in_at','checkInAt','checkInTime']],
-      [['checkInLatitude','lat','check_in_latitude'],['check_in_latitude','checkInLatitude','lat']],
-      [['checkInLongitude','lng','check_in_longitude'],['check_in_longitude','checkInLongitude','lng']],
-      [['checkOutAt','checkOutTime','check_out_at'],['check_out_at','checkOutAt','checkOutTime']],
-      [['checkOutLatitude','check_out_latitude'],['check_out_latitude','checkOutLatitude']],
-      [['checkOutLongitude','check_out_longitude'],['check_out_longitude','checkOutLongitude']],
+      [['projectId','project_id'],['project_id','projectId']],
+      [['employeeId','employee_id'],['employee_id','employeeId']],
+      [['startDate','start_date'],['start_date','startDate']],
+      [['endDate','end_date'],['end_date','endDate']],
+      [['type'],['type']],
+      [['reason'],['reason']],
+      [['days'],['days']],
+      [['submittedAt','submitted_at'],['submitted_at','submittedAt']],
     ]) {
-      const current = firstValue(existing, pair[1]);
-      if (current !== null && !unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+      if (!unchangedIfProvided(row, existing, pair[0], pair[1])) return false;
+    }
+    const nextStatus = str(row.status || existing.status || 'pending');
+    if (!['pending','approved','rejected'].includes(nextStatus)) return false;
+    if (role === 'employee') {
+      if (nextStatus !== 'pending') return false;
+      if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
+      if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
     }
     return true;
   }
 
-  if (entity === 'leaves') {
-    if (finalLeaveStatuses.has(str(existing.status))) return false;
-    if (!unchangedIfProvided(row, existing, ['employeeId','employee_id'], ['employee_id','employeeId'])) return false;
-    if (!unchangedIfProvided(row, existing, ['submittedAt','submitted_at'], ['submitted_at','submittedAt'])) return false;
-    const nextStatus = str(row.status || existing.status || 'pending');
-    if (role === 'employee') {
-      if (!unchangedIfProvided(row, existing, ['approverId','approver_id'], ['approver_id','approverId'])) return false;
-      if (!unchangedIfProvided(row, existing, ['approvedAt','approved_at'], ['approved_at','approvedAt'])) return false;
-      return nextStatus === 'pending';
-    }
-    return ['pending','approved','rejected'].includes(nextStatus);
-  }
+  if (BROAD_ROLES.has(role)) return true;
+  if (!existing) return op === 'upsert';
 
   if (entity === 'outletProposals') {
     if (['approved','rejected'].includes(str(existing.status))) return false;
@@ -538,6 +742,7 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
   const employeeId = str(row.employeeId || row.recordedBy || row.submittedBy || row.updatedBy || row.employee_id || row.recorded_by || row.submitted_by || context.existing?.employee_id || context.existing?.recorded_by || context.existing?.submitted_by || context.existing?.employeeId);
   if (entity === 'leaves' && ['manager','supervisor','employee'].includes(role)) {
     if (!employeeId || !context.accessibleEmployeeIds?.has(employeeId)) return false;
+    if (!projectId || !projectAllowed(claims, projectId)) return false;
     if (role === 'employee' && context.existing) {
       return str(row.status || context.existing.status) === str(context.existing.status);
     }
@@ -575,7 +780,7 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
     return false;
   }
   if (role === 'supervisor' || role === 'employee') {
-    if (role === 'supervisor' && entity === 'attendancePoints') return true;
+    if (role === 'supervisor' && entity === 'attendancePoints') return false;
     if (!FIELD_ENTITIES.has(entity)) return false;
     return projectAllowed(claims, projectId) && !!employeeId && context.accessibleEmployeeIds?.has(employeeId);
   }
@@ -613,7 +818,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'competitors': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Competitor'), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'competitorProducts': return { ...base, id: str(row.id), competitorId: str(row.competitorId), sku: str(row.sku || row.id), name: str(row.name || 'Competitor Product'), unit: str(row.unit || 'pcs'), typicalPrice: num(row.typicalPrice), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
     case 'attendancePoints': return { ...base, id: str(row.id), code: str(row.code || row.id), name: str(row.name || 'Attendance Point'), type: safeStatus(row.type, ['office','meeting','store','point'], 'point'), outletId: nullable(str(row.outletId)), latitude: num(row.latitude ?? row.lat), longitude: num(row.longitude ?? row.lng), radiusM: num(row.radiusM), status: safeStatus(row.status, ['active','inactive','archived'], 'active') };
-    case 'leaves': return { ...base, id: str(row.id), employeeId: str(row.employeeId), type: str(row.type || 'Cuti Tahunan'), startDate: str(row.startDate), endDate: str(row.endDate), days: Math.max(1, Number(row.days) || 1), reason: str(row.reason), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), approverId: nullable(str(row.approverId)), submittedAt: str(row.submittedAt || new Date().toISOString().slice(0,10)), approvedAt: nullable(str(row.approvedAt)) };
+    case 'leaves': return { ...base, id: str(row.id), projectId: str(row.projectId), employeeId: str(row.employeeId), type: str(row.type || 'Cuti Tahunan'), startDate: str(row.startDate), endDate: str(row.endDate), days: Math.max(1, Number(row.days) || 1), reason: str(row.reason), status: safeStatus(row.status, ['pending','approved','rejected'], 'pending'), approverId: nullable(str(row.approverId)), submittedAt: str(row.submittedAt || new Date().toISOString()), approvedAt: nullable(str(row.approvedAt)) };
     case 'stocks': return { ...base, id: str(row.id), projectId: str(row.projectId), outletId: str(row.outletId), productId: str(row.productId), quantity: Math.max(0, Number(row.quantity) || 0), minStock: Math.max(0, Number(row.minStock) || 0), updatedBy: nullable(str(row.updatedBy)), lastUpdated: str(row.lastUpdated || new Date().toISOString().slice(0,10)) };
     case 'inventoryCycles': return {
       ...base,
@@ -685,7 +890,7 @@ function upsertStatements(env, entity, rawRow, organizationId, extras = {}) {
     case 'competitors': return [p(`INSERT INTO core_competitors(id,organization_id,code,name,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_competitors.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitors.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.status,m])];
     case 'competitorProducts': return [p(`INSERT INTO core_competitor_products(id,organization_id,competitor_id,sku,name,unit,typical_price,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET competitor_id=excluded.competitor_id,sku=excluded.sku,name=excluded.name,unit=excluded.unit,typical_price=excluded.typical_price,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_competitor_products.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_competitor_products.organization_id=excluded.organization_id`, [row.id,organizationId,row.competitorId,row.sku,row.name,nullable(row.unit),num(row.typicalPrice),row.status,m])];
     case 'attendancePoints': return [p(`INSERT INTO core_attendance_points(id,organization_id,code,name,type,address,outlet_id,latitude,longitude,radius_m,status,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET code=excluded.code,name=excluded.name,type=excluded.type,address=excluded.address,outlet_id=excluded.outlet_id,latitude=excluded.latitude,longitude=excluded.longitude,radius_m=excluded.radius_m,status=excluded.status,metadata_json=excluded.metadata_json,row_version=core_attendance_points.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_attendance_points.organization_id=excluded.organization_id`, [row.id,organizationId,row.code,row.name,row.type,nullable(row.address),nullable(row.outletId),num(row.latitude),num(row.longitude),num(row.radiusM),row.status,m])];
-    case 'leaves': return [p(`INSERT INTO core_leaves(id,organization_id,employee_id,type,start_date,end_date,days,reason,status,approver_id,submitted_at,approved_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET employee_id=excluded.employee_id,type=excluded.type,start_date=excluded.start_date,end_date=excluded.end_date,days=excluded.days,reason=excluded.reason,status=excluded.status,approver_id=excluded.approver_id,submitted_at=excluded.submitted_at,approved_at=excluded.approved_at,metadata_json=excluded.metadata_json,row_version=core_leaves.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_leaves.organization_id=excluded.organization_id`, [row.id,organizationId,row.employeeId,row.type,row.startDate,row.endDate,row.days,nullable(row.reason),row.status,row.approverId,row.submittedAt,row.approvedAt,m])];
+    case 'leaves': return [p(`INSERT INTO core_leaves(id,organization_id,project_id,employee_id,type,start_date,end_date,days,reason,status,approver_id,submitted_at,approved_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,employee_id=excluded.employee_id,type=excluded.type,start_date=excluded.start_date,end_date=excluded.end_date,days=excluded.days,reason=excluded.reason,status=excluded.status,approver_id=excluded.approver_id,submitted_at=excluded.submitted_at,approved_at=excluded.approved_at,metadata_json=excluded.metadata_json,row_version=core_leaves.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_leaves.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.employeeId,row.type,row.startDate,row.endDate,row.days,nullable(row.reason),row.status,row.approverId,row.submittedAt,row.approvedAt,m])];
     case 'stocks': return [p(`INSERT INTO core_stocks(id,organization_id,project_id,outlet_id,product_id,quantity,min_stock,updated_by,last_updated,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,quantity=excluded.quantity,min_stock=excluded.min_stock,updated_by=excluded.updated_by,last_updated=excluded.last_updated,metadata_json=excluded.metadata_json,row_version=core_stocks.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_stocks.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.quantity,row.minStock,row.updatedBy,row.lastUpdated,m])];
     case 'inventoryCycles': return [p(`INSERT INTO core_inventory_cycles(id,organization_id,project_id,outlet_id,product_id,employee_id,visit_id,cycle_date,status,opening_qty,stock_in_qty,adjustment_qty,return_qty,damaged_qty,transfer_out_qty,closing_qty,sell_out_qty,unit_price,sales_amount,sale_id,idempotency_key,finalized_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,cycle_date=excluded.cycle_date,status=excluded.status,opening_qty=excluded.opening_qty,stock_in_qty=excluded.stock_in_qty,adjustment_qty=excluded.adjustment_qty,return_qty=excluded.return_qty,damaged_qty=excluded.damaged_qty,transfer_out_qty=excluded.transfer_out_qty,closing_qty=excluded.closing_qty,sell_out_qty=excluded.sell_out_qty,unit_price=excluded.unit_price,sales_amount=excluded.sales_amount,sale_id=excluded.sale_id,idempotency_key=excluded.idempotency_key,finalized_at=excluded.finalized_at,metadata_json=excluded.metadata_json,row_version=core_inventory_cycles.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_inventory_cycles.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.employeeId,row.visitId,row.cycleDate,row.status,row.openingQty,row.stockInQty,row.adjustmentQty,row.returnQty,row.damagedQty,row.transferOutQty,row.closingQty,row.sellOutQty,row.unitPrice,row.salesAmount,null,row.idempotencyKey,row.finalizedAt,m])];
     case 'priceObservations': return [p(`INSERT INTO core_price_observations(id,organization_id,project_id,outlet_id,product_id,employee_id,visit_id,observed_price,discount_percent,discount_amount,notes,recorded_at,metadata_json,row_version,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(id) DO UPDATE SET project_id=excluded.project_id,outlet_id=excluded.outlet_id,product_id=excluded.product_id,employee_id=excluded.employee_id,visit_id=excluded.visit_id,observed_price=excluded.observed_price,discount_percent=excluded.discount_percent,discount_amount=excluded.discount_amount,notes=excluded.notes,recorded_at=excluded.recorded_at,metadata_json=excluded.metadata_json,row_version=core_price_observations.row_version+1,updated_at=CURRENT_TIMESTAMP WHERE core_price_observations.organization_id=excluded.organization_id`, [row.id,organizationId,row.projectId,row.outletId,row.productId,row.employeeId,row.visitId,row.observedPrice,row.discountPercent,row.discountAmount,nullable(row.notes),row.recordedAt,m])];
@@ -797,7 +1002,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
       case 'competitors': return { ...common, code: dbRow.code, name: dbRow.name, status: dbRow.status };
       case 'competitorProducts': return { ...common, competitorId: dbRow.competitor_id, sku: dbRow.sku, name: dbRow.name, unit: dbRow.unit, typicalPrice: dbRow.typical_price, status: dbRow.status };
       case 'attendancePoints': return { ...common, code: dbRow.code, name: dbRow.name, type: dbRow.type, address: dbRow.address, outletId: dbRow.outlet_id, lat: dbRow.latitude, lng: dbRow.longitude, radiusM: dbRow.radius_m, status: dbRow.status };
-      case 'leaves': return { ...common, employeeId: dbRow.employee_id, type: dbRow.type, startDate: dbRow.start_date, endDate: dbRow.end_date, days: dbRow.days, reason: dbRow.reason, status: dbRow.status, approverId: dbRow.approver_id, submittedAt: dbRow.submitted_at, approvedAt: dbRow.approved_at };
+      case 'leaves': return { ...common, projectId: dbRow.project_id || common.projectId || '', employeeId: dbRow.employee_id, type: dbRow.type, startDate: dbRow.start_date, endDate: dbRow.end_date, days: dbRow.days, reason: dbRow.reason, status: dbRow.status, approverId: dbRow.approver_id, submittedAt: dbRow.submitted_at, approvedAt: dbRow.approved_at };
       case 'stocks': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, quantity: dbRow.quantity, minStock: dbRow.min_stock, updatedBy: dbRow.updated_by, lastUpdated: dbRow.last_updated };
       case 'inventoryCycles': return { ...common, projectId:dbRow.project_id, outletId:dbRow.outlet_id, productId:dbRow.product_id, employeeId:dbRow.employee_id, visitId:dbRow.visit_id, cycleDate:dbRow.cycle_date, status:dbRow.status, openingQty:dbRow.opening_qty, stockInQty:dbRow.stock_in_qty, adjustmentQty:dbRow.adjustment_qty, returnQty:dbRow.return_qty, damagedQty:dbRow.damaged_qty, transferOutQty:dbRow.transfer_out_qty, closingQty:dbRow.closing_qty, sellOutQty:dbRow.sell_out_qty, unitPrice:dbRow.unit_price, salesAmount:dbRow.sales_amount, saleId:dbRow.sale_id, idempotencyKey:dbRow.idempotency_key, finalizedAt:dbRow.finalized_at };
       case 'priceObservations': return { ...common, projectId: dbRow.project_id, outletId: dbRow.outlet_id, productId: dbRow.product_id, employeeId: dbRow.employee_id, recordedBy: dbRow.employee_id, visitId: dbRow.visit_id, observedPrice: dbRow.observed_price, discountPercent: dbRow.discount_percent, discountAmount: dbRow.discount_amount, notes: dbRow.notes || '', recordedAt: dbRow.recorded_at };
@@ -875,7 +1080,7 @@ async function bootstrapData(env, claims) {
     data.products = data.products.filter(row => row.projectIds.some(id => allowedProjects.has(str(id))));
     data.projectProducts = data.projectProducts.filter(row => allowedProjects.has(str(row.projectId)));
     for (const key of ['visits','attendance','productSales','surveyResponses','priceObservations','competitorIntel','outletProposals']) data[key] = data[key].filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId || row.submittedBy)));
-    data.leaves = data.leaves.filter(row => employeesAllowed.has(str(row.employeeId)));
+    data.leaves = data.leaves.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.stocks = data.stocks.filter(row => allowedProjects.has(str(row.projectId)));
     data.inventoryCycles = data.inventoryCycles.filter(row => allowedProjects.has(str(row.projectId)) && employeesAllowed.has(str(row.employeeId)));
     data.surveyTemplates = data.surveyTemplates.filter(row => (row.projectId && allowedProjects.has(str(row.projectId))) || (!row.projectId && allowedClients.has(str(row.clientId))));
@@ -1032,6 +1237,9 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   if (!code) return { error:'PROJECT_CODE_REQUIRED', status:422 };
   if (!clientId) return { error:'PROJECT_CLIENT_REQUIRED', status:422 };
   if (!['draft','active','on_hold','completed','cancelled'].includes(nextStatus)) return { error:'PROJECT_INVALID_STATUS', status:422 };
+  const attendanceSource = str(row.attendanceSource || parseMetadata(existing?.metadata_json)?.attendanceSource || 'manual');
+  if (!['manual','visit'].includes(attendanceSource)) return { error:'PROJECT_INVALID_ATTENDANCE_SOURCE', status:422 };
+  row.attendanceSource = attendanceSource;
 
   const client = await env.DB.prepare(
     'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'
@@ -1828,7 +2036,7 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       ).bind(organizationId,str(existing.id || row.id)));
       existingProjectIds = unique(links.map(link => link.project_id));
     }
-    if ((entity === 'visits' || entity === 'outletProposals') && !actorEmployeeResolved) {
+    if ((entity === 'visits' || entity === 'outletProposals' || entity === 'attendance') && !actorEmployeeResolved) {
       actorEmployeeResolved = true;
       const actorEmployee = await env.DB.prepare(
         "SELECT id FROM core_employees WHERE organization_id=? AND auth_user_id=? AND employment_status='active' LIMIT 1"
@@ -1877,10 +2085,30 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(cycleError.authoritativeOpening != null ? { authoritativeOpening:cycleError.authoritativeOpening } : {}),
       }, cycleError.status || 422);
     }
+    if (entity === 'attendancePoints') {
+      const pointError = await validateAttendancePointMutation(row, existing, op);
+      if (pointError) return json({ error:pointError.error, entity, id:row.id || null }, pointError.status || 422);
+    }
+    if (entity === 'attendance') {
+      const attendanceError = await validateAttendanceMutation(env, organizationId, claims, row, existing, op);
+      if (attendanceError) return json({
+        error:attendanceError.error, entity, id:row.id || null,
+        ...(attendanceError.distanceM != null ? { distanceM:attendanceError.distanceM } : {}),
+        ...(attendanceError.radiusM != null ? { radiusM:attendanceError.radiusM } : {}),
+      }, attendanceError.status || 422);
+      if (roleOf(claims) === 'employee' && actorEmployeeId && str(row.employeeId || existing?.employee_id) !== actorEmployeeId) {
+        return json({ error:'ATTENDANCE_SELF_ONLY', entity, id:row.id || null }, 403);
+      }
+    }
+    if (entity === 'leaves') {
+      const leaveError = await validateLeaveMutation(env, organizationId, row, existing, op);
+      if (leaveError) return json({ error:leaveError.error, entity, id:row.id || null }, leaveError.status || 422);
+    }
     if (entity === 'projectAssignments' && op === 'upsert') {
       const assignmentError = await validateProjectAssignmentMutation(env, organizationId, row, existing, { batchAssignments });
       if (assignmentError) return json({ error:assignmentError.error, entity, id:row.id || null, allocated:assignmentError.allocated, remainingSubordinates:assignmentError.remainingSubordinates }, assignmentError.status || 422);
     }
+    let visitAttendanceSource = 'manual';
     if (entity === 'visits' && op === 'upsert') {
       const geofenceError = await applyVisitGeofenceAuthority(env, organizationId, row, existing);
       if (geofenceError) return json({
@@ -1890,6 +2118,8 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         ...(geofenceError.distanceM != null ? { distanceM:geofenceError.distanceM } : {}),
         ...(geofenceError.radiusM != null ? { radiusM:geofenceError.radiusM } : {}),
       }, geofenceError.status || 422);
+      const attendancePolicy = await projectAttendancePolicy(env, organizationId, str(row.projectId || existing?.project_id));
+      visitAttendanceSource = attendancePolicy?.enabled === false ? 'disabled' : (attendancePolicy?.source || 'manual');
     }
     if (entity === 'leaves' && existing && ['approved','rejected'].includes(str(row.status)) && str(row.status) !== str(existing.status)) {
       row.approverId = claims.sub;
@@ -1903,6 +2133,9 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
         extras = { authUserId: user?.id || null };
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
+      if (entity === 'visits') {
+        statements.push(...visitAttendanceStatements(env, organizationId, row, existing, visitAttendanceSource));
+      }
       if (entity === 'outletProposals' && str(row.status) === 'approved') {
         const finalization = await approvedProposalOutlet(env, organizationId, row, existing);
         if (finalization.error) return json({ error:finalization.error, entity, id:row.id || null }, finalization.status || 422);
