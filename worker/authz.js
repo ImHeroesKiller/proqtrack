@@ -49,13 +49,13 @@ async function findUserByEmail(env, email) {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
   return env.DB.prepare(
-    'SELECT id,email,password_hash,role,status,last_login_at FROM auth_users WHERE lower(email)=? LIMIT 1',
+    'SELECT id,email,display_name,password_hash,role,status,last_login_at FROM auth_users WHERE lower(email)=? LIMIT 1',
   ).bind(normalized).first();
 }
 
 async function findUserById(env, id) {
   return env.DB.prepare(
-    'SELECT id,email,password_hash,role,status,last_login_at FROM auth_users WHERE id=? LIMIT 1',
+    'SELECT id,email,display_name,password_hash,role,status,last_login_at FROM auth_users WHERE id=? LIMIT 1',
   ).bind(id).first();
 }
 
@@ -95,6 +95,45 @@ async function organizationMembership(env, userId, organizationId) {
       AND o.status='active'
     LIMIT 1
   `).bind(userId, organizationId).first();
+}
+
+async function profileSnapshot(env, userId, organizationId = '') {
+  const row = await env.DB.prepare(`
+    SELECT u.id,u.email,u.display_name,
+           e.id AS employee_id,e.full_name,e.phone,e.metadata_json
+    FROM auth_users u
+    LEFT JOIN core_employees e
+      ON e.auth_user_id=u.id AND e.organization_id=?
+    WHERE u.id=?
+    LIMIT 1
+  `).bind(organizationId || '',userId).first();
+  if (!row) return null;
+  let employeeMeta = {};
+  try { employeeMeta = JSON.parse(row.metadata_json || '{}') || {}; } catch { employeeMeta = {}; }
+  return {
+    id:row.id,
+    email:row.email,
+    name:String(row.display_name || row.full_name || row.email || '').trim(),
+    employeeId:row.employee_id || null,
+    phone:row.phone || '',
+    area:String(employeeMeta.area || ''),
+  };
+}
+
+async function deviceSnapshot(env, userId, organizationId = '') {
+  if (!organizationId) return { deviceBound:false, deviceLabel:'', devicePairedAt:null, deviceLastSeenAt:null };
+  const row = await env.DB.prepare(`
+    SELECT status,device_label,paired_at,last_seen_at
+    FROM core_auth_devices
+    WHERE organization_id=? AND user_id=?
+    LIMIT 1
+  `).bind(organizationId,userId).first();
+  return {
+    deviceBound:row?.status === 'active',
+    deviceLabel:row?.device_label || '',
+    devicePairedAt:row?.paired_at || null,
+    deviceLastSeenAt:row?.last_seen_at || null,
+  };
 }
 
 async function projectScope(env, userId, organizationId, role) {
@@ -420,6 +459,10 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     console.warn('auth_user_touch_failed', error?.message || error);
   }
   await writeAuthAudit(env, { requestId, actor: claims, action: 'login' });
+  const [profile, device] = await Promise.all([
+    profileSnapshot(env,claims.sub,claims.organizationId || ''),
+    deviceSnapshot(env,claims.sub,claims.organizationId || ''),
+  ]);
 
   return authJson({
     ok: true,
@@ -427,12 +470,17 @@ export async function loginAuthoritatively(request, env, requestId = crypto.rand
     exp: claims.exp,
     account: {
       id: claims.sub,
-      email: claims.email,
+      email: profile?.email || claims.email,
+      name: profile?.name || claims.email,
+      employeeId: profile?.employeeId || null,
+      phone: profile?.phone || '',
+      area: profile?.area || '',
       role: claims.role,
       organizationId: claims.organizationId,
       organization: authorization.organization,
       projectIds: claims.projectIds,
       clientIds: claims.clientIds,
+      ...device,
     },
     requestId,
   });
@@ -526,7 +574,21 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
   if (url.pathname === '/api/auth/session' && request.method === 'GET') {
     try {
       const claims = await authenticateAuthoritatively(request, env);
-      return authJson({ ok: true, ...claims, requestId });
+      const [profile, device] = await Promise.all([
+        profileSnapshot(env,claims.sub,claims.organizationId || ''),
+        deviceSnapshot(env,claims.sub,claims.organizationId || ''),
+      ]);
+      return authJson({
+        ok:true,
+        ...claims,
+        email:profile?.email || claims.email,
+        name:profile?.name || claims.email,
+        employeeId:profile?.employeeId || null,
+        phone:profile?.phone || '',
+        area:profile?.area || '',
+        ...device,
+        requestId,
+      });
     } catch (error) {
       return authErrorResponse(error, requestId);
     }
@@ -570,6 +632,9 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
       const body = await request.json().catch(() => ({}));
       const email = normalizeEmail(body.email || claims.email);
       const fullName = String(body.name || '').trim().slice(0, 180);
+      const phone = String(body.phone || '').trim().slice(0, 64);
+      const area = String(body.area || '').trim().slice(0, 120);
+      if (!fullName) return authJson({ error:'PROFILE_NAME_REQUIRED', requestId },400);
       if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return authJson({ error: 'EMAIL_INVALID', requestId }, 400);
       }
@@ -579,22 +644,32 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
       if (conflict) return authJson({ error: 'EMAIL_ALREADY_USED', requestId }, 409);
 
       const statements = [
-        env.DB.prepare('UPDATE auth_users SET email=? WHERE id=?').bind(email, claims.sub),
+        env.DB.prepare('UPDATE auth_users SET email=?,display_name=? WHERE id=?').bind(email,fullName,claims.sub),
       ];
       if (claims.organizationId) {
-        statements.push(env.DB.prepare(`
-          UPDATE core_employees
-          SET email=?,
-              full_name=CASE WHEN ?<>'' THEN ? ELSE full_name END,
-              updated_at=CURRENT_TIMESTAMP
-          WHERE organization_id=? AND auth_user_id=?
-        `).bind(email, fullName, fullName, claims.organizationId, claims.sub));
+        const employee = await env.DB.prepare(
+          'SELECT id,metadata_json FROM core_employees WHERE organization_id=? AND auth_user_id=? LIMIT 1',
+        ).bind(claims.organizationId,claims.sub).first();
+        if (employee) {
+          let metadata = {};
+          try { metadata = JSON.parse(employee.metadata_json || '{}') || {}; } catch { metadata = {}; }
+          metadata.area = area;
+          statements.push(env.DB.prepare(`
+            UPDATE core_employees
+            SET email=?,full_name=?,phone=?,metadata_json=?,updated_at=CURRENT_TIMESTAMP
+            WHERE organization_id=? AND id=?
+          `).bind(email,fullName,phone,JSON.stringify(metadata),claims.organizationId,employee.id));
+        }
       }
       await env.DB.batch(statements);
+      const [profile, device] = await Promise.all([
+        profileSnapshot(env,claims.sub,claims.organizationId || ''),
+        deviceSnapshot(env,claims.sub,claims.organizationId || ''),
+      ]);
       await writeAuthAudit(env, { requestId, actor: claims, action: 'update_profile' });
       return authJson({
         ok: true,
-        account: { id: claims.sub, email, name: fullName || null },
+        account: { ...profile, role:claims.role, organizationId:claims.organizationId, ...device },
         requestId,
       });
     } catch (error) {
@@ -634,6 +709,10 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
       const authorization = await resolveAuthorizationForUser(env, user, targetOrganizationId);
       const next = await createSession(env, request, user, authorization);
       await revokeSession(env, current.sid);
+      const [profile, device] = await Promise.all([
+        profileSnapshot(env,next.claims.sub,next.claims.organizationId || ''),
+        deviceSnapshot(env,next.claims.sub,next.claims.organizationId || ''),
+      ]);
       await writeAuthAudit(env, { requestId, actor: next.claims, action: 'switch_organization' });
       return authJson({
         ok: true,
@@ -641,12 +720,17 @@ export async function handleAuthRoute(request, env, url = new URL(request.url), 
         exp: next.claims.exp,
         account: {
           id: next.claims.sub,
-          email: next.claims.email,
+          email: profile?.email || next.claims.email,
+          name: profile?.name || next.claims.email,
+          employeeId: profile?.employeeId || null,
+          phone: profile?.phone || '',
+          area: profile?.area || '',
           role: next.claims.role,
           organizationId: next.claims.organizationId,
           organization: authorization.organization,
           projectIds: next.claims.projectIds,
           clientIds: next.claims.clientIds,
+          ...device,
         },
         requestId,
       });
