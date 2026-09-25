@@ -242,3 +242,19 @@ try {
 } finally {
   cleanup();
 }
+
+if (!process.exitCode) {
+  // The authenticated Settings role matrix reuses production smoke scripts.
+  // Cool down the login gateway window first so this release gate does not
+  // weaken or race the production rate limit.
+  execFileSync('sleep',['61'],{ stdio:'inherit' });
+  execFileSync('bash',['scripts/m7-authenticated-production-uat.sh'],{
+    stdio:'inherit',
+    env:process.env,
+  });
+  execFileSync('bash',['scripts/settings-admin-smoke.sh'],{
+    stdio:'inherit',
+    env:process.env,
+  });
+  console.log('Settings final integrated production UAT PASS: Superadmin + Head/Admin/Manager/Supervisor/Employee release matrix');
+}
