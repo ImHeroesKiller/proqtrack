@@ -170,13 +170,13 @@ test('all master pages expose bulk upload and UI permissions match server roles'
   const [app, projectUi, settings] = await Promise.all([
     read('src/app.js'), read('src/types/index.js'), read('src/account-settings.js'),
   ]);
-  assert.match(app, /BulkMaster\.open\('outlets'\)/);
-  assert.match(app, /BulkMaster\.open\('products'\)/);
-  assert.match(app, /BulkMaster\.open\('competitors'\)/);
-  assert.match(app, /BulkMaster\.open\('competitorProducts'\)/);
-  assert.match(projectUi, /BulkMaster\.open\('clients'\)/);
-  assert.match(projectUi, /BulkMaster\.open\('projects'\)/);
-  assert.match(settings, /BulkMaster\.open\('attendancePoints'\)/);
+  assert.match(app, /FT\.openBulkMaster\('outlets'\)/);
+  assert.match(app, /FT\.openBulkMaster\('products'\)/);
+  assert.match(app, /FT\.openBulkMaster\('competitors'\)/);
+  assert.match(app, /FT\.openBulkMaster\('competitorProducts'\)/);
+  assert.match(projectUi, /FT\.openBulkMaster\('clients'\)/);
+  assert.match(projectUi, /FT\.openBulkMaster\('projects'\)/);
+  assert.match(settings, /FT\.openBulkMaster\('attendancePoints'\)/);
   assert.match(projectUi, /a\?\.role === "admin"/);
   assert.match(projectUi, /function canManageClients/);
   assert.match(projectUi, /function canCreateProject/);
