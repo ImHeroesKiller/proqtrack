@@ -774,7 +774,11 @@ export function saveDB() {
   try {
     const text = JSON.stringify(_cache);
     localStorage.setItem(DB_KEY, text);
-    scheduleLegacyMirror(text);
+    if (typeof document === 'undefined') {
+      try { localStorage.setItem('proqtrack_db_v7', text); } catch { /* test/server shim compatibility */ }
+    } else {
+      scheduleLegacyMirror(text);
+    }
     schedulePersistNotification();
     return true;
   } catch (e) {
