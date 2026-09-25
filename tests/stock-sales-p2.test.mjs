@@ -4,11 +4,12 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const fieldSales = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'utf8');
+const stockSalesPages = readFileSync(new URL('../src/routes/stock-sales-pages.js', import.meta.url), 'utf8');
 const stockSalesUi = readFileSync(new URL('../src/lib/stock-sales-ui.js', import.meta.url), 'utf8');
 
 test('P2 Stock filters project outlet and status using row metadata', () => {
-  assert.match(app,/id="stockProjectFilter"/);
-  assert.match(app,/id="stockOutletFilter"/);
+  assert.match(stockSalesPages,/id="stockProjectFilter"/);
+  assert.match(stockSalesPages,/id="stockOutletFilter"/);
   assert.match(app,/stockFilterSnapshot/);
   assert.match(app,/stockMatchesFilters/);
   assert.match(stockSalesUi,/projectId/);
@@ -17,9 +18,9 @@ test('P2 Stock filters project outlet and status using row metadata', () => {
 });
 
 test('P2 Stock dashboard exposes operational stock health summaries', () => {
-  assert.match(app,/Saldo stok/);
-  assert.match(app,/Stok menipis/);
-  assert.match(app,/Stok habis/);
+  assert.match(stockSalesPages,/Saldo stok/);
+  assert.match(stockSalesPages,/Stok menipis/);
+  assert.match(stockSalesPages,/Stok habis/);
 });
 
 test('P2 visit stock captures stock-in explicitly instead of inferring replenishment', () => {
@@ -42,12 +43,12 @@ test('P2 Manager Stock movement supports explicit recorder employee', () => {
 });
 
 test('P2 Sales has operational summary and filters', () => {
-  assert.match(app,/Transaksi aktif/);
-  assert.match(app,/Qty terjual/);
-  assert.match(app,/Nilai penjualan/);
-  assert.match(app,/id="salesSourceFilter"/);
-  assert.match(app,/id="salesFromFilter"/);
-  assert.match(app,/id="salesToFilter"/);
+  assert.match(stockSalesPages,/Transaksi aktif/);
+  assert.match(stockSalesPages,/Qty terjual/);
+  assert.match(stockSalesPages,/Nilai penjualan/);
+  assert.match(stockSalesPages,/id="salesSourceFilter"/);
+  assert.match(stockSalesPages,/id="salesFromFilter"/);
+  assert.match(stockSalesPages,/id="salesToFilter"/);
   assert.match(app,/window\.FT\.filterProductSales/);
 });
 
@@ -75,8 +76,8 @@ test('P2 visit stock validates whole batch before creating ledger cycles', () =>
 });
 
 test('P2 Sales exposes pending correction recovery without resurrecting voided source', () => {
-  assert.match(app,/pendingCorrections/);
-  assert.match(app,/koreksi manual belum memiliki replacement/);
+  assert.match(stockSalesPages,/pendingCorrections/);
+  assert.match(stockSalesPages,/koreksi manual belum memiliki replacement/);
   assert.match(app,/openManualSaleModal/);
 });
 
@@ -87,9 +88,9 @@ test('P2 manual sale reuses one idempotency token for retries from the same moda
 });
 
 test('P2 sales KPI cards follow the active filters', () => {
-  assert.match(app,/id="salesKpiTransactions"/);
-  assert.match(app,/id="salesKpiQty"/);
-  assert.match(app,/id="salesKpiAmount"/);
+  assert.match(stockSalesPages,/id="salesKpiTransactions"/);
+  assert.match(stockSalesPages,/id="salesKpiQty"/);
+  assert.match(stockSalesPages,/id="salesKpiAmount"/);
   assert.match(app,/salesSummary\(visibleRows\)/);
   assert.match(app,/totals\.amount/);
 });

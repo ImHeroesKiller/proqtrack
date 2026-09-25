@@ -52,10 +52,11 @@ test('bulk client detects duplicates across preview chunk boundaries', () => {
 });
 
 test('bulk upload is first-class server route and employee UI exposes it', async () => {
-  const [main, hardening, app, wrangler, workflow, migration] = await Promise.all([
+  const [main, hardening, app, employeePage, wrangler, workflow, migration] = await Promise.all([
     read('worker/main.js'),
     read('worker/hardening.js'),
     read('src/app.js'),
+    read('src/routes/employees-page.js'),
     read('wrangler.jsonc'),
     read('.github/workflows/cloudflare-mvp.yml'),
     read('migrations/0012_bulk_employee_upload.sql'),
@@ -63,7 +64,7 @@ test('bulk upload is first-class server route and employee UI exposes it', async
   assert.match(main, /handleBulkEmployeeRoute/);
   assert.match(main, /pathname\.startsWith\('\/api\/bulk\/employees'\)/);
   assert.match(hardening, /return 'bulk'/);
-  assert.match(app, /FT\.openBulkEmployees\(\)/);
+  assert.match(employeePage, /FT\.openBulkEmployees\(\)/);
   assert.match(app, /import\('\.\/bulk-employees\.js'\)/);
   assert.match(wrangler, /CORE_BULK_API_ENABLED/);
   assert.match(workflow, /\/api\/bulk\/employees\/preview/);

@@ -35,7 +35,11 @@ test('P0 non-broad bootstrap queries are scoped before decode', async () => {
 });
 
 test('P0 large master pages render only active page rows into DOM', async () => {
-  const app = await read('src/app.js');
+  const [app, employeePage, visitsPage] = await Promise.all([
+    read('src/app.js'),
+    read('src/routes/employees-page.js'),
+    read('src/routes/visits-page.js'),
+  ]);
   for (const marker of [
     'visitRowsCache',
     'employeeRowsCache',
@@ -43,8 +47,8 @@ test('P0 large master pages render only active page rows into DOM', async () => 
     'productRowsCache',
     "tbody.innerHTML = pageState.items.map(row => row.html).join('')",
   ]) assert.ok(app.includes(marker), marker);
-  assert.match(app, /paginateVisits\(visitRowsCache/);
-  assert.match(app, /paginateEmployees\(employeeRowsCache/);
+  assert.match(visitsPage, /paginateVisits\(visitRowsCache/);
+  assert.match(employeePage, /paginateEmployees\(employeeRowsCache/);
   assert.match(app, /paginateOutlets\(outletRowsCache/);
   assert.match(app, /paginateProducts\(productRowsCache/);
 });
