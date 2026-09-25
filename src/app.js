@@ -20,7 +20,7 @@ import {
   getFieldPhotos, getFieldPhotosByEmployee, getAccessibleFieldPhotos,
   createFieldPhoto, deleteFieldPhoto, FIELD_PHOTO_TYPES, getAppSettings,
   getOrganization, getCurrentOrgId,
-  getVisitsOnDate, visitDay, getAttendancePoints, getOutletProposals,
+  getVisitsOnDate, visitDay, getAttendancePoints, getAttendanceProjectsForEmployee, getOutletProposals,
   canEmployeeAddStore, hasManualOutletApprovalProjects, formatOutletLabel, getProjectStoreSettings, defaultStoreCatalog,
   getProductSales, getProductSalesAudit, createProductSale, voidProductSale, monthSalesAmount,
   registerTestDevice, getActor, resetDB as resetDatabase,
@@ -1378,7 +1378,7 @@ function renderVisits() {
             </tr>
           </thead>
           <tbody>
-            ${visits.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>` :
+            ${visits.length === 0 ? `<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">📋</div><h3>Belum ada data kunjungan</h3><p>Klik "Tambah Kunjungan" untuk membuat data baru</p></div></td></tr>` :
             visits.map(v => {
               const emp = empMap[v.employeeId]; const out = outletMap[v.outletId];
               if (!emp || !out) return '';
@@ -3459,6 +3459,11 @@ window.FT.openAttendancePointModal = function() {
         <select class="select" name="type"><option value="office">Kantor</option><option value="meeting">Meeting point</option><option value="store">Toko</option></select>
       </div>
       <div class="form-group"><label class="label">Alamat</label><input class="input" name="address"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="label">Latitude</label><input class="input" type="number" step="any" min="-90" max="90" name="lat" required></div>
+        <div class="form-group"><label class="label">Longitude</label><input class="input" type="number" step="any" min="-180" max="180" name="lng" required></div>
+      </div>
+      <div class="form-group"><label class="label">Radius (meter)</label><input class="input" type="number" min="10" name="radiusM" value="150" required></div>
       <div class="modal-footer"><button type="button" class="btn btn-secondary" data-pqt-onclick="FT.closeModal()">Batal</button><button class="btn btn-primary">Simpan</button></div>
     </form>`);
 };
@@ -3479,6 +3484,7 @@ function renderLeavesManager() {
   const empMap = Object.fromEntries(getEmployees().map(e => [e.id, e]));
   const leaves = getLeaves().filter(l => empMap[l.employeeId]).sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
+  const projectMap = Object.fromEntries((getDB().projects || []).map(p => [p.id, p]));
   const pending = leaves.filter(l => l.status === 'pending');
   return `
     ${pending.length > 0 ? `
@@ -3499,7 +3505,7 @@ function renderLeavesManager() {
       </div>
       <div class="visits-table-wrapper">
         <table class="table" id="leaveTable">
-          <thead><tr><th>Karyawan</th><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
+          <thead><tr><th>Karyawan</th><th>Project</th><th>Tipe</th><th>Mulai</th><th>Sampai</th><th>Hari</th><th>Alasan</th><th>Status</th><th>Approver</th><th></th></tr></thead>
           <tbody>
             ${leaves.length === 0 ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3></div></td></tr>` :
             leaves.map(l => {
@@ -3508,11 +3514,12 @@ function renderLeavesManager() {
               return `
                 <tr>
                   <td><span style="font-weight:600;">${esc(emp.name)}</span></td>
-                  <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
+                  <td>${esc(projectMap[l.projectId]?.code || l.projectId || '-')}</td>
+                  <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${esc(l.type)}</span></td>
                   <td>${formatDateShort(l.startDate)}</td>
                   <td>${formatDateShort(l.endDate)}</td>
                   <td style="text-align:center; font-weight:600;">${l.days}</td>
-                  <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${l.reason}</td>
+                  <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${esc(l.reason)}</td>
                   <td>${statusBadge(l.status)}</td>
                   <td style="font-size:12px; color:var(--gray-400);">${l.status === 'pending' ? '-' : (accMap[l.approverId] || '-')}</td>
                   <td>
@@ -3542,15 +3549,22 @@ window.FT.filterLeaves = function() {
   });
 };
 
-window.FT.approveLeave = function(id) {
-  updateLeave(id, { status: 'approved', approverId: state.account.id, approvedAt: new Date().toISOString().slice(0,10) });
-  showToast('Pengajuan disetujui', 'success'); render();
-};
-
-window.FT.rejectLeave = function(id) {
-  updateLeave(id, { status: 'rejected', approverId: state.account.id, approvedAt: new Date().toISOString().slice(0,10) });
-  showToast('Pengajuan ditolak', 'success'); render();
-};
+async function decideLeave(id,status) {
+  const row=getLeaves().find(item=>item.id===id);
+  if (!row || row.status!=='pending') return;
+  try {
+    updateLeave(id,{ status });
+    await confirmAuthoritativeSync();
+    showToast(status==='approved'?'Pengajuan disetujui':'Pengajuan ditolak','success');
+    render();
+  } catch(error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error?.message || 'Keputusan leave gagal disimpan.','error');
+    render();
+  }
+}
+window.FT.approveLeave = id => decideLeave(id,'approved');
+window.FT.rejectLeave = id => decideLeave(id,'rejected');
 
 window.FT.viewLeave = function(id) {
   const l = getLeaves().find(x => x.id === id);
@@ -3559,12 +3573,12 @@ window.FT.viewLeave = function(id) {
   const accMap = Object.fromEntries(getAccounts().map(a => [a.id, a.name || a.email]));
   openModal('Detail Pengajuan', `
     <div class="detail-grid">
-      <div class="detail-label">Karyawan</div><div class="detail-value">${emp ? emp.name : '-'}</div>
-      <div class="detail-label">Tipe</div><div class="detail-value">${l.type}</div>
+      <div class="detail-label">Karyawan</div><div class="detail-value">${esc(emp ? emp.name : '-')}</div>
+      <div class="detail-label">Tipe</div><div class="detail-value">${esc(l.type)}</div>
       <div class="detail-label">Mulai</div><div class="detail-value">${formatDate(l.startDate)}</div>
       <div class="detail-label">Sampai</div><div class="detail-value">${formatDate(l.endDate)}</div>
       <div class="detail-label">Durasi</div><div class="detail-value">${l.days} hari</div>
-      <div class="detail-label">Alasan</div><div class="detail-value full">${l.reason}</div>
+      <div class="detail-label">Alasan</div><div class="detail-value full">${esc(l.reason)}</div>
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(l.status)}</div>
       <div class="detail-label">Diajukan</div><div class="detail-value">${formatDateShort(l.submittedAt)}</div>
       <div class="detail-label">Approver</div><div class="detail-value">${accMap[l.approverId] || '-'}</div>
@@ -3641,11 +3655,11 @@ function renderMyLeaves() {
             ${leaves.length === 0 ? `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">📄</div><h3>Belum ada pengajuan</h3><p>Klik "Ajukan Ijin/Cuti" untuk membuat baru</p></div></td></tr>` :
             leaves.map(l => `
               <tr>
-                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${l.type}</span></td>
+                <td><span style="font-size:12px; background:var(--gray-100); padding:4px 10px; border-radius:99px;">${esc(l.type)}</span></td>
                 <td>${formatDateShort(l.startDate)}</td>
                 <td>${formatDateShort(l.endDate)}</td>
                 <td style="text-align:center; font-weight:600;">${l.days}</td>
-                <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${l.reason}</td>
+                <td style="max-width:200px; font-size:13px; color:var(--gray-500);">${esc(l.reason)}</td>
                 <td>${statusBadge(l.status)}</td>
                 <td style="font-size:12px; color:var(--gray-400);">${formatDateShort(l.submittedAt)}</td>
               </tr>
@@ -3659,8 +3673,16 @@ function renderMyLeaves() {
 
 window.FT.openMyLeaveModal = function() {
   const leaveTypes = getLeaveTypes();
+  const projects = getAttendanceProjectsForEmployee(myEmployeeId());
   openModal('Ajukan Ijin / Cuti', `
     <form data-pqt-onsubmit="FT.createMyLeave(event)">
+      <div class="form-group">
+        <label class="label">Project</label>
+        <select class="select" name="projectId" required>
+          <option value="">Pilih project</option>
+          ${projects.map(p => `<option value="${esc(p.id)}">${esc(p.code || p.id)} — ${esc(p.name)}</option>`).join('')}
+        </select>
+      </div>
       <div class="form-group">
         <label class="label">Tipe</label>
         <select class="select" name="type" required>
@@ -3696,13 +3718,24 @@ window.FT.calcLeaveDays = function() {
   }
 };
 
-window.FT.createMyLeave = function(e) {
+window.FT.createMyLeave = async function(e) {
   e.preventDefault();
+  const submit=e.target.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(e.target));
   data.employeeId = myEmployeeId();
   data.days = parseInt(data.days);
-  createLeave(data);
-  closeModal(); showToast('Pengajuan terkirim, menunggu approval', 'success'); render();
+  try {
+    if(submit){submit.disabled=true;submit.textContent='Mengirim…';}
+    createLeave(data);
+    await confirmAuthoritativeSync();
+    closeModal(); showToast('Pengajuan terkirim, menunggu approval', 'success'); render();
+  } catch(error) {
+    restoreOperationalBaseline(getDB());
+    showToast(error?.message || 'Pengajuan gagal dikirim.','error');
+    render();
+  } finally {
+    if(submit?.isConnected){submit.disabled=false;submit.textContent='Kirim Pengajuan';}
+  }
 };
 
 // ===== Generic table filter helper =====
