@@ -953,7 +953,18 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       if (!context.existing || !projectAllowed(claims, str(row.id))) return false;
       const currentClientId = str(context.existing.client_id || context.existing.clientId);
       const nextClientId = str(row.clientId || row.client_id || currentClientId);
-      return !!currentClientId && nextClientId === currentClientId && clientAllowed(claims, currentClientId);
+      if (!currentClientId || nextClientId !== currentClientId || !clientAllowed(claims, currentClientId)) return false;
+
+      // Manager Settings authority is limited to project-scoped catalog/operational metadata.
+      // Attendance policy is organization-admin controlled and must not be changed through
+      // a crafted project sync request, even though the UI hides the Attendance tab.
+      const currentMeta = parseMetadata(context.existing.metadata_json);
+      const currentAttendanceSource = str(currentMeta.attendanceSourceMode || 'manual') === 'visit' ? 'visit' : 'manual';
+      const nextAttendanceSource = str(row.attendanceSourceMode || currentAttendanceSource) === 'visit' ? 'visit' : 'manual';
+      const currentLateAfter = str(currentMeta.attendanceLateAfter || '09:00');
+      const nextLateAfter = str(row.attendanceLateAfter || currentLateAfter);
+      if (nextAttendanceSource !== currentAttendanceSource || nextLateAfter !== currentLateAfter) return false;
+      return true;
     }
     if (entity === 'outlets' || entity === 'products') {
       const projectIds = unique(row.projectIds?.length ? row.projectIds : [projectId]);
