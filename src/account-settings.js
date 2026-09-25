@@ -687,9 +687,8 @@ window.AM = {
     event.preventDefault();
     if (profileSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     profileSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Menyimpan profil…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       const saved = await updateCloudProfile({
@@ -707,16 +706,15 @@ window.AM = {
       toast(profileErrorMessage(error), 'error');
     } finally {
       profileSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   async savePassword(event) {
     event.preventDefault();
     if (passwordSaveInFlight) return;
     const form = event.target;
-    const submit = form.querySelector('button[type="submit"]');
     passwordSaveInFlight = true;
-    if (submit) submit.disabled = true;
+    setSubmitBusy(form,true,'Memperbarui…');
     try {
       const data = Object.fromEntries(new FormData(form).entries());
       if (data.nextPassword !== data.confirmPassword) throw new Error('Konfirmasi password tidak sama.');
@@ -730,12 +728,15 @@ window.AM = {
       toast(passwordErrorMessage(error), 'error');
     } finally {
       passwordSaveInFlight = false;
-      if (submit?.isConnected) submit.disabled = false;
+      setSubmitBusy(form,false);
     }
   },
   savePrefs(event) {
     event.preventDefault();
+    if (preferenceSaveInFlight) return;
     const form = event.target;
+    preferenceSaveInFlight = true;
+    setSubmitBusy(form,true,'Menyimpan…');
     try {
       updateAppSettings({
         compactTables: form.compactTables.checked,
@@ -747,11 +748,22 @@ window.AM = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       toast(error.message || error, 'error');
+    } finally {
+      preferenceSaveInFlight = false;
+      setSubmitBusy(form,false);
     }
   },
   async logoutAllSessions() {
     if (sessionActionInFlight) return;
-    if (!confirm('Keluar dari semua perangkat? Semua sesi aktif untuk akun ini akan dicabut dan Anda harus login kembali.')) return;
+    openSettingsConfirm({
+      title:'Keluar dari semua perangkat?',
+      message:'Semua sesi aktif untuk identitas login ini, termasuk di organisasi lain, akan dicabut. Anda harus login kembali.',
+      confirmLabel:'Keluar semua',
+      action:'logoutAll',
+    });
+  },
+  async _logoutAllSessionsConfirmed() {
+    if (sessionActionInFlight) return;
     sessionActionInFlight = true;
     try {
       await revokeApiSession({ all:true });
@@ -761,6 +773,33 @@ window.AM = {
       toast(error?.message || String(error),'error');
     } finally {
       sessionActionInFlight = false;
+    }
+  },
+  async runPendingConfirm() {
+    const pending = pendingConfirmAction;
+    pendingConfirmAction = null;
+    window.FT.closeModal?.();
+    if (!pending) return;
+    if (pending.action === 'logoutAll') return this._logoutAllSessionsConfirmed();
+    if (pending.action === 'resetDevice') return this._resetDeviceConfirmed(pending.id);
+    if (pending.action === 'toggleStatus') return this._toggleStatusConfirmed(pending.id,pending.value);
+  },
+  async refreshOrganizationProfile() {
+    const orgId = String(account()?.organizationId || getCurrentOrgId() || '');
+    if (!orgId || organizationProfileSyncInFlight) return;
+    organizationProfileSyncInFlight = true;
+    organizationProfileSyncError = '';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    try {
+      await syncCurrentOrganizationProfile();
+      organizationProfileSyncedOrg = orgId;
+      organizationProfileAttemptedOrg = orgId;
+      organizationProfileLastSyncedAt = new Date();
+    } catch (error) {
+      organizationProfileSyncError = organizationErrorMessage(error);
+    } finally {
+      organizationProfileSyncInFlight = false;
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
     }
   },
   pickAttendanceSettingsProject(id) {
