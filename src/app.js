@@ -1292,18 +1292,21 @@ function dashLink(href, label) {
 }
 
 function renderManagerDashboard() {
-  const stats = getDashboardStats();
   const org = getOrganization();
   const today = todayISO();
-  const todayVisits = getVisits()
+  const visits = getVisits();
+  const todayVisits = visits
     .filter(v => visitDay(v) === today)
     .sort((a,b) => String(b.checkInTime || '').localeCompare(String(a.checkInTime || '')));
   const employees = getEmployees();
   const outlets = getOutlets();
+  const stocks = getStocks();
+  const leaves = getLeaves();
   const employeeById = new Map(employees.map(row => [String(row.id), row]));
   const outletById = new Map(outlets.map(row => [String(row.id), row]));
   const activeEmployees = employees.filter(e => e.status === 'active');
-  const pendingLeaves = getLeaves().filter(l => l.status === 'pending').length;
+  const pendingLeaves = leaves.filter(l => l.status === 'pending').length;
+  const lowStocks = stocks.filter(s => Number(s.quantity || 0) <= Number(s.minStock || 0)).length;
   const project = isManager() && state.account?.projectId
     ? (getDB().projects || []).find(row => String(row.id) === String(state.account.projectId))
     : null;
@@ -1329,8 +1332,8 @@ function renderManagerDashboard() {
     <div class="grid-4">
       ${[
         ['Karyawan aktif', activeEmployees.length, '#/employees'],
-        ['Kunjungan hari ini', stats.todayVisits, '#/visits'],
-        ['Stok menipis', stats.lowStocks, '#/stocks'],
+        ['Kunjungan hari ini', todayVisits.length, '#/visits'],
+        ['Stok menipis', lowStocks, '#/stocks'],
         ['Cuti pending', pendingLeaves, '#/leaves'],
       ].map(([l,v,h]) => `<a class="stat-card" href="${h}" style="text-decoration:none;color:inherit"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></a>`).join('')}
     </div>
