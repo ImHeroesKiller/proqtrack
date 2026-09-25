@@ -92,11 +92,11 @@ test('service worker never caches API traffic and precaches the complete built a
   assert.match(source, /if \(isPrivateApi\(url\)\) return/);
   assert.match(source, /proqtrack-v12/);
   assert.match(source, /PRECACHE_MANIFEST/);
-  assert.match(source, /field-photo-evidence\.js/);
-  assert.match(source, /m6-client\.js/);
+  assert.match(source, /RUNTIME_CACHE/);
+  assert.match(source, /isRuntimeCacheable/);
   assert.match(build, /precache-manifest\.json/);
   assert.match(build, /collectFiles\("dist"\)/);
-  assert.match(build, /runtimeGraph\("src\/entry\.js"\)/);
+  assert.match(build, /runtimeGraph\(criticalRuntimeEntries\)/);
   assert.match(build, /node_modules\/leaflet\/dist\/leaflet\.js/);
   assert.match(build, /writeFile/);
 });
