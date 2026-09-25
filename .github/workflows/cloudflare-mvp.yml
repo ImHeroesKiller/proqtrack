@@ -197,6 +197,9 @@ jobs:
         shell: bash
         run: bash scripts/production-superadmin-smoke.sh
 
+      - name: Run Attendance Leave final production UAT
+        run: node scripts/attendance-leave-production-uat.mjs
+
       - name: Verify security headers and auth boundaries
         shell: bash
         run: |
