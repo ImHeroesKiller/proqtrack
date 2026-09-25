@@ -19,7 +19,7 @@ const pm = readFileSync(new URL('../src/types/index.js', import.meta.url), 'utf8
 const worker = readFileSync(new URL('../worker/operations.js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../migrations/0028_attendance_leave_project_authority.sql', import.meta.url), 'utf8');
 
-function attendanceEnv({source='manual', assignment=true, duplicate=false, target={latitude:-6.2,longitude:106.8,radius_m:150,status:'active'}}={}) {
+function attendanceEnv({source='manual', assignment=true, duplicate=false, targetUserId='USR-EMP', target={latitude:-6.2,longitude:106.8,radius_m:150,status:'active'}}={}) {
   return {
     DB:{
       prepare(sql){
@@ -30,6 +30,7 @@ function attendanceEnv({source='manual', assignment=true, duplicate=false, targe
                 if (/FROM core_projects/.test(sql)) return {id:'PRJ-1',status:'active',metadata_json:JSON.stringify({attendanceSource:source,modules:{attendance:true,leaves:true}})};
                 if (/FROM core_employee_project_assignments/.test(sql)) return assignment ? {id:'ASN-1'} : null;
                 if (/FROM core_attendance WHERE/.test(sql)) return duplicate ? {id:'ATT-OLD'} : null;
+                if (/FROM core_employees/.test(sql)) return {auth_user_id:targetUserId};
                 if (/FROM core_outlets/.test(sql) || /FROM core_attendance_points/.test(sql)) return target;
                 return null;
               }
@@ -74,7 +75,7 @@ test('P0 manual attendance requires project assignment and canonical status', as
     id:'ATT-1',projectId:'PRJ-1',employeeId:'EMP-1',workDate:'2026-09-25',
     status:'terlambat',lat:-6.2,lng:106.8,locationType:'point',locationId:'APT-1'
   };
-  const result=await validateAttendanceMutation(attendanceEnv(), 'ORG-1', {role:'employee'}, row, null, 'upsert');
+  const result=await validateAttendanceMutation(attendanceEnv(), 'ORG-1', {role:'employee',sub:'USR-EMP'}, row, null, 'upsert');
   assert.equal(result,null);
   assert.equal(row.status,'late');
   assert.equal(row.source,'manual');
@@ -83,17 +84,17 @@ test('P0 manual attendance requires project assignment and canonical status', as
 
 test('P0 manual attendance is blocked for visit-derived projects', async () => {
   const row={id:'ATT-1',projectId:'PRJ-1',employeeId:'EMP-1',workDate:'2026-09-25',status:'present',lat:-6.2,lng:106.8,locationType:'point',locationId:'APT-1'};
-  const result=await validateAttendanceMutation(attendanceEnv({source:'visit'}),'ORG-1',{role:'employee'},row,null,'upsert');
+  const result=await validateAttendanceMutation(attendanceEnv({source:'visit'}),'ORG-1',{role:'employee',sub:'USR-EMP'},row,null,'upsert');
   assert.equal(result?.error,'ATTENDANCE_MANUAL_DISABLED');
 });
 
 test('P0 manual attendance requires GPS and rejects duplicate project-day record', async () => {
-  const noGps=await validateAttendanceMutation(attendanceEnv(),'ORG-1',{role:'employee'},{
+  const noGps=await validateAttendanceMutation(attendanceEnv(),'ORG-1',{role:'employee',sub:'USR-EMP'},{
     id:'ATT-1',projectId:'PRJ-1',employeeId:'EMP-1',workDate:'2026-09-25',status:'present',locationType:'point',locationId:'APT-1'
   },null,'upsert');
   assert.equal(noGps?.error,'ATTENDANCE_GPS_REQUIRED');
 
-  const dup=await validateAttendanceMutation(attendanceEnv({duplicate:true}),'ORG-1',{role:'employee'},{
+  const dup=await validateAttendanceMutation(attendanceEnv({duplicate:true}),'ORG-1',{role:'employee',sub:'USR-EMP'},{
     id:'ATT-2',projectId:'PRJ-1',employeeId:'EMP-1',workDate:'2026-09-25',status:'present',lat:-6.2,lng:106.8,locationType:'point',locationId:'APT-1'
   },null,'upsert');
   assert.equal(dup?.error,'ATTENDANCE_ALREADY_RECORDED');
@@ -202,4 +203,15 @@ test('P0 leave assignment must cover the entire requested period', async () => {
 test('P0 leave backfill accepts historical ended assignment only when it covers full leave period', () => {
   assert.match(migration,/a\.status IN \('active','inactive','ended'\)/);
   assert.match(migration,/date\(a\.ends_on\) >= date\(core_leaves\.end_date\)/);
+});
+
+
+test('P0 manual attendance is self-service for project roles', async () => {
+  const row={id:'ATT-SPOOF',projectId:'PRJ-1',employeeId:'EMP-1',workDate:'2026-09-25',status:'present',lat:-6.2,lng:106.8,locationType:'point',locationId:'APT-1'};
+  const result=await validateAttendanceMutation(attendanceEnv({targetUserId:'USR-EMP'}),'ORG-1',{role:'supervisor',sub:'USR-SPV'},row,null,'upsert');
+  assert.equal(result?.error,'ATTENDANCE_SELF_ONLY');
+
+  const own={...row,id:'ATT-OWN'};
+  const ownResult=await validateAttendanceMutation(attendanceEnv({targetUserId:'USR-SPV'}),'ORG-1',{role:'supervisor',sub:'USR-SPV'},own,null,'upsert');
+  assert.equal(ownResult,null);
 });
