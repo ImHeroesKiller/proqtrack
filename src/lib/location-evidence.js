@@ -170,7 +170,7 @@ export async function captureDevicePosition(geolocation = (typeof navigator !== 
       // fallback; geofence validation still decides whether the point is usable.
       position = await requestDevicePosition(
         geolocation,
-        { enableHighAccuracy:false, timeout:12000, maximumAge:120000 },
+        { enableHighAccuracy:false, timeout:12000, maximumAge:30000 },
       );
     } catch (fallbackError) {
       throw normalizeGpsError(fallbackError);
