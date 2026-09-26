@@ -124,7 +124,7 @@ test('shared visit GPS capture falls back from high accuracy without weakening p
   assert.equal(calls.length,2);
   assert.equal(calls[0].enableHighAccuracy,true);
   assert.equal(calls[1].enableHighAccuracy,false);
-  assert.equal(calls[1].maximumAge,120000);
+  assert.equal(calls[1].maximumAge,30000);
 
   let deniedCalls = 0;
   const denied = {
