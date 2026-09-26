@@ -747,6 +747,7 @@ window.FS.initOutletMap = async function() {
     const { lat, lng } = ev.latlng;
     const context = outletFormContext();
     if (!outletFormContextActive(context)) return;
+    _outletSearchController?.abort();
     if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
     else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
 
@@ -787,6 +788,7 @@ window.FS.searchOutletMap = async function() {
   if (!q || !outletFormContextActive(context)) return;
 
   _outletSearchController?.abort();
+  _outletGeocodeController?.abort();
   const controller = new AbortController();
   _outletSearchController = controller;
   let timedOut = false;
@@ -832,11 +834,13 @@ window.FS.searchOutletMap = async function() {
     }
   } finally {
     clearTimeout(timeout);
-    if (button?.isConnected && document.getElementById('outletMapSearchBtn') === button) {
-      button.disabled = false;
-      button.textContent = 'Cari';
+    if (_outletSearchController === controller) {
+      if (button?.isConnected && document.getElementById('outletMapSearchBtn') === button) {
+        button.disabled = false;
+        button.textContent = 'Cari';
+      }
+      _outletSearchController = null;
     }
-    if (_outletSearchController === controller) _outletSearchController = null;
   }
 };
 
@@ -897,6 +901,10 @@ window.FS.captureOutletLocation = async function() {
     window.showToast?.('GPS/lokasi browser tidak tersedia di perangkat ini.', 'error');
     return;
   }
+
+  // A new explicit GPS action supersedes any older map search/geocoder work.
+  _outletSearchController?.abort();
+  _outletGeocodeController?.abort();
 
   if (hint) hint.textContent = 'Mengambil lokasi perangkat…';
   if (btn) {
