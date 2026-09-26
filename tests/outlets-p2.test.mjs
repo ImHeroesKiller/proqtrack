@@ -66,6 +66,7 @@ test('Outlets P2 wires operational filters refresh pagination and edit parity', 
     'getProjectStoreSettings(projectId)',"outletNotesField(cat,model.notes)",
     'id="outletPickMap"','FT.syncManagerOutletCatalog(this.value)',
   ]) assert.ok(app.includes(marker), marker);
-  assert.match(fieldSales,/const hasCurrent = Number\.isFinite\(currentLat\)/);
+  assert.match(fieldSales,/const currentPair = validCoordinatePair\(/);
+  assert.match(fieldSales,/const hasCurrent = Boolean\(currentPair\)/);
   assert.match(fieldSales,/Lokasi outlet saat ini/);
 });
