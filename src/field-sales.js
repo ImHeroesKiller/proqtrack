@@ -13,7 +13,7 @@ import {
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
-import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM } from './lib/location-evidence.js';
+import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM, validCoordinatePair } from './lib/location-evidence.js';
 import { attendanceLeaveFriendlyErrorMessage, attendanceSourceKey, attendanceSourceLabel } from './lib/attendance-leave-ui.js';
 import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 import { ensureLeaflet } from './lib/leaflet-loader.js';
@@ -458,9 +458,9 @@ export function renderOutletProposalForm() {
         <div class="form-group"><label class="label">Nama toko</label><input class="input" name="name" required></div>
         <div class="form-group">
           <label class="label">Lokasi toko</label>
-          <button type="button" class="btn btn-primary" id="outletLocBtn" data-pqt-onclick="FS.captureOutletLocation()" style="width:100%">Ambil lokasi / buka peta</button>
-          <div class="am-muted" id="outletMapHint" style="margin-top:8px">Satu tombol: GPS perangkat, isi alamat otomatis, lalu buka aplikasi peta untuk konfirmasi.</div>
-          <a id="outletOpenMaps" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noreferrer" style="display:none;margin-top:8px">Buka aplikasi peta</a>
+          <button type="button" class="btn btn-primary" id="outletLocBtn" data-pqt-onclick="FS.captureOutletLocation()" style="width:100%">Ambil lokasi GPS</button>
+          <div class="am-muted" id="outletMapHint" style="margin-top:8px">Ambil lokasi dari perangkat. Koordinat dikunci lebih dulu; alamat akan dilengkapi otomatis bila jaringan tersedia.</div>
+          <a id="outletOpenMaps" class="btn btn-secondary btn-sm" href="#" target="_blank" rel="noopener noreferrer" style="display:none;margin-top:8px">Buka Maps untuk konfirmasi</a>
           <input type="hidden" name="lat" id="outletLat" required>
           <input type="hidden" name="lng" id="outletLng" required>
           <input type="hidden" name="mapLabel" id="outletMapLabel">
@@ -613,11 +613,33 @@ async function reverseGeocode(lat, lng, { signal } = {}) {
   return data;
 }
 
-function applyGeocode(data, lat, lng) {
+function lockOutletCoordinates(latValue, lngValue, { label = '', accuracyM = null, source = 'map' } = {}) {
+  const pair = validCoordinatePair(latValue, lngValue);
+  const latEl = document.getElementById('outletLat');
+  const lngEl = document.getElementById('outletLng');
+  if (!pair || !latEl || !lngEl) return false;
+
+  latEl.value = String(pair.lat);
+  lngEl.value = String(pair.lng);
+  const labelEl = document.getElementById('outletMapLabel');
+  if (labelEl && label) labelEl.value = label;
+
+  const accuracy = Number(accuracyM);
+  const accuracyLabel = Number.isFinite(accuracy) && accuracy >= 0 ? ` · akurasi ±${Math.round(accuracy)} m` : '';
+  const sourceLabel = source === 'gps' ? 'GPS terkunci' : 'Titik terkunci';
+  const hint = document.getElementById('outletMapHint');
+  if (hint) hint.textContent = `${sourceLabel}: ${pair.lat.toFixed(6)}, ${pair.lng.toFixed(6)}${accuracyLabel}`;
+  showMapsLink(pair.lat, pair.lng);
+  return true;
+}
+
+function applyGeocode(data, latValue, lngValue, options = {}) {
+  const pair = validCoordinatePair(latValue, lngValue);
+  if (!pair) return false;
+  const { lat, lng } = pair;
   const addr = data?.address || {};
-  document.getElementById('outletLat').value = lat;
-  document.getElementById('outletLng').value = lng;
-  document.getElementById('outletMapLabel').value = data?.display_name || '';
+  if (!lockOutletCoordinates(lat, lng, { ...options, label:data?.display_name || options.label || '' })) return false;
+
   const addressEl = document.getElementById('outletAddress');
   if (addressEl && (!addressEl.value || addressEl.dataset.fromMap === '1')) {
     addressEl.value = data?.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
@@ -626,18 +648,22 @@ function applyGeocode(data, lat, lng) {
   const areaEl = document.getElementById('outletArea');
   if (areaEl && (!areaEl.value || areaEl.dataset.fromMap === '1')) {
     areaEl.value = addr.city || addr.town || addr.county || addr.state || '';
-    areaEl.dataset.fromMap = '1';
+    if (areaEl.value) areaEl.dataset.fromMap = '1';
   }
   const hint = document.getElementById('outletMapHint');
-  if (hint) hint.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)} · ${data?.display_name || 'Titik ditandai'}`;
+  if (hint && data?.display_name) {
+    const accuracy = Number(options.accuracyM);
+    const accuracyLabel = Number.isFinite(accuracy) && accuracy >= 0 ? ` · ±${Math.round(accuracy)} m` : '';
+    hint.textContent = `${options.source === 'gps' ? 'GPS terkunci' : 'Titik terkunci'}: ${lat.toFixed(6)}, ${lng.toFixed(6)}${accuracyLabel} · ${data.display_name}`;
+  }
+  return true;
 }
 
 function mapsAppUrl(lat, lng, label = 'Toko baru') {
   const q = encodeURIComponent(label);
   const ua = navigator.userAgent || '';
   if (/iPhone|iPad|iPod/i.test(ua)) return `https://maps.apple.com/?ll=${lat},${lng}&q=${q}`;
-  if (/Android/i.test(ua)) return `geo:${lat},${lng}?q=${lat},${lng}(${q})`;
-  return `https://www.google.com/maps?q=${lat},${lng}`;
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
 function showMapsLink(lat, lng) {
@@ -678,10 +704,13 @@ window.FS.initOutletMap = async function() {
   }
   if (!el.isConnected || !window.L) return;
   window.FS.disposeOutletMap();
-  const currentLat = Number(document.getElementById('outletLat')?.value);
-  const currentLng = Number(document.getElementById('outletLng')?.value);
-  const hasCurrent = Number.isFinite(currentLat) && Number.isFinite(currentLng)
-    && currentLat >= -90 && currentLat <= 90 && currentLng >= -180 && currentLng <= 180;
+  const currentPair = validCoordinatePair(
+    document.getElementById('outletLat')?.value ?? '',
+    document.getElementById('outletLng')?.value ?? '',
+  );
+  const hasCurrent = Boolean(currentPair);
+  const currentLat = currentPair?.lat;
+  const currentLng = currentPair?.lng;
   const start = hasCurrent ? [currentLat, currentLng] : [-6.2, 106.82];
   _outletMap = window.L.map(el, { zoomControl: true }).setView(start, hasCurrent ? 16 : 12);
   window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -752,39 +781,98 @@ window.FS.searchOutletMap = async function() {
 
 window.FS.toggleNotesKind = function() {};
 
-window.FS.captureOutletLocation = function() {
+function outletPosition(options) {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, options);
+  });
+}
+
+async function bestAvailableOutletPosition() {
+  try {
+    return await outletPosition({ enableHighAccuracy:true, timeout:10000, maximumAge:30000 });
+  } catch (error) {
+    if (Number(error?.code) === 1) throw error;
+    return outletPosition({ enableHighAccuracy:false, timeout:12000, maximumAge:120000 });
+  }
+}
+
+async function enrichLockedOutletLocation(lat, lng, accuracyM = null) {
+  _outletGeocodeController?.abort();
+  const controller = new AbortController();
+  _outletGeocodeController = controller;
+  try {
+    const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
+    if (!controller.signal.aborted) applyGeocode(geo, lat, lng, { source:'gps', accuracyM });
+  } catch (error) {
+    if (error?.name !== 'AbortError' && !controller.signal.aborted) {
+      // Coordinates are already authoritative. Reverse geocoding is only an
+      // address convenience and must never make GPS capture look unsuccessful.
+      applyGeocode(null, lat, lng, { source:'gps', accuracyM });
+    }
+  } finally {
+    if (_outletGeocodeController === controller) _outletGeocodeController = null;
+  }
+}
+
+window.FS.captureOutletLocation = async function() {
   const hint = document.getElementById('outletMapHint');
   const btn = document.getElementById('outletLocBtn');
-  if (!navigator.geolocation) {
-    window.showToast?.('GPS tidak tersedia di perangkat ini', 'error');
+  if (!window.isSecureContext) {
+    if (hint) hint.textContent = 'Lokasi browser hanya tersedia pada koneksi HTTPS yang aman.';
+    window.showToast?.('Buka ProQTrack melalui HTTPS untuk memakai lokasi.', 'error');
     return;
   }
-  if (hint) hint.textContent = 'Mengambil lokasi GPS...';
-  if (btn) btn.disabled = true;
-  navigator.geolocation.getCurrentPosition(async pos => {
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    _outletGeocodeController?.abort();
-    const controller = new AbortController();
-    _outletGeocodeController = controller;
-    try {
-      const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
-      if (!controller.signal.aborted) applyGeocode(geo, lat, lng);
-    } catch (error) {
-      if (error?.name !== 'AbortError' && !controller.signal.aborted) applyGeocode(null, lat, lng);
-    } finally {
-      if (_outletGeocodeController === controller) _outletGeocodeController = null;
+  if (!navigator.geolocation) {
+    if (hint) hint.textContent = 'Fitur lokasi tidak tersedia di browser/perangkat ini.';
+    window.showToast?.('GPS/lokasi browser tidak tersedia di perangkat ini.', 'error');
+    return;
+  }
+
+  if (hint) hint.textContent = 'Mengambil lokasi perangkat…';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Mencari lokasi…';
+  }
+
+  try {
+    const pos = await bestAvailableOutletPosition();
+    const lat = pos?.coords?.latitude;
+    const lng = pos?.coords?.longitude;
+    const accuracyM = pos?.coords?.accuracy;
+    if (!lockOutletCoordinates(lat, lng, { source:'gps', accuracyM })) {
+      throw Object.assign(new Error('Koordinat lokasi tidak valid.'), { code:'GPS_INVALID' });
     }
-    showMapsLink(lat, lng);
-    if (btn) btn.disabled = false;
-    window.showToast?.('Lokasi diambil. Alamat terisi otomatis.', 'success');
-    const open = document.getElementById('outletOpenMaps');
-    if (open && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '')) setTimeout(() => open.click(), 280);
-  }, err => {
-    if (btn) btn.disabled = false;
-    if (hint) hint.textContent = 'Gagal mengambil GPS. Izinkan akses lokasi di browser.';
-    window.showToast?.(err.message || 'Izin lokasi ditolak', 'error');
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+
+    if (_outletMap && window.L) {
+      const pair = [Number(lat), Number(lng)];
+      _outletMap.setView(pair, 17);
+      if (_outletMarker) _outletMarker.setLatLng(pair);
+      else _outletMarker = window.L.marker(pair).addTo(_outletMap);
+    }
+
+    if (btn?.isConnected) {
+      btn.disabled = false;
+      btn.textContent = 'Ambil ulang lokasi';
+    }
+    window.showToast?.('Lokasi GPS terkunci. Alamat sedang dilengkapi.', 'success');
+
+    // Do not await reverse geocoding. A slow/blocked Nominatim response must
+    // not delay or invalidate coordinates already supplied by the device.
+    void enrichLockedOutletLocation(Number(lat), Number(lng), accuracyM);
+  } catch (error) {
+    if (btn?.isConnected) {
+      btn.disabled = false;
+      btn.textContent = 'Coba ambil lokasi lagi';
+    }
+    const code = Number(error?.code);
+    const message = code === 1
+      ? 'Izin lokasi diblokir. Izinkan Location untuk situs ini di browser, lalu coba lagi.'
+      : code === 3
+        ? 'Lokasi belum terkunci. Aktifkan Location/Wi-Fi dan coba lagi di area dengan sinyal lebih baik.'
+        : 'Posisi perangkat belum tersedia. Aktifkan Location/Wi-Fi lalu coba lagi.';
+    if (hint) hint.textContent = message;
+    window.showToast?.(message, 'error');
+  }
 };
 
 export { locationTypeLabel };
