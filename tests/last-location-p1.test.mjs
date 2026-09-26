@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  validCoordinatePair, visitLocationEvidence, locationFreshness, locationSourceLabel,
+  validCoordinatePair, visitLocationEvidence, locationFreshness, locationSourceLabel, captureDevicePosition,
 } from '../src/lib/location-evidence.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -100,4 +100,42 @@ test('cloud visit authority maps UI checked-in to D1 in_progress and preserves G
   assert.match(ops, /row\.startLatitude \?\? row\.checkInLat \?\? row\.lat/);
   assert.match(ops, /row\.startLongitude \?\? row\.checkInLng \?\? row\.lng/);
   assert.match(ops, /row\.startedAt \|\| row\.checkInCapturedAt \|\| row\.checkInAt/);
+});
+
+
+test('shared visit GPS capture falls back from high accuracy without weakening permission denial', async () => {
+  const calls = [];
+  const geolocation = {
+    getCurrentPosition(success, failure, options) {
+      calls.push(options);
+      if (calls.length === 1) {
+        failure({ code:3, message:'timeout' });
+        return;
+      }
+      success({
+        coords:{ latitude:-6.2, longitude:106.8, accuracy:42 },
+        timestamp:Date.parse('2026-09-26T03:00:00.000Z'),
+      });
+    },
+  };
+  const result = await captureDevicePosition(geolocation);
+  assert.deepEqual([result.lat,result.lng],[-6.2,106.8]);
+  assert.equal(result.accuracyM,42);
+  assert.equal(calls.length,2);
+  assert.equal(calls[0].enableHighAccuracy,true);
+  assert.equal(calls[1].enableHighAccuracy,false);
+  assert.equal(calls[1].maximumAge,120000);
+
+  let deniedCalls = 0;
+  const denied = {
+    getCurrentPosition(success, failure) {
+      deniedCalls += 1;
+      failure({ code:1, message:'denied' });
+    },
+  };
+  await assert.rejects(
+    captureDevicePosition(denied),
+    error => error?.code === 'GPS_PERMISSION_REQUIRED',
+  );
+  assert.equal(deniedCalls,1);
 });
