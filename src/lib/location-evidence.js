@@ -132,31 +132,59 @@ export function assertVisitGeofence(outlet, gps, defaultRadiusM = 50) {
   return evidence;
 }
 
-export function captureDevicePosition(geolocation = (typeof navigator !== 'undefined' ? navigator.geolocation : null)) {
+function requestDevicePosition(geolocation, options) {
   return new Promise((resolve, reject) => {
-    if (!geolocation?.getCurrentPosition) {
-      reject(Object.assign(new Error('GPS tidak tersedia di perangkat ini.'), { code:'GPS_UNAVAILABLE' }));
-      return;
-    }
-    geolocation.getCurrentPosition(position => {
-      const pair = validCoordinatePair(position?.coords?.latitude, position?.coords?.longitude);
-      if (!pair) {
-        reject(Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' }));
-        return;
-      }
-      const accuracy = Number(position.coords.accuracy);
-      resolve({
-        ...pair,
-        accuracyM:Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null,
-        capturedAt:new Date(position.timestamp || Date.now()).toISOString(),
-      });
-    }, error => {
-      reject(Object.assign(
-        new Error(error?.code === 1
-          ? 'Izin lokasi diperlukan untuk check-in.'
-          : 'GPS belum mendapatkan lokasi yang valid. Coba lagi.'),
-        { code:error?.code === 1 ? 'GPS_PERMISSION_REQUIRED' : 'GPS_POSITION_FAILED' },
-      ));
-    }, { enableHighAccuracy:true, timeout:15000, maximumAge:0 });
+    geolocation.getCurrentPosition(resolve, reject, options);
   });
+}
+
+function normalizeGpsError(error) {
+  const permissionDenied = Number(error?.code) === 1;
+  return Object.assign(
+    new Error(permissionDenied
+      ? 'Izin lokasi diperlukan untuk check-in.'
+      : 'GPS belum mendapatkan lokasi yang valid. Aktifkan Location/Wi-Fi lalu coba lagi.'),
+    {
+      code:permissionDenied ? 'GPS_PERMISSION_REQUIRED' : 'GPS_POSITION_FAILED',
+      causeCode:Number(error?.code) || null,
+    },
+  );
+}
+
+export async function captureDevicePosition(geolocation = (typeof navigator !== 'undefined' ? navigator.geolocation : null)) {
+  if (!geolocation?.getCurrentPosition) {
+    throw Object.assign(new Error('GPS tidak tersedia di perangkat ini.'), { code:'GPS_UNAVAILABLE' });
+  }
+
+  let position;
+  try {
+    position = await requestDevicePosition(
+      geolocation,
+      { enableHighAccuracy:true, timeout:10000, maximumAge:30000 },
+    );
+  } catch (firstError) {
+    if (Number(firstError?.code) === 1) throw normalizeGpsError(firstError);
+    try {
+      // Desktop browsers and some Android devices can fail a high-accuracy fix
+      // even though a coarse/cached location is available. Use that as a safe
+      // fallback; geofence validation still decides whether the point is usable.
+      position = await requestDevicePosition(
+        geolocation,
+        { enableHighAccuracy:false, timeout:12000, maximumAge:30000 },
+      );
+    } catch (fallbackError) {
+      throw normalizeGpsError(fallbackError);
+    }
+  }
+
+  const pair = validCoordinatePair(position?.coords?.latitude, position?.coords?.longitude);
+  if (!pair) {
+    throw Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' });
+  }
+  const accuracy = Number(position?.coords?.accuracy);
+  return {
+    ...pair,
+    accuracyM:Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null,
+    capturedAt:new Date(position?.timestamp || Date.now()).toISOString(),
+  };
 }
