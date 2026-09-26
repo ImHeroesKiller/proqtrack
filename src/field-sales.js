@@ -677,6 +677,26 @@ let _outletMap = null;
 let _outletMarker = null;
 let _outletGeocodeController = null;
 let _outletSearchController = null;
+const OUTLET_GEOCODE_TIMEOUT_MS = 8000;
+const OUTLET_SEARCH_TIMEOUT_MS = 10000;
+
+function outletFormContext() {
+  return {
+    latEl:document.getElementById('outletLat'),
+    lngEl:document.getElementById('outletLng'),
+    hintEl:document.getElementById('outletMapHint'),
+    buttonEl:document.getElementById('outletLocBtn'),
+  };
+}
+
+function outletFormContextActive(context) {
+  return Boolean(
+    context?.latEl?.isConnected
+    && context?.lngEl?.isConnected
+    && document.getElementById('outletLat') === context.latEl
+    && document.getElementById('outletLng') === context.lngEl
+  );
+}
 
 window.FS.disposeOutletMap = function() {
   _outletGeocodeController?.abort();
@@ -725,32 +745,60 @@ window.FS.initOutletMap = async function() {
   }
   _outletMap.on('click', async ev => {
     const { lat, lng } = ev.latlng;
+    const context = outletFormContext();
+    if (!outletFormContextActive(context)) return;
     if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
     else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
+
+    // The user's chosen point is authoritative. Never wait for reverse geocoding
+    // before persisting the coordinate pair into the form.
+    if (!lockOutletCoordinates(lat, lng, { source:'map' })) return;
+
     _outletGeocodeController?.abort();
     const controller = new AbortController();
     _outletGeocodeController = controller;
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, OUTLET_GEOCODE_TIMEOUT_MS);
     try {
       const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
-      if (!controller.signal.aborted && document.getElementById('outletPickMap')) applyGeocode(geo, lat, lng);
+      if (!controller.signal.aborted && outletFormContextActive(context)) {
+        applyGeocode(geo, lat, lng, { source:'map' });
+      }
     } catch (error) {
-      if (error?.name !== 'AbortError' && !controller.signal.aborted && document.getElementById('outletPickMap')) {
-        applyGeocode(null, lat, lng);
+      if ((timedOut || error?.name !== 'AbortError') && outletFormContextActive(context)) {
+        applyGeocode(null, lat, lng, { source:'map' });
       }
     } finally {
+      clearTimeout(timeout);
       if (_outletGeocodeController === controller) _outletGeocodeController = null;
     }
-    if (!controller.signal.aborted) showMapsLink(lat, lng);
   });
   setTimeout(() => _outletMap?.invalidateSize(), 220);
 };
 
 window.FS.searchOutletMap = async function() {
-  const q = document.getElementById('outletMapSearch')?.value?.trim();
-  if (!q) return;
+  const input = document.getElementById('outletMapSearch');
+  const button = document.getElementById('outletMapSearchBtn');
+  const context = outletFormContext();
+  const q = input?.value?.trim();
+  if (!q || !outletFormContextActive(context)) return;
+
   _outletSearchController?.abort();
   const controller = new AbortController();
   _outletSearchController = controller;
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, OUTLET_SEARCH_TIMEOUT_MS);
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Mencari…';
+  }
+
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(q)}&limit=1&addressdetails=1`;
     const res = await fetch(url, {
@@ -759,22 +807,35 @@ window.FS.searchOutletMap = async function() {
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const rows = await res.json();
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted || !outletFormContextActive(context)) return;
     const hit = rows[0];
-    if (!hit) { window.showToast?.('Alamat tidak ditemukan', 'error'); return; }
-    const lat = Number(hit.lat);
-    const lng = Number(hit.lon);
+    if (!hit) {
+      window.showToast?.('Alamat tidak ditemukan. Coba kata kunci yang lebih spesifik.', 'error');
+      return;
+    }
+    const pair = validCoordinatePair(hit.lat, hit.lon);
+    if (!pair) throw new Error('INVALID_GEOCODE_COORDINATE');
+    const { lat, lng } = pair;
     if (_outletMap) {
       _outletMap.setView([lat, lng], 16);
       if (_outletMarker) _outletMarker.setLatLng([lat, lng]);
       else _outletMarker = window.L.marker([lat, lng]).addTo(_outletMap);
     }
-    applyGeocode(hit, lat, lng);
+    applyGeocode(hit, lat, lng, { source:'search' });
     rememberGeocode(geocodeKey(lat, lng), hit);
-    showMapsLink(lat, lng);
   } catch (error) {
-    if (error?.name !== 'AbortError') window.showToast?.('Gagal mencari lokasi', 'error');
+    if (!outletFormContextActive(context)) return;
+    if (timedOut) {
+      window.showToast?.('Pencarian lokasi terlalu lama. Coba lagi atau gunakan Lokasi Saya.', 'error');
+    } else if (error?.name !== 'AbortError') {
+      window.showToast?.('Gagal mencari lokasi. Periksa koneksi lalu coba lagi.', 'error');
+    }
   } finally {
+    clearTimeout(timeout);
+    if (button?.isConnected && document.getElementById('outletMapSearchBtn') === button) {
+      button.disabled = false;
+      button.textContent = 'Cari';
+    }
     if (_outletSearchController === controller) _outletSearchController = null;
   }
 };
@@ -796,27 +857,36 @@ async function bestAvailableOutletPosition() {
   }
 }
 
-async function enrichLockedOutletLocation(lat, lng, accuracyM = null) {
+async function enrichLockedOutletLocation(lat, lng, accuracyM = null, context = outletFormContext()) {
   _outletGeocodeController?.abort();
   const controller = new AbortController();
   _outletGeocodeController = controller;
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, OUTLET_GEOCODE_TIMEOUT_MS);
   try {
     const geo = await reverseGeocode(lat, lng, { signal:controller.signal });
-    if (!controller.signal.aborted) applyGeocode(geo, lat, lng, { source:'gps', accuracyM });
+    if (!controller.signal.aborted && outletFormContextActive(context)) {
+      applyGeocode(geo, lat, lng, { source:'gps', accuracyM });
+    }
   } catch (error) {
-    if (error?.name !== 'AbortError' && !controller.signal.aborted) {
+    if ((timedOut || error?.name !== 'AbortError') && outletFormContextActive(context)) {
       // Coordinates are already authoritative. Reverse geocoding is only an
       // address convenience and must never make GPS capture look unsuccessful.
       applyGeocode(null, lat, lng, { source:'gps', accuracyM });
     }
   } finally {
+    clearTimeout(timeout);
     if (_outletGeocodeController === controller) _outletGeocodeController = null;
   }
 }
 
 window.FS.captureOutletLocation = async function() {
-  const hint = document.getElementById('outletMapHint');
-  const btn = document.getElementById('outletLocBtn');
+  const context = outletFormContext();
+  const hint = context.hintEl;
+  const btn = context.buttonEl;
   if (!window.isSecureContext) {
     if (hint) hint.textContent = 'Lokasi browser hanya tersedia pada koneksi HTTPS yang aman.';
     window.showToast?.('Buka ProQTrack melalui HTTPS untuk memakai lokasi.', 'error');
@@ -836,6 +906,7 @@ window.FS.captureOutletLocation = async function() {
 
   try {
     const pos = await bestAvailableOutletPosition();
+    if (!outletFormContextActive(context)) return;
     const lat = pos?.coords?.latitude;
     const lng = pos?.coords?.longitude;
     const accuracyM = pos?.coords?.accuracy;
@@ -858,8 +929,9 @@ window.FS.captureOutletLocation = async function() {
 
     // Do not await reverse geocoding. A slow/blocked Nominatim response must
     // not delay or invalidate coordinates already supplied by the device.
-    void enrichLockedOutletLocation(Number(lat), Number(lng), accuracyM);
+    void enrichLockedOutletLocation(Number(lat), Number(lng), accuracyM, context);
   } catch (error) {
+    if (!outletFormContextActive(context)) return;
     if (btn?.isConnected) {
       btn.disabled = false;
       btn.textContent = 'Coba ambil lokasi lagi';
