@@ -47,3 +47,39 @@ test('manager outlet forms expose the same resilient device-location action', as
   assert.ok(matches.length >= 2, 'new/edit manager outlet forms should expose Lokasi Saya');
   assert.match(app, /Buka Maps untuk konfirmasi/);
 });
+
+
+test('outlet async location work cannot write into a replaced or closed modal', async () => {
+  const field = await read('src/field-sales.js');
+  assert.match(field, /function outletFormContext\(\)/);
+  assert.match(field, /function outletFormContextActive\(context\)/);
+  assert.match(field, /document\.getElementById\('outletLat'\) === context\.latEl/);
+  const captureStart = field.indexOf('window.FS.captureOutletLocation = async function');
+  const capture = field.slice(captureStart);
+  assert.match(capture, /if \(!outletFormContextActive\(context\)\) return;/);
+  assert.match(capture, /enrichLockedOutletLocation\(Number\(lat\), Number\(lng\), accuracyM, context\)/);
+});
+
+test('map click locks coordinates immediately and reverse geocoding has a bounded timeout', async () => {
+  const field = await read('src/field-sales.js');
+  assert.match(field, /const OUTLET_GEOCODE_TIMEOUT_MS = 8000/);
+  const mapStart = field.indexOf("_outletMap.on('click'");
+  const searchStart = field.indexOf('window.FS.searchOutletMap', mapStart);
+  const click = field.slice(mapStart, searchStart);
+  const lockIndex = click.indexOf("lockOutletCoordinates(lat, lng, { source:'map' })");
+  const geocodeIndex = click.indexOf('await reverseGeocode');
+  assert.ok(lockIndex >= 0 && geocodeIndex > lockIndex, 'map coordinate lock must precede reverse geocoding');
+  assert.match(click, /timedOut = true/);
+  assert.match(click, /controller\.abort\(\)/);
+});
+
+test('map search is single-flight, timeout bounded, and exposes progress state', async () => {
+  const [field, app] = await Promise.all([read('src/field-sales.js'), read('src/app.js')]);
+  assert.match(field, /const OUTLET_SEARCH_TIMEOUT_MS = 10000/);
+  assert.match(field, /_outletSearchController\?\.abort\(\)/);
+  assert.match(field, /button\.textContent = 'Mencari…'/);
+  assert.match(field, /Pencarian lokasi terlalu lama/);
+  assert.match(field, /validCoordinatePair\(hit\.lat, hit\.lon\)/);
+  const matches = app.match(/id="outletMapSearchBtn"/g) || [];
+  assert.ok(matches.length >= 2, 'manager new/edit outlet forms should expose deterministic search button state');
+});
