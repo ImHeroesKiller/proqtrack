@@ -83,3 +83,19 @@ test('map search is single-flight, timeout bounded, and exposes progress state',
   const matches = app.match(/id="outletMapSearchBtn"/g) || [];
   assert.ok(matches.length >= 2, 'manager new/edit outlet forms should expose deterministic search button state');
 });
+
+
+test('GPS map click and address search cancel stale competing location work', async () => {
+  const field = await read('src/field-sales.js');
+  const mapStart = field.indexOf("_outletMap.on('click'");
+  const searchStart = field.indexOf('window.FS.searchOutletMap', mapStart);
+  const gpsStart = field.indexOf('window.FS.captureOutletLocation = async function', searchStart);
+  const mapBlock = field.slice(mapStart, searchStart);
+  const searchBlock = field.slice(searchStart, gpsStart);
+  const gpsBlock = field.slice(gpsStart);
+  assert.match(mapBlock, /_outletSearchController\?\.abort\(\)/);
+  assert.match(searchBlock, /_outletGeocodeController\?\.abort\(\)/);
+  assert.match(gpsBlock, /_outletSearchController\?\.abort\(\)/);
+  assert.match(gpsBlock, /_outletGeocodeController\?\.abort\(\)/);
+  assert.match(searchBlock, /if \(_outletSearchController === controller\)/);
+});
