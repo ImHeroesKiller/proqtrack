@@ -72,7 +72,8 @@ test('P0 PWA cache is atomic and content versioned', async () => {
   ]);
   assert.match(sw, /const RELEASE = '__PROQTRACK_RELEASE__'/);
   assert.match(sw, /const CACHE = `proqtrack-shell-\$\{RELEASE\}`/);
-  assert.match(sw, /const cached = await cache\.match\('\.\/index\.html'\)/);
+  assert.match(sw, /const cached = await cache\.match\('\.\/'\)/);
+  assert.doesNotMatch(sw, /cache\.match\('\.\/index\.html'\)/);
   assert.doesNotMatch(sw, /cache\.put\('\.\/index\.html'/);
   assert.match(build, /createHash\("sha256"\)/);
   assert.match(build, /precache-manifest\.json/);
