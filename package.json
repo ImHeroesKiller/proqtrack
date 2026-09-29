@@ -22,7 +22,7 @@
     "uat:production:full": "node scripts/final-full-production-uat.mjs"
   },
   "devDependencies": {
-    "wrangler": "^4.123.0",
+    "wrangler": "^4.140.0",
     "leaflet": "1.9.4"
   }
 }
