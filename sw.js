@@ -14,7 +14,6 @@ const RUNTIME_MAX_ENTRIES = 80;
 const PRECACHE_MANIFEST = 'precache-manifest.json';
 const FALLBACK_SHELL = [
   './',
-  './index.html',
   './manifest.webmanifest',
   './assets/logo.js',
   './assets/logo-dark.svg',
@@ -77,12 +76,46 @@ function isPrivateApi(url) {
   return url.origin === self.location.origin && url.pathname.startsWith('/api/');
 }
 
+async function normalizeNavigationResponse(response) {
+  if (!response) return null;
+  if (response.type === 'opaqueredirect') return null;
+  if (!response.redirected) return response;
+
+  // A redirected response cannot be returned to a navigation FetchEvent whose
+  // redirect mode is "manual". Re-wrap the already-followed same-origin body
+  // as a fresh synthetic response so Chrome does not reject respondWith().
+  try {
+    const responseUrl = response.url ? new URL(response.url) : null;
+    if (responseUrl && responseUrl.origin !== self.location.origin) return null;
+    const headers = new Headers(response.headers);
+    headers.delete('content-length');
+    return new Response(await response.arrayBuffer(), {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function navigationResponse(request) {
   const cache = await caches.open(CACHE);
-  const cached = await cache.match('./index.html');
-  if (cached) return cached;
+  const cached = await cache.match('./');
+  const safeCached = await normalizeNavigationResponse(cached);
+  if (safeCached) return safeCached;
+
   try {
-    return await fetch(request);
+    // Never pass the browser navigation Request straight through here. Navigation
+    // requests can carry redirect:"manual", while Cloudflare may normalize HTML
+    // routes. Fetch the canonical shell explicitly with redirect following.
+    const shellUrl = new URL('./', self.registration.scope);
+    const response = await fetch(shellUrl, {
+      cache:'no-store',
+      credentials:'same-origin',
+      redirect:'follow',
+    });
+    return await normalizeNavigationResponse(response) || Response.error();
   } catch {
     return Response.error();
   }

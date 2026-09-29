@@ -116,7 +116,12 @@ for (const path of shellPaths) {
   releaseHash.update("\0");
 }
 const release = releaseHash.digest("hex").slice(0, 16);
-const assets = shellPaths.map(path => `./${path}`);
+// Do not precache ./index.html directly. Workers Assets can normalize
+// /index.html -> /, which produces a redirected Response. Returning that cached
+// response from a navigation FetchEvent can fail in Chromium when redirect mode
+// is not "follow". The canonical ./ shell is precached by sw.js instead.
+const precachePaths = shellPaths.filter(path => path !== "index.html");
+const assets = precachePaths.map(path => `./${path}`);
 
 await writeFile(
   "dist/precache-manifest.json",
