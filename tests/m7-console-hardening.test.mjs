@@ -147,5 +147,10 @@ test('empty 403 login responses are classified as edge/security rejection with t
   assert.match(login, /cf-ray/);
   assert.match(login, /x-request-id/);
   assert.match(login, /Cloudflare Security Events/);
-  assert.doesNotMatch(login, /if \(!data \|\| typeof data !== 'object'\)[\s\S]*return null/);
+  const emptyPayloadStart = login.indexOf("if (!data || typeof data !== 'object')");
+  const emptyPayloadEnd = login.indexOf('if (!res.ok)', emptyPayloadStart);
+  assert.ok(emptyPayloadStart >= 0 && emptyPayloadEnd > emptyPayloadStart);
+  const emptyPayloadBranch = login.slice(emptyPayloadStart, emptyPayloadEnd);
+  assert.match(emptyPayloadBranch, /throw error;/);
+  assert.doesNotMatch(emptyPayloadBranch, /\breturn null\b/);
 });
