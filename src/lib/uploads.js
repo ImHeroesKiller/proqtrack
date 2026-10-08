@@ -101,7 +101,20 @@ export async function issueUploadSession(account, credentials = {}) {
   const data = await res.json().catch(() => null);
   if (!data || typeof data !== 'object') {
     clearApiTokenIfCurrent(generation);
-    return null;
+    const ray = res.headers.get('cf-ray') || '';
+    const requestId = res.headers.get('x-request-id') || '';
+    const edgeLike = res.status === 403;
+    const error = new Error(
+      edgeLike
+        ? 'Permintaan login ditolak sebelum diproses aplikasi. Coba lagi atau periksa Cloudflare Security Events.'
+        : `Login gagal dengan respons HTTP ${res.status} tanpa payload aplikasi.`
+    );
+    error.code = edgeLike ? 'EDGE_FORBIDDEN' : `HTTP_${res.status}_EMPTY_RESPONSE`;
+    error.status = res.status;
+    error.cfRay = ray;
+    error.requestId = requestId;
+    error.payload = null;
+    throw error;
   }
   if (!res.ok) {
     clearApiTokenIfCurrent(generation);

@@ -136,3 +136,21 @@ test('evidence hydration keeps the restored bearer token stable without blocking
   const bootstrapEnd = bridge.indexOf('export async function refreshOperationalData', bootstrapStart);
   assert.doesNotMatch(bridge.slice(bootstrapStart, bootstrapEnd), /await fetchCloudFieldPhotos/);
 });
+
+
+test('empty 403 login responses are classified as edge/security rejection with trace ids', async () => {
+  const uploads = await read('src/lib/uploads.js');
+  const start = uploads.indexOf('export async function issueUploadSession');
+  const end = uploads.indexOf('export async function revokeApiSession', start);
+  const login = uploads.slice(start, end);
+  assert.match(login, /EDGE_FORBIDDEN/);
+  assert.match(login, /cf-ray/);
+  assert.match(login, /x-request-id/);
+  assert.match(login, /Cloudflare Security Events/);
+  const emptyPayloadStart = login.indexOf("if (!data || typeof data !== 'object')");
+  const emptyPayloadEnd = login.indexOf('if (!res.ok)', emptyPayloadStart);
+  assert.ok(emptyPayloadStart >= 0 && emptyPayloadEnd > emptyPayloadStart);
+  const emptyPayloadBranch = login.slice(emptyPayloadStart, emptyPayloadEnd);
+  assert.match(emptyPayloadBranch, /throw error;/);
+  assert.doesNotMatch(emptyPayloadBranch, /\breturn null\b/);
+});
