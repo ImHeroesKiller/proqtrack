@@ -603,6 +603,79 @@ async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'RE
   return rebased;
 }
 
+export function captureOperationalIntent(localDb = {}) {
+  const current = snapshotCollections(localDb);
+  const changes = diffSnapshots(baseline, current).map(change => ({
+    entity:change.entity,
+    op:change.op,
+    row:clone(change.row),
+    baseRow:clone(snapshotRow(baseline, change.entity, change.row)),
+  }));
+  return {
+    baseRevision:revision,
+    changes,
+  };
+}
+
+function rebaseStoredIntent(storedChanges = [], remoteSnapshot = baseline) {
+  const rebased = [];
+  let conflictFields = 0;
+  let droppedChanges = 0;
+
+  for (const stored of Array.isArray(storedChanges) ? storedChanges : []) {
+    if (!stored?.entity || !stored?.op || !stored?.row) continue;
+    const remoteRow = snapshotRow(remoteSnapshot, stored.entity, stored.row);
+    const baseRow = stored.baseRow || null;
+
+    if (stored.op === 'delete') {
+      if (!remoteRow) continue;
+      if (baseRow && stable(remoteRow) === stable(baseRow)) {
+        rebased.push({ entity:stored.entity, op:'delete', row:clone(remoteRow) });
+      } else {
+        droppedChanges += 1;
+      }
+      continue;
+    }
+
+    const merged = mergeRowThreeWay(baseRow, stored.row, remoteRow);
+    conflictFields += merged.conflicts;
+    if (!merged.row) {
+      droppedChanges += 1;
+      continue;
+    }
+    if (!remoteRow || stable(merged.row) !== stable(remoteRow)) {
+      rebased.push({ entity:stored.entity, op:'upsert', row:merged.row });
+    } else if (merged.appliedFields === 0 && baseRow) {
+      droppedChanges += 1;
+    }
+  }
+
+  return {
+    changes:rebased,
+    mergedSnapshot:applyChanges(remoteSnapshot, rebased),
+    conflictFields,
+    droppedChanges,
+  };
+}
+
+export function replayOperationalIntent(localDb, storedChanges = []) {
+  if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return {
+    accepted:false,
+    reason:'cloud-not-ready',
+    conflictFields:0,
+    droppedChanges:0,
+  };
+  const rebased = rebaseStoredIntent(storedChanges, baseline);
+  applyMergedSnapshotToLocal(localDb, rebased.mergedSnapshot);
+  const accepted = scheduleOperationalSync(localDb);
+  return {
+    accepted,
+    conflictFields:rebased.conflictFields,
+    droppedChanges:rebased.droppedChanges,
+    reapplied:rebased.changes.length,
+  };
+}
+
 function emitStatus(status, detail = {}) {
   if (typeof window === 'undefined' || typeof CustomEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('proqtrack:cloud-status', {
