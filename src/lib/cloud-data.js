@@ -915,6 +915,7 @@ async function flush() {
         conflict:true,
         conflictKind:'reference',
         recoverable:true,
+        source:'background-sync',
       });
     } else {
       emitStatus('error');
