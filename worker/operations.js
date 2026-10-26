@@ -2400,7 +2400,12 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
   const idConflict = await crossTenantIdConflict(env, organizationId, changes);
   if (idConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: idConflict.entity, id: idConflict.id }, 409);
 
-  const accessibleEmployeeIds = await employeeAccess(env, claims);
+  // Broad roles are authorized globally within the active organization and do
+  // not need a full employee-id scan on every sync. Avoiding that query is
+  // material on large tenants and removes needless pressure from D1's queue.
+  const accessibleEmployeeIds = BROAD_ROLES.has(roleOf(claims))
+    ? new Set()
+    : await employeeAccess(env, claims);
   let actorEmployeeId = '';
   let actorEmployeeResolved = false;
   const batchAssignments = changes.filter(change => change?.entity === 'projectAssignments' && change?.op !== 'delete').map(change => change.row || {});
