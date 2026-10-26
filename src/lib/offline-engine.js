@@ -57,26 +57,31 @@ function emit(status, organizationId, extra = {}) {
 }
 
 async function persistOperationalSnapshot(db) {
-  // During a conflict rebase the server hydrate must never overwrite the durable
-  // local snapshot that is about to be replayed.
   if (recovering) return false;
   const organizationId = currentOrganizationId(db);
   if (!organizationId || !cutoverRemembered(organizationId)) return false;
-  const held = await snapshotItem(organizationId);
-  if (held?.requiresReview) return false;
+
   const snapshot = operationalSnapshot(db);
   const nextSignature = signature(snapshot);
   if (nextSignature === lastSignatures.get(organizationId)) return false;
   rememberSignature(organizationId, nextSignature);
+
+  const cloud = await import('./cloud-data.js');
+  const intent = cloud.captureOperationalIntent(db);
+  if (!intent?.changes?.length) return false;
+
   const id = `${SNAPSHOT_PREFIX}${organizationId}`;
   await enqueueMutation({
     id,
-    mutationId: id,
+    mutationId:id,
     organizationId,
-    kind: 'snapshot',
-    changes: [{ entity: '__operational_snapshot__', op: 'replace', row: snapshot }],
+    kind:'intent',
+    baseRevision:Number(intent.baseRevision || 0),
+    changes:intent.changes,
   });
-  emit(navigator.onLine === false ? 'queued-offline' : 'queued', organizationId);
+  emit(navigator.onLine === false ? 'queued-offline' : 'queued', organizationId, {
+    changeCount:intent.changes.length,
+  });
   return true;
 }
 
@@ -105,21 +110,26 @@ export async function replayLatestSnapshot(organizationId = '') {
   replaying = true;
   try {
     const item = await snapshotItem(orgId);
-    if (item?.requiresReview) {
-      emit('conflict-held', orgId, { pendingSnapshot: true, resolution: 'manual' });
-      return false;
+    if (!item) return false;
+
+    // Legacy whole-snapshot outbox entries are unsafe in multi-user mode.
+    // Resolve them cloud-first instead of replaying stale device state.
+    if (item.kind === 'snapshot' || item?.changes?.[0]?.entity === '__operational_snapshot__' || item?.requiresReview) {
+      return recoverCloudConflict(orgId);
     }
-    const snapshot = item?.changes?.[0]?.row;
-    if (!snapshot) return false;
-    const [{ getDB, persistDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
+
+    const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
     const db = getDB();
-    for (const key of OPERATIONAL_KEYS) {
-      if (Array.isArray(snapshot[key])) db[key] = clone(snapshot[key]);
+    const result = cloud.replayOperationalIntent(db, item.changes || []);
+    if (result.accepted) {
+      emit('replaying', orgId, {
+        resolution:'auto-rebase',
+        reapplied:Number(result.reapplied || 0),
+        conflictFields:Number(result.conflictFields || 0),
+        droppedChanges:Number(result.droppedChanges || 0),
+      });
     }
-    persistDB('offline-replay');
-    const accepted = cloud.scheduleOperationalSync(db);
-    if (accepted) emit('replaying', orgId);
-    return accepted;
+    return Boolean(result.accepted);
   } finally {
     replaying = false;
   }
@@ -127,8 +137,6 @@ export async function replayLatestSnapshot(organizationId = '') {
 
 async function clearSyncedSnapshot(organizationId) {
   if (!organizationId) return false;
-  const item = await snapshotItem(organizationId);
-  if (item?.requiresReview) return false;
   await deleteMutation(`${SNAPSHOT_PREFIX}${organizationId}`);
   emit('synced', organizationId);
   return true;
