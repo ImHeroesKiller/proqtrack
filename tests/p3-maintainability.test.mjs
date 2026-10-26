@@ -107,18 +107,19 @@ test('CSP no longer permits executable inline attributes or third-party scripts'
   }
 });
 
-test('conflicted offline snapshots remain blocked until explicit resolution', async () => {
+test('offline conflicts auto-rebase without blocking manual resolution UI', async () => {
   const [offline, bootstrap] = await Promise.all([
     read('src/lib/offline-engine.js'),
     read('src/m4-bootstrap.js'),
   ]);
-  assert.match(offline, /requiresReview: true/);
-  assert.match(offline, /if \(item\?\.requiresReview\)/);
-  assert.match(offline, /export async function discardHeldSnapshot/);
-  assert.match(offline, /conflict-resolved-server/);
-  assert.match(bootstrap, /Perubahan perlu ditinjau/);
-  assert.match(bootstrap, /Gunakan versi terbaru/);
-  assert.match(bootstrap, /ProQOffline\?\.discardHeldSnapshot/);
+  assert.match(offline, /captureOperationalIntent/);
+  assert.match(offline, /replayOperationalIntent/);
+  assert.match(offline, /conflict-auto-resolved/);
+  assert.doesNotMatch(offline, /requiresReview:\s*true/);
+  assert.doesNotMatch(bootstrap, /Perubahan perlu ditinjau/);
+  assert.doesNotMatch(bootstrap, /Gunakan versi terbaru/);
+  assert.match(bootstrap, /Multi-user conflicts are resolved automatically/);
+  assert.match(bootstrap, /ProQOffline\?\.recoverCloudConflict/);
   assert.doesNotMatch(bootstrap, /D1|Cloudflare|GitHub/);
 });
 
