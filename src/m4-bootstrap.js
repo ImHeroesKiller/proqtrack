@@ -170,14 +170,14 @@ function registerServiceWorkerAfterPaint() {
   const register = () => {
     const run = async () => {
       try {
-        const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none' });
+        const registration = await navigator.serviceWorker.register('./sw.js');
         await registration.update();
       } catch (error) {
         console.warn('m4_service_worker_register_failed', error?.message || error);
       }
     };
-    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:2500 });
-    else setTimeout(run, 600);
+    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:5000 });
+    else setTimeout(run, 1200);
   };
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once:true });
