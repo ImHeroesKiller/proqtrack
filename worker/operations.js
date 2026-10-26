@@ -2506,9 +2506,27 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     if (op === 'delete') statements.push(...deleteStatements(env, entity, row, organizationId));
     else {
       let extras = {};
-      if (entity === 'employees' && row.email) {
-        const user = await env.DB.prepare('SELECT id FROM auth_users WHERE lower(email)=lower(?) LIMIT 1').bind(str(row.email)).first();
-        extras = { authUserId: user?.id || null };
+      if (entity === 'employees') {
+        // Preserve an existing tenant-scoped auth link. For a new employee,
+        // only attach an auth user that is already a member of this organization.
+        // A global auth_users email match alone is not sufficient because
+        // core_employees(auth_user_id, organization_id) is tenant-scoped.
+        const existingAuthUserId = str(existing?.auth_user_id);
+        if (existingAuthUserId) {
+          extras = { authUserId: existingAuthUserId };
+        } else if (row.email) {
+          const member = await env.DB.prepare(`
+            SELECT au.id
+            FROM auth_users au
+            JOIN core_organization_users ou
+              ON ou.user_id=au.id AND ou.organization_id=?
+            WHERE lower(au.email)=lower(?)
+            LIMIT 1
+          `).bind(organizationId,str(row.email)).first();
+          extras = { authUserId: member?.id || null };
+        } else {
+          extras = { authUserId:null };
+        }
       }
       statements.push(...upsertStatements(env, entity, row, organizationId, extras));
       if (entity === 'visits') statements.push(...await visitAttendanceStatements(env, organizationId, row));
