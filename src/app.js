@@ -36,7 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, restoreOperationalBaseline, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -789,20 +789,8 @@ function navigationMetrics() {
 
 window.addEventListener('proqtrack:db-updated', invalidateNavigationMetrics);
 window.addEventListener('proqtrack:cloud-status', event => {
-  const detail = event.detail || {};
-  const status = String(detail.status || '');
+  const status = String(event.detail?.status || '');
   if (['ready','synced','refreshed'].includes(status)) invalidateNavigationMetrics();
-
-  if (
-    status === 'conflict'
-    && detail.recoverable === true
-    && detail.conflictKind === 'reference'
-    && detail.source === 'background-sync'
-  ) {
-    restoreOperationalBaseline(getDB());
-    showToast('Perubahan lokal tidak lagi valid. Data terbaru dari server dipulihkan.', 'error');
-    scheduleRender();
-  }
 });
 
 function shellSignature(fieldRole, roleSkin) {
