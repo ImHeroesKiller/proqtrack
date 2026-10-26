@@ -895,6 +895,18 @@ async function flush() {
         body: JSON.stringify({ mutationId, baseRevision: revision, changes: chunk }),
       });
       revision = Number(result.revision);
+      if (result?.refreshRequired) {
+        ready = false;
+        lastError = null;
+        emitStatus('conflict', {
+          conflict:true,
+          conflictKind:'server-refresh',
+          recoverable:true,
+          source:'background-sync',
+          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
+        });
+        return;
+      }
       baseline = applyChanges(baseline, chunk);
     }
     lastError = null;
