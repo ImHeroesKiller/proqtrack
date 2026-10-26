@@ -31,7 +31,7 @@ test('migrateDB normalizes assignment roles and outlet projectIds', () => {
   const ended = db.projectAssignments.find(a => a.id === 'ASN2');
   assert.equal(sales.roleOnProject, 'sales');
   assert.equal(ended.roleOnProject, 'sales');
-  assert.equal(ended.status, 'removed');
+  assert.equal(ended.status, 'ended');
 });
 
 test('getLinkedProjectIds accepts both legacy and array shapes', () => {
@@ -120,7 +120,7 @@ test('UAT seed migrates to v15 without dropping rows or rehashing passwords', ()
   const ended = db.projectAssignments.find(a => a.id === 'ASN-UAT-008');
   assert.equal(sales.roleOnProject, 'sales');
   assert.equal(merch.roleOnProject, 'sales');
-  assert.equal(ended.status, 'removed');
+  assert.equal(ended.status, 'ended');
   assert.equal(db.attendance.find(a => a.id === 'ATT-UAT-001').status, 'hadir');
   assert.equal(db.attendance.find(a => a.id === 'ATT-UAT-002').status, 'terlambat');
   assert.equal(db.attendance.find(a => a.id === 'ATT-UAT-004').status, 'tidak hadir');
