@@ -2375,6 +2375,12 @@ async function validateProjectAssignmentMutation(env, organizationId, row, exist
   return null;
 }
 
+function isForeignKeyConstraintError(error) {
+  const text = String(error?.message || error || '').toUpperCase();
+  return text.includes('SQLITE_CONSTRAINT_FOREIGNKEY')
+    || (text.includes('FOREIGN KEY') && text.includes('CONSTRAINT'));
+}
+
 async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
@@ -2394,7 +2400,12 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
   const idConflict = await crossTenantIdConflict(env, organizationId, changes);
   if (idConflict) return json({ error: 'ENTITY_ID_CONFLICT', entity: idConflict.entity, id: idConflict.id }, 409);
 
-  const accessibleEmployeeIds = await employeeAccess(env, claims);
+  // Broad roles are authorized globally within the active organization and do
+  // not need a full employee-id scan on every sync. Avoiding that query is
+  // material on large tenants and removes needless pressure from D1's queue.
+  const accessibleEmployeeIds = BROAD_ROLES.has(roleOf(claims))
+    ? new Set()
+    : await employeeAccess(env, claims);
   let actorEmployeeId = '';
   let actorEmployeeResolved = false;
   const batchAssignments = changes.filter(change => change?.entity === 'projectAssignments' && change?.op !== 'delete').map(change => change.row || {});
@@ -2522,7 +2533,23 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
     await env.DB.batch(statements);
   } catch (error) {
     const latest = await syncState(env, organizationId);
-    if (Number(latest.revision) !== currentRevision) return json({ error:'REVISION_CONFLICT', revision:Number(latest.revision) },409);
+    if (Number(latest.revision) !== currentRevision) {
+      return json({ error:'REVISION_CONFLICT', revision:Number(latest.revision) },409);
+    }
+    if (isForeignKeyConstraintError(error)) {
+      console.warn('sync_reference_conflict', {
+        organizationId,
+        mutationId,
+        actorId:claims.sub,
+        changeCount:changes.length,
+        entities:[...new Set(changes.map(change => str(change?.entity)).filter(Boolean))],
+      });
+      return json({
+        error:'SYNC_REFERENCE_CONFLICT',
+        message:'Data berubah di server. Muat ulang data terbaru lalu ulangi perubahan.',
+        revision:currentRevision,
+      },409);
+    }
     throw error;
   }
   return json({ ok: true, revision: nextRevision, applied: changes.length });

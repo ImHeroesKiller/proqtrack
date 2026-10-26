@@ -45,6 +45,8 @@ let refreshPromise = null;
 let refreshKey = '';
 let bridgeGeneration = 0;
 const bridgeControllers = new Set();
+const SYNC_CHUNK_SIZE = 50;
+const SYNC_DEBOUNCE_MS = 100;
 
 const SESSION_AUTH_ERRORS = new Set([
   'AUTH_REQUIRED',
@@ -254,8 +256,8 @@ async function migrateP2OperationalCollections(localDb, remote, account = {}) {
   const changes = p2OperationalMigrationChanges(localDb, remote?.data || {}, account);
   if (!changes.length) return remote;
   let baseRevision = Number(remote?.revision || 0);
-  for (let offset = 0; offset < changes.length; offset += 100) {
-    const chunk = changes.slice(offset, offset + 100);
+  for (let offset = 0; offset < changes.length; offset += SYNC_CHUNK_SIZE) {
+    const chunk = changes.slice(offset, offset + SYNC_CHUNK_SIZE);
     const mutationId = 'P2-CLOUD-' + organizationId + '-' + stableMutationSuffix(chunk);
     const send = () => apiJson('/api/core/sync', {
       method: 'POST',
@@ -416,8 +418,8 @@ async function migrateLegacyMasterCollections(localDb, remote, account = {}) {
   if (!changes.length) return remote;
 
   let baseRevision = Number(remote?.revision || 0);
-  for (let offset = 0; offset < changes.length; offset += 100) {
-    const chunk = changes.slice(offset, offset + 100);
+  for (let offset = 0; offset < changes.length; offset += SYNC_CHUNK_SIZE) {
+    const chunk = changes.slice(offset, offset + SYNC_CHUNK_SIZE);
     const mutationId = 'LEGACY-MASTER-' + organizationId + '-' + stableMutationSuffix(chunk);
     const send = () => apiJson('/api/core/sync', {
       method:'POST',
@@ -884,8 +886,8 @@ async function flush() {
       emitStatus('synced');
       return;
     }
-    for (let offset = 0; offset < changes.length; offset += 200) {
-      const chunk = changes.slice(offset, offset + 200);
+    for (let offset = 0; offset < changes.length; offset += SYNC_CHUNK_SIZE) {
+      const chunk = changes.slice(offset, offset + SYNC_CHUNK_SIZE);
       const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${offset}`;
       const result = await apiJson('/api/core/sync', {
         method: 'POST',
@@ -903,6 +905,17 @@ async function flush() {
       ready = false;
       revision = Number(error.payload?.revision || revision);
       emitStatus('conflict', { conflict: true });
+    } else if (error.code === 'SYNC_REFERENCE_CONFLICT') {
+      ready = false;
+      revision = Number(error.payload?.revision || revision);
+      // Treat stale FK references as an authoritative rebase condition instead
+      // of a generic transport failure. The offline engine will refresh the
+      // server baseline and hold any durable local snapshot for review.
+      emitStatus('conflict', {
+        conflict:true,
+        conflictKind:'reference',
+        recoverable:true,
+      });
     } else {
       emitStatus('error');
     }
@@ -910,7 +923,7 @@ async function flush() {
     syncing = false;
     if (queuedSnapshot && ready) {
       clearTimeout(timer);
-      timer = setTimeout(flush, 150);
+      timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
     }
   }
 }
@@ -953,10 +966,15 @@ export async function commitOperationalChanges(changes = []) {
     return result;
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    if (error.code === 'REVISION_CONFLICT') {
+    if (error.code === 'REVISION_CONFLICT' || error.code === 'SYNC_REFERENCE_CONFLICT') {
       ready = false;
       revision = Number(error.payload?.revision || revision);
-      emitStatus('conflict', { conflict:true, source:'direct-commit' });
+      emitStatus('conflict', {
+        conflict:true,
+        conflictKind:error.code === 'SYNC_REFERENCE_CONFLICT' ? 'reference' : 'revision',
+        recoverable:true,
+        source:'direct-commit',
+      });
     } else {
       emitStatus('error', { source:'direct-commit' });
     }
@@ -970,7 +988,7 @@ export function scheduleOperationalSync(db) {
   if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return false;
   queuedSnapshot = snapshotCollections(db);
   clearTimeout(timer);
-  timer = setTimeout(flush, 180);
+  timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
   return true;
 }
 
