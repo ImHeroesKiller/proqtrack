@@ -2420,6 +2420,22 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       const incoming = { ...row };
       Object.assign(row, parseMetadata(existing.metadata_json), incoming);
     }
+
+    if (entity === 'projectAssignments' && op === 'upsert' && existing) {
+      const incomingStatus = ({ removed:'ended', assigned:'active' }[str(row.status)] || str(row.status || existing.status || 'active'));
+      const existingStatus = str(existing.status);
+      const sameIdentity = str(row.projectId || existing.project_id) === str(existing.project_id)
+        && str(row.employeeId || existing.employee_id) === str(existing.employee_id);
+      if (existingStatus === 'ended' && incomingStatus === 'ended' && sameIdentity) {
+        console.info('sync_final_assignment_replay_ignored', {
+          organizationId,
+          mutationId,
+          assignmentId:str(existing.id),
+          actorId:claims.sub,
+        });
+        continue;
+      }
+    }
     let existingProjectIds = [];
     if (entity === 'outlets' && existing) {
       const links = await allRows(env.DB.prepare(

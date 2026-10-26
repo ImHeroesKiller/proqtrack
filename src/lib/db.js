@@ -661,7 +661,10 @@ function migrateDB(parsed) {
   const assignmentRoleMap = { field_sales: 'sales', merchandiser: 'sales' };
   (out.projectAssignments || []).forEach(row => {
     if (assignmentRoleMap[row.roleOnProject]) row.roleOnProject = assignmentRoleMap[row.roleOnProject];
-    if (row.status === 'ended') row.status = 'removed';
+    // Canonical cloud status is "ended". Normalize legacy local "removed"
+    // forward instead of rewriting authoritative "ended" back to "removed",
+    // which otherwise creates a false diff and a repeating 409 sync loop.
+    if (row.status === 'removed') row.status = 'ended';
   });
   (out.outlets || []).forEach(outlet => {
     if (outlet && outlet.projectId && !Array.isArray(outlet.projectIds)) {
@@ -1385,7 +1388,7 @@ export function updateEmployee(id, data) {
   if (next.status !== 'active') {
     (db.projectAssignments || []).forEach(a => {
       if (a.employeeId === id && a.status === 'active') {
-        a.status = 'removed';
+        a.status = 'ended';
         a.removedAt = new Date().toISOString();
         a.removalReason = 'Karyawan dinonaktifkan';
       }
