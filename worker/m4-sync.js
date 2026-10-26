@@ -12,7 +12,7 @@ export async function handleM4Sync(request, env, claims, url = new URL(request.u
       await env.DB.prepare(`
         INSERT INTO core_sync_conflicts(
           id,organization_id,mutation_id,actor_user_id,client_revision,server_revision,resolution,details_json
-        ) VALUES(?,?,?,?,?,?,'manual',?)
+        ) VALUES(?,?,?,?,?,?,'client_replay',?)
       `).bind(
         crypto.randomUUID(),
         claims.organizationId,
@@ -20,7 +20,7 @@ export async function handleM4Sync(request, env, claims, url = new URL(request.u
         claims.sub,
         Math.max(0, Number(body.baseRevision || 0)),
         Math.max(0, Number(payload.revision || 0)),
-        JSON.stringify({ changeCount: Array.isArray(body.changes) ? body.changes.length : 0 }),
+        JSON.stringify({ changeCount: Array.isArray(body.changes) ? body.changes.length : 0, strategy:'automatic_three_way_rebase' }),
       ).run();
     }
   } catch (error) {

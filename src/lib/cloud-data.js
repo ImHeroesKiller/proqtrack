@@ -1,5 +1,6 @@
 import { clearApiToken, getApiToken, getApiTokenMeta, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
+import { createCloudRebaseTools } from './cloud-rebase.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
   'clients',
@@ -25,6 +26,14 @@ export const CLOUD_COLLECTIONS = Object.freeze([
   'outletProposals',
 ]);
 
+const {
+  changeKey,
+  snapshotRow,
+  rebaseSnapshotIntent,
+  rebaseStoredIntent,
+  cloudWinTargetForChange,
+} = createCloudRebaseTools(CLOUD_COLLECTIONS);
+
 const DB_KEY = 'proqtrack_db_v6';
 const MIRROR_KEY = 'proqtrack_db_v7';
 let ready = false;
@@ -34,6 +43,7 @@ let revision = 0;
 let cutoverMode = 'pending';
 let baseline = {};
 let queuedSnapshot = null;
+let queuedLocalDb = null;
 let lastError = null;
 let suppressStorageHook = false;
 let storageHookInstalled = false;
@@ -47,6 +57,7 @@ let bridgeGeneration = 0;
 const bridgeControllers = new Set();
 const SYNC_CHUNK_SIZE = 50;
 const SYNC_DEBOUNCE_MS = 100;
+const AUTO_REBASE_MAX_ATTEMPTS = 4;
 
 const SESSION_AUTH_ERRORS = new Set([
   'AUTH_REQUIRED',
@@ -490,6 +501,81 @@ function applyChanges(target, changes) {
   return next;
 }
 
+async function latestCloudSnapshot() {
+  const latest = await apiJson('/api/core/bootstrap');
+  return {
+    revision:Number(latest?.revision || revision),
+    snapshot:snapshotCollections(latest?.data || {}),
+  };
+}
+
+function applyMergedSnapshotToLocal(localDb, snapshot) {
+  if (!localDb || !snapshot) return;
+  applyRemoteDataToLocal(localDb, snapshot);
+}
+
+async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'REVISION_CONFLICT') {
+  const latest = await latestCloudSnapshot();
+  const rebased = rebaseSnapshotIntent(baseSnapshot, localTarget, latest.snapshot);
+  revision = latest.revision;
+  baseline = latest.snapshot;
+  applyMergedSnapshotToLocal(localDb, rebased.mergedSnapshot);
+  console.info('sync_auto_rebased', {
+    reason,
+    revision,
+    intentCount:rebased.intentCount,
+    reapplied:rebased.changes.length,
+    conflictFields:rebased.conflictFields,
+    droppedChanges:rebased.droppedChanges,
+  });
+  return rebased;
+}
+
+export function operationalBaselineState() {
+  return {
+    revision,
+    snapshot:clone(baseline),
+  };
+}
+
+export function captureOperationalIntent(localDb = {}, rememberedBase = null) {
+  const sourceBaseline = rememberedBase?.snapshot
+    ? snapshotCollections(rememberedBase.snapshot)
+    : baseline;
+  const sourceRevision = rememberedBase?.snapshot
+    ? Number(rememberedBase.revision || 0)
+    : revision;
+  const current = snapshotCollections(localDb);
+  const changes = diffSnapshots(sourceBaseline, current).map(change => ({
+    entity:change.entity,
+    op:change.op,
+    row:clone(change.row),
+    baseRow:clone(snapshotRow(sourceBaseline, change.entity, change.row)),
+  }));
+  return {
+    baseRevision:sourceRevision,
+    changes,
+  };
+}
+
+export function replayOperationalIntent(localDb, storedChanges = []) {
+  if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return {
+    accepted:false,
+    reason:'cloud-not-ready',
+    conflictFields:0,
+    droppedChanges:0,
+  };
+  const rebased = rebaseStoredIntent(storedChanges, baseline);
+  applyMergedSnapshotToLocal(localDb, rebased.mergedSnapshot);
+  const accepted = scheduleOperationalSync(localDb);
+  return {
+    accepted,
+    conflictFields:rebased.conflictFields,
+    droppedChanges:rebased.droppedChanges,
+    reapplied:rebased.changes.length,
+  };
+}
+
 function emitStatus(status, detail = {}) {
   if (typeof window === 'undefined' || typeof CustomEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('proqtrack:cloud-status', {
@@ -623,8 +709,6 @@ async function apiJson(path, options = {}) {
     const res = await fetch(path, { ...options, headers, signal: controller.signal });
     const data = await res.json().catch(() => ({}));
 
-    // A response from a superseded login/logout/organization context must
-    // never mutate the active bridge state, even if the old request completed.
     if (generation !== bridgeGeneration || getApiToken() !== token) {
       throw bridgeError('SESSION_STALE', 0);
     }
@@ -660,16 +744,10 @@ export async function restoreCloudSession(localDb, { onValidated = null } = {}) 
     const meta = getApiTokenMeta();
     const hasTenantHint = Boolean(meta?.organizationId);
 
-    // For tenant-bound sessions these two reads are independent. Starting them
-    // together removes a full network/Worker/D1 round-trip from root restore.
     const sessionPromise = apiJson('/api/auth/session');
     const bootstrapPromise = hasTenantHint ? apiJson('/api/core/bootstrap') : null;
     const session = await sessionPromise;
 
-    // P0 performance: once the server has validated the token, expose only the
-    // authoritative identity to the UI before operational bootstrap/migrations.
-    // Persistence is deferred because serializing a large local snapshot can
-    // block the first authenticated paint.
     const provisionalAccount = ensureCloudIdentity(localDb, session, null, '', { persist:false });
     if (!provisionalAccount) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
     if (typeof onValidated === 'function') {
@@ -704,9 +782,6 @@ export async function establishCloudSession({ email, password, organizationId = 
   try {
     token = await issueUploadSession(null, { email, password, organizationId });
   } catch (error) {
-    // A hard refresh does not clear localStorage. If the browser carries an old
-    // tenant hint that the server no longer authorizes, retry once without that
-    // hint and let authoritative membership resolution select/ask for a valid org.
     if (organizationId && error?.code === 'ORGANIZATION_ACCESS_DENIED') {
       token = await issueUploadSession(null, { email, password, organizationId: '' });
     } else {
@@ -794,11 +869,10 @@ export async function bootstrapOperationalData(localDb, account = {}, { prefetch
     }
   }
 
-  // Clear any queued snapshot from a previous tenant/session before accepting
-  // this server snapshot as the write-through baseline.
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
+  queuedLocalDb = null;
   syncing = false;
   baseline = snapshotCollections(remote.data || {});
   ready = true;
@@ -873,70 +947,179 @@ export async function refreshOperationalData(localDb, account = {}) {
   return request;
 }
 
+async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { source = 'background-sync' } = {}) {
+  let target = snapshotCollections(localTarget || {});
+  let rebaseAttempts = 0;
+  let totalConflictFields = 0;
+  let totalDroppedChanges = 0;
+  let totalApplied = 0;
+  let recovered = false;
+  let chunkSize = SYNC_CHUNK_SIZE;
+
+  while (true) {
+    const changes = diffSnapshots(baseline, target);
+    if (!changes.length) {
+      applyMergedSnapshotToLocal(localDb, target);
+      return {
+        ok:true,
+        revision,
+        applied:totalApplied,
+        recovered,
+        conflictFields:totalConflictFields,
+        droppedChanges:totalDroppedChanges,
+      };
+    }
+
+    const chunk = changes.slice(0, chunkSize);
+    const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${rebaseAttempts}`;
+
+    try {
+      const result = await apiJson('/api/core/sync', {
+        method:'POST',
+        headers:{ 'idempotency-key':mutationId },
+        body:JSON.stringify({ mutationId, baseRevision:revision, changes:chunk }),
+      });
+
+      revision = Number(result.revision ?? revision);
+
+      if (result?.refreshRequired) {
+        const latest = await latestCloudSnapshot();
+        revision = latest.revision;
+        baseline = latest.snapshot;
+        target = latest.snapshot;
+        applyMergedSnapshotToLocal(localDb, target);
+        console.info('sync_auto_recovered_server_refresh', {
+          source,
+          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
+          revision,
+        });
+        return {
+          ok:true,
+          revision,
+          applied:totalApplied,
+          recovered:true,
+          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+
+      baseline = applyChanges(baseline, chunk);
+      totalApplied += chunk.length;
+      rebaseAttempts = 0;
+      continue;
+    } catch (error) {
+      const code = String(error?.code || '');
+      if (!['REVISION_CONFLICT','SYNC_REFERENCE_CONFLICT'].includes(code)) throw error;
+
+      rebaseAttempts += 1;
+      recovered = true;
+      const attemptedChunk = chunk;
+      const rebased = await autoRebaseTarget(baseline, target, localDb, code);
+      target = rebased.mergedSnapshot;
+      totalConflictFields += Number(rebased.conflictFields || 0);
+      totalDroppedChanges += Number(rebased.droppedChanges || 0);
+
+      if (!rebased.changes.length) {
+        return {
+          ok:true,
+          revision,
+          applied:totalApplied,
+          recovered:true,
+          recovery:'AUTO_REBASE_CLOUD_WINS',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+
+      if (code === 'SYNC_REFERENCE_CONFLICT') {
+        if (chunkSize > 1) {
+          chunkSize = 1;
+          rebaseAttempts = 0;
+          continue;
+        }
+
+        const invalidChange = attemptedChunk[0];
+        if (invalidChange) {
+          target = cloudWinTargetForChange(target, baseline, invalidChange);
+          applyMergedSnapshotToLocal(localDb, target);
+          totalDroppedChanges += 1;
+          rebaseAttempts = 0;
+          console.warn('sync_invalid_reference_cloud_wins', {
+            source,
+            entity:String(invalidChange.entity || ''),
+            id:changeKey(invalidChange.row),
+            revision,
+          });
+          continue;
+        }
+      }
+
+      if (code === 'REVISION_CONFLICT' && rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
+        console.info('sync_contention_retry_deferred', {
+          source,
+          revision,
+          attempts:rebaseAttempts,
+          remainingChanges:rebased.changes.length,
+        });
+        return {
+          ok:false,
+          deferred:true,
+          target,
+          revision,
+          applied:totalApplied,
+          recovered:true,
+          recovery:'AUTO_REBASE_CONTENTION_RETRY',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+    }
+  }
+}
+
 async function flush() {
   if (syncing || !ready || !getApiToken() || !queuedSnapshot) return;
   syncing = true;
   emitStatus('syncing');
+  const target = queuedSnapshot;
+  const localDb = queuedLocalDb;
+  queuedSnapshot = null;
+  queuedLocalDb = null;
+  let retryDelay = SYNC_DEBOUNCE_MS;
+
   try {
-    const current = queuedSnapshot;
-    queuedSnapshot = null;
-    const changes = diffSnapshots(baseline, current);
-    if (!changes.length) {
-      lastError = null;
-      emitStatus('synced');
+    const result = await syncTargetWithAutomaticRebase(target, localDb, { source:'background-sync' });
+    ready = true;
+    lastError = null;
+
+    if (result?.deferred && result?.target) {
+      queuedSnapshot = result.target;
+      queuedLocalDb = localDb;
+      retryDelay = 500;
+      emitStatus('retrying', {
+        source:'background-sync',
+        recovered:true,
+        recovery:result.recovery || 'AUTO_REBASE_CONTENTION_RETRY',
+      });
       return;
     }
-    for (let offset = 0; offset < changes.length; offset += SYNC_CHUNK_SIZE) {
-      const chunk = changes.slice(offset, offset + SYNC_CHUNK_SIZE);
-      const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${offset}`;
-      const result = await apiJson('/api/core/sync', {
-        method: 'POST',
-        headers: { 'idempotency-key': mutationId },
-        body: JSON.stringify({ mutationId, baseRevision: revision, changes: chunk }),
-      });
-      revision = Number(result.revision);
-      if (result?.refreshRequired) {
-        ready = false;
-        lastError = null;
-        emitStatus('conflict', {
-          conflict:true,
-          conflictKind:'server-refresh',
-          recoverable:true,
-          source:'background-sync',
-          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
-        });
-        return;
-      }
-      baseline = applyChanges(baseline, chunk);
-    }
-    lastError = null;
-    emitStatus('synced');
+
+    emitStatus('synced', {
+      source:'background-sync',
+      recovered:result.recovered === true,
+      recovery:result.recovery || '',
+      conflictFields:Number(result.conflictFields || 0),
+      droppedChanges:Number(result.droppedChanges || 0),
+    });
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    if (error.code === 'REVISION_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      emitStatus('conflict', { conflict: true });
-    } else if (error.code === 'SYNC_REFERENCE_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      // Treat stale FK references as an authoritative rebase condition instead
-      // of a generic transport failure. The offline engine will refresh the
-      // server baseline and hold any durable local snapshot for review.
-      emitStatus('conflict', {
-        conflict:true,
-        conflictKind:'reference',
-        recoverable:true,
-        source:'background-sync',
-      });
-    } else {
-      emitStatus('error');
-    }
+    emitStatus('error', { source:'background-sync' });
   } finally {
     syncing = false;
     if (queuedSnapshot && ready) {
       clearTimeout(timer);
-      timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
+      timer = setTimeout(flush, retryDelay);
     }
   }
 }
@@ -963,34 +1146,39 @@ export async function commitOperationalChanges(changes = []) {
       throw error;
     }
   }
+
   syncing = true;
   emitStatus('syncing', { source:'direct-commit' });
   try {
-    const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}`;
-    const result = await apiJson('/api/core/sync', {
-      method:'POST',
-      headers:{ 'idempotency-key': mutationId },
-      body:JSON.stringify({ mutationId, baseRevision:revision, changes:list }),
-    });
-    revision = Number(result.revision);
-    baseline = applyChanges(baseline, list);
+    const target = applyChanges(baseline, list);
+    const result = await syncTargetWithAutomaticRebase(target, null, { source:'direct-commit' });
+    ready = true;
     lastError = null;
-    emitStatus('synced', { source:'direct-commit' });
+
+    if (result?.deferred && result?.target) {
+      queuedSnapshot = result.target;
+      queuedLocalDb = null;
+      clearTimeout(timer);
+      timer = setTimeout(flush, 500);
+      emitStatus('retrying', {
+        source:'direct-commit',
+        recovered:true,
+        recovery:result.recovery || 'AUTO_REBASE_CONTENTION_RETRY',
+      });
+      return { ...result, ok:true, deferred:true };
+    }
+
+    emitStatus('synced', {
+      source:'direct-commit',
+      recovered:result.recovered === true,
+      recovery:result.recovery || '',
+      conflictFields:Number(result.conflictFields || 0),
+      droppedChanges:Number(result.droppedChanges || 0),
+    });
     return result;
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    if (error.code === 'REVISION_CONFLICT' || error.code === 'SYNC_REFERENCE_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      emitStatus('conflict', {
-        conflict:true,
-        conflictKind:error.code === 'SYNC_REFERENCE_CONFLICT' ? 'reference' : 'revision',
-        recoverable:true,
-        source:'direct-commit',
-      });
-    } else {
-      emitStatus('error', { source:'direct-commit' });
-    }
+    emitStatus('error', { source:'direct-commit' });
     throw error;
   } finally {
     syncing = false;
@@ -1000,6 +1188,7 @@ export async function commitOperationalChanges(changes = []) {
 export function scheduleOperationalSync(db) {
   if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return false;
   queuedSnapshot = snapshotCollections(db);
+  queuedLocalDb = db && typeof db === 'object' ? db : null;
   clearTimeout(timer);
   timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
   return true;
@@ -1084,6 +1273,7 @@ export function restoreOperationalBaseline(localDb) {
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
+  queuedLocalDb = null;
   syncing = false;
   if (localDb && baseline && typeof baseline === 'object') applyRemoteDataToLocal(localDb, baseline);
   lastError = null;
@@ -1104,6 +1294,7 @@ export function resetCloudDataBridge() {
   cutoverMode = 'pending';
   baseline = {};
   queuedSnapshot = null;
+  queuedLocalDb = null;
   lastError = null;
   clearTimeout(timer);
   timer = null;
@@ -1150,3 +1341,4 @@ export async function logoutCloudSession() {
   resetCloudDataBridge();
   return revokeApiSession();
 }
+

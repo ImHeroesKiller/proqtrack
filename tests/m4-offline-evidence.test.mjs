@@ -72,18 +72,18 @@ test('offline login requires prior cloud identity, remembered cutover and never 
   assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*password/i);
 });
 
-test('conflict recovery hydrates server state but holds local snapshot for explicit review', async () => {
+test('conflict recovery is automatic and never holds a blocking manual snapshot', async () => {
   const source = await read('src/lib/offline-engine.js');
+  const bootstrap = await read('src/m4-bootstrap.js');
   assert.match(source, /const lastSignatures = new Map\(\)/);
-  assert.match(source, /if \(recovering\) return false/);
-  assert.match(source, /persistDB\('offline-replay'\)/);
-  assert.match(source, /status === 'ready' && !recovering/);
-  assert.match(source, /conflict-held/);
-  const recoveryStart = source.indexOf('export async function recoverCloudConflict');
-  const recoveryEnd = source.indexOf('export function installOfflineEngine', recoveryStart);
-  const recovery = source.slice(recoveryStart, recoveryEnd);
-  assert.match(recovery, /cloud\.applyRemoteDataToLocal/);
-  assert.doesNotMatch(recovery, /await replayLatestSnapshot/);
+  assert.match(source, /captureOperationalIntent/);
+  assert.match(source, /replayOperationalIntent/);
+  assert.match(source, /conflict-auto-resolved/);
+  assert.doesNotMatch(source, /requiresReview:\s*true/);
+  assert.doesNotMatch(source, /resolution:\s*'manual'/);
+  assert.doesNotMatch(bootstrap, /Perubahan perlu ditinjau/);
+  assert.doesNotMatch(bootstrap, /Tinjau nanti/);
+  assert.match(bootstrap, /Multi-user conflicts are resolved automatically/);
 });
 
 test('service worker never caches API traffic and precaches the complete built app', async () => {
@@ -128,12 +128,14 @@ test('evidence client persists blob before network upload', async () => {
   assert.match(source, /idempotency-key/);
 });
 
-test('revision conflicts are recorded for manual resolution', async () => {
+test('revision conflicts are recorded for automatic client replay', async () => {
   const [main, sync] = await Promise.all([read('worker/main.js'), read('worker/m4-sync.js')]);
   assert.match(main, /handleM4Sync/);
   assert.match(sync, /core_sync_conflicts/);
   assert.match(sync, /REVISION_CONFLICT/);
-  assert.match(sync, /'manual'/);
+  assert.match(sync, /'client_replay'/);
+  assert.match(sync, /automatic_three_way_rebase/);
+  assert.doesNotMatch(sync, /'manual'/);
 });
 
 test('M4 bootstrap loads offline engine, evidence queue and offline login', async () => {

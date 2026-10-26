@@ -1,7 +1,6 @@
 import './lib/offline-engine.js';
 import { installOfflineLogin } from './lib/offline-login.js';
 
-let activeConflictOrganizationId = '';
 let evidenceRuntimePromise = null;
 let evidenceRuntimeScheduled = false;
 
@@ -38,65 +37,17 @@ function primeEvidenceRuntime(event) {
   }
 }
 
-function closeConflictResolver() {
-  const root = document.getElementById('modalRoot');
-  if (root) root.innerHTML = '';
-}
-
-function openConflictResolver(detail = {}) {
-  const root = document.getElementById('modalRoot');
-  const organizationId = String(detail.organizationId || window.FT?.state?.account?.organizationId || '');
-  if (!root || !organizationId) return false;
-  activeConflictOrganizationId = organizationId;
-  root.innerHTML = `
-    <div class="modal-overlay" data-pqt-onclick="ProQConflict.close()">
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-        <div class="modal-handle"></div>
-        <div class="modal-header">
-          <h3 id="conflict-title">Perubahan perlu ditinjau</h3>
-          <button class="modal-close" type="button" aria-label="Tutup" data-pqt-onclick="ProQConflict.close()">×</button>
-        </div>
-        <div class="modal-body">
-          <p style="margin:0 0 10px">Ada perubahan dari perangkat lain yang lebih baru.</p>
-          <p style="margin:0;color:var(--gray-500);font-size:13px;line-height:1.55">
-            Versi terbaru sudah digunakan. Salinan perubahan dari perangkat ini tetap disimpan dan tidak akan dikirim otomatis sampai Anda memilih tindakan.
-          </p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" type="button" data-pqt-onclick="ProQConflict.close()">Tinjau nanti</button>
-          <button class="btn btn-primary" type="button" data-pqt-onclick="ProQConflict.useServerVersion()">Gunakan versi terbaru</button>
-        </div>
-      </div>
-    </div>`;
-  return true;
-}
-
-async function useServerVersion() {
-  const organizationId = activeConflictOrganizationId || window.FT?.state?.account?.organizationId || '';
-  try {
-    const resolved = await window.ProQOffline?.discardHeldSnapshot?.(organizationId);
-    closeConflictResolver();
-    activeConflictOrganizationId = '';
-    window.showToast?.(
-      resolved
-        ? 'Versi terbaru dipakai. Salinan perubahan perangkat ini sudah dibersihkan.'
-        : 'Tidak ada salinan perubahan yang perlu dibersihkan.',
-      'success',
-    );
-    return Boolean(resolved);
-  } catch (error) {
-    console.error('offline_conflict_resolution_failed', error?.message || error);
-    window.showToast?.('Penyelesaian perubahan gagal. Coba lagi.', 'error');
-    return false;
-  }
-}
-
 function installConflictResolver() {
   if (typeof window === 'undefined') return;
+  // Compatibility surface only. Multi-user conflicts are resolved automatically
+  // by the cloud rebase engine and must never block users with a modal.
   window.ProQConflict = Object.freeze({
-    open: openConflictResolver,
-    close: closeConflictResolver,
-    useServerVersion,
+    open:() => false,
+    close:() => true,
+    useServerVersion:async () => {
+      const organizationId = window.FT?.state?.account?.organizationId || '';
+      return Boolean(await window.ProQOffline?.recoverCloudConflict?.(organizationId));
+    },
   });
 }
 
@@ -109,14 +60,11 @@ function installStatusBridge() {
       last = status;
       window.showToast?.('Mode offline aktif. Perubahan operasional aman di perangkat.', 'success');
     } else if (status === 'conflict-held') {
-      if (last !== status) {
-        last = status;
-        window.showToast?.('Ada perubahan dari perangkat lain. Pilih tindakan untuk salinan perubahan perangkat ini.', 'error');
-      }
-      openConflictResolver(event.detail || {});
-    } else if (status === 'conflict-resolved-server') {
+      // Legacy event compatibility: resolve automatically, never prompt.
+      window.ProQOffline?.recoverCloudConflict?.(event.detail?.organizationId || '').catch?.(() => {});
       last = '';
-      closeConflictResolver();
+    } else if (status === 'conflict-auto-resolved' || status === 'conflict-resolved-server') {
+      last = '';
     } else if (status === 'synced') {
       last = '';
     }

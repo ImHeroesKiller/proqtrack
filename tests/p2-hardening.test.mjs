@@ -52,7 +52,7 @@ test('field photo metadata hydrates from authoritative evidence without becoming
   assert.match(bridge, /id: evidenceId/);
 });
 
-test('revision conflict recovery is fail-closed and never auto-replays a whole local snapshot', async () => {
+test('revision conflict recovery is cloud-first, automatic, and never replays a whole local snapshot', async () => {
   const [offline, receipt] = await Promise.all([
     read('src/lib/offline-engine.js'),
     read('worker/m4-sync.js'),
@@ -60,10 +60,13 @@ test('revision conflict recovery is fail-closed and never auto-replays a whole l
   const start = offline.indexOf('export async function recoverCloudConflict');
   const end = offline.indexOf('export function installOfflineEngine', start);
   const recovery = offline.slice(start, end);
-  assert.match(recovery, /conflict-held/);
-  assert.match(recovery, /resolution: pending \? 'manual' : 'server-wins'/);
+  assert.match(recovery, /conflict-auto-resolved/);
+  assert.match(recovery, /resolution:'server-wins'/);
+  assert.doesNotMatch(recovery, /requiresReview:\s*true/);
   assert.doesNotMatch(recovery, /await replayLatestSnapshot/);
-  assert.match(receipt, /'manual'/);
+  assert.match(receipt, /'client_replay'/);
+  assert.match(receipt, /automatic_three_way_rebase/);
+  assert.doesNotMatch(receipt, /'manual'/);
 });
 
 test('canonical live deploy target has no divergent named production namespace', async () => {

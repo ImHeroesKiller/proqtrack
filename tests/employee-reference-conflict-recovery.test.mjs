@@ -24,14 +24,17 @@ test('employee delete is rejected before D1 when historical references exist', a
   assert.match(sync, /validateEmployeeMutation\(env, organizationId, row, existing, \{ batchAssignments, op \}\)/);
 });
 
-test('background reference conflict restores authoritative baseline instead of looping', async () => {
-  const [bridge, app] = await Promise.all([
+test('background reference conflict is auto-rebased and never opens a manual recovery path', async () => {
+  const [bridge, app, bootstrap] = await Promise.all([
     read('src/lib/cloud-data.js'),
     read('src/app.js'),
+    read('src/m4-bootstrap.js'),
   ]);
-  assert.match(bridge, /conflictKind:'reference'[\s\S]*recoverable:true[\s\S]*source:'background-sync'/);
-  assert.match(app, /detail\.conflictKind === 'reference'/);
-  assert.match(app, /detail\.source === 'background-sync'/);
-  assert.match(app, /restoreOperationalBaseline\(getDB\(\)\)/);
-  assert.match(app, /Perubahan lokal tidak lagi valid/);
+  assert.match(bridge, /syncTargetWithAutomaticRebase/);
+  assert.match(bridge, /SYNC_REFERENCE_CONFLICT/);
+  assert.match(bridge, /sync_invalid_reference_cloud_wins/);
+  assert.match(bridge, /AUTO_REBASE_CONTENTION_RETRY/);
+  assert.doesNotMatch(app, /detail\.conflictKind === 'reference'/);
+  assert.doesNotMatch(app, /Perubahan lokal tidak lagi valid/);
+  assert.doesNotMatch(bootstrap, /Perubahan perlu ditinjau/);
 });
