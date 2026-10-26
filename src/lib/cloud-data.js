@@ -717,8 +717,6 @@ async function apiJson(path, options = {}) {
     const res = await fetch(path, { ...options, headers, signal: controller.signal });
     const data = await res.json().catch(() => ({}));
 
-    // A response from a superseded login/logout/organization context must
-    // never mutate the active bridge state, even if the old request completed.
     if (generation !== bridgeGeneration || getApiToken() !== token) {
       throw bridgeError('SESSION_STALE', 0);
     }
@@ -754,16 +752,10 @@ export async function restoreCloudSession(localDb, { onValidated = null } = {}) 
     const meta = getApiTokenMeta();
     const hasTenantHint = Boolean(meta?.organizationId);
 
-    // For tenant-bound sessions these two reads are independent. Starting them
-    // together removes a full network/Worker/D1 round-trip from root restore.
     const sessionPromise = apiJson('/api/auth/session');
     const bootstrapPromise = hasTenantHint ? apiJson('/api/core/bootstrap') : null;
     const session = await sessionPromise;
 
-    // P0 performance: once the server has validated the token, expose only the
-    // authoritative identity to the UI before operational bootstrap/migrations.
-    // Persistence is deferred because serializing a large local snapshot can
-    // block the first authenticated paint.
     const provisionalAccount = ensureCloudIdentity(localDb, session, null, '', { persist:false });
     if (!provisionalAccount) throw new Error('SESSION_ACCOUNT_UNAVAILABLE');
     if (typeof onValidated === 'function') {
@@ -798,9 +790,6 @@ export async function establishCloudSession({ email, password, organizationId = 
   try {
     token = await issueUploadSession(null, { email, password, organizationId });
   } catch (error) {
-    // A hard refresh does not clear localStorage. If the browser carries an old
-    // tenant hint that the server no longer authorizes, retry once without that
-    // hint and let authoritative membership resolution select/ask for a valid org.
     if (organizationId && error?.code === 'ORGANIZATION_ACCESS_DENIED') {
       token = await issueUploadSession(null, { email, password, organizationId: '' });
     } else {
@@ -888,8 +877,6 @@ export async function bootstrapOperationalData(localDb, account = {}, { prefetch
     }
   }
 
-  // Clear any queued snapshot from a previous tenant/session before accepting
-  // this server snapshot as the write-through baseline.
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
@@ -1055,8 +1042,6 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
       if (code === 'SYNC_REFERENCE_CONFLICT') {
         if (chunkSize > 1) {
-          // Isolate the exact invalid relation instead of discarding a whole
-          // multi-entity batch.
           chunkSize = 1;
           rebaseAttempts = 0;
           continue;
