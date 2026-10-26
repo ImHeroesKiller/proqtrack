@@ -9,36 +9,34 @@ const field = readFileSync(new URL('../src/field-sales.js', import.meta.url), 'u
 const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const projects = readFileSync(new URL('../src/types/index.js', import.meta.url), 'utf8');
 
-test('P0 project config exposes manual or visit attendance source', () => {
-  assert.match(projects, /name="attendanceSourceMode"/);
-  assert.match(projects, /Otomatis dari Visit/);
+test('P0 project config fixes attendance to explicit employee check-in', () => {
+  assert.match(projects, /name="attendanceSourceMode" value="manual"/);
+  assert.doesNotMatch(projects, /Otomatis dari Visit/);
   assert.match(projects, /name="attendanceLateAfter"/);
-  assert.match(projects, /attendanceSourceMode: formValue\(fd, "attendanceSourceMode"\)/);
-  assert.match(worker, /PROJECT_INVALID_ATTENDANCE_SOURCE/);
+  assert.match(projects, /attendanceSourceMode: "manual"/);
+  assert.match(worker, /row\.attendanceSourceMode = 'manual'/);
   assert.match(worker, /PROJECT_INVALID_ATTENDANCE_CUTOFF/);
 });
 
-test('P0 manual attendance is project-scoped and cloud-confirmed', () => {
+test('P0 employee attendance is project-scoped explicit and cloud-confirmed', () => {
   assert.match(db, /getProjectAttendancePolicy\(projectId\)/);
   assert.match(db, /getEmployeeAttendanceProjects/);
-  assert.match(attendanceDomain, /Absensi project ini dihitung otomatis dari kunjungan/);
-  assert.match(field, /getProjectAttendancePolicy\(projectId\)\.sourceMode !== 'manual'/);
+  assert.doesNotMatch(attendanceDomain, /Absensi project ini dihitung otomatis dari kunjungan/);
+  assert.match(field, /Check In Karyawan/);
   assert.match(field, /await waitForOperationalSync\(\)/);
   assert.match(field, /await refreshOperationalData\(getDB\(\), getActor\(\)\)/);
 });
 
-test('P0 server rejects direct attendance on visit-derived projects', () => {
-  assert.match(worker, /ATTENDANCE_VISIT_DERIVED_ONLY/);
+test('P0 server accepts explicit employee attendance independently from Visit', () => {
+  assert.doesNotMatch(worker, /ATTENDANCE_VISIT_DERIVED_ONLY/);
   assert.match(worker, /ATTENDANCE_EMPLOYEE_PROJECT_MISMATCH/);
   assert.match(worker, /ATTENDANCE_SELF_ONLY/);
   assert.match(worker, /attendance:manual:/);
 });
 
-test('P0 visit check-in derives first daily attendance atomically', () => {
-  assert.match(worker, /async function visitAttendanceStatements/);
-  assert.match(worker, /attendanceSource:'visit'/);
-  assert.match(worker, /INSERT OR IGNORE INTO core_attendance/);
-  assert.match(worker, /attendance:visit:/);
+test('P0 visit check-in never creates employee attendance', () => {
+  assert.match(worker, /async function visitAttendanceStatements\(\) \{[\s\S]*return \[\]/);
+  assert.doesNotMatch(worker, /attendance:visit:/);
   assert.match(worker, /statements\.push\(\.\.\.await visitAttendanceStatements/);
 });
 
