@@ -57,12 +57,7 @@ function normalizeRow(input = {}, index = 0) {
 }
 
 function validInitialPassword(value) {
-  const password = String(value || '');
-  return password.length >= 16
-    && /[A-Z]/.test(password)
-    && /[a-z]/.test(password)
-    && /[0-9]/.test(password)
-    && /[^A-Za-z0-9]/.test(password);
+  return String(value || '').length >= 8;
 }
 
 function employeeId() {
@@ -362,7 +357,7 @@ async function commit(request, env, claims, requestId) {
       return json({
         error: 'INITIAL_PASSWORD_REQUIRED',
         rowNumber: validated[index].rowNumber,
-        message: 'Initial password minimal 16 karakter dan harus berisi huruf besar, huruf kecil, angka, dan simbol.',
+        message: 'Initial password minimal 8 karakter.',
       }, 422);
     }
   }
