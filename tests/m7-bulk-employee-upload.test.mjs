@@ -35,8 +35,8 @@ test('bulk server normalizes field roles statuses and login intent safely', () =
   assert.equal(row.employeeCode, 'EMP-7');
   assert.equal(row.role, 'employee');
   assert.equal(row.createLogin, true);
-  assert.equal(bulkServer.validInitialPassword('Abcdefghijk7!XYZ'), true);
-  assert.equal(bulkServer.validInitialPassword('too-short'), false);
+  assert.equal(bulkServer.validInitialPassword('12345678'), true);
+  assert.equal(bulkServer.validInitialPassword('1234567'), false);
 });
 
 test('bulk client detects duplicates across preview chunk boundaries', () => {
@@ -83,4 +83,19 @@ test('bulk endpoint stores no plaintext credential fields in audit schema', asyn
   assert.doesNotMatch(worker, /detail_json[^\n]*password/i);
   assert.equal(bulkServer.MAX_PREVIEW_ROWS, 100);
   assert.equal(bulkServer.MAX_COMMIT_ROWS, 20);
+});
+
+
+test('bulk-generated initial password policy is eight characters minimum', async () => {
+  const client = await read('src/bulk-employees.js');
+  const worker = await read('worker/bulk-employees.js');
+  const accounts = await read('worker/accounts.js');
+  const authz = await read('worker/authz.js');
+  const settings = await read('src/account-settings.js');
+  assert.match(client, /strongInitialPassword\(length = 8\)/);
+  assert.match(worker, /String\(value \|\| ''\)\.length >= 8/);
+  assert.match(worker, /Initial password minimal 8 karakter/);
+  assert.match(accounts, /password\.length < 8/);
+  assert.match(authz, /nextPassword\.length < 8/);
+  assert.match(settings, /minlength="8"/);
 });
