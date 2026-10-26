@@ -982,7 +982,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'projects': {
       const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
       const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
-      const attendanceSourceMode = str(row.attendanceSourceMode) === 'visit' ? 'visit' : 'manual';
+      const attendanceSourceMode = 'manual';
       const attendanceLateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(str(row.attendanceLateAfter)) ? str(row.attendanceLateAfter) : '09:00';
       return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status, attendanceSourceMode, attendanceLateAfter };
     }
@@ -1209,7 +1209,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
     const common = { ...meta, id: dbRow.id || meta.id, organizationId: dbRow.organization_id || meta.organizationId, rowVersion: Number(dbRow.row_version || meta.rowVersion || 1) };
     switch (entity) {
       case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status };
-      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
+      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate, attendanceSourceMode:'manual' };
       case 'employees': return { ...common, authUserId: dbRow.auth_user_id || meta.authUserId, employeeCode: dbRow.employee_code, name: dbRow.full_name, email: dbRow.email, phone: dbRow.phone, status: dbRow.employment_status };
       case 'projectAssignments': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, supervisorUserId: dbRow.supervisor_user_id, positionName: dbRow.position_name, status: dbRow.status, startDate: dbRow.starts_on, endDate: dbRow.ends_on };
       case 'outlets': return { ...common, clientId: dbRow.client_id, outletNumber: dbRow.code, code: dbRow.code, name: dbRow.name, address: dbRow.address, lat: dbRow.latitude, lng: dbRow.longitude, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
