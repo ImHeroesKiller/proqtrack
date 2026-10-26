@@ -249,13 +249,13 @@ try {
   await sync('supervisor','supervisor-correction',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,status:'late',checkInAt:'09:10',checkOutAt:'17:15',correctionReason:'Supervisor correction UAT'}}]);
   await sync('manager','manager-correction',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,status:'present',checkInAt:'08:05',checkOutAt:'17:15',correctionReason:'Manager final correction UAT'}}]);
 
-  await sync('visit','visit-direct-attendance-denied',[{entity:'attendance',op:'upsert',row:{id:ids.visitDirect,projectId:ids.visit,employeeId:ids.visitEmp,workDate:today,checkInAt:'08:10'}}],409,'ATTENDANCE_VISIT_DERIVED_ONLY');
+  await sync('visit','employee-explicit-checkin',[{entity:'attendance',op:'upsert',row:{id:ids.visitDirect,projectId:ids.visit,employeeId:ids.visitEmp,workDate:today,checkInAt:'08:10'}}]);
   await sync('visit','visit-plan',[{entity:'visits',op:'upsert',row:{id:ids.visitId,projectId:ids.visit,outletId:ids.outlet,employeeId:ids.visitEmp,status:'planned',scheduledAt:visitStart}}]);
   await sync('visit','visit-checkin',[{entity:'visits',op:'upsert',row:{id:ids.visitId,projectId:ids.visit,outletId:ids.outlet,employeeId:ids.visitEmp,status:'in_progress',scheduledAt:visitStart,startedAt:visitStart,checkInTime:'08:10',locationSource:'device_gps',checkInLat:-6.214620,checkInLng:106.822900}}]);
-  const visitAttendance=d1Row(`SELECT id FROM core_attendance WHERE organization_id='${ids.org}' AND project_id='${ids.visit}' AND employee_id='${ids.visitEmp}' AND work_date='${today}' LIMIT 1;`)?.id;
-  expect(visitAttendance,'visit-derived attendance missing after check-in');
-  await sync('supervisor','visit-attendance-correction-denied',[{entity:'attendance',op:'upsert',row:{id:visitAttendance,projectId:ids.visit,employeeId:ids.visitEmp,workDate:today,status:'late',checkInAt:'09:10',correctionReason:'Visit attendance correction denied'}}],409,'ATTENDANCE_VISIT_DERIVED_IMMUTABLE');
+  const visitAttendanceCountAfterVisitCheckin=Number(d1Row(`SELECT COUNT(*) count FROM core_attendance WHERE organization_id='${ids.org}' AND project_id='${ids.visit}' AND employee_id='${ids.visitEmp}' AND work_date='${today}';`)?.count||0);
+  expect(visitAttendanceCountAfterVisitCheckin===1,'visit check-in must not create employee attendance');
   await sync('visit','visit-checkout',[{entity:'visits',op:'upsert',row:{id:ids.visitId,projectId:ids.visit,outletId:ids.outlet,employeeId:ids.visitEmp,status:'completed',scheduledAt:visitStart,startedAt:visitStart,checkInTime:'08:10',completedAt:visitEnd,checkOutTime:'17:10',checkOutLat:-6.214620,checkOutLng:106.822900}}]);
+  await sync('visit','employee-explicit-checkout',[{entity:'attendance',op:'upsert',row:{id:ids.visitDirect,projectId:ids.visit,employeeId:ids.visitEmp,workDate:today,checkOutAt:'17:10'}}]);
 
   await sync('manual','leave-submit-withdraw',[{entity:'leaves',op:'upsert',row:{id:ids.leaveWithdraw,employeeId:ids.manualEmp,type:'Cuti Tahunan',startDate:future1,endDate:future1,reason:'Initial UAT leave request'}}]);
   await sync('manual','leave-edit',[{entity:'leaves',op:'upsert',row:{id:ids.leaveWithdraw,employeeId:ids.manualEmp,type:'Cuti Tahunan',startDate:future2,endDate:future2,reason:'Edited UAT leave request',status:'pending'}}]);
@@ -285,7 +285,7 @@ try {
     expect(le.has(ids.manualEmp)&&le.has(ids.visitEmp),`${name} cannot see both leave scopes`);
     const p=data.data?.projects||[];
     expect(p.find(x=>x.id===ids.manual)?.attendanceSourceMode==='manual',`${name} manual mode missing`);
-    expect(p.find(x=>x.id===ids.visit)?.attendanceSourceMode==='visit',`${name} visit mode missing`);
+    expect(p.find(x=>x.id===ids.visit)?.attendanceSourceMode==='manual',`${name} explicit employee attendance mode missing`);
   }
 
   const final=d1Row(`SELECT
@@ -304,7 +304,7 @@ try {
   expect(Number(final.manual_count)===1&&Number(final.visit_count)===1,'attendance cardinality invariant failed');
   expect(final.manual_source==='manual','manual source invariant failed');
   expect(Number(final.correction_count)===2&&final.corrected_by===ids.manager,'correction audit invariant failed');
-  expect(final.visit_checkout,'visit-derived checkout missing');
+  expect(final.visit_checkout,'explicit employee checkout missing');
   expect(final.withdraw_status==='rejected'&&final.withdraw_kind==='withdrawn','withdraw audit invariant failed');
   expect(final.approved_status==='approved'&&final.approved_by===ids.supervisor,'supervisor approval invariant failed');
   expect(final.conflict_status==='rejected'&&final.conflict_by===ids.manager,'manager rejection invariant failed');
@@ -316,7 +316,7 @@ try {
     (SELECT COUNT(*) FROM core_attendance WHERE organization_id='${ids.org}') attendance,
     (SELECT COUNT(*) FROM core_leaves WHERE organization_id='${ids.org}') leaves;`);
   expect(Object.values(residual).every(v=>Number(v)===0),`cleanup residual ${JSON.stringify(residual)}`);
-  console.log('Attendance + Leave final production UAT PASS: Head/Manager/Supervisor/Employee, Settings boundaries, Manual/Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
+  console.log('Attendance + Leave final production UAT PASS: Head/Manager/Supervisor/Employee, explicit employee attendance independent from Visit, lifecycle, correction governance, Leave governance, role isolation, and cleanup');
 } catch(error) {
   console.error('Attendance + Leave final production UAT FAILED:',error?.stack||error);
   process.exitCode=1;
