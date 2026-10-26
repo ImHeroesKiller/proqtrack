@@ -789,7 +789,20 @@ function navigationMetrics() {
 
 window.addEventListener('proqtrack:db-updated', invalidateNavigationMetrics);
 window.addEventListener('proqtrack:cloud-status', event => {
-  if (['ready','synced','refreshed'].includes(String(event.detail?.status || ''))) invalidateNavigationMetrics();
+  const detail = event.detail || {};
+  const status = String(detail.status || '');
+  if (['ready','synced','refreshed'].includes(status)) invalidateNavigationMetrics();
+
+  if (
+    status === 'conflict'
+    && detail.recoverable === true
+    && detail.conflictKind === 'reference'
+    && detail.source === 'background-sync'
+  ) {
+    restoreOperationalBaseline(getDB());
+    showToast('Perubahan lokal tidak lagi valid. Data terbaru dari server dipulihkan.', 'error');
+    scheduleRender();
+  }
 });
 
 function shellSignature(fieldRole, roleSkin) {
