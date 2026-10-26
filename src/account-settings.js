@@ -917,6 +917,12 @@ window.AM = {
       }
       if (!data.password) delete data.password;
       if (!id) {
+        // Refresh authoritative memberships immediately before create so a
+        // stale browser cache cannot trigger an avoidable POST 409.
+        await syncCloudAccounts();
+        accountSyncedOrg = String(account()?.organizationId || getDB().currentOrganizationId || '');
+        accountSyncAttemptedOrg = accountSyncedOrg;
+        accountSyncLastAt = new Date();
         const duplicate = getAccounts().find(a => String(a.email || '').toLowerCase() === String(data.email || '').trim().toLowerCase());
         if (duplicate) throw Object.assign(new Error('ACCOUNT_ALREADY_IN_ORGANIZATION'), { code:'ACCOUNT_ALREADY_IN_ORGANIZATION' });
       }
