@@ -7,6 +7,7 @@ function defaultModules() {
 }
 function migrateV7() {
   const db = readDB();
+  const stamp = now();
   let changed = false;
   const ensureArray = (key) => {
     if (!Array.isArray(db[key])) {
