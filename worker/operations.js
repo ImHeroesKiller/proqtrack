@@ -2659,10 +2659,50 @@ export async function handleOperationalRoute(request, env, claims, url = new URL
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(request, env, claims);
   if (url.pathname === '/api/core/import' && request.method === 'POST') return handleImport(request, env, claims);
   if (url.pathname === '/api/core/sync' && request.method === 'POST') {
+    let syncMode = '';
+    try {
+      const body = await request.clone().json();
+      syncMode = str(body?.syncMode);
+    } catch { syncMode = ''; }
+
     const response = await handleSync(request, env, claims, bulkReceipt);
+    let payload = {};
     if (response.status >= 400) {
-      let payload = {};
       try { payload = await response.clone().json(); } catch { payload = {}; }
+    }
+
+    const backgroundBusinessConflict = syncMode === 'background-sync'
+      && response.status === 409
+      && str(payload?.entity)
+      && str(payload?.id)
+      && !['REVISION_CONFLICT','SYNC_REFERENCE_CONFLICT'].includes(str(payload?.error));
+
+    if (backgroundBusinessConflict) {
+      const latest = await syncState(env, claims.organizationId);
+      console.info('sync_background_business_conflict_cloud_wins', {
+        organizationId:claims.organizationId,
+        actorId:claims.sub,
+        code:str(payload?.error),
+        entity:str(payload?.entity),
+        id:str(payload?.id),
+        revision:Number(latest?.revision || 0),
+      });
+      return json({
+        ok:true,
+        recovered:true,
+        recovery:'BACKGROUND_BUSINESS_CONFLICT_CLOUD_WINS',
+        revision:Number(latest?.revision || 0),
+        applied:0,
+        refreshRequired:true,
+        conflict:{
+          code:str(payload?.error),
+          entity:str(payload?.entity),
+          id:str(payload?.id),
+        },
+      },200);
+    }
+
+    if (response.status >= 400) {
       console.warn('sync_rejected', {
         organizationId:claims.organizationId,
         actorId:claims.sub,
