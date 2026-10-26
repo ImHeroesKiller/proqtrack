@@ -1,11 +1,12 @@
-import { enqueueMutation, listMutations, deleteMutation, offlineQueueStats } from './offline-store.js';
+import { enqueueMutation, listMutations, deleteMutation, offlineQueueStats, setOfflineMeta, getOfflineMeta } from './offline-store.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const SNAPSHOT_PREFIX = 'offline-snapshot:';
+const BASELINE_PREFIX = 'cloud-baseline:';
 const OPERATIONAL_KEYS = Object.freeze([
   'clients','projects','employees','projectAssignments','outlets','visits','attendance',
   'products','productSales','surveyTemplates','surveyResponses','projectProducts',
-  'competitors','competitorProducts','attendancePoints','leaves','stocks',
+  'competitors','competitorProducts','attendancePoints','leaves','stocks','inventoryCycles',
   'priceObservations','competitorIntel','outletProposals',
 ]);
 let installed = false;
@@ -56,6 +57,16 @@ function emit(status, organizationId, extra = {}) {
   }).catch(() => {});
 }
 
+async function rememberCloudBaseline(organizationId = '') {
+  const orgId = String(organizationId || '');
+  if (!orgId) return false;
+  const cloud = await import('./cloud-data.js');
+  const state = cloud.operationalBaselineState();
+  if (!state?.snapshot) return false;
+  await setOfflineMeta(`${BASELINE_PREFIX}${orgId}`, state);
+  return true;
+}
+
 async function persistOperationalSnapshot(db) {
   if (recovering) return false;
   const organizationId = currentOrganizationId(db);
@@ -67,7 +78,21 @@ async function persistOperationalSnapshot(db) {
   rememberSignature(organizationId, nextSignature);
 
   const cloud = await import('./cloud-data.js');
-  const intent = cloud.captureOperationalIntent(db);
+  const status = cloud.cloudDataStatus();
+  let rememberedBase = null;
+  if (!status.ready) {
+    rememberedBase = await getOfflineMeta(`${BASELINE_PREFIX}${organizationId}`);
+    if (!rememberedBase?.snapshot) {
+      // First cold/offline observation becomes the safe three-way base. Offline
+      // login is only allowed for a previously cloud-linked identity, so this
+      // cache is the last known device copy, not a new tenant import.
+      rememberedBase = { revision:0, snapshot:clone(snapshot) };
+      await setOfflineMeta(`${BASELINE_PREFIX}${organizationId}`, rememberedBase);
+      return false;
+    }
+  }
+
+  const intent = cloud.captureOperationalIntent(db, rememberedBase);
   if (!intent?.changes?.length) return false;
 
   const id = `${SNAPSHOT_PREFIX}${organizationId}`;
@@ -216,9 +241,11 @@ export function installOfflineEngine() {
   window.addEventListener('proqtrack:cloud-status', event => {
     const orgId = String(event.detail?.organizationId || window.FT?.state?.account?.organizationId || '');
     if (!orgId) return;
-    if (event.detail?.status === 'synced') clearSyncedSnapshot(orgId).catch(() => {});
-    if (event.detail?.status === 'conflict') recoverCloudConflict(orgId).catch(() => {});
-    if (event.detail?.status === 'ready' && !recovering) replayLatestSnapshot(orgId).catch(() => {});
+    const status = String(event.detail?.status || '');
+    if (['ready','synced','refreshed'].includes(status)) rememberCloudBaseline(orgId).catch(() => {});
+    if (status === 'synced') clearSyncedSnapshot(orgId).catch(() => {});
+    if (status === 'conflict') recoverCloudConflict(orgId).catch(() => {});
+    if (status === 'ready' && !recovering) replayLatestSnapshot(orgId).catch(() => {});
   }, { signal });
   return true;
 }
