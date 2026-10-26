@@ -21,7 +21,7 @@ test('final Settings role matrix exposes only intended tabs', () => {
   }
 });
 
-test('manager project authority permits catalog metadata but blocks Attendance policy changes', () => {
+test('manager project authority permits catalog metadata, canonicalizes legacy source, and blocks cutoff changes', () => {
   const claims = {
     sub:'USR-MANAGER',
     role:'manager',
@@ -52,12 +52,14 @@ test('manager project authority permits catalog metadata but blocks Attendance p
     true,
   );
 
+  // Legacy "visit" is no longer a mutable policy. It is canonicalized to
+  // explicit employee attendance, so this is a harmless no-op.
   assert.equal(
     authorizeOperationalChange(claims,'projects',{
       op:'upsert',
       row:{ ...catalogRow, attendanceSourceMode:'visit' },
     },{ existing }),
-    false,
+    true,
   );
   assert.equal(
     authorizeOperationalChange(claims,'projects',{
