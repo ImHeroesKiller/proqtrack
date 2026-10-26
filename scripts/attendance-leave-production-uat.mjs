@@ -238,9 +238,12 @@ try {
   expect(projectAfterCatalog?.storeCatalog?.allowNewOutlet===false,'settings manager catalog update missing');
   expect(projectAfterCatalog?.attendanceSourceMode==='manual','settings manager catalog changed attendance source');
 
-  await sync('manager','settings-manager-attendance-policy-denied',[{
+  await sync('manager','settings-manager-legacy-attendance-source-canonicalized',[{
     entity:'projects',op:'upsert',row:{...projectAfterCatalog,attendanceSourceMode:'visit'}
-  }],403,'CHANGE_FORBIDDEN');
+  }]);
+  const managerAfterLegacySource=await bootstrap('manager');
+  const projectAfterLegacySource=managerAfterLegacySource.data?.projects?.find(row=>row.id===ids.manual);
+  expect(projectAfterLegacySource?.attendanceSourceMode==='manual','legacy Visit attendance source was not canonicalized to explicit employee attendance');
 
   await sync('manual','manual-checkin',[{entity:'attendance',op:'upsert',row:{id:ids.manualAtt,projectId:ids.manual,employeeId:ids.manualEmp,workDate:today,checkInAt:'08:05'}}]);
   await sync('manual','employee-self-only',[{entity:'attendance',op:'upsert',row:{id:`UAT-AL-ATT-OTHER-${runKey}`,projectId:ids.manual,employeeId:ids.otherEmp,workDate:today,checkInAt:'08:10'}}],403,'ATTENDANCE_SELF_ONLY');
