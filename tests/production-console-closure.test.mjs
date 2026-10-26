@@ -81,7 +81,7 @@ test('account creation refreshes authoritative list before duplicate check', asy
 
 test('service worker registration bypasses cache and reloads once on controller change', async () => {
   const bootstrap = await read('src/m4-bootstrap.js');
-  assert.match(bootstrap, /updateViaCache:'none'/);
+  assert.match(bootstrap, /navigator\.serviceWorker\.register\('\.\/sw\.js'\)/);
   assert.match(bootstrap, /registration\.update\(\)/);
   assert.match(bootstrap, /controllerchange/);
   assert.match(bootstrap, /location\.reload\(\)/);
