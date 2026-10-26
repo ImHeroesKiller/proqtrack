@@ -34,6 +34,7 @@ let revision = 0;
 let cutoverMode = 'pending';
 let baseline = {};
 let queuedSnapshot = null;
+let queuedLocalDb = null;
 let lastError = null;
 let suppressStorageHook = false;
 let storageHookInstalled = false;
@@ -47,6 +48,7 @@ let bridgeGeneration = 0;
 const bridgeControllers = new Set();
 const SYNC_CHUNK_SIZE = 50;
 const SYNC_DEBOUNCE_MS = 100;
+const AUTO_REBASE_MAX_ATTEMPTS = 4;
 
 const SESSION_AUTH_ERRORS = new Set([
   'AUTH_REQUIRED',
