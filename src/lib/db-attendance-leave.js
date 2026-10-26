@@ -100,7 +100,6 @@ export function createAttendanceLeaveDomain(deps) {
     );
     if (!assignment) throw new Error('Karyawan tidak memiliki assignment aktif pada project ini.');
     const policy = getProjectAttendancePolicy(projectId);
-    if (policy.sourceMode === 'visit') throw new Error('Absensi project ini dihitung otomatis dari kunjungan.');
 
     if ((db.leaves || []).some(row =>
       String(row.employeeId) === employeeId
