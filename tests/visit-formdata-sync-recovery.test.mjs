@@ -33,14 +33,14 @@ test('server recognizes only the legacy assignment cache invalidation signature'
   assert.match(worker, /sync_legacy_assignment_cache_invalidation_ignored/);
 });
 
-test('background sync rebases when server neutralizes stale legacy assignment replay', async () => {
+test('background sync refreshes silently when server neutralizes stale legacy assignment replay', async () => {
   const cloud = await read('src/lib/cloud-data.js');
-  const start = cloud.indexOf("const result = await apiJson('/api/core/sync'");
-  const block = cloud.slice(start, start + 1800);
-  const refreshIndex = block.indexOf('if (result?.refreshRequired)');
-  const applyIndex = block.indexOf('baseline = applyChanges(baseline, chunk)');
-  assert.ok(refreshIndex >= 0);
-  assert.ok(applyIndex > refreshIndex);
-  assert.match(block, /conflictKind:'server-refresh'/);
-  assert.match(block, /recoverable:true/);
+  const start = cloud.indexOf('async function syncTargetWithAutomaticRebase');
+  const end = cloud.indexOf('async function flush', start);
+  const block = cloud.slice(start, end);
+  assert.match(block, /if \(result\?\.refreshRequired\)/);
+  assert.match(block, /latestCloudSnapshot\(\)/);
+  assert.match(block, /sync_auto_recovered_server_refresh/);
+  assert.match(block, /recovery:result\.recovery/);
+  assert.doesNotMatch(block, /emitStatus\('conflict'/);
 });
