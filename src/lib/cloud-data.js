@@ -492,6 +492,117 @@ function applyChanges(target, changes) {
   return next;
 }
 
+function changeKey(row) {
+  return String(row?.id || (row?.projectId && row?.productId ? `${row.projectId}:${row.productId}` : ''));
+}
+
+function snapshotRow(snapshot = {}, entity = '', row = null) {
+  const key = changeKey(row);
+  if (!key) return null;
+  return asMap(snapshot?.[entity] || []).get(key) || null;
+}
+
+function mergeRowThreeWay(baseRow, localRow, remoteRow) {
+  if (!baseRow) {
+    if (!remoteRow) return { row:clone(localRow), conflicts:0, appliedFields:Object.keys(localRow || {}).length };
+    return { row:clone(remoteRow), conflicts:1, appliedFields:0 };
+  }
+  if (!remoteRow) return { row:null, conflicts:1, appliedFields:0 };
+
+  const merged = clone(remoteRow);
+  let conflicts = 0;
+  let appliedFields = 0;
+  const keys = new Set([...Object.keys(baseRow || {}), ...Object.keys(localRow || {})]);
+  for (const key of keys) {
+    const baseValue = baseRow?.[key];
+    const localValue = localRow?.[key];
+    const remoteValue = remoteRow?.[key];
+    const localChanged = stable(baseValue) !== stable(localValue);
+    if (!localChanged) continue;
+    const remoteChanged = stable(baseValue) !== stable(remoteValue);
+    if (remoteChanged && stable(localValue) !== stable(remoteValue)) {
+      conflicts += 1;
+      continue;
+    }
+    if (localValue === undefined) delete merged[key];
+    else merged[key] = clone(localValue);
+    appliedFields += 1;
+  }
+  return { row:merged, conflicts, appliedFields };
+}
+
+function rebaseSnapshotIntent(baseSnapshot = {}, localSnapshot = {}, remoteSnapshot = {}) {
+  const intent = diffSnapshots(baseSnapshot, localSnapshot);
+  const rebased = [];
+  let conflictFields = 0;
+  let droppedChanges = 0;
+
+  for (const change of intent) {
+    const baseRow = snapshotRow(baseSnapshot, change.entity, change.row);
+    const remoteRow = snapshotRow(remoteSnapshot, change.entity, change.row);
+
+    if (change.op === 'delete') {
+      if (!remoteRow) continue;
+      if (baseRow && stable(remoteRow) === stable(baseRow)) {
+        rebased.push({ entity:change.entity, op:'delete', row:clone(remoteRow) });
+      } else {
+        droppedChanges += 1;
+      }
+      continue;
+    }
+
+    const merged = mergeRowThreeWay(baseRow, change.row, remoteRow);
+    conflictFields += merged.conflicts;
+    if (!merged.row) {
+      droppedChanges += 1;
+      continue;
+    }
+    if (!remoteRow || stable(merged.row) !== stable(remoteRow)) {
+      rebased.push({ entity:change.entity, op:'upsert', row:merged.row });
+    } else if (merged.appliedFields === 0 && baseRow) {
+      droppedChanges += 1;
+    }
+  }
+
+  return {
+    changes:rebased,
+    mergedSnapshot:applyChanges(remoteSnapshot, rebased),
+    intentCount:intent.length,
+    conflictFields,
+    droppedChanges,
+  };
+}
+
+async function latestCloudSnapshot() {
+  const latest = await apiJson('/api/core/bootstrap');
+  return {
+    revision:Number(latest?.revision || revision),
+    snapshot:snapshotCollections(latest?.data || {}),
+  };
+}
+
+function applyMergedSnapshotToLocal(localDb, snapshot) {
+  if (!localDb || !snapshot) return;
+  applyRemoteDataToLocal(localDb, snapshot);
+}
+
+async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'REVISION_CONFLICT') {
+  const latest = await latestCloudSnapshot();
+  const rebased = rebaseSnapshotIntent(baseSnapshot, localTarget, latest.snapshot);
+  revision = latest.revision;
+  baseline = latest.snapshot;
+  applyMergedSnapshotToLocal(localDb, rebased.mergedSnapshot);
+  console.info('sync_auto_rebased', {
+    reason,
+    revision,
+    intentCount:rebased.intentCount,
+    reapplied:rebased.changes.length,
+    conflictFields:rebased.conflictFields,
+    droppedChanges:rebased.droppedChanges,
+  });
+  return rebased;
+}
+
 function emitStatus(status, detail = {}) {
   if (typeof window === 'undefined' || typeof CustomEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent('proqtrack:cloud-status', {
