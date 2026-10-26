@@ -603,16 +603,29 @@ async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'RE
   return rebased;
 }
 
-export function captureOperationalIntent(localDb = {}) {
+export function operationalBaselineState() {
+  return {
+    revision,
+    snapshot:clone(baseline),
+  };
+}
+
+export function captureOperationalIntent(localDb = {}, rememberedBase = null) {
+  const sourceBaseline = rememberedBase?.snapshot
+    ? snapshotCollections(rememberedBase.snapshot)
+    : baseline;
+  const sourceRevision = rememberedBase?.snapshot
+    ? Number(rememberedBase.revision || 0)
+    : revision;
   const current = snapshotCollections(localDb);
-  const changes = diffSnapshots(baseline, current).map(change => ({
+  const changes = diffSnapshots(sourceBaseline, current).map(change => ({
     entity:change.entity,
     op:change.op,
     row:clone(change.row),
-    baseRow:clone(snapshotRow(baseline, change.entity, change.row)),
+    baseRow:clone(snapshotRow(sourceBaseline, change.entity, change.row)),
   }));
   return {
-    baseRevision:revision,
+    baseRevision:sourceRevision,
     changes,
   };
 }
