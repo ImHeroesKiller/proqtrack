@@ -23,7 +23,9 @@ test('P3A attendance and leave API remains stable behind db facade', async () =>
 test('P3A attendance leave domain preserves lifecycle and authority rules', async () => {
   const domain = await read('src/lib/db-attendance-leave.js');
   assert.match(domain, /assertCanAccessEmployee\(employeeId\)/);
-  assert.match(domain, /sourceMode === 'visit'/);
+  assert.doesNotMatch(domain, /sourceMode === 'visit'/);
+  // Historical Visit-derived rows remain immutable for audit compatibility,
+  // while new attendance can no longer be sourced from Visit.
   assert.match(domain, /Absensi turunan Visit harus dikoreksi dari workflow Visit/);
   assert.match(domain, /Pengajuan tidak boleh direview oleh pengaju sendiri/);
   assert.match(domain, /attendanceConflict/);

@@ -331,10 +331,9 @@ const canonicalAttendanceStatus = value => ({
 
 function projectAttendancePolicy(project = {}) {
   const meta = parseMetadata(project?.metadata_json);
-  const sourceMode = str(meta.attendanceSourceMode) === 'visit' ? 'visit' : 'manual';
   const rawLateAfter = str(meta.attendanceLateAfter || '09:00');
   const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(rawLateAfter) ? rawLateAfter : '09:00';
-  return { sourceMode, lateAfter };
+  return { sourceMode:'manual', lateAfter };
 }
 
 function attendanceClock(value = '') {
@@ -429,7 +428,6 @@ async function validateAttendanceAuthorityMutation(env, organizationId, claims, 
 
   const policy = projectAttendancePolicy(project);
   if (!existing) {
-    if (policy.sourceMode === 'visit') return { error:'ATTENDANCE_VISIT_DERIVED_ONLY', status:409 };
     const leave = await env.DB.prepare(
       "SELECT id FROM core_leaves WHERE organization_id=? AND employee_id=? AND status='approved' AND start_date<=? AND end_date>=? LIMIT 1"
     ).bind(organizationId,employeeId,workDate,workDate).first();
@@ -658,65 +656,9 @@ async function validateLeaveAuthorityMutation(env, organizationId, claims, row, 
   return null;
 }
 
-async function visitAttendanceStatements(env, organizationId, row) {
-  const nextStatus = canonicalVisitStatus(row.status || 'planned');
-  if (!['in_progress','completed'].includes(nextStatus)) return [];
-  const projectId = str(row.projectId || row.project_id);
-  const employeeId = str(row.employeeId || row.employee_id);
-  const project = await env.DB.prepare(
-    'SELECT metadata_json FROM core_projects WHERE organization_id=? AND id=? LIMIT 1'
-  ).bind(organizationId,projectId).first();
-  if (!project || projectAttendancePolicy(project).sourceMode !== 'visit') return [];
-
-  const workDate = str(row.date || row.visitDate || row.scheduledAt).slice(0,10);
-  const checkInAt = str(row.checkInTime || row.checkInAt || row.startedAt || row.checkInCapturedAt);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || !checkInAt) return [];
-  const policy = projectAttendancePolicy(project);
-  const id = `ATT-VIS-${str(row.id)}`;
-  const metadataJson = JSON.stringify({
-    attendanceSource:'visit',
-    provenance:'visit',
-    visitId:str(row.id),
-    firstVisitId:str(row.id),
-    locationId:str(row.outletId),
-    locationType:'store',
-    checkInLocation:str(row.outletId),
-  });
-  const statements = [env.DB.prepare(
-    `INSERT OR IGNORE INTO core_attendance(
-      id,organization_id,project_id,employee_id,work_date,status,check_in_at,
-      check_in_latitude,check_in_longitude,idempotency_key,metadata_json,row_version,updated_at
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,1,CURRENT_TIMESTAMP)`
-  ).bind(
-    id,organizationId,projectId,employeeId,workDate,
-    attendanceStatusAt(checkInAt,policy.lateAfter),checkInAt,
-    num(row.checkInLat ?? row.startLatitude ?? row.lat),
-    num(row.checkInLng ?? row.startLongitude ?? row.lng),
-    `attendance:visit:${projectId}:${employeeId}:${workDate}`,
-    metadataJson
-  )];
-
-  if (nextStatus === 'completed') {
-    const checkOutAt = str(row.checkOutTime || row.checkOutAt || row.completedAt || row.checkOutCapturedAt);
-    if (checkOutAt) {
-      statements.push(env.DB.prepare(
-        `UPDATE core_attendance
-         SET check_out_at=?,
-             check_out_latitude=?,
-             check_out_longitude=?,
-             row_version=row_version+1,
-             updated_at=CURRENT_TIMESTAMP
-         WHERE organization_id=? AND project_id=? AND employee_id=? AND work_date=?
-           AND json_extract(metadata_json,'$.attendanceSource')='visit'`
-      ).bind(
-        checkOutAt,
-        num(row.checkOutLat ?? row.endLatitude),
-        num(row.checkOutLng ?? row.endLongitude),
-        organizationId,projectId,employeeId,workDate
-      ));
-    }
-  }
-  return statements;
+async function visitAttendanceStatements() {
+  // Visit lifecycle and employee attendance are intentionally independent.
+  return [];
 }
 
 export function operationalTransitionAllowed(claims, entity, change, context = {}) {
@@ -997,8 +939,8 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       // Attendance policy is organization-admin controlled and must not be changed through
       // a crafted project sync request, even though the UI hides the Attendance tab.
       const currentMeta = parseMetadata(context.existing.metadata_json);
-      const currentAttendanceSource = str(currentMeta.attendanceSourceMode || 'manual') === 'visit' ? 'visit' : 'manual';
-      const nextAttendanceSource = str(row.attendanceSourceMode || currentAttendanceSource) === 'visit' ? 'visit' : 'manual';
+      const currentAttendanceSource = 'manual';
+      const nextAttendanceSource = 'manual';
       const currentLateAfter = str(currentMeta.attendanceLateAfter || '09:00');
       const nextLateAfter = str(row.attendanceLateAfter || currentLateAfter);
       if (nextAttendanceSource !== currentAttendanceSource || nextLateAfter !== currentLateAfter) return false;
@@ -1040,7 +982,7 @@ function normalizeRow(entity, row, organizationId, extras = {}) {
     case 'projects': {
       const uiStatus = safeStatus(row.status, ['draft','active','paused','closed','archived','planning','on_hold','completed','cancelled'], 'active');
       const status = ({ planning:'draft', on_hold:'paused', completed:'closed', cancelled:'closed' }[uiStatus] || uiStatus);
-      const attendanceSourceMode = str(row.attendanceSourceMode) === 'visit' ? 'visit' : 'manual';
+      const attendanceSourceMode = 'manual';
       const attendanceLateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(str(row.attendanceLateAfter)) ? str(row.attendanceLateAfter) : '09:00';
       return { ...base, id: str(row.id), clientId: str(row.clientId), code: str(row.code || row.id), name: str(row.name), uiStatus, status, attendanceSourceMode, attendanceLateAfter };
     }
@@ -1267,7 +1209,7 @@ function decodeRows(entity, rows, relationMap = new Map()) {
     const common = { ...meta, id: dbRow.id || meta.id, organizationId: dbRow.organization_id || meta.organizationId, rowVersion: Number(dbRow.row_version || meta.rowVersion || 1) };
     switch (entity) {
       case 'clients': return { ...common, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status };
-      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate };
+      case 'projects': return { ...common, clientId: dbRow.client_id, code: dbRow.code, name: dbRow.name, status: meta.uiStatus || dbRow.status, startDate: dbRow.starts_on || meta.startDate, endDate: dbRow.ends_on || meta.endDate, attendanceSourceMode:'manual' };
       case 'employees': return { ...common, authUserId: dbRow.auth_user_id || meta.authUserId, employeeCode: dbRow.employee_code, name: dbRow.full_name, email: dbRow.email, phone: dbRow.phone, status: dbRow.employment_status };
       case 'projectAssignments': return { ...common, projectId: dbRow.project_id, employeeId: dbRow.employee_id, supervisorUserId: dbRow.supervisor_user_id, positionName: dbRow.position_name, status: dbRow.status, startDate: dbRow.starts_on, endDate: dbRow.ends_on };
       case 'outlets': return { ...common, clientId: dbRow.client_id, outletNumber: dbRow.code, code: dbRow.code, name: dbRow.name, address: dbRow.address, lat: dbRow.latitude, lng: dbRow.longitude, status: dbRow.status, projectIds: relationMap.get(str(dbRow.id)) || meta.projectIds || [] };
@@ -1607,20 +1549,10 @@ async function validateProjectMutation(env, organizationId, row, existing = null
   if (!code) return { error:'PROJECT_CODE_REQUIRED', status:422 };
   if (!clientId) return { error:'PROJECT_CLIENT_REQUIRED', status:422 };
   if (!['draft','active','on_hold','completed','cancelled'].includes(nextStatus)) return { error:'PROJECT_INVALID_STATUS', status:422 };
-  const attendanceSourceMode = str(row.attendanceSourceMode || parseMetadata(existing?.metadata_json)?.attendanceSourceMode || 'manual');
+  const attendanceSourceMode = 'manual';
+  row.attendanceSourceMode = 'manual';
   const attendanceLateAfter = str(row.attendanceLateAfter || parseMetadata(existing?.metadata_json)?.attendanceLateAfter || '09:00');
-  if (!['manual','visit'].includes(attendanceSourceMode)) return { error:'PROJECT_INVALID_ATTENDANCE_SOURCE', status:422 };
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(attendanceLateAfter)) return { error:'PROJECT_INVALID_ATTENDANCE_CUTOFF', status:422 };
-  if (existing) {
-    const currentAttendanceSource = projectAttendancePolicy(existing).sourceMode;
-    if (currentAttendanceSource !== attendanceSourceMode) {
-      const today = await organizationToday(env,organizationId);
-      const attendanceInUse = await env.DB.prepare(
-        'SELECT id FROM core_attendance WHERE organization_id=? AND project_id=? AND work_date=? LIMIT 1'
-      ).bind(organizationId,id,today).first();
-      if (attendanceInUse) return { error:'PROJECT_ATTENDANCE_SOURCE_IN_USE', status:409 };
-    }
-  }
 
   const client = await env.DB.prepare(
     'SELECT id FROM core_clients WHERE organization_id=? AND id=? LIMIT 1'

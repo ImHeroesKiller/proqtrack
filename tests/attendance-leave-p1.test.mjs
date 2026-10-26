@@ -36,11 +36,12 @@ test('P1 attendance correction requires governed audit trail', () => {
   assert.match(app, /FT\.saveAttendanceCorrection/);
 });
 
-test('P1 visit-derived attendance remains read-only but receives visit checkout', () => {
-  assert.match(worker, /ATTENDANCE_VISIT_DERIVED_IMMUTABLE/);
-  assert.match(worker, /json_extract\(metadata_json,'\$\.attendanceSource'\)='visit'/);
-  assert.match(worker, /SET check_out_at=\?/);
-  assert.match(app, /Attendance dari Visit harus dikoreksi melalui workflow Visit/);
+test('P1 Visit lifecycle is independent from employee attendance', () => {
+  assert.match(worker, /async function visitAttendanceStatements\(\) \{[\s\S]*return \[\]/);
+  assert.match(worker, /sourceMode:'manual'/);
+  assert.doesNotMatch(worker, /ATTENDANCE_VISIT_DERIVED_ONLY/);
+  assert.match(field, /Check In Karyawan/);
+  assert.match(field, /Attendance karyawan terpisah dari Visit/);
 });
 
 test('P1 approved leave blocks attendance and visit check-in', () => {
@@ -67,8 +68,8 @@ test('P1 employee can withdraw pending leave without deleting audit history', ()
   assert.match(app, /FT\.withdrawMyLeave/);
 });
 
-test('P1 source mode cannot change after attendance starts today', () => {
-  assert.match(worker, /PROJECT_ATTENDANCE_SOURCE_IN_USE/);
-  assert.match(worker, /currentAttendanceSource !== attendanceSourceMode/);
-  assert.match(projects, /PROJECT_ATTENDANCE_SOURCE_IN_USE/);
+test('P1 attendance source is fixed to explicit employee check-in', () => {
+  assert.match(worker, /row\.attendanceSourceMode = 'manual'/);
+  assert.match(db, /const sourceMode = 'manual'/);
+  assert.doesNotMatch(worker, /PROJECT_ATTENDANCE_SOURCE_IN_USE/);
 });

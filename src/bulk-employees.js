@@ -97,7 +97,7 @@ function download(name, text, type = 'text/csv;charset=utf-8') {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function strongInitialPassword(length = 20) {
+function strongInitialPassword(length = 8) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*-_';
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   const chars = ['A','a','7','!'];

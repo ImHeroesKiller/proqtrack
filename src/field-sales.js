@@ -116,11 +116,8 @@ export function attendanceCheckinCard() {
   const projects = getEmployeeAttendanceProjects(id);
   const projectMap = Object.fromEntries(projects.map(project => [String(project.id),project]));
   const recordedProjectIds = new Set(attendance.map(row => String(row.projectId || '')));
-  const manualProjects = projects.filter(project =>
-    getProjectAttendancePolicy(project.id).sourceMode === 'manual'
-    && !recordedProjectIds.has(String(project.id))
-  );
-  const visitProjects = projects.filter(project => getProjectAttendancePolicy(project.id).sourceMode === 'visit');
+  const manualProjects = projects.filter(project => !recordedProjectIds.has(String(project.id)));
+  const visitProjects = [];
   const firstStore = getVisitsOnDate(today, id)[0];
   const store = firstStore ? getOutlets().find(o => o.id === firstStore.outletId) : null;
   const assigned = emp?.attendancePointId
@@ -156,15 +153,13 @@ export function attendanceCheckinCard() {
             <div class="am-muted">Check-in ${esc(att.checkInTime || att.checkInAt || '-')} · Check-out ${esc(att.checkOutTime || att.checkOutAt || 'belum')} · ${esc(source)}</div>
           </div>
           ${attendanceSourceKey(att) !== 'visit' && !att.checkOutAt && !att.checkOutTime
-            ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.checkOutAttendance('${att.id}')">Check out</button>`
+            ? `<button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.checkOutAttendance('${att.id}')">Check Out Karyawan</button>`
             : statusBadge(att.status)}
         </div>`;
       }).join('')}</div>`
     : '';
 
-  const visitHint = visitProjects.length
-    ? `<div class="am-muted" style="margin:0 0 10px">Absensi otomatis dari check-in Visit: ${visitProjects.map(project => esc(project.code || project.name || project.id)).join(', ')}.</div>`
-    : '';
+  const visitHint = '<div class="am-muted" style="margin:0 0 10px">Attendance karyawan terpisah dari Visit. Check-in dilakukan langsung oleh karyawan.</div>';
 
   if (!projects.length) {
     return `<div class="empty-state"><h3>Belum ada project aktif</h3><p>Attendance mengikuti assignment project aktif.</p></div>`;
@@ -190,7 +185,7 @@ export function attendanceCheckinCard() {
             ${options}
           </select>
         </div>
-        <button class="btn btn-primary" type="submit">Check in</button>
+        <button class="btn btn-primary" type="submit">Check In Karyawan</button>
       </form>`
       : (!manualProjects.length && !visitProjects.length ? '<div class="am-muted">Attendance hari ini sudah tercatat untuk seluruh project manual.</div>' : '')}
   </div>`;
@@ -326,10 +321,6 @@ window.FS = {
     const id = empId();
     const submit = form.querySelector('button[type="submit"]');
     if (!id || !projectId) { window.showToast?.('Project attendance tidak valid.', 'error'); return; }
-    if (getProjectAttendancePolicy(projectId).sourceMode !== 'manual') {
-      window.showToast?.('Attendance project ini dihitung otomatis dari Visit.', 'error');
-      return;
-    }
     const timeZone = getOrganization()?.timezone || 'Asia/Jakarta';
     const checkInTime = currentTenantTimeHHMM(timeZone);
     let cloudCommitted = false;

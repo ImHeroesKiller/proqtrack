@@ -390,9 +390,8 @@ export function saveProjectAttendanceSettings(projectId, data = {}) {
   const db = getDB();
   const project = (db.projects || []).find(p => String(p.id) === String(projectId));
   if (!project) throw new Error('Project tidak ditemukan.');
-  const sourceMode = data.sourceMode === 'visit' ? 'visit' : data.sourceMode === 'manual' ? 'manual' : '';
+  const sourceMode = 'manual';
   const lateAfter = String(data.lateAfter || '').trim();
-  if (!sourceMode) throw new Error('Sumber attendance project tidak valid.');
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(lateAfter)) throw new Error('Batas waktu terlambat tidak valid.');
   project.attendanceSourceMode = sourceMode;
   project.attendanceLateAfter = lateAfter;
@@ -1096,7 +1095,7 @@ export function getAttendancePolicy() {
 
 export function getProjectAttendancePolicy(projectId) {
   const project = (getDB().projects || []).find(row => String(row.id) === String(projectId)) || {};
-  const sourceMode = project.attendanceSourceMode === 'visit' ? 'visit' : 'manual';
+  const sourceMode = 'manual';
   const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(project.attendanceLateAfter || ''))
     ? String(project.attendanceLateAfter)
     : '09:00';
