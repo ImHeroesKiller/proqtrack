@@ -45,8 +45,9 @@ test('reference conflicts enter authoritative conflict recovery instead of gener
 
 test('employee sync never links a global auth user outside the active organization', async () => {
   const operations = await read('worker/operations.js');
-  const start = operations.indexOf("if (entity === 'employees')");
+  const start = operations.indexOf('// Preserve an existing tenant-scoped auth link');
   const end = operations.indexOf("statements.push(...upsertStatements", start);
+  assert.ok(start >= 0 && end > start, 'employee auth resolution block must exist');
   const employeeAuth = operations.slice(start, end);
   assert.match(employeeAuth, /existingAuthUserId/);
   assert.match(employeeAuth, /JOIN core_organization_users ou/);
