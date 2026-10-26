@@ -977,7 +977,7 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
       const result = await apiJson('/api/core/sync', {
         method:'POST',
         headers:{ 'idempotency-key':mutationId },
-        body:JSON.stringify({ mutationId, baseRevision:revision, changes:chunk }),
+        body:JSON.stringify({ mutationId, baseRevision:revision, changes:chunk, syncMode:source }),
       });
 
       revision = Number(result.revision ?? revision);
@@ -986,6 +986,30 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
         const latest = await latestCloudSnapshot();
         revision = latest.revision;
         baseline = latest.snapshot;
+
+        const conflictEntity = String(result?.conflict?.entity || '');
+        const conflictId = String(result?.conflict?.id || '');
+        if (conflictEntity && conflictId) {
+          const rejected = chunk.find(change =>
+            String(change?.entity || '') === conflictEntity
+            && changeKey(change?.row) === conflictId
+          );
+          if (rejected) {
+            target = cloudWinTargetForChange(target, latest.snapshot, rejected);
+            applyMergedSnapshotToLocal(localDb, target);
+            totalDroppedChanges += 1;
+            recovered = true;
+            console.info('sync_background_business_conflict_cloud_wins', {
+              source,
+              code:String(result?.conflict?.code || ''),
+              entity:conflictEntity,
+              id:conflictId,
+              revision,
+            });
+            continue;
+          }
+        }
+
         target = latest.snapshot;
         applyMergedSnapshotToLocal(localDb, target);
         console.info('sync_auto_recovered_server_refresh', {
