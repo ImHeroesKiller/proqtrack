@@ -2066,11 +2066,21 @@ window.FT.openVisitModal = function() {
 
 let visitCreateInFlight = false;
 
+function submitFormFromEvent(event) {
+  const target = event?.target;
+  if (target?.tagName === 'FORM') return target;
+  return target?.closest?.('form') || null;
+}
+
 window.FT.createVisit = function(e) {
   e.preventDefault();
   if (visitCreateInFlight) return;
-  const form = e.currentTarget || e.target;
-  const submit = form?.querySelector('button[type="submit"]');
+  const form = submitFormFromEvent(e);
+  if (!form) {
+    showToast('Form kunjungan tidak valid. Muat ulang halaman lalu coba kembali.', 'error');
+    return;
+  }
+  const submit = form.querySelector('button[type="submit"]');
   visitCreateInFlight = true;
   if (submit) submit.disabled = true;
   try {
@@ -2146,8 +2156,12 @@ window.FT.submitVisitCorrection = async function(event, id) {
   if (visitCorrectionInFlight) return;
   const visit = getVisits().find(v => v.id === id);
   if (!visit) return showToast('Kunjungan tidak ditemukan.', 'error');
-  const form = event.currentTarget || event.target;
-  const submit = form?.querySelector('button[type="submit"]');
+  const form = submitFormFromEvent(event);
+  if (!form) {
+    showToast('Form koreksi kunjungan tidak valid. Muat ulang halaman lalu coba kembali.', 'error');
+    return;
+  }
+  const submit = form.querySelector('button[type="submit"]');
   const data = Object.fromEntries(new FormData(form));
   const reason = String(data.reason || '').trim();
   if (reason.length < 10) return showToast('Alasan koreksi minimal 10 karakter.', 'error');
