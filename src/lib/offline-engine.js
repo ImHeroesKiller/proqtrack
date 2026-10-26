@@ -1,4 +1,4 @@
-import { enqueueMutation, listMutations, patchMutation, deleteMutation, offlineQueueStats } from './offline-store.js';
+import { enqueueMutation, listMutations, deleteMutation, offlineQueueStats } from './offline-store.js';
 
 const DB_KEY = 'proqtrack_db_v6';
 const SNAPSHOT_PREFIX = 'offline-snapshot:';
@@ -146,25 +146,22 @@ export async function discardHeldSnapshot(organizationId = '') {
   const orgId = String(organizationId || window.FT?.state?.account?.organizationId || '');
   if (!orgId) return false;
   const item = await snapshotItem(orgId);
-  if (!item?.requiresReview) return false;
+  if (!item) return false;
   await deleteMutation(`${SNAPSHOT_PREFIX}${orgId}`);
-  try {
-    const { getDB } = await import('./db.js');
-    rememberSignature(orgId, signature(operationalSnapshot(getDB())));
-  } catch { /* cache signature is best effort */ }
-  emit('conflict-resolved-server', orgId, { resolution: 'server-wins' });
+  emit('conflict-auto-resolved', orgId, { resolution:'server-wins' });
   return true;
 }
 
 export async function heldConflictStatus(organizationId = '') {
   const orgId = String(organizationId || window.FT?.state?.account?.organizationId || '');
-  if (!orgId) return { held: false };
+  if (!orgId) return { held:false };
   const item = await snapshotItem(orgId);
   return {
-    held: Boolean(item?.requiresReview),
-    organizationId: orgId,
-    createdAt: item?.createdAt || null,
-    updatedAt: item?.updatedAt || null,
+    held:false,
+    pending:Boolean(item),
+    organizationId:orgId,
+    createdAt:item?.createdAt || null,
+    updatedAt:item?.updatedAt || null,
   };
 }
 
@@ -176,27 +173,26 @@ export async function recoverCloudConflict(organizationId = '') {
     const orgId = String(organizationId || account?.organizationId || '');
     if (!account || !orgId) return false;
     if (account.role !== 'superadmin' && account.organizationId && String(account.organizationId) !== orgId) return false;
+
     const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
     const db = getDB();
     const pending = await snapshotItem(orgId);
-    if (pending) {
-      await patchMutation(pending.id, {
-        status: 'blocked',
-        requiresReview: true,
-        conflictHeldAt: Date.now(),
-      });
-    }
+
     const bootstrap = await cloud.bootstrapOperationalData(db, account);
-    if (bootstrap.mode === 'cloud' && bootstrap.data) cloud.applyRemoteDataToLocal(db, bootstrap.data);
-    // Fail closed: never auto-overwrite a newer server revision with a whole
-    // device snapshot. Keep the offline snapshot durable for explicit review.
-    emit(pending ? 'conflict-held' : 'conflict-no-local-change', orgId, {
-      pendingSnapshot: !!pending,
-      resolution: pending ? 'manual' : 'server-wins',
+    if (bootstrap.mode === 'cloud' && bootstrap.data) {
+      cloud.applyRemoteDataToLocal(db, bootstrap.data);
+    }
+
+    if (pending) await deleteMutation(`${SNAPSHOT_PREFIX}${orgId}`);
+    rememberSignature(orgId, signature(operationalSnapshot(db)));
+    emit('conflict-auto-resolved', orgId, {
+      pendingSnapshot:Boolean(pending),
+      resolution:'server-wins',
+      automatic:true,
     });
-    return false;
+    return true;
   } catch (error) {
-    emit('conflict-recovery-failed', organizationId, { error: error?.message || String(error) });
+    emit('conflict-recovery-failed', organizationId, { error:error?.message || String(error) });
     return false;
   } finally {
     recovering = false;
