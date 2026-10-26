@@ -12,25 +12,25 @@ test('final Attendance Leave production UAT script is syntax-valid',()=>{
   execFileSync(process.execPath,['--check',fileURLToPath(scriptUrl)],{stdio:'pipe'});
 });
 
-test('final UAT covers roles and both attendance sources',()=>{
+test('final UAT covers roles and explicit employee attendance',()=>{
   assert.match(script,/await session\('manager'/);
   assert.match(script,/await session\('supervisor'/);
   assert.match(script,/await session\('manual'/);
   assert.match(script,/await session\('visit'/);
   assert.match(script,/attendanceSourceMode":"manual"/);
-  assert.match(script,/attendanceSourceMode":"visit"/);
 });
 
-test('final UAT covers Attendance lifecycle and source governance',()=>{
+test('final UAT covers Attendance lifecycle independent from Visit',()=>{
   assert.match(script,/manual-checkin/);
   assert.match(script,/manual-checkout/);
   assert.match(script,/employee-correction-denied/);
   assert.match(script,/supervisor-correction/);
   assert.match(script,/manager-correction/);
-  assert.match(script,/visit-direct-attendance-denied/);
+  assert.match(script,/employee-explicit-checkin/);
   assert.match(script,/visit-checkin/);
   assert.match(script,/visit-checkout/);
-  assert.match(script,/ATTENDANCE_VISIT_DERIVED_IMMUTABLE/);
+  assert.match(script,/visit check-in must not create employee attendance/);
+  assert.match(script,/employee-explicit-checkout/);
 });
 
 test('final UAT covers Leave lifecycle governance and conflicts',()=>{
