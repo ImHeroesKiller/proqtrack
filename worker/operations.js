@@ -2595,6 +2595,21 @@ export async function handleOperationalRoute(request, env, claims, url = new URL
   if (!claims?.organizationId) return json({ error: 'ORGANIZATION_REQUIRED' }, 409);
   if (url.pathname === '/api/core/bootstrap' && request.method === 'GET') return handleBootstrap(request, env, claims);
   if (url.pathname === '/api/core/import' && request.method === 'POST') return handleImport(request, env, claims);
-  if (url.pathname === '/api/core/sync' && request.method === 'POST') return handleSync(request, env, claims, bulkReceipt);
+  if (url.pathname === '/api/core/sync' && request.method === 'POST') {
+    const response = await handleSync(request, env, claims, bulkReceipt);
+    if (response.status >= 400) {
+      let payload = {};
+      try { payload = await response.clone().json(); } catch { payload = {}; }
+      console.warn('sync_rejected', {
+        organizationId:claims.organizationId,
+        actorId:claims.sub,
+        status:response.status,
+        code:str(payload?.error),
+        entity:str(payload?.entity),
+        revision:Number.isFinite(Number(payload?.revision)) ? Number(payload.revision) : null,
+      });
+    }
+    return response;
+  }
   return json({ error: 'NOT_FOUND' }, 404);
 }
