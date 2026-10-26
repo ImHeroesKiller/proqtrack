@@ -1668,12 +1668,40 @@ async function validateProjectMutation(env, organizationId, row, existing = null
 
 
 async function validateEmployeeMutation(env, organizationId, row, existing = null, context = {}) {
+  const op = str(context.op || 'upsert');
   const id = str(row.id || existing?.id);
   const code = str(row.employeeCode || row.code || existing?.employee_code || id);
   const name = str(row.name || row.fullName || existing?.full_name);
   const email = str(row.email || existing?.email).toLowerCase();
   const status = str(row.status || existing?.employment_status || 'active');
   if (!id) return { error:'EMPLOYEE_ID_REQUIRED', status:400 };
+
+  if (op === 'delete') {
+    if (!existing) return null;
+    const refs = await env.DB.prepare(`
+      SELECT
+        EXISTS(SELECT 1 FROM core_employee_project_assignments WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_visits WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_attendance WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_leaves WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_product_sales WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_survey_responses WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_field_evidence WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_price_observations WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_competitor_intel WHERE organization_id=? AND employee_id=? LIMIT 1) +
+        EXISTS(SELECT 1 FROM core_inventory_cycles WHERE organization_id=? AND employee_id=? LIMIT 1)
+        AS reference_count
+    `).bind(
+      organizationId,id, organizationId,id, organizationId,id, organizationId,id, organizationId,id,
+      organizationId,id, organizationId,id, organizationId,id, organizationId,id, organizationId,id,
+    ).first();
+    const referenceCount = Number(refs?.reference_count || 0);
+    if (referenceCount > 0) {
+      return { error:'EMPLOYEE_REFERENCED_USE_INACTIVE', status:409, referenceCount };
+    }
+    return null;
+  }
+
   if (!code) return { error:'EMPLOYEE_CODE_REQUIRED', status:422 };
   if (!name) return { error:'EMPLOYEE_NAME_REQUIRED', status:422 };
   if (!['active','inactive','terminated'].includes(status)) return { error:'EMPLOYEE_INVALID_STATUS', status:422 };
@@ -2476,9 +2504,15 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       const projectError = await validateProjectMutation(env, organizationId, row, existing, { batchAssignments });
       if (projectError) return json({ error:projectError.error, entity, id:row.id || null, currentStatus:projectError.currentStatus, nextStatus:projectError.nextStatus }, projectError.status || 422);
     }
-    if (entity === 'employees' && op === 'upsert') {
-      const employeeError = await validateEmployeeMutation(env, organizationId, row, existing, { batchAssignments });
-      if (employeeError) return json({ error:employeeError.error, entity, id:row.id || null, remainingAssignments:employeeError.remainingAssignments }, employeeError.status || 422);
+    if (entity === 'employees') {
+      const employeeError = await validateEmployeeMutation(env, organizationId, row, existing, { batchAssignments, op });
+      if (employeeError) return json({
+        error:employeeError.error,
+        entity,
+        id:row.id || null,
+        remainingAssignments:employeeError.remainingAssignments,
+        referenceCount:employeeError.referenceCount,
+      }, employeeError.status || 422);
     }
     if (entity === 'outlets') {
       const outletError = await validateOutletMutation(env, organizationId, row, existing, { op, existingProjectIds });
