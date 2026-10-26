@@ -32,7 +32,8 @@ test('background reference conflict is auto-rebased and never opens a manual rec
   ]);
   assert.match(bridge, /syncTargetWithAutomaticRebase/);
   assert.match(bridge, /SYNC_REFERENCE_CONFLICT/);
-  assert.match(bridge, /sync_invalid_reference_cloud_wins/);\n  assert.match(bridge, /AUTO_REBASE_CONTENTION_RETRY/);
+  assert.match(bridge, /sync_invalid_reference_cloud_wins/);
+  assert.match(bridge, /AUTO_REBASE_CONTENTION_RETRY/);
   assert.doesNotMatch(app, /detail\.conflictKind === 'reference'/);
   assert.doesNotMatch(app, /Perubahan lokal tidak lagi valid/);
   assert.doesNotMatch(bootstrap, /Perubahan perlu ditinjau/);
