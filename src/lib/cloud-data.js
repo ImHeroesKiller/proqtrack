@@ -586,6 +586,14 @@ function applyMergedSnapshotToLocal(localDb, snapshot) {
   applyRemoteDataToLocal(localDb, snapshot);
 }
 
+function cloudWinTargetForChange(targetSnapshot, cloudSnapshot, change) {
+  const remoteRow = snapshotRow(cloudSnapshot, change?.entity, change?.row);
+  if (remoteRow) {
+    return applyChanges(targetSnapshot, [{ entity:change.entity, op:'upsert', row:clone(remoteRow) }]);
+  }
+  return applyChanges(targetSnapshot, [{ entity:change.entity, op:'delete', row:clone(change.row) }]);
+}
+
 async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'REVISION_CONFLICT') {
   const latest = await latestCloudSnapshot();
   const rebased = rebaseSnapshotIntent(baseSnapshot, localTarget, latest.snapshot);
@@ -1078,7 +1086,9 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
   let rebaseAttempts = 0;
   let totalConflictFields = 0;
   let totalDroppedChanges = 0;
+  let totalApplied = 0;
   let recovered = false;
+  let chunkSize = SYNC_CHUNK_SIZE;
 
   while (true) {
     const changes = diffSnapshots(baseline, target);
@@ -1087,14 +1097,14 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
       return {
         ok:true,
         revision,
-        applied:0,
+        applied:totalApplied,
         recovered,
         conflictFields:totalConflictFields,
         droppedChanges:totalDroppedChanges,
       };
     }
 
-    const chunk = changes.slice(0, SYNC_CHUNK_SIZE);
+    const chunk = changes.slice(0, chunkSize);
     const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${rebaseAttempts}`;
 
     try {
@@ -1120,7 +1130,7 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
         return {
           ok:true,
           revision,
-          applied:0,
+          applied:totalApplied,
           recovered:true,
           recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
           conflictFields:totalConflictFields,
@@ -1129,6 +1139,8 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
       }
 
       baseline = applyChanges(baseline, chunk);
+      totalApplied += chunk.length;
+      rebaseAttempts = 0;
       continue;
     } catch (error) {
       const code = String(error?.code || '');
@@ -1136,6 +1148,7 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
       rebaseAttempts += 1;
       recovered = true;
+      const attemptedChunk = chunk;
       const rebased = await autoRebaseTarget(baseline, target, localDb, code);
       target = rebased.mergedSnapshot;
       totalConflictFields += Number(rebased.conflictFields || 0);
@@ -1145,7 +1158,7 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
         return {
           ok:true,
           revision,
-          applied:0,
+          applied:totalApplied,
           recovered:true,
           recovery:'AUTO_REBASE_CLOUD_WINS',
           conflictFields:totalConflictFields,
@@ -1153,25 +1166,46 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
         };
       }
 
-      if (rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
-        const latest = await latestCloudSnapshot();
-        revision = latest.revision;
-        baseline = latest.snapshot;
-        target = latest.snapshot;
-        applyMergedSnapshotToLocal(localDb, target);
-        totalDroppedChanges += rebased.changes.length;
-        console.warn('sync_auto_rebase_exhausted_cloud_wins', {
+      if (code === 'SYNC_REFERENCE_CONFLICT') {
+        if (chunkSize > 1) {
+          // Isolate the exact invalid relation instead of discarding a whole
+          // multi-entity batch.
+          chunkSize = 1;
+          rebaseAttempts = 0;
+          continue;
+        }
+
+        const invalidChange = attemptedChunk[0];
+        if (invalidChange) {
+          target = cloudWinTargetForChange(target, baseline, invalidChange);
+          applyMergedSnapshotToLocal(localDb, target);
+          totalDroppedChanges += 1;
+          rebaseAttempts = 0;
+          console.warn('sync_invalid_reference_cloud_wins', {
+            source,
+            entity:String(invalidChange.entity || ''),
+            id:changeKey(invalidChange.row),
+            revision,
+          });
+          continue;
+        }
+      }
+
+      if (code === 'REVISION_CONFLICT' && rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
+        console.info('sync_contention_retry_deferred', {
           source,
           revision,
           attempts:rebaseAttempts,
-          droppedChanges:totalDroppedChanges,
+          remainingChanges:rebased.changes.length,
         });
         return {
-          ok:true,
+          ok:false,
+          deferred:true,
+          target,
           revision,
-          applied:0,
+          applied:totalApplied,
           recovered:true,
-          recovery:'AUTO_REBASE_EXHAUSTED_CLOUD_WINS',
+          recovery:'AUTO_REBASE_CONTENTION_RETRY',
           conflictFields:totalConflictFields,
           droppedChanges:totalDroppedChanges,
         };
