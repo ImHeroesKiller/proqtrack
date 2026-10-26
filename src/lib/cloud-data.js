@@ -1222,11 +1222,25 @@ async function flush() {
   const localDb = queuedLocalDb;
   queuedSnapshot = null;
   queuedLocalDb = null;
+  let retryDelay = SYNC_DEBOUNCE_MS;
 
   try {
     const result = await syncTargetWithAutomaticRebase(target, localDb, { source:'background-sync' });
     ready = true;
     lastError = null;
+
+    if (result?.deferred && result?.target) {
+      queuedSnapshot = result.target;
+      queuedLocalDb = localDb;
+      retryDelay = 500;
+      emitStatus('retrying', {
+        source:'background-sync',
+        recovered:true,
+        recovery:result.recovery || 'AUTO_REBASE_CONTENTION_RETRY',
+      });
+      return;
+    }
+
     emitStatus('synced', {
       source:'background-sync',
       recovered:result.recovered === true,
@@ -1241,7 +1255,7 @@ async function flush() {
     syncing = false;
     if (queuedSnapshot && ready) {
       clearTimeout(timer);
-      timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
+      timer = setTimeout(flush, retryDelay);
     }
   }
 }
@@ -1276,6 +1290,20 @@ export async function commitOperationalChanges(changes = []) {
     const result = await syncTargetWithAutomaticRebase(target, null, { source:'direct-commit' });
     ready = true;
     lastError = null;
+
+    if (result?.deferred && result?.target) {
+      queuedSnapshot = result.target;
+      queuedLocalDb = null;
+      clearTimeout(timer);
+      timer = setTimeout(flush, 500);
+      emitStatus('retrying', {
+        source:'direct-commit',
+        recovered:true,
+        recovery:result.recovery || 'AUTO_REBASE_CONTENTION_RETRY',
+      });
+      return { ...result, ok:true, deferred:true };
+    }
+
     emitStatus('synced', {
       source:'direct-commit',
       recovered:result.recovered === true,
