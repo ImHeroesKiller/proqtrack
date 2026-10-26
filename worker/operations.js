@@ -939,8 +939,8 @@ export function authorizeOperationalChange(claims, entity, change, context = {})
       // Attendance policy is organization-admin controlled and must not be changed through
       // a crafted project sync request, even though the UI hides the Attendance tab.
       const currentMeta = parseMetadata(context.existing.metadata_json);
-      const currentAttendanceSource = str(currentMeta.attendanceSourceMode || 'manual') === 'visit' ? 'visit' : 'manual';
-      const nextAttendanceSource = str(row.attendanceSourceMode || currentAttendanceSource) === 'visit' ? 'visit' : 'manual';
+      const currentAttendanceSource = 'manual';
+      const nextAttendanceSource = 'manual';
       const currentLateAfter = str(currentMeta.attendanceLateAfter || '09:00');
       const nextLateAfter = str(row.attendanceLateAfter || currentLateAfter);
       if (nextAttendanceSource !== currentAttendanceSource || nextLateAfter !== currentLateAfter) return false;
