@@ -1402,3 +1402,10 @@ export async function logoutCloudSession() {
   resetCloudDataBridge();
   return revokeApiSession();
 }
+
+
+export const __test = Object.freeze({
+  mergeRowThreeWay,
+  rebaseSnapshotIntent,
+  rebaseStoredIntent,
+});
