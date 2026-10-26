@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { __test as rebase } from '../src/lib/cloud-data.js';
+import { createCloudRebaseTools } from '../src/lib/cloud-rebase.js';
+
+const rebase = createCloudRebaseTools(['employees']);
 
 function snap(employees = []) {
   return { employees };
