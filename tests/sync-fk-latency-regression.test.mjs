@@ -38,7 +38,8 @@ test('revision and reference conflicts are auto-rebased without blocking conflic
   assert.match(sync, /SYNC_REFERENCE_CONFLICT/);
   assert.match(sync, /autoRebaseTarget/);
   assert.match(sync, /AUTO_REBASE_MAX_ATTEMPTS/);
-  assert.match(sync, /sync_invalid_reference_cloud_wins/);\n  assert.match(sync, /AUTO_REBASE_CONTENTION_RETRY/);
+  assert.match(sync, /sync_invalid_reference_cloud_wins/);
+  assert.match(sync, /AUTO_REBASE_CONTENTION_RETRY/);
   assert.doesNotMatch(sync, /emitStatus\('conflict'/);
 });
 
