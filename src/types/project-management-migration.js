@@ -7,7 +7,6 @@ function defaultModules() {
 }
 function migrateV7() {
   const db = readDB();
-  const stamp = now();
   let changed = false;
   const ensureArray = (key) => {
     if (!Array.isArray(db[key])) {
@@ -31,16 +30,6 @@ function migrateV7() {
     }, {});
   const nextAssignments = db.projectAssignments.map((assignment) => {
     const project = db.projects.find((p) => p.id === assignment.projectId);
-    const assignedEmployee = db.employees.find(
-      (employee) => employee.id === assignment.employeeId,
-    );
-    const assignedAccount = db.accounts.find(
-      (user) => user.employeeId === assignment.employeeId,
-    );
-    const eligible =
-      assignedEmployee?.status === "active" &&
-      assignedAccount &&
-      assignedAccount.status !== "inactive";
     const projectSupervisor = db.projectAssignments.find(
       (candidate) =>
         candidate.projectId === assignment.projectId &&
@@ -60,11 +49,11 @@ function migrateV7() {
       notes: "Migrasi assignment lama",
       ...assignment,
     };
-    if (!eligible && normalized.status === "active") {
-      normalized.status = "removed";
-      normalized.removedAt = stamp;
-      normalized.removalReason = "Karyawan atau akun login tidak aktif";
-    }
+    // Cloud operational assignment lifecycle is server-authoritative.
+    // Never close an active assignment merely because the browser cache does
+    // not contain the employee's account record. Account lists are loaded
+    // separately and may be intentionally partial.
+    if (normalized.status === "removed") normalized.status = "ended";
     return normalized;
   });
   if (JSON.stringify(nextAssignments) !== JSON.stringify(db.projectAssignments)) {
