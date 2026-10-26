@@ -252,7 +252,14 @@ async function restoreCloudSessionOnReload() {
 }
 
 async function cloudLogout() {
-  try { await logoutCloudSession(); } catch (error) { console.warn('cloud_logout_failed', error); }
+  try {
+    await logoutCloudSession();
+  } catch (error) {
+    const code = String(error?.code || error?.message || '');
+    if (!['AUTH_REQUIRED','INVALID_TOKEN','TOKEN_EXPIRED','SESSION_EXPIRED','SESSION_REVOKED','SESSION_REAUTH_REQUIRED'].includes(code)) {
+      console.warn('cloud_logout_failed', error);
+    }
+  }
   const state = window.FT.state;
   state.loggedIn = false;
   state.sessionRestoring = false;

@@ -183,8 +183,12 @@ export async function revokeApiSession({ all = false } = {}) {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      const error = new Error(data.message || data.error || `HTTP ${res.status}`);
-      error.code = data.error || 'SESSION_REVOKE_FAILED';
+      const code = data.error || 'SESSION_REVOKE_FAILED';
+      if (res.status === 401 && ['AUTH_REQUIRED','INVALID_TOKEN','TOKEN_EXPIRED','SESSION_EXPIRED','SESSION_REVOKED','SESSION_REAUTH_REQUIRED'].includes(code)) {
+        return true;
+      }
+      const error = new Error(data.message || code || `HTTP ${res.status}`);
+      error.code = code;
       error.status = res.status;
       error.payload = data;
       throw error;
