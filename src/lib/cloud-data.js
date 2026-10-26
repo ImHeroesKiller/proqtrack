@@ -514,14 +514,6 @@ function applyMergedSnapshotToLocal(localDb, snapshot) {
   applyRemoteDataToLocal(localDb, snapshot);
 }
 
-function cloudWinTargetForChange(targetSnapshot, cloudSnapshot, change) {
-  const remoteRow = snapshotRow(cloudSnapshot, change?.entity, change?.row);
-  if (remoteRow) {
-    return applyChanges(targetSnapshot, [{ entity:change.entity, op:'upsert', row:clone(remoteRow) }]);
-  }
-  return applyChanges(targetSnapshot, [{ entity:change.entity, op:'delete', row:clone(change.row) }]);
-}
-
 async function autoRebaseTarget(baseSnapshot, localTarget, localDb, reason = 'REVISION_CONFLICT') {
   const latest = await latestCloudSnapshot();
   const rebased = rebaseSnapshotIntent(baseSnapshot, localTarget, latest.snapshot);
