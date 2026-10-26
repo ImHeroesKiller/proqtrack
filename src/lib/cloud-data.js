@@ -986,65 +986,136 @@ export async function refreshOperationalData(localDb, account = {}) {
   return request;
 }
 
+async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { source = 'background-sync' } = {}) {
+  let target = snapshotCollections(localTarget || {});
+  let rebaseAttempts = 0;
+  let totalConflictFields = 0;
+  let totalDroppedChanges = 0;
+  let recovered = false;
+
+  while (true) {
+    const changes = diffSnapshots(baseline, target);
+    if (!changes.length) {
+      applyMergedSnapshotToLocal(localDb, target);
+      return {
+        ok:true,
+        revision,
+        applied:0,
+        recovered,
+        conflictFields:totalConflictFields,
+        droppedChanges:totalDroppedChanges,
+      };
+    }
+
+    const chunk = changes.slice(0, SYNC_CHUNK_SIZE);
+    const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${rebaseAttempts}`;
+
+    try {
+      const result = await apiJson('/api/core/sync', {
+        method:'POST',
+        headers:{ 'idempotency-key':mutationId },
+        body:JSON.stringify({ mutationId, baseRevision:revision, changes:chunk }),
+      });
+
+      revision = Number(result.revision ?? revision);
+
+      if (result?.refreshRequired) {
+        const latest = await latestCloudSnapshot();
+        revision = latest.revision;
+        baseline = latest.snapshot;
+        target = latest.snapshot;
+        applyMergedSnapshotToLocal(localDb, target);
+        console.info('sync_auto_recovered_server_refresh', {
+          source,
+          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
+          revision,
+        });
+        return {
+          ok:true,
+          revision,
+          applied:0,
+          recovered:true,
+          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+
+      baseline = applyChanges(baseline, chunk);
+      continue;
+    } catch (error) {
+      const code = String(error?.code || '');
+      if (!['REVISION_CONFLICT','SYNC_REFERENCE_CONFLICT'].includes(code)) throw error;
+
+      rebaseAttempts += 1;
+      recovered = true;
+      const rebased = await autoRebaseTarget(baseline, target, localDb, code);
+      target = rebased.mergedSnapshot;
+      totalConflictFields += Number(rebased.conflictFields || 0);
+      totalDroppedChanges += Number(rebased.droppedChanges || 0);
+
+      if (!rebased.changes.length) {
+        return {
+          ok:true,
+          revision,
+          applied:0,
+          recovered:true,
+          recovery:'AUTO_REBASE_CLOUD_WINS',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+
+      if (rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
+        const latest = await latestCloudSnapshot();
+        revision = latest.revision;
+        baseline = latest.snapshot;
+        target = latest.snapshot;
+        applyMergedSnapshotToLocal(localDb, target);
+        totalDroppedChanges += rebased.changes.length;
+        console.warn('sync_auto_rebase_exhausted_cloud_wins', {
+          source,
+          revision,
+          attempts:rebaseAttempts,
+          droppedChanges:totalDroppedChanges,
+        });
+        return {
+          ok:true,
+          revision,
+          applied:0,
+          recovered:true,
+          recovery:'AUTO_REBASE_EXHAUSTED_CLOUD_WINS',
+          conflictFields:totalConflictFields,
+          droppedChanges:totalDroppedChanges,
+        };
+      }
+    }
+  }
+}
+
 async function flush() {
   if (syncing || !ready || !getApiToken() || !queuedSnapshot) return;
   syncing = true;
   emitStatus('syncing');
+  const target = queuedSnapshot;
+  const localDb = queuedLocalDb;
+  queuedSnapshot = null;
+  queuedLocalDb = null;
+
   try {
-    const current = queuedSnapshot;
-    queuedSnapshot = null;
-    const changes = diffSnapshots(baseline, current);
-    if (!changes.length) {
-      lastError = null;
-      emitStatus('synced');
-      return;
-    }
-    for (let offset = 0; offset < changes.length; offset += SYNC_CHUNK_SIZE) {
-      const chunk = changes.slice(offset, offset + SYNC_CHUNK_SIZE);
-      const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}-${offset}`;
-      const result = await apiJson('/api/core/sync', {
-        method: 'POST',
-        headers: { 'idempotency-key': mutationId },
-        body: JSON.stringify({ mutationId, baseRevision: revision, changes: chunk }),
-      });
-      revision = Number(result.revision);
-      if (result?.refreshRequired) {
-        ready = false;
-        lastError = null;
-        emitStatus('conflict', {
-          conflict:true,
-          conflictKind:'server-refresh',
-          recoverable:true,
-          source:'background-sync',
-          recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
-        });
-        return;
-      }
-      baseline = applyChanges(baseline, chunk);
-    }
+    const result = await syncTargetWithAutomaticRebase(target, localDb, { source:'background-sync' });
+    ready = true;
     lastError = null;
-    emitStatus('synced');
+    emitStatus('synced', {
+      source:'background-sync',
+      recovered:result.recovered === true,
+      recovery:result.recovery || '',
+      conflictFields:Number(result.conflictFields || 0),
+      droppedChanges:Number(result.droppedChanges || 0),
+    });
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    if (error.code === 'REVISION_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      emitStatus('conflict', { conflict: true });
-    } else if (error.code === 'SYNC_REFERENCE_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      // Treat stale FK references as an authoritative rebase condition instead
-      // of a generic transport failure. The offline engine will refresh the
-      // server baseline and hold any durable local snapshot for review.
-      emitStatus('conflict', {
-        conflict:true,
-        conflictKind:'reference',
-        recoverable:true,
-        source:'background-sync',
-      });
-    } else {
-      emitStatus('error');
-    }
+    emitStatus('error', { source:'background-sync' });
   } finally {
     syncing = false;
     if (queuedSnapshot && ready) {
@@ -1076,34 +1147,25 @@ export async function commitOperationalChanges(changes = []) {
       throw error;
     }
   }
+
   syncing = true;
   emitStatus('syncing', { source:'direct-commit' });
   try {
-    const mutationId = crypto?.randomUUID?.() || `mut-${Date.now()}`;
-    const result = await apiJson('/api/core/sync', {
-      method:'POST',
-      headers:{ 'idempotency-key': mutationId },
-      body:JSON.stringify({ mutationId, baseRevision:revision, changes:list }),
-    });
-    revision = Number(result.revision);
-    baseline = applyChanges(baseline, list);
+    const target = applyChanges(baseline, list);
+    const result = await syncTargetWithAutomaticRebase(target, null, { source:'direct-commit' });
+    ready = true;
     lastError = null;
-    emitStatus('synced', { source:'direct-commit' });
+    emitStatus('synced', {
+      source:'direct-commit',
+      recovered:result.recovered === true,
+      recovery:result.recovery || '',
+      conflictFields:Number(result.conflictFields || 0),
+      droppedChanges:Number(result.droppedChanges || 0),
+    });
     return result;
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    if (error.code === 'REVISION_CONFLICT' || error.code === 'SYNC_REFERENCE_CONFLICT') {
-      ready = false;
-      revision = Number(error.payload?.revision || revision);
-      emitStatus('conflict', {
-        conflict:true,
-        conflictKind:error.code === 'SYNC_REFERENCE_CONFLICT' ? 'reference' : 'revision',
-        recoverable:true,
-        source:'direct-commit',
-      });
-    } else {
-      emitStatus('error', { source:'direct-commit' });
-    }
+    emitStatus('error', { source:'direct-commit' });
     throw error;
   } finally {
     syncing = false;
@@ -1113,6 +1175,7 @@ export async function commitOperationalChanges(changes = []) {
 export function scheduleOperationalSync(db) {
   if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return false;
   queuedSnapshot = snapshotCollections(db);
+  queuedLocalDb = db && typeof db === 'object' ? db : null;
   clearTimeout(timer);
   timer = setTimeout(flush, SYNC_DEBOUNCE_MS);
   return true;
