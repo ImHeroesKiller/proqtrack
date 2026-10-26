@@ -912,6 +912,7 @@ export async function bootstrapOperationalData(localDb, account = {}, { prefetch
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
+  queuedLocalDb = null;
   syncing = false;
   baseline = snapshotCollections(remote.data || {});
   ready = true;
@@ -1260,6 +1261,7 @@ export function restoreOperationalBaseline(localDb) {
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
+  queuedLocalDb = null;
   syncing = false;
   if (localDb && baseline && typeof baseline === 'object') applyRemoteDataToLocal(localDb, baseline);
   lastError = null;
@@ -1280,6 +1282,7 @@ export function resetCloudDataBridge() {
   cutoverMode = 'pending';
   baseline = {};
   queuedSnapshot = null;
+  queuedLocalDb = null;
   lastError = null;
   clearTimeout(timer);
   timer = null;
