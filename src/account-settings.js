@@ -93,13 +93,13 @@ function renderAttendanceSettings() {
     ? String(window.FT.state._attendanceSettingsProjectId)
     : String(projects[0]?.id || '');
   const project = projects.find(row => String(row.id) === selected) || null;
-  const sourceMode = project?.attendanceSourceMode === 'visit' ? 'visit' : 'manual';
+  const sourceMode = 'manual';
   const lateAfter = /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(project?.attendanceLateAfter || ''))
     ? String(project.attendanceLateAfter)
     : '09:00';
   return `
         <div class="card-title">Attendance per project</div>
-        <div class="card-subtitle">Authority attendance disimpan pada project dan dipakai langsung oleh server. Manual = employee melakukan attendance langsung; Visit = attendance dibentuk otomatis dari Visit.</div>
+        <div class="card-subtitle">Attendance dilakukan langsung oleh karyawan melalui tombol Check In / Check Out. Visit tidak membuat attendance otomatis.</div>
         ${project ? `
         <form class="am-form" data-pqt-onsubmit="AM.saveAttendanceProjectSettings(event)">
           <div class="form-group">
@@ -111,17 +111,15 @@ function renderAttendanceSettings() {
           <div class="form-row">
             <div class="form-group">
               <label class="label">Sumber attendance</label>
-              <select class="select" name="sourceMode">
-                <option value="manual" ${sourceMode === 'manual' ? 'selected' : ''}>Manual attendance</option>
-                <option value="visit" ${sourceMode === 'visit' ? 'selected' : ''}>Otomatis dari Visit</option>
-              </select>
+              <input type="hidden" name="sourceMode" value="manual">
+              <div class="input" aria-readonly="true">Check-in karyawan</div>
             </div>
             <div class="form-group">
               <label class="label">Batas terlambat</label>
               <input class="input" type="time" name="lateAfter" value="${esc(lateAfter)}" required>
             </div>
           </div>
-          <div class="am-muted">Perubahan sumber attendance dapat ditolak bila attendance hari ini sudah tercatat, untuk mencegah campuran Manual dan Visit dalam project yang sama.</div>
+          <div class="am-muted">Visit dan attendance berdiri sendiri. Check-in Visit tidak membuat check-in karyawan.</div>
           <button class="btn btn-primary" type="submit">Simpan pengaturan attendance</button>
         </form>
         ` : '<div class="empty-state"><h3>Tidak ada project aktif</h3><p>Aktifkan project terlebih dahulu sebelum mengatur attendance.</p></div>'}
@@ -674,7 +672,7 @@ window.AM = {
       toast('Project tidak ditemukan.', 'error');
       return;
     }
-    const sourceMode = form.sourceMode.value === 'visit' ? 'visit' : 'manual';
+    const sourceMode = 'manual';
     const lateAfter = String(form.lateAfter.value || '');
     const nextProject = { ...project, attendanceSourceMode:sourceMode, attendanceLateAfter:lateAfter };
     settingsProjectSaveInFlight.add(key);
@@ -686,7 +684,6 @@ window.AM = {
       window.dispatchEvent(new HashChangeEvent('hashchange'));
     } catch (error) {
       const messages = {
-        PROJECT_ATTENDANCE_SOURCE_IN_USE:'Sumber attendance tidak dapat diubah karena attendance hari ini sudah tercatat.',
         PROJECT_INVALID_ATTENDANCE_SOURCE:'Sumber attendance project tidak valid.',
         PROJECT_INVALID_ATTENDANCE_CUTOFF:'Batas waktu terlambat tidak valid.',
         REVISION_CONFLICT:'Data project berubah di perangkat lain. Muat ulang lalu coba kembali.',
