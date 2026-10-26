@@ -152,12 +152,32 @@ if (typeof window !== 'undefined') {
 
 function registerServiceWorkerAfterPaint() {
   if (!('serviceWorker' in navigator)) return false;
+  const reloadKey = 'proqtrack_sw_controller_reload';
+  try {
+    if (navigator.serviceWorker.controller && sessionStorage.getItem(reloadKey) === '1') {
+      sessionStorage.removeItem(reloadKey);
+    }
+  } catch { /* sessionStorage best effort */ }
+
+  let controllerReloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (controllerReloaded) return;
+    controllerReloaded = true;
+    try { sessionStorage.setItem(reloadKey, '1'); } catch { /* best effort */ }
+    location.reload();
+  }, { once:true });
+
   const register = () => {
-    const run = () => navigator.serviceWorker.register('./sw.js').catch(error => {
-      console.warn('m4_service_worker_register_failed', error?.message || error);
-    });
-    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:5000 });
-    else setTimeout(run, 1200);
+    const run = async () => {
+      try {
+        const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none' });
+        await registration.update();
+      } catch (error) {
+        console.warn('m4_service_worker_register_failed', error?.message || error);
+      }
+    };
+    if ('requestIdleCallback' in window) window.requestIdleCallback(run, { timeout:2500 });
+    else setTimeout(run, 600);
   };
   if (document.readyState === 'complete') register();
   else window.addEventListener('load', register, { once:true });
