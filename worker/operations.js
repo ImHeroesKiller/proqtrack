@@ -2409,6 +2409,18 @@ function isForeignKeyConstraintError(error) {
     || (text.includes('FOREIGN KEY') && text.includes('CONSTRAINT'));
 }
 
+function isLegacyAssignmentCacheInvalidation(changes = []) {
+  return Array.isArray(changes)
+    && changes.length > 0
+    && changes.every(change => {
+      if (str(change?.entity) !== 'projectAssignments' || str(change?.op) !== 'upsert') return false;
+      const row = change?.row || {};
+      const status = str(row.status);
+      return ['removed','ended'].includes(status)
+        && str(row.removalReason) === 'Karyawan atau akun login tidak aktif';
+    });
+}
+
 async function handleSync(request, env, claims, bulkReceipt = null) {
   const organizationId = claims.organizationId;
   const body = await request.json().catch(() => ({}));
@@ -2605,6 +2617,23 @@ async function handleSync(request, env, claims, bulkReceipt = null) {
       return json({ error:'REVISION_CONFLICT', revision:Number(latest.revision) },409);
     }
     if (isForeignKeyConstraintError(error)) {
+      if (isLegacyAssignmentCacheInvalidation(changes)) {
+        console.warn('sync_legacy_assignment_cache_invalidation_ignored', {
+          organizationId,
+          mutationId,
+          actorId:claims.sub,
+          changeCount:changes.length,
+          revision:currentRevision,
+        });
+        return json({
+          ok:true,
+          recovered:true,
+          recovery:'LEGACY_ASSIGNMENT_CACHE_INVALIDATION',
+          revision:currentRevision,
+          applied:0,
+          refreshRequired:true,
+        },200);
+      }
       console.warn('sync_reference_conflict', {
         organizationId,
         mutationId,
