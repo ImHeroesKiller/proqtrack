@@ -70,3 +70,18 @@ test('Outlets P2 wires operational filters refresh pagination and edit parity', 
   assert.match(fieldSales,/const hasCurrent = Boolean\(currentPair\)/);
   assert.match(fieldSales,/Lokasi outlet saat ini/);
 });
+
+
+test('Outlets layout uses shared responsive operational components', () => {
+  const start = app.indexOf('function renderOutlets()');
+  const end = app.indexOf('window.FT.outletPage', start);
+  const block = app.slice(start, end);
+  assert.match(block, /class="ops-kpi-grid"/);
+  assert.match(block, /class="card ops-card"/);
+  assert.match(block, /class="ops-toolbar"/);
+  assert.match(block, /class="ops-toolbar-main"/);
+  assert.match(block, /class="ops-toolbar-actions"/);
+  assert.match(block, /class="ops-result-count"/);
+  assert.doesNotMatch(block, /class="pm-kpis"/);
+  assert.doesNotMatch(block, /class="filter-row"/);
+});

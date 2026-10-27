@@ -2829,28 +2829,33 @@ function renderOutlets() {
   const initialPage = paginateOutlets(outletRowsCache, outletPage, OUTLET_PAGE_SIZE);
   outletPage = initialPage.currentPage;
   const rendered = `
-    <div class="pm-kpis">
-      <div class="pm-kpi"><span>Total Outlet</span><strong>${summary.total}</strong></div>
-      <div class="pm-kpi"><span>Aktif</span><strong>${summary.active}</strong></div>
-      <div class="pm-kpi"><span>Nonaktif</span><strong>${summary.inactive}</strong></div>
-      <div class="pm-kpi"><span>Archived</span><strong>${summary.archived}</strong></div>
+    <div class="ops-kpi-grid">
+      <div class="ops-kpi"><span>Total Outlet</span><strong>${summary.total}</strong><small>seluruh outlet terlihat</small></div>
+      <div class="ops-kpi"><span>Aktif</span><strong>${summary.active}</strong><small>siap operasional</small></div>
+      <div class="ops-kpi"><span>Nonaktif</span><strong>${summary.inactive}</strong><small>sementara tidak aktif</small></div>
+      <div class="ops-kpi"><span>Archived</span><strong>${summary.archived}</strong><small>histori tersimpan</small></div>
     </div>
-    <div class="card">
-      <div class="filter-row" style="gap:8px;flex-wrap:wrap">
-        <input class="input search-input" id="outletSearch" placeholder="🔍 Nama, kode, alamat, PIC, project..." data-pqt-oninput="FT.filterOutlets(1)">
-        <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Project</option>${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}</select>
-        <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Client</option>${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}</select>
-        <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option></select>
-        <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Tipe</option>${storeOptionList(options.types)}</select>
-        <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Area</option>${storeOptionList(options.areas)}</select>
-        <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetOutletFilters()">Reset</button>
-        <div class="spacer"></div>
-        <span id="outletSyncState">${outletSyncLabel()}</span>
-        <button class="btn btn-secondary" id="outletRefreshBtn" data-pqt-onclick="FT.refreshOutlets()">Refresh</button>
-        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('outlets')">Bulk Upload</button>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openOutletModal()">+ Tambah Outlet</button>
+    <div class="card ops-card">
+      <div class="ops-toolbar">
+        <div class="ops-toolbar-main">
+          <input class="input search-input" id="outletSearch" placeholder="🔍 Nama, kode, alamat, PIC, project..." data-pqt-oninput="FT.filterOutlets(1)">
+          <select class="select" id="outletProjectFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Project</option>${outletOptionList(options.projects,'id',project => `${project.code || project.id} — ${project.name || ''}`)}</select>
+          <select class="select" id="outletClientFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Client</option>${outletOptionList(options.clients,'id',client => client.name || client.code || client.id)}</select>
+          <select class="select" id="outletStatusFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Status</option><option value="active">Aktif</option><option value="inactive">Nonaktif</option><option value="archived">Archived</option></select>
+          <select class="select" id="outletTypeFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Tipe</option>${storeOptionList(options.types)}</select>
+          <select class="select" id="outletAreaFilter" data-pqt-onchange="FT.filterOutlets(1)"><option value="">Semua Area</option>${storeOptionList(options.areas)}</select>
+          <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetOutletFilters()">Reset</button>
+        </div>
+        <div class="ops-toolbar-actions">
+          <div id="outletResultSummary" class="ops-result-count"></div>
+          <div class="ops-row-actions">
+            <span id="outletSyncState">${outletSyncLabel()}</span>
+            <button class="btn btn-secondary" id="outletRefreshBtn" data-pqt-onclick="FT.refreshOutlets()">Refresh</button>
+            <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('outlets')">Bulk Upload</button>
+            <button class="btn btn-primary" data-pqt-onclick="FT.openOutletModal()">+ Tambah Outlet</button>
+          </div>
+        </div>
       </div>
-      <div id="outletResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper">
         <table class="table" id="outletTable">
           <thead><tr><th>Outlet</th><th>Project / Client</th><th>Tipe / Area</th><th>Operasional</th><th>Status</th><th></th></tr></thead>
@@ -3363,29 +3368,34 @@ function renderProducts() {
   const initialPage = paginateProducts(productRowsCache, productPage, PRODUCT_PAGE_SIZE);
   productPage = initialPage.currentPage;
   const rendered=`
-    <div class="grid-4" style="margin-bottom:14px">
-      <div class="stat-card"><div class="stat-label">Total Produk</div><div class="stat-value">${statusSummary.total}</div></div>
-      <div class="stat-card"><div class="stat-label">Aktif</div><div class="stat-value">${statusSummary.active}</div></div>
-      <div class="stat-card"><div class="stat-label">Brand</div><div class="stat-value">${statusSummary.brands}</div></div>
-      <div class="stat-card"><div class="stat-label">Shared Product</div><div class="stat-value">${sharedCount}</div></div>
+    <div class="ops-kpi-grid">
+      <div class="ops-kpi"><span>Total Produk</span><strong>${statusSummary.total}</strong><small>seluruh katalog</small></div>
+      <div class="ops-kpi"><span>Aktif</span><strong>${statusSummary.active}</strong><small>tersedia untuk operasional</small></div>
+      <div class="ops-kpi"><span>Brand</span><strong>${statusSummary.brands}</strong><small>brand terdaftar</small></div>
+      <div class="ops-kpi"><span>Shared Product</span><strong>${sharedCount}</strong><small>dipakai lintas project</small></div>
     </div>
-    <div class="card">
-      <div class="filter-row">
-        <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand, project, client..." data-pqt-oninput="FT.filterProducts(1)">
-        <select class="select" id="productProjectFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Project</option>${productOptionList(options.projects,'id',p=>`${p.code||p.id} — ${p.name||''}`)}</select>
-        <select class="select" id="productClientFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Client</option>${productOptionList(options.clients,'id',c=>c.name||c.code||c.id)}</select>
-        <select class="select" id="productCatFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Kategori</option>${options.categories.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
-        <select class="select" id="productBrandFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Brand</option>${options.brands.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
-        <select class="select" id="productStatusFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select>
-        <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetProductFilters()">Reset</button>
-        <div class="spacer"></div>
-        <span id="productSyncState">${productSyncLabel()}</span>
-        <button class="btn btn-secondary" id="productRefreshBtn" data-pqt-onclick="FT.refreshProducts()">Refresh</button>
-        <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('products')">Bulk Upload</button>
-        <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
+    <div class="card ops-card">
+      <div class="ops-toolbar">
+        <div class="ops-toolbar-main">
+          <input class="input search-input" id="productSearch" placeholder="Cari nama, SKU, brand, project, client..." data-pqt-oninput="FT.filterProducts(1)">
+          <select class="select" id="productProjectFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Project</option>${productOptionList(options.projects,'id',p=>`${p.code||p.id} — ${p.name||''}`)}</select>
+          <select class="select" id="productClientFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Client</option>${productOptionList(options.clients,'id',c=>c.name||c.code||c.id)}</select>
+          <select class="select" id="productCatFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Kategori</option>${options.categories.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+          <select class="select" id="productBrandFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Brand</option>${options.brands.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('')}</select>
+          <select class="select" id="productStatusFilter" data-pqt-onchange="FT.filterProducts(1)"><option value="">Semua Status</option><option value="active">Active</option><option value="inactive">Inactive</option><option value="archived">Archived</option></select>
+          <button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.resetProductFilters()">Reset</button>
+        </div>
+        <div class="ops-toolbar-actions">
+          <div id="productResultSummary" class="ops-result-count"></div>
+          <div class="ops-row-actions">
+            <span id="productSyncState">${productSyncLabel()}</span>
+            <button class="btn btn-secondary" id="productRefreshBtn" data-pqt-onclick="FT.refreshProducts()">Refresh</button>
+            <button class="btn btn-secondary" data-pqt-onclick="FT.openBulkMaster('products')">Bulk Upload</button>
+            <button class="btn btn-primary" data-pqt-onclick="FT.openProductModal()">+ Tambah Produk</button>
+          </div>
+        </div>
       </div>
       <datalist id="catList">${options.categories.map(v=>`<option value="${esc(v)}">`).join('')}</datalist>
-      <div id="productResultSummary" class="am-muted" style="margin:10px 0"></div>
       <div class="visits-table-wrapper"><table class="table" id="productTable">
         <thead><tr><th>Produk</th><th>Project / Client</th><th>Brand / Kategori</th><th>Harga</th><th>Status</th><th></th></tr></thead>
         <tbody>${initialPage.items.map(row => row.html).join('')}</tbody>

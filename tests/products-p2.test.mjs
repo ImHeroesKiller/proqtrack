@@ -94,3 +94,17 @@ test('Products P2 edit form preserves multi-project relationships explicitly', (
 test('Products P2 helper is available to PWA runtime', () => {
   assert.match(sw,/RUNTIME_CACHE/);
 });
+
+
+test('Products layout uses shared responsive operational components', () => {
+  const start = app.indexOf('function renderProducts()');
+  const end = app.indexOf('window.FT.productPage', start);
+  const block = app.slice(start, end);
+  assert.match(block, /class="ops-kpi-grid"/);
+  assert.match(block, /class="card ops-card"/);
+  assert.match(block, /class="ops-toolbar"/);
+  assert.match(block, /class="ops-toolbar-main"/);
+  assert.match(block, /class="ops-toolbar-actions"/);
+  assert.match(block, /class="ops-result-count"/);
+  assert.doesNotMatch(block, /class="filter-row"/);
+});
