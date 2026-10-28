@@ -36,7 +36,7 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated, restoreOperationalBaseline } from './lib/cloud-data.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
