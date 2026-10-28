@@ -55,3 +55,13 @@ test('employee sync never links a global auth user outside the active organizati
   assert.match(employeeAuth, /ou\.user_id=au\.id AND ou\.organization_id=\?/);
   assert.doesNotMatch(employeeAuth, /SELECT id FROM auth_users WHERE lower\(email\)=lower\(\?\) LIMIT 1/);
 });
+
+test('sync mutation audit accepts global superadmin without tenant membership', async () => {
+  const migration = await read('migrations/0029_global_superadmin_sync_audit.sql');
+  assert.match(migration, /REFERENCES auth_users\(id\) ON DELETE RESTRICT/);
+  assert.match(migration, /FOREIGN KEY \(organization_id\) REFERENCES core_organizations\(id\) ON DELETE CASCADE/);
+  assert.doesNotMatch(
+    migration,
+    /FOREIGN KEY \(actor_user_id, organization_id\)[\s\S]*REFERENCES core_organization_users/,
+  );
+});
