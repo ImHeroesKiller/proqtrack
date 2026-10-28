@@ -9,8 +9,17 @@ export function validCoordinatePair(latValue, lngValue) {
   return { lat, lng };
 }
 
+export function validDeviceCoordinatePair(latValue, lngValue) {
+  const pair = validCoordinatePair(latValue, lngValue);
+  if (!pair) return null;
+  if (pair.lat === 0 && pair.lng === 0) return null;
+  return pair;
+}
+
 export function visitLocationEvidence(visit = {}, outlet = null) {
-  const checkIn = validCoordinatePair(visit.checkInLat, visit.checkInLng);
+  const checkIn = visit.locationSource === 'device_gps'
+    ? validDeviceCoordinatePair(visit.checkInLat, visit.checkInLng)
+    : validCoordinatePair(visit.checkInLat, visit.checkInLng);
   if (checkIn) {
     const source = visit.locationSource === 'device_gps' ? 'device_gps' : (visit.locationSource || 'checkin_coordinate');
     const administrative = ['outlet_reference','administrative_entry','administrative_checkin'].includes(source);
@@ -24,7 +33,9 @@ export function visitLocationEvidence(visit = {}, outlet = null) {
     };
   }
 
-  const legacy = validCoordinatePair(visit.lat, visit.lng);
+  const legacy = visit.locationSource === 'device_gps'
+    ? validDeviceCoordinatePair(visit.lat, visit.lng)
+    : validCoordinatePair(visit.lat, visit.lng);
   if (legacy) {
     const source = visit.locationSource || 'visit_coordinate';
     const administrative = ['outlet_reference','administrative_entry','administrative_checkin'].includes(source);
@@ -177,7 +188,7 @@ export async function captureDevicePosition(geolocation = (typeof navigator !== 
     }
   }
 
-  const pair = validCoordinatePair(position?.coords?.latitude, position?.coords?.longitude);
+  const pair = validDeviceCoordinatePair(position?.coords?.latitude, position?.coords?.longitude);
   if (!pair) {
     throw Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' });
   }

@@ -245,6 +245,12 @@ export function validateImportSnapshot(snapshot = {}) {
 const finalVisitStatuses = new Set(['completed','cancelled','rejected']);
 const canonicalVisitStatus = value => str(value || 'planned') === 'checked-in' ? 'in_progress' : str(value || 'planned');
 const finiteCoordinate = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+const finiteDeviceCoordinatePair = (latValue, lngValue) => {
+  if (!finiteCoordinate(latValue) || !finiteCoordinate(lngValue)) return false;
+  const lat = Number(latValue);
+  const lng = Number(lngValue);
+  return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0);
+};
 const hasVisitExecutionEvidence = row => [
   'checkInTime','checkOutTime','startedAt','completedAt','checkInAt','checkOutAt',
   'lat','lng','checkInLat','checkInLng','startLatitude','startLongitude',
@@ -297,8 +303,8 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
   const lng = firstValue(row, isCheckIn
     ? ['checkInLng','startLongitude','lng','start_longitude']
     : ['checkOutLng','endLongitude','end_longitude']);
-  if (!finiteCoordinate(lat) || !finiteCoordinate(lng)) {
-    return isCheckIn ? { error:'VISIT_GPS_REQUIRED', status:422 } : null;
+  if (!finiteDeviceCoordinatePair(lat, lng)) {
+    return { error:'VISIT_GPS_REQUIRED', status:422 };
   }
   const distanceM = visitDistanceMeters(lat,lng,outlet.latitude,outlet.longitude);
   if (isCheckIn) {
@@ -695,13 +701,17 @@ export function operationalTransitionAllowed(claims, entity, change, context = {
 
     if (currentStatus === 'planned' && nextStatus === 'in_progress') {
       return str(row.locationSource) === 'device_gps'
-        && finiteCoordinate(firstValue(row,['checkInLat','startLatitude','lat','start_latitude']))
-        && finiteCoordinate(firstValue(row,['checkInLng','startLongitude','lng','start_longitude']))
+        && finiteDeviceCoordinatePair(
+          firstValue(row,['checkInLat','startLatitude','lat','start_latitude']),
+          firstValue(row,['checkInLng','startLongitude','lng','start_longitude']),
+        )
         && !!firstValue(row,['startedAt','checkInCapturedAt','checkInAt','started_at']);
     }
     if (currentStatus === 'in_progress' && nextStatus === 'completed') {
-      return finiteCoordinate(firstValue(row,['checkOutLat','endLatitude','end_latitude']))
-        && finiteCoordinate(firstValue(row,['checkOutLng','endLongitude','end_longitude']))
+      return finiteDeviceCoordinatePair(
+          firstValue(row,['checkOutLat','endLatitude','end_latitude']),
+          firstValue(row,['checkOutLng','endLongitude','end_longitude']),
+        )
         && !!firstValue(row,['completedAt','checkOutCapturedAt','checkOutAt','completed_at']);
     }
     return true;

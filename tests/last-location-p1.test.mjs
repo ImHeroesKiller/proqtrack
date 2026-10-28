@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
-  validCoordinatePair, visitLocationEvidence, locationFreshness, locationSourceLabel, captureDevicePosition,
+  validCoordinatePair, validDeviceCoordinatePair, visitLocationEvidence, locationFreshness, locationSourceLabel, captureDevicePosition,
 } from '../src/lib/location-evidence.js';
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -13,6 +13,8 @@ test('Last Location accepts only complete valid coordinate pairs', () => {
   assert.equal(validCoordinatePair(-6.2,181), null);
   assert.equal(validCoordinatePair(-6.2,null), null);
   assert.equal(validCoordinatePair('',106.8), null);
+  assert.equal(validDeviceCoordinatePair(0,0), null);
+  assert.deepEqual(validDeviceCoordinatePair(-6.2,106.8), { lat:-6.2, lng:106.8 });
 });
 
 test('visit GPS evidence takes precedence and outlet coordinates remain reference-only', () => {
@@ -138,4 +140,12 @@ test('shared visit GPS capture falls back from high accuracy without weakening p
     error => error?.code === 'GPS_PERMISSION_REQUIRED',
   );
   assert.equal(deniedCalls,1);
+});
+
+test('visit detail does not render null checkout coordinates as zero-zero GPS', async () => {
+  const field = await read('src/field-sales.js');
+  assert.match(field, /validDeviceCoordinatePair\(v\.checkOutLat, v\.checkOutLng\)/);
+  assert.match(field, /Belum ada GPS perangkat/);
+  assert.match(field, /Referensi outlet/);
+  assert.doesNotMatch(field, /const checkOutLat = Number\(v\.checkOutLat\)/);
 });

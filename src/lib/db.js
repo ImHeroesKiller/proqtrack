@@ -1837,6 +1837,12 @@ export function updateVisit(id, data) {
 
   const canonicalStatus = value => String(value || 'planned') === 'checked-in' ? 'in_progress' : String(value || 'planned');
   const validCoordinate = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value));
+  const validDeviceCoordinatePair = (latValue, lngValue) => {
+    if (!validCoordinate(latValue) || !validCoordinate(lngValue)) return false;
+    const lat = Number(latValue);
+    const lng = Number(lngValue);
+    return lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0);
+  };
   const currentStatus = canonicalStatus(current.status);
   const nextStatus = canonicalStatus(data.status || current.status);
   if (['completed','cancelled','rejected'].includes(currentStatus)) {
@@ -1867,16 +1873,14 @@ export function updateVisit(id, data) {
 
   if (currentStatus === 'planned' && nextStatus === 'in_progress') {
     if (String(data.locationSource || '') !== 'device_gps'
-        || !validCoordinate(data.checkInLat)
-        || !validCoordinate(data.checkInLng)
+        || !validDeviceCoordinatePair(data.checkInLat, data.checkInLng)
         || !String(data.checkInCapturedAt || data.startedAt || '')) {
       throw new Error('Check-in wajib menggunakan GPS perangkat yang valid.');
     }
   }
   if (currentStatus === 'in_progress' && nextStatus === 'completed') {
     if (!String(data.checkOutTime || data.completedAt || data.checkOutCapturedAt || '')
-        || !validCoordinate(data.checkOutLat)
-        || !validCoordinate(data.checkOutLng)
+        || !validDeviceCoordinatePair(data.checkOutLat, data.checkOutLng)
         || !String(data.checkOutCapturedAt || data.completedAt || '')) {
       throw new Error('Check-out wajib merekam lokasi GPS dan waktu perangkat.');
     }
