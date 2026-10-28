@@ -99,3 +99,20 @@ test('GPS map click and address search cancel stale competing location work', as
   assert.match(gpsBlock, /_outletGeocodeController\?\.abort\(\)/);
   assert.match(searchBlock, /if \(_outletSearchController === controller\)/);
 });
+
+test('outlet mutation recovery imports the cloud rollback helper used after sync failure', async () => {
+  const [app, cloud] = await Promise.all([
+    read('src/app.js'),
+    read('src/lib/cloud-data.js'),
+  ]);
+  assert.match(
+    app,
+    /import \{[^}]*restoreOperationalBaseline[^}]*\} from '\.\/lib\/cloud-data\.js';/s,
+    'restoreOperationalBaseline must be imported before outlet error handlers call it',
+  );
+  assert.match(cloud, /export function restoreOperationalBaseline\(localDb\)/);
+  const start = app.indexOf('window.FT.createOutlet = async function');
+  const end = app.indexOf('window.FT.deleteOutlet = async function', start);
+  const createOutletFlow = app.slice(start, end);
+  assert.match(createOutletFlow, /restoreOperationalBaseline\(getDB\(\)\)/);
+});
