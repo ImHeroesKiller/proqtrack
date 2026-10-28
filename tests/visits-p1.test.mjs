@@ -116,3 +116,9 @@ test('D1 visit authority stores canonical start/end timestamps and coordinates',
   assert.match(ops,/geofence_radius_m/);
   assert.match(ops,/actorEmployeeId/);
 });
+
+test('visit execution rejects zero-zero as device GPS evidence', () => {
+  const claims = { role:'employee', projectIds:['PRJ-1'] };
+  const planned = { id:'VIS-ZERO',project_id:'PRJ-1',outlet_id:'OUT-1',employee_id:'EMP-1',status:'planned' };
+  assert.equal(operationalTransitionAllowed(claims,'visits',{ op:'upsert', row:{ id:'VIS-ZERO',status:'checked-in',locationSource:'device_gps',checkInLat:0,checkInLng:0,startedAt:'2026-10-28T04:00:00.000Z' } },{ existing:planned }), false);
+});
