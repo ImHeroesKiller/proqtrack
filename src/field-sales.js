@@ -13,7 +13,7 @@ import {
   outletIcon, todayISO, photoTypeLabel, normalizeAttendanceStatus, safePhotoUrl,
 } from './lib/utils.js';
 import { icon as appIcon } from '../assets/icons.js';
-import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM, validCoordinatePair } from './lib/location-evidence.js';
+import { locationFreshness, locationSourceLabel, visitLocationEvidence, currentTenantTimeHHMM, validCoordinatePair, validDeviceCoordinatePair } from './lib/location-evidence.js';
 import { attendanceLeaveFriendlyErrorMessage, attendanceSourceKey, attendanceSourceLabel } from './lib/attendance-leave-ui.js';
 import { refreshOperationalData, waitForOperationalSync, restoreOperationalBaseline } from './lib/cloud-data.js';
 import { ensureLeaflet } from './lib/leaflet-loader.js';
@@ -204,14 +204,15 @@ export function renderVisitDetailHtml(visitId) {
   const intel = getCompetitorIntel().filter(i => String(i.visitId || '') === String(visitId));
   const photos = getFieldPhotos().filter(p => String(p.visitId || '') === String(visitId));
   const products = Object.fromEntries(getProducts().map(p => [p.id, p]));
-  const checkInEvidence = visitLocationEvidence(v, o);
-  const checkInFreshness = locationFreshness(checkInEvidence, v, Date.now(), todayISO());
-  const checkOutLat = Number(v.checkOutLat);
-  const checkOutLng = Number(v.checkOutLng);
-  const checkOutValid = Number.isFinite(checkOutLat) && Number.isFinite(checkOutLng);
-  const checkOutAccuracy = Number(v.checkOutAccuracyM);
-  const checkOutEvidence = checkOutValid ? {
-    lat:checkOutLat, lng:checkOutLng, source:'device_gps', actual:true,
+  const locationEvidence = visitLocationEvidence(v, o);
+  const checkInEvidence = locationEvidence?.source === 'device_gps' && locationEvidence.actual ? locationEvidence : null;
+  const checkInFreshness = checkInEvidence ? locationFreshness(checkInEvidence, v, Date.now(), todayISO()) : null;
+  const outletReference = validCoordinatePair(o?.lat, o?.lng);
+  const checkOutPair = validDeviceCoordinatePair(v.checkOutLat, v.checkOutLng);
+  const rawCheckOutAccuracy = v.checkOutAccuracyM;
+  const checkOutAccuracy = rawCheckOutAccuracy == null || rawCheckOutAccuracy === '' ? null : Number(rawCheckOutAccuracy);
+  const checkOutEvidence = checkOutPair ? {
+    ...checkOutPair, source:'device_gps', actual:true,
     accuracyM:Number.isFinite(checkOutAccuracy) ? Math.max(0, checkOutAccuracy) : null,
     capturedAt:v.checkOutCapturedAt || v.completedAt || null,
   } : null;
@@ -223,8 +224,9 @@ export function renderVisitDetailHtml(visitId) {
       <div class="detail-label">Check out</div><div class="detail-value">${v.checkOutTime || '—'}</div>
       <div class="detail-label">Durasi</div><div class="detail-value">${formatDuration(v.checkInTime, v.checkOutTime)}</div>
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(v.status)}</div>
-      <div class="detail-label">Bukti GPS Check In</div><div class="detail-value">${checkInEvidence ? `${esc(locationSourceLabel(checkInEvidence))} · ${checkInEvidence.lat.toFixed(6)}, ${checkInEvidence.lng.toFixed(6)}${checkInEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkInEvidence.accuracyM)} m` : ''} · ${esc(checkInFreshness.label)}` : '—'}</div>
-      <div class="detail-label">Bukti GPS Check Out</div><div class="detail-value">${checkOutEvidence ? `GPS perangkat · ${checkOutEvidence.lat.toFixed(6)}, ${checkOutEvidence.lng.toFixed(6)}${checkOutEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkOutEvidence.accuracyM)} m` : ''}${checkOutEvidence.capturedAt ? ` · ${esc(checkOutEvidence.capturedAt)}` : ''}` : '—'}</div>
+      <div class="detail-label">Bukti GPS Check In</div><div class="detail-value">${checkInEvidence ? `${esc(locationSourceLabel(checkInEvidence))} · ${checkInEvidence.lat.toFixed(6)}, ${checkInEvidence.lng.toFixed(6)}${checkInEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkInEvidence.accuracyM)} m` : ''} · ${esc(checkInFreshness.label)}` : 'Belum ada GPS perangkat'}</div>
+      <div class="detail-label">Bukti GPS Check Out</div><div class="detail-value">${checkOutEvidence ? `GPS perangkat · ${checkOutEvidence.lat.toFixed(6)}, ${checkOutEvidence.lng.toFixed(6)}${checkOutEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkOutEvidence.accuracyM)} m` : ''}${checkOutEvidence.capturedAt ? ` · ${esc(checkOutEvidence.capturedAt)}` : ''}` : 'Belum ada GPS perangkat'}</div>
+      <div class="detail-label">Referensi outlet</div><div class="detail-value">${outletReference ? `${outletReference.lat.toFixed(6)}, ${outletReference.lng.toFixed(6)} · bukan posisi perangkat` : '—'}</div>
       <div class="detail-label">Catatan</div><div class="detail-value full">${esc(v.notes || '—')}</div>
     </div>
     <h4>Stok outlet saat ini</h4>
