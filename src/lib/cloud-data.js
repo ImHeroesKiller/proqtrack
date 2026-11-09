@@ -1,6 +1,8 @@
 import { clearApiToken, getApiToken, getApiTokenMeta, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 import { createCloudRebaseTools } from './cloud-rebase.js';
+import { p2OperationalMigrationChanges } from './cloud-p2-migration.js';
+import { visitCloudEvidenceMatches } from './visit-cloud-confirmation.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
   'clients',
@@ -45,6 +47,7 @@ let baseline = {};
 let queuedSnapshot = null;
 let queuedLocalDb = null;
 let lastError = null;
+let backgroundFailureCount = 0;
 let suppressStorageHook = false;
 let storageHookInstalled = false;
 let evidenceHydrationPromise = null;
@@ -198,65 +201,6 @@ export function legacyMasterMigrationChanges(localDb = {}, remoteData = {}, orga
         status:row.status || 'active',
       },
     });
-  }
-  return changes;
-}
-
-const P2_OPERATIONAL_COLLECTIONS = Object.freeze(['priceObservations','competitorIntel','outletProposals']);
-
-function operationalOwnerId(entity, row = {}) {
-  if (entity === 'outletProposals') return String(row.submittedBy || row.employeeId || '');
-  return String(row.recordedBy || row.employeeId || '');
-}
-
-function localActorEmployeeId(localDb = {}, account = {}) {
-  const accountId = String(account.sub || account.id || '');
-  const email = String(account.email || '').toLowerCase();
-  const linked = (localDb.employees || []).find(row =>
-    String(row.authUserId || '') === accountId
-    || (email && String(row.email || '').toLowerCase() === email)
-  );
-  if (linked?.id) return String(linked.id);
-  const localAccount = (localDb.accounts || []).find(row =>
-    String(row.id || '') === accountId || (email && String(row.email || '').toLowerCase() === email)
-  );
-  return String(localAccount?.employeeId || '');
-}
-
-function p2OperationalMigrationChanges(localDb = {}, remoteData = {}, account = {}) {
-  const organizationId = String(account.organizationId || account.organization?.id || localDb.currentOrganizationId || '');
-  if (!organizationId) return [];
-  const broad = ['superadmin','head','admin'].includes(String(account.role || '').toLowerCase());
-  const ownEmployeeId = localActorEmployeeId(localDb, account);
-  const projects = new Set((remoteData.projects || []).map(row => String(row.id || '')));
-  const outlets = new Set((remoteData.outlets || []).map(row => String(row.id || '')));
-  const products = new Set((remoteData.products || []).map(row => String(row.id || '')));
-  const employees = new Set((remoteData.employees || []).map(row => String(row.id || '')));
-  const visits = new Set((remoteData.visits || []).map(row => String(row.id || '')));
-  const competitorProducts = new Set((remoteData.competitorProducts || []).map(row => String(row.id || '')));
-  const changes = [];
-
-  for (const entity of P2_OPERATIONAL_COLLECTIONS) {
-    const remoteIds = new Set((remoteData[entity] || []).map(row => String(row.id || '')));
-    for (const source of Array.isArray(localDb[entity]) ? localDb[entity] : []) {
-      const row = clone(source);
-      const id = String(row.id || '');
-      if (!id || remoteIds.has(id) || !sameOrganization(row, organizationId)) continue;
-      const owner = operationalOwnerId(entity, row);
-      if (!broad && (!ownEmployeeId || owner !== ownEmployeeId)) continue;
-      const projectId = String(row.projectId || '');
-      if (!projectId || !projects.has(projectId) || !owner || !employees.has(owner)) continue;
-      if (entity !== 'outletProposals' && !outlets.has(String(row.outletId || ''))) continue;
-      if (row.visitId && !visits.has(String(row.visitId))) row.visitId = null;
-      if (entity === 'priceObservations' && !products.has(String(row.productId || ''))) continue;
-      if (entity === 'competitorIntel') {
-        if (row.productId && !products.has(String(row.productId))) row.productId = null;
-        if (row.competitorProductId && !competitorProducts.has(String(row.competitorProductId))) row.competitorProductId = null;
-      }
-      row.organizationId = organizationId;
-      if (!row.employeeId) row.employeeId = owner;
-      changes.push({ entity, op: 'upsert', row });
-    }
   }
   return changes;
 }
@@ -555,6 +499,17 @@ export function captureOperationalIntent(localDb = {}, rememberedBase = null) {
   return {
     baseRevision:sourceRevision,
     changes,
+  };
+}
+
+export function pendingOperationalIntentStatus(storedChanges = []) {
+  if (!ready || cutoverMode !== 'cloud') return { ready:false, pending:true };
+  const rebased = rebaseStoredIntent(storedChanges, baseline);
+  return {
+    ready:true,
+    pending:rebased.changes.length > 0,
+    changeCount:rebased.changes.length,
+    droppedChanges:rebased.droppedChanges,
   };
 }
 
@@ -984,10 +939,24 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
       if (result?.refreshRequired) {
         const latest = await latestCloudSnapshot();
+        // A server refresh must not erase device-only records still awaiting upload.
+        const deviceCreates = diffSnapshots(baseline, target).filter(change =>
+          change.op === 'upsert'
+          && !snapshotRow(baseline, change.entity, change.row)
+          && !snapshotRow(latest.snapshot, change.entity, change.row));
         revision = latest.revision;
         baseline = latest.snapshot;
-        target = latest.snapshot;
+        target = applyChanges(latest.snapshot, deviceCreates);
         applyMergedSnapshotToLocal(localDb, target);
+        if (deviceCreates.length) {
+          rebaseAttempts += 1;
+          if (rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
+            return { ok:false, deferred:true, target, revision, applied:totalApplied,
+              recovered:true, recovery:'DEVICE_CREATES_RETRY_PENDING',
+              conflictFields:totalConflictFields, droppedChanges:totalDroppedChanges };
+          }
+          continue;
+        }
         console.info('sync_auto_recovered_server_refresh', {
           source,
           recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
@@ -1041,17 +1010,18 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
         const invalidChange = attemptedChunk[0];
         if (invalidChange) {
-          target = cloudWinTargetForChange(target, baseline, invalidChange);
-          applyMergedSnapshotToLocal(localDb, target);
-          totalDroppedChanges += 1;
-          rebaseAttempts = 0;
-          console.warn('sync_invalid_reference_cloud_wins', {
+          // Missing references are often temporary; never report success by deleting
+          // the unsynced change. Hold it for automatic retry/reconciliation.
+          console.warn('sync_reference_blocked_preserved', {
             source,
             entity:String(invalidChange.entity || ''),
             id:changeKey(invalidChange.row),
             revision,
           });
-          continue;
+          throw bridgeError('SYNC_REFERENCE_BLOCKED', 409, {
+            entity:String(invalidChange.entity || ''),
+            id:changeKey(invalidChange.row),
+          });
         }
       }
 
@@ -1080,6 +1050,8 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
 async function flush() {
   if (syncing || !ready || !getApiToken() || !queuedSnapshot) return;
+  const generation = bridgeGeneration;
+  const sessionToken = getApiToken();
   syncing = true;
   emitStatus('syncing');
   const target = queuedSnapshot;
@@ -1092,6 +1064,7 @@ async function flush() {
     const result = await syncTargetWithAutomaticRebase(target, localDb, { source:'background-sync' });
     ready = true;
     lastError = null;
+    backgroundFailureCount = 0;
 
     if (result?.deferred && result?.target) {
       queuedSnapshot = result.target;
@@ -1113,13 +1086,26 @@ async function flush() {
       droppedChanges:Number(result.droppedChanges || 0),
     });
   } catch (error) {
+    // An old session's failed request must never requeue tenant data into a new session.
+    if (generation !== bridgeGeneration || sessionToken !== getApiToken()) return;
     lastError = error.code || error.message || String(error);
-    emitStatus('error', { source:'background-sync' });
+    backgroundFailureCount += 1;
+    retryDelay = String(error?.code || '') === 'SYNC_REFERENCE_BLOCKED'
+      ? 30000 : Math.min(60000, 1000 * (2 ** Math.min(backgroundFailureCount, 6)));
+    // A failed upload is pending, not synced. Keep the latest queued changes.
+    if (!queuedSnapshot) queuedSnapshot = target;
+    if (!queuedLocalDb) queuedLocalDb = localDb;
+    emitStatus('pending', {
+      source:'background-sync', reason:lastError,
+      remainingChanges:diffSnapshots(baseline, queuedSnapshot).length,
+    });
   } finally {
-    syncing = false;
-    if (queuedSnapshot && ready) {
-      clearTimeout(timer);
-      timer = setTimeout(flush, retryDelay);
+    if (generation === bridgeGeneration && sessionToken === getApiToken()) {
+      syncing = false;
+      if (queuedSnapshot && ready) {
+        clearTimeout(timer);
+        timer = setTimeout(flush, retryDelay);
+      }
     }
   }
 }
@@ -1269,7 +1255,34 @@ export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
   });
 }
 
+// Local save is not a cloud acknowledgement: verify the canonical visit evidence.
+export async function confirmVisitCloudPersistence(localVisit, { timeoutMs = 12000 } = {}) {
+  if (!localVisit?.id) return { confirmed:false, reason:'VISIT_NOT_FOUND' };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { confirmed:false, reason:'OFFLINE' };
+  }
+  if (!getApiToken() || cutoverMode !== 'cloud' || !ready) {
+    return { confirmed:false, reason:'CLOUD_SYNC_UNAVAILABLE' };
+  }
+  try {
+    await waitForOperationalSync({ timeoutMs });
+    const remote = await apiJson('/api/core/bootstrap');
+    const serverVisit = (remote?.data?.visits || []).find(row => String(row.id) === String(localVisit.id));
+    if (!visitCloudEvidenceMatches(localVisit, serverVisit)) {
+      return { confirmed:false, reason:'CLOUD_VISIT_NOT_CONFIRMED' };
+    }
+    return { confirmed:true, revision:Number(remote.revision || revision) };
+  } catch (error) {
+    return { confirmed:false, reason:String(error?.code || error?.message || 'CLOUD_SYNC_FAILED') };
+  }
+}
+
 export function restoreOperationalBaseline(localDb) {
+  // Do not let an unrelated form rollback erase pending visit/outlet mutations.
+  if (queuedSnapshot || syncing) {
+    emitStatus('pending', { source:'mutation-recovery', reason:'UNSYNCED_CHANGES_PRESERVED' });
+    return localDb;
+  }
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
@@ -1296,6 +1309,7 @@ export function resetCloudDataBridge() {
   queuedSnapshot = null;
   queuedLocalDb = null;
   lastError = null;
+  backgroundFailureCount = 0;
   clearTimeout(timer);
   timer = null;
   refreshPromise = null;
