@@ -1887,7 +1887,12 @@ export function updateVisit(id, data) {
   }
 
   db.visits[idx] = { ...current, ...data };
-  saveDB();
+  try {
+    if (saveDB() !== true) throw new Error('VISIT_LOCAL_SAVE_FAILED');
+  } catch (error) {
+    db.visits[idx] = current;
+    throw error;
+  }
   return db.visits[idx];
 }
 
