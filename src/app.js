@@ -2257,6 +2257,7 @@ async function checkInVisitWithEvidence(id) {
     const geofence = assertVisitGeofence(outlet, gps, 50);
     const patch = {
       status:'checked-in',
+      gpsEvidenceVersion:2,
       checkInTime:currentTenantTimeHHMM(),
       startedAt:gps.capturedAt,
       locationSource:'device_gps',
@@ -2296,6 +2297,7 @@ async function checkOutVisitWithEvidence(id) {
     try { geofence = outlet ? visitGeofenceEvidence(outlet, gps, 50) : null; } catch { geofence = null; }
     const patch = {
       status:'completed',
+      gpsEvidenceVersion:2,
       checkOutTime:currentTenantTimeHHMM(),
       completedAt:gps.capturedAt,
       checkOutLat:gps.lat,
