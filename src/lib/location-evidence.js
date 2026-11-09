@@ -1,4 +1,5 @@
 import { runtimeTimezone } from './utils.js';
+import { assessVisitGpsQuality } from './visit-gps-quality.js';
 
 export function validCoordinatePair(latValue, lngValue) {
   if (latValue === '' || latValue == null || lngValue === '' || lngValue == null) return null;
@@ -115,13 +116,13 @@ export function distanceMeters(lat1, lng1, lat2, lng2) {
 }
 
 export function visitGeofenceEvidence(outlet, gps, defaultRadiusM = 50) {
-  const outletLat = Number(outlet?.lat ?? outlet?.latitude);
-  const outletLng = Number(outlet?.lng ?? outlet?.longitude);
-  const gpsLat = Number(gps?.lat);
-  const gpsLng = Number(gps?.lng);
-  if (![outletLat, outletLng, gpsLat, gpsLng].every(Number.isFinite)) {
+  const outletPair = validDeviceCoordinatePair(outlet?.lat ?? outlet?.latitude, outlet?.lng ?? outlet?.longitude);
+  const devicePair = validDeviceCoordinatePair(gps?.lat, gps?.lng);
+  if (!outletPair || !devicePair) {
     throw Object.assign(new Error('Outlet belum memiliki koordinat valid untuk check-in.'), { code:'VISIT_GEOFENCE_UNAVAILABLE' });
   }
+  const { lat:outletLat, lng:outletLng } = outletPair;
+  const { lat:gpsLat, lng:gpsLng } = devicePair;
   const configuredRadius = Number(outlet?.geofenceRadiusM ?? outlet?.radiusM);
   const radiusM = Number.isFinite(configuredRadius) && configuredRadius > 0 ? configuredRadius : defaultRadiusM;
   const distanceM = distanceMeters(gpsLat, gpsLng, outletLat, outletLng);
@@ -188,14 +189,39 @@ export async function captureDevicePosition(geolocation = (typeof navigator !== 
     }
   }
 
-  const pair = validDeviceCoordinatePair(position?.coords?.latitude, position?.coords?.longitude);
-  if (!pair) {
-    throw Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' });
+  function validateFix(fix) {
+    const pair = validDeviceCoordinatePair(fix?.coords?.latitude, fix?.coords?.longitude);
+    if (!pair) {
+      throw Object.assign(new Error('Koordinat GPS tidak valid.'), { code:'GPS_INVALID' });
+    }
+    const timestamp = Number(fix?.timestamp);
+    const capturedAt = fix?.timestamp != null && Number.isFinite(timestamp) && Math.abs(timestamp) <= 8.64e15
+      ? new Date(timestamp).toISOString() : null;
+    const quality = assessVisitGpsQuality({
+      accuracyM:fix?.coords?.accuracy,
+      capturedAt,
+    });
+    if (!quality.ok) {
+      throw Object.assign(new Error('GPS perangkat belum cukup akurat atau masih menggunakan lokasi lama.'), quality);
+    }
+    return { ...pair, accuracyM:quality.accuracyM, capturedAt:quality.capturedAt };
   }
-  const accuracy = Number(position?.coords?.accuracy);
-  return {
-    ...pair,
-    accuracyM:Number.isFinite(accuracy) && accuracy >= 0 ? accuracy : null,
-    capturedAt:new Date(position?.timestamp || Date.now()).toISOString(),
-  };
+
+  try {
+    return validateFix(position);
+  } catch (error) {
+    if (!['GPS_ACCURACY_LOW','GPS_ACCURACY_REQUIRED','GPS_STALE','GPS_TIMESTAMP_INVALID'].includes(error?.code)) {
+      throw error;
+    }
+    // One automatic fresh high-accuracy retry; no repeated manual confirmations.
+    let fresh;
+    try {
+      fresh = await requestDevicePosition(
+        geolocation, { enableHighAccuracy:true, timeout:8000, maximumAge:0 },
+      );
+    } catch (retryError) {
+      throw normalizeGpsError(retryError);
+    }
+    return validateFix(fresh);
+  }
 }
