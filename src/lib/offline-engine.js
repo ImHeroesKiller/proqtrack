@@ -206,6 +206,11 @@ async function clearSyncedSnapshot(organizationId) {
   return true;
 }
 
+export async function reconcileConfirmedOperationalIntent(organizationId = '') {
+  const orgId = String(organizationId || window.FT?.state?.account?.organizationId || '');
+  return orgId ? clearSyncedSnapshot(orgId) : false;
+}
+
 export async function discardHeldSnapshot(organizationId = '') {
   const orgId = String(organizationId || window.FT?.state?.account?.organizationId || '');
   if (!orgId) return false;
