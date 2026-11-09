@@ -36,7 +36,8 @@ import {
   normalizeAttendanceStatus,
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
-import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated, restoreOperationalBaseline } from './lib/cloud-data.js';
+import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated, restoreOperationalBaseline, confirmVisitCloudPersistence } from './lib/cloud-data.js';
+import { persistPendingOperationalIntent } from './lib/offline-engine.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -2303,13 +2304,26 @@ async function checkOutVisitWithEvidence(id) {
   }
 }
 
+async function finalizeVisitCloudStatus(visit, action) {
+  // Save the offline intent before claiming that a local-only action is safe.
+  await persistPendingOperationalIntent(getDB());
+  const cloud = await confirmVisitCloudPersistence(visit);
+  closeModal();
+  if (cloud.confirmed) {
+    showToast(`${action} berhasil dan sudah tersimpan di Cloud`, 'success');
+  } else if (cloud.reason === 'OFFLINE' || navigator.onLine === false) {
+    showToast(`${action} tersimpan di perangkat — menunggu sinkronisasi saat online.`);
+  } else {
+    showToast(`${action} tersimpan di perangkat — belum dikonfirmasi Cloud. Sinkronisasi akan dicoba lagi.`);
+  }
+  render();
+}
+
 window.FT.checkInVisit = async function(id) {
   try {
     const visit = await checkInVisitWithEvidence(id);
     if (!visit) return;
-    closeModal();
-    showToast('Check-in berhasil dengan GPS dan geofence valid', 'success');
-    render();
+    await finalizeVisitCloudStatus(visit, 'Check-in');
   } catch (error) {
     showToast(visitExecutionErrorMessage(error,'Check-in gagal'), 'error');
   }
@@ -2319,9 +2333,7 @@ window.FT.checkOutVisit = async function(id) {
   try {
     const visit = await checkOutVisitWithEvidence(id);
     if (!visit) return;
-    closeModal();
-    showToast('Check-out berhasil dengan bukti GPS', 'success');
-    render();
+    await finalizeVisitCloudStatus(visit, 'Check-out');
   } catch (error) {
     showToast(visitExecutionErrorMessage(error,'Check-out gagal'), 'error');
   }
