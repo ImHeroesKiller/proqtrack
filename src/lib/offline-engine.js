@@ -75,8 +75,6 @@ async function persistOperationalSnapshot(db) {
   const snapshot = operationalSnapshot(db);
   const nextSignature = signature(snapshot);
   if (nextSignature === lastSignatures.get(organizationId)) return false;
-  rememberSignature(organizationId, nextSignature);
-
   const cloud = await import('./cloud-data.js');
   const status = cloud.cloudDataStatus();
   let rememberedBase = null;
@@ -104,10 +102,17 @@ async function persistOperationalSnapshot(db) {
     baseRevision:Number(intent.baseRevision || 0),
     changes:intent.changes,
   });
+  rememberSignature(organizationId, nextSignature);
   emit(navigator.onLine === false ? 'queued-offline' : 'queued', organizationId, {
     changeCount:intent.changes.length,
   });
   return true;
+}
+
+// Explicit write barrier for critical visit mutations: the outbox must be durable
+// before a local-only status is shown to the employee.
+export async function persistPendingOperationalIntent(db) {
+  return persistOperationalSnapshot(db);
 }
 
 function observeLocalCache(dbHint = null) {
@@ -140,7 +145,9 @@ export async function replayLatestSnapshot(organizationId = '') {
     // Legacy whole-snapshot outbox entries are unsafe in multi-user mode.
     // Resolve them cloud-first instead of replaying stale device state.
     if (item.kind === 'snapshot' || item?.changes?.[0]?.entity === '__operational_snapshot__' || item?.requiresReview) {
-      return recoverCloudConflict(orgId);
+      // Legacy snapshots require migration; never automatically delete raw unsynced data.
+      emit('pending-legacy-recovery', orgId, { resolution:'preserved' });
+      return false;
     }
 
     const [{ getDB }, cloud] = await Promise.all([import('./db.js'), import('./cloud-data.js')]);
@@ -162,6 +169,19 @@ export async function replayLatestSnapshot(organizationId = '') {
 
 async function clearSyncedSnapshot(organizationId) {
   if (!organizationId) return false;
+  const item = await snapshotItem(organizationId);
+  if (!item) return false;
+  if (item.kind !== 'intent' || item.requiresReview) {
+    emit('pending', organizationId, { resolution:'held' });
+    return false;
+  }
+  const cloud = await import('./cloud-data.js');
+  const status = cloud.cloudDataStatus();
+  const remaining = cloud.pendingOperationalIntentStatus(item.changes || []);
+  if (!status.ready || status.syncing || status.queued || !remaining.ready || remaining.pending) {
+    emit('pending', organizationId, { resolution:'awaiting-cloud-ack' });
+    return false;
+  }
   await deleteMutation(`${SNAPSHOT_PREFIX}${organizationId}`);
   emit('synced', organizationId);
   return true;
@@ -208,12 +228,26 @@ export async function recoverCloudConflict(organizationId = '') {
       cloud.applyRemoteDataToLocal(db, bootstrap.data);
     }
 
-    if (pending) await deleteMutation(`${SNAPSHOT_PREFIX}${orgId}`);
+    if (pending) {
+      if (pending.kind !== 'intent' || pending.requiresReview) {
+        emit('pending-legacy-recovery', orgId, { resolution:'preserved' });
+        return false;
+      }
+      const result = cloud.replayOperationalIntent(db, pending.changes || []);
+      if (!result.accepted) {
+        emit('pending', orgId, { resolution:'retry-required' });
+        return false;
+      }
+      rememberSignature(orgId, signature(operationalSnapshot(db)));
+      emit('replaying', orgId, {
+        resolution:'cloud-first-rebase',
+        reapplied:Number(result.reapplied || 0),
+      });
+      return true;
+    }
     rememberSignature(orgId, signature(operationalSnapshot(db)));
     emit('conflict-auto-resolved', orgId, {
-      pendingSnapshot:Boolean(pending),
-      resolution:'server-wins',
-      automatic:true,
+      pendingSnapshot:false, resolution:'server-wins', automatic:true,
     });
     return true;
   } catch (error) {
