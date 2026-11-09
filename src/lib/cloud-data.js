@@ -1,6 +1,7 @@
 import { clearApiToken, getApiToken, getApiTokenMeta, issueUploadSession, revokeApiSession, switchApiOrganization } from './uploads.js';
 import { hashPassword } from './utils.js';
 import { createCloudRebaseTools } from './cloud-rebase.js';
+import { visitCloudEvidenceMatches } from './visit-cloud-confirmation.js';
 
 export const CLOUD_COLLECTIONS = Object.freeze([
   'clients',
@@ -45,6 +46,7 @@ let baseline = {};
 let queuedSnapshot = null;
 let queuedLocalDb = null;
 let lastError = null;
+let backgroundFailureCount = 0;
 let suppressStorageHook = false;
 let storageHookInstalled = false;
 let evidenceHydrationPromise = null;
@@ -984,10 +986,24 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
       if (result?.refreshRequired) {
         const latest = await latestCloudSnapshot();
+        // A server refresh must not erase device-only records still awaiting upload.
+        const deviceCreates = diffSnapshots(baseline, target).filter(change =>
+          change.op === 'upsert'
+          && !snapshotRow(baseline, change.entity, change.row)
+          && !snapshotRow(latest.snapshot, change.entity, change.row));
         revision = latest.revision;
         baseline = latest.snapshot;
-        target = latest.snapshot;
+        target = applyChanges(latest.snapshot, deviceCreates);
         applyMergedSnapshotToLocal(localDb, target);
+        if (deviceCreates.length) {
+          rebaseAttempts += 1;
+          if (rebaseAttempts >= AUTO_REBASE_MAX_ATTEMPTS) {
+            return { ok:false, deferred:true, target, revision, applied:totalApplied,
+              recovered:true, recovery:'DEVICE_CREATES_RETRY_PENDING',
+              conflictFields:totalConflictFields, droppedChanges:totalDroppedChanges };
+          }
+          continue;
+        }
         console.info('sync_auto_recovered_server_refresh', {
           source,
           recovery:result.recovery || 'SERVER_REFRESH_REQUIRED',
@@ -1041,17 +1057,18 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
         const invalidChange = attemptedChunk[0];
         if (invalidChange) {
-          target = cloudWinTargetForChange(target, baseline, invalidChange);
-          applyMergedSnapshotToLocal(localDb, target);
-          totalDroppedChanges += 1;
-          rebaseAttempts = 0;
-          console.warn('sync_invalid_reference_cloud_wins', {
+          // Missing references are often temporary; never report success by deleting
+          // the unsynced change. Hold it for automatic retry/reconciliation.
+          console.warn('sync_reference_blocked_preserved', {
             source,
             entity:String(invalidChange.entity || ''),
             id:changeKey(invalidChange.row),
             revision,
           });
-          continue;
+          throw bridgeError('SYNC_REFERENCE_BLOCKED', 409, {
+            entity:String(invalidChange.entity || ''),
+            id:changeKey(invalidChange.row),
+          });
         }
       }
 
