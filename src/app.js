@@ -1921,7 +1921,7 @@ function visitRowEntry(visit, emp, outlet) {
         <td>${outletIcon(outlet.type)} ${esc(outlet.name)}</td>
         <td>${visit.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
         <td>${visit.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-        <td>${formatDuration(visit.checkInTime, visit.checkOutTime)}</td>
+        <td>${formatDuration(visit.checkInTime, visit.checkOutTime, visit.startedAt, visit.completedAt)}</td>
         <td>${statusBadge(visit.status)}</td>
         <td style="color:#fbbf24;">${stars}</td>
         <td><button class="btn btn-secondary btn-sm" data-pqt-onclick="FT.viewVisit('${visit.id}')">Detail</button></td>
@@ -2216,10 +2216,21 @@ const visitCheckOutInFlight = new Set();
 
 function visitExecutionErrorMessage(error, fallback = 'Proses kunjungan gagal') {
   const code = error?.code || error?.message || '';
+  if (['GPS_ACCURACY_LOW','VISIT_GPS_ACCURACY_LOW'].includes(code)) {
+    const measured = Number(error?.accuracyM ?? error?.payload?.accuracyM);
+    const approx = Number.isFinite(measured) ? ` (±${Math.round(measured)} m)` : '';
+    return `Akurasi GPS belum cukup${approx}. Aktifkan lokasi presisi dan coba lagi di area terbuka (maksimal ±50 m).`;
+  }
   return {
     VISIT_APPROVED_LEAVE_CONFLICT:'Check-in tidak dapat dilakukan karena ijin/cuti pada tanggal ini sudah disetujui.',
     VISIT_OUTSIDE_GEOFENCE:'Check-in berada di luar radius outlet.',
     VISIT_GPS_REQUIRED:'Lokasi GPS wajib tersedia untuk check-in.',
+    VISIT_GPS_ACCURACY_REQUIRED:'Perangkat belum memberikan informasi akurasi GPS. Aktifkan lokasi presisi lalu coba lagi.',
+    GPS_ACCURACY_REQUIRED:'Perangkat belum memberikan informasi akurasi GPS. Aktifkan lokasi presisi lalu coba lagi.',
+    GPS_STALE:'Posisi GPS terlalu lama. Aktifkan layanan lokasi lalu coba lagi.',
+    GPS_TIMESTAMP_INVALID:'Waktu GPS tidak valid. Periksa tanggal dan jam otomatis perangkat.',
+    VISIT_GPS_TIMESTAMP_INVALID:'Waktu GPS tidak valid. Periksa tanggal dan jam otomatis perangkat.',
+    GPS_PERMISSION_REQUIRED:'Izin lokasi diperlukan untuk check-in/check-out.',
     VISIT_GEOFENCE_UNAVAILABLE:'Geofence outlet belum tersedia atau tidak valid.',
     REVISION_CONFLICT:'Data kunjungan berubah dari perangkat lain. Muat ulang lalu coba kembali.',
   }[code] || error?.message || fallback;
@@ -3266,7 +3277,7 @@ function renderMyVisits() {
                   <td>${o ? outletIcon(o.type)+' '+o.name : '-'}</td>
                   <td>${v.checkInTime || '<span style="color:var(--gray-300);">—</span>'}</td>
                   <td>${v.checkOutTime || '<span style="color:var(--gray-300);">—</span>'}</td>
-                  <td>${formatDuration(v.checkInTime, v.checkOutTime)}</td>
+                  <td>${formatDuration(v.checkInTime, v.checkOutTime, v.startedAt, v.completedAt)}</td>
                   <td>${statusBadge(v.status)}</td>
                   <td><button class="btn btn-secondary btn-sm" type="button" data-pqt-onclick="FS.openVisitDetail('${v.id}')">Detail</button></td>
                 </tr>
