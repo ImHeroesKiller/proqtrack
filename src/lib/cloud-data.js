@@ -560,6 +560,17 @@ export function captureOperationalIntent(localDb = {}, rememberedBase = null) {
   };
 }
 
+export function pendingOperationalIntentStatus(storedChanges = []) {
+  if (!ready || cutoverMode !== 'cloud') return { ready:false, pending:true };
+  const rebased = rebaseStoredIntent(storedChanges, baseline);
+  return {
+    ready:true,
+    pending:rebased.changes.length > 0,
+    changeCount:rebased.changes.length,
+    droppedChanges:rebased.droppedChanges,
+  };
+}
+
 export function replayOperationalIntent(localDb, storedChanges = []) {
   if (!ready || cutoverMode !== 'cloud' || !getApiToken()) return {
     accepted:false,
