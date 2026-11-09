@@ -129,7 +129,7 @@ export function formatDuration(checkIn, checkOut, startedAt = null, completedAt 
     mins = Math.floor((end - start) / 60000);
   } else {
     const clock = value => {
-      const match = /^(?:[01]?\\d|2[0-3]):[0-5]\\d$/.exec(String(value || ''));
+      const match = /^(?:[01]?\d|2[0-3]):[0-5]\d$/.exec(String(value || ''));
       if (!match) return null;
       const [h, m] = String(value).split(':').map(Number);
       return h * 60 + m;
