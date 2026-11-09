@@ -67,6 +67,9 @@ test('server enforces the same GPS quality policy when starting or completing a 
   assert.match(block,/checkInAccuracyM/);
   assert.match(block,/checkOutAccuracyM/);
   assert.match(block,/error:'VISIT_' \+ quality.code/);
+  assert.match(block,/gpsEvidenceVersion >= 2 \|\| accuracyM != null/);
+  assert.match(block,/legacy_unverified/);
+  assert.match(app,/gpsEvidenceVersion:2/);
   assert.match(app,/GPS_ACCURACY_LOW/);
   assert.match(app,/VISIT_GPS_ACCURACY_LOW/);
 });
