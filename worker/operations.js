@@ -1,3 +1,5 @@
+import { assessVisitGpsQuality } from '../src/lib/visit-gps-quality.js';
+
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: {
@@ -275,6 +277,22 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
   const isCheckIn = currentStatus === 'planned' && nextStatus === 'in_progress';
   const isCheckOut = currentStatus === 'in_progress' && nextStatus === 'completed';
   if (!isCheckIn && !isCheckOut) return null;
+
+  // Check GPS quality on the server too; client-only validation is not authority.
+  // A historic capture remains valid during delayed offline sync.
+  const accuracyM = firstValue(row, isCheckIn ? ['checkInAccuracyM'] : ['checkOutAccuracyM']);
+  const capturedAt = firstValue(row, isCheckIn
+    ? ['checkInCapturedAt','startedAt','checkInAt']
+    : ['checkOutCapturedAt','completedAt','checkOutAt']);
+  const quality = assessVisitGpsQuality({ accuracyM, capturedAt }, { allowHistoric:true });
+  if (!quality.ok) {
+    return {
+      error:'VISIT_' + quality.code,
+      status:422,
+      ...(quality.accuracyM != null ? { accuracyM:quality.accuracyM } : {}),
+      ...(quality.maxAccuracyM != null ? { maxAccuracyM:quality.maxAccuracyM } : {}),
+    };
+  }
 
   if (isCheckIn) {
     const employeeId = str(row.employeeId || row.employee_id || existing.employee_id || existing.employeeId);
