@@ -1109,6 +1109,7 @@ async function flush() {
     const result = await syncTargetWithAutomaticRebase(target, localDb, { source:'background-sync' });
     ready = true;
     lastError = null;
+    backgroundFailureCount = 0;
 
     if (result?.deferred && result?.target) {
       queuedSnapshot = result.target;
@@ -1131,7 +1132,16 @@ async function flush() {
     });
   } catch (error) {
     lastError = error.code || error.message || String(error);
-    emitStatus('error', { source:'background-sync' });
+    backgroundFailureCount += 1;
+    retryDelay = String(error?.code || '') === 'SYNC_REFERENCE_BLOCKED'
+      ? 30000 : Math.min(60000, 1000 * (2 ** Math.min(backgroundFailureCount, 6)));
+    // A failed upload is pending, not synced. Keep the latest queued changes.
+    if (!queuedSnapshot) queuedSnapshot = target;
+    if (!queuedLocalDb) queuedLocalDb = localDb;
+    emitStatus('pending', {
+      source:'background-sync', reason:lastError,
+      remainingChanges:diffSnapshots(baseline, queuedSnapshot).length,
+    });
   } finally {
     syncing = false;
     if (queuedSnapshot && ready) {
@@ -1286,6 +1296,28 @@ export async function waitForOperationalSync({ timeoutMs = 12000 } = {}) {
   });
 }
 
+// Local save is not a cloud acknowledgement: verify the canonical visit evidence.
+export async function confirmVisitCloudPersistence(localVisit, { timeoutMs = 12000 } = {}) {
+  if (!localVisit?.id) return { confirmed:false, reason:'VISIT_NOT_FOUND' };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return { confirmed:false, reason:'OFFLINE' };
+  }
+  if (!getApiToken() || cutoverMode !== 'cloud' || !ready) {
+    return { confirmed:false, reason:'CLOUD_SYNC_UNAVAILABLE' };
+  }
+  try {
+    await waitForOperationalSync({ timeoutMs });
+    const remote = await apiJson('/api/core/bootstrap');
+    const serverVisit = (remote?.data?.visits || []).find(row => String(row.id) === String(localVisit.id));
+    if (!visitCloudEvidenceMatches(localVisit, serverVisit)) {
+      return { confirmed:false, reason:'CLOUD_VISIT_NOT_CONFIRMED' };
+    }
+    return { confirmed:true, revision:Number(remote.revision || revision) };
+  } catch (error) {
+    return { confirmed:false, reason:String(error?.code || error?.message || 'CLOUD_SYNC_FAILED') };
+  }
+}
+
 export function restoreOperationalBaseline(localDb) {
   clearTimeout(timer);
   timer = null;
@@ -1313,6 +1345,7 @@ export function resetCloudDataBridge() {
   queuedSnapshot = null;
   queuedLocalDb = null;
   lastError = null;
+  backgroundFailureCount = 0;
   clearTimeout(timer);
   timer = null;
   refreshPromise = null;
