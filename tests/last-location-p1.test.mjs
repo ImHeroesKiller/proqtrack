@@ -116,7 +116,7 @@ test('shared visit GPS capture falls back from high accuracy without weakening p
       }
       success({
         coords:{ latitude:-6.2, longitude:106.8, accuracy:42 },
-        timestamp:Date.parse('2026-09-26T03:00:00.000Z'),
+        timestamp:Date.now() - 5000,
       });
     },
   };
