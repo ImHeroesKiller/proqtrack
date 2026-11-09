@@ -1108,6 +1108,8 @@ async function syncTargetWithAutomaticRebase(localTarget, localDb = null, { sour
 
 async function flush() {
   if (syncing || !ready || !getApiToken() || !queuedSnapshot) return;
+  const generation = bridgeGeneration;
+  const sessionToken = getApiToken();
   syncing = true;
   emitStatus('syncing');
   const target = queuedSnapshot;
@@ -1142,6 +1144,8 @@ async function flush() {
       droppedChanges:Number(result.droppedChanges || 0),
     });
   } catch (error) {
+    // An old session's failed request must never requeue tenant data into a new session.
+    if (generation !== bridgeGeneration || sessionToken !== getApiToken()) return;
     lastError = error.code || error.message || String(error);
     backgroundFailureCount += 1;
     retryDelay = String(error?.code || '') === 'SYNC_REFERENCE_BLOCKED'
@@ -1154,10 +1158,12 @@ async function flush() {
       remainingChanges:diffSnapshots(baseline, queuedSnapshot).length,
     });
   } finally {
-    syncing = false;
-    if (queuedSnapshot && ready) {
-      clearTimeout(timer);
-      timer = setTimeout(flush, retryDelay);
+    if (generation === bridgeGeneration && sessionToken === getApiToken()) {
+      syncing = false;
+      if (queuedSnapshot && ready) {
+        clearTimeout(timer);
+        timer = setTimeout(flush, retryDelay);
+      }
     }
   }
 }
@@ -1330,6 +1336,11 @@ export async function confirmVisitCloudPersistence(localVisit, { timeoutMs = 120
 }
 
 export function restoreOperationalBaseline(localDb) {
+  // Do not let an unrelated form rollback erase pending visit/outlet mutations.
+  if (queuedSnapshot || syncing) {
+    emitStatus('pending', { source:'mutation-recovery', reason:'UNSYNCED_CHANGES_PRESERVED' });
+    return localDb;
+  }
   clearTimeout(timer);
   timer = null;
   queuedSnapshot = null;
