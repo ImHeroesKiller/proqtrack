@@ -37,7 +37,7 @@ import {
 } from './lib/utils.js';
 import { issueUploadSession, clearApiToken, getApiToken, bindAssetFields, uploadAsset, deleteUploadedAsset, assetField } from './lib/uploads.js';
 import { refreshOperationalData, cloudDataStatus, waitForOperationalSync, ensureEvidenceMetadataHydrated, restoreOperationalBaseline, confirmVisitCloudPersistence } from './lib/cloud-data.js';
-import { persistPendingOperationalIntent } from './lib/offline-engine.js';
+import { persistPendingOperationalIntent, reconcileConfirmedOperationalIntent } from './lib/offline-engine.js';
 import { defaultPortrait } from './lib/avatars.js';
 import { applyOrganizationBranding } from './lib/organization-branding.js';
 import {
@@ -2310,6 +2310,7 @@ async function finalizeVisitCloudStatus(visit, action) {
   const cloud = await confirmVisitCloudPersistence(visit);
   closeModal();
   if (cloud.confirmed) {
+    await reconcileConfirmedOperationalIntent(visit.organizationId || getCurrentOrgId()).catch(() => {});
     showToast(`${action} berhasil dan sudah tersimpan di Cloud`, 'success');
   } else if (cloud.reason === 'OFFLINE' || navigator.onLine === false) {
     showToast(`${action} tersimpan di perangkat — menunggu sinkronisasi saat online.`);
