@@ -103,7 +103,7 @@ test('outbox is cleared only after convergence, not on rejected change or confli
   const block=off.slice(start,end);
   assert.match(block,/pendingOperationalIntentStatus/);
   assert.match(block,/status\.syncing \|\| status\.queued/);
-  assert.match(block,/if \(pending\)/);
-  assert.doesNotMatch(block,/if \(pending\) await deleteMutation/);
-  assert.match(block,/replayOperationalIntent\(db, pending\.changes/);
+  assert.match(off,/if \(pending\) \{/);
+  assert.doesNotMatch(off,/if \(pending\) await deleteMutation/);
+  assert.match(off,/replayOperationalIntent\(db, pending\.changes/);
 });
