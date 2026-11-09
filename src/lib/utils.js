@@ -120,12 +120,26 @@ export function outletIcon(type) {
   return OUTLET_TYPES[type] || '🏪';
 }
 
-export function formatDuration(checkIn, checkOut) {
-  if (!checkIn || !checkOut) return '-';
-  const [h1, m1] = checkIn.split(':').map(Number);
-  const [h2, m2] = checkOut.split(':').map(Number);
-  const mins = (h2 * 60 + m2) - (h1 * 60 + m1);
-  if (mins < 0) return '-';
+export function formatDuration(checkIn, checkOut, startedAt = null, completedAt = null) {
+  const start = startedAt ? Date.parse(String(startedAt)) : NaN;
+  const end = completedAt ? Date.parse(String(completedAt)) : NaN;
+  let mins;
+  if (Number.isFinite(start) && Number.isFinite(end)) {
+    if (end < start) return '-';
+    mins = Math.floor((end - start) / 60000);
+  } else {
+    const clock = value => {
+      const match = /^(?:[01]?\\d|2[0-3]):[0-5]\\d$/.exec(String(value || ''));
+      if (!match) return null;
+      const [h, m] = String(value).split(':').map(Number);
+      return h * 60 + m;
+    };
+    const from = clock(checkIn);
+    const to = clock(checkOut);
+    if (from === null || to === null) return '-';
+    mins = to - from;
+    if (mins < 0) mins += 24 * 60;
+  }
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return h > 0 ? `${h}j ${m}m` : `${m}m`;
