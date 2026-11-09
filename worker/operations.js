@@ -284,14 +284,21 @@ async function applyVisitGeofenceAuthority(env, organizationId, row, existing) {
   const capturedAt = firstValue(row, isCheckIn
     ? ['checkInCapturedAt','startedAt','checkInAt']
     : ['checkOutCapturedAt','completedAt','checkOutAt']);
-  const quality = assessVisitGpsQuality({ accuracyM, capturedAt }, { allowHistoric:true });
-  if (!quality.ok) {
-    return {
-      error:'VISIT_' + quality.code,
-      status:422,
-      ...(quality.accuracyM != null ? { accuracyM:quality.accuracyM } : {}),
-      ...(quality.maxAccuracyM != null ? { maxAccuracyM:quality.maxAccuracyM } : {}),
-    };
+  const gpsEvidenceVersion = Number(row.gpsEvidenceVersion || parseMetadata(existing?.metadata_json).gpsEvidenceVersion || 0);
+  // v2 explicitly requires accuracy. Legacy clients without an accuracy field
+  // remain readable during migration; any supplied poor accuracy is still rejected.
+  if (gpsEvidenceVersion >= 2 || accuracyM != null) {
+    const quality = assessVisitGpsQuality({ accuracyM, capturedAt }, { allowHistoric:true });
+    if (!quality.ok) {
+      return {
+        error:'VISIT_' + quality.code,
+        status:422,
+        ...(quality.accuracyM != null ? { accuracyM:quality.accuracyM } : {}),
+        ...(quality.maxAccuracyM != null ? { maxAccuracyM:quality.maxAccuracyM } : {}),
+      };
+    }
+  } else {
+    row.gpsVerificationState = 'legacy_unverified';
   }
 
   if (isCheckIn) {
