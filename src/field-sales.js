@@ -222,7 +222,7 @@ export function renderVisitDetailHtml(visitId) {
       <div class="detail-label">Tanggal</div><div class="detail-value">${formatDate(visitDay(v))}</div>
       <div class="detail-label">Check in</div><div class="detail-value">${v.checkInTime || '—'}</div>
       <div class="detail-label">Check out</div><div class="detail-value">${v.checkOutTime || '—'}</div>
-      <div class="detail-label">Durasi</div><div class="detail-value">${formatDuration(v.checkInTime, v.checkOutTime)}</div>
+      <div class="detail-label">Durasi</div><div class="detail-value">${formatDuration(v.checkInTime, v.checkOutTime, v.startedAt, v.completedAt)}</div>
       <div class="detail-label">Status</div><div class="detail-value">${statusBadge(v.status)}</div>
       <div class="detail-label">Bukti GPS Check In</div><div class="detail-value">${checkInEvidence ? `${esc(locationSourceLabel(checkInEvidence))} · ${checkInEvidence.lat.toFixed(6)}, ${checkInEvidence.lng.toFixed(6)}${checkInEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkInEvidence.accuracyM)} m` : ''} · ${esc(checkInFreshness.label)}` : 'Belum ada GPS perangkat'}</div>
       <div class="detail-label">Bukti GPS Check Out</div><div class="detail-value">${checkOutEvidence ? `GPS perangkat · ${checkOutEvidence.lat.toFixed(6)}, ${checkOutEvidence.lng.toFixed(6)}${checkOutEvidence.accuracyM != null ? ` · akurasi ±${Math.round(checkOutEvidence.accuracyM)} m` : ''}${checkOutEvidence.capturedAt ? ` · ${esc(checkOutEvidence.capturedAt)}` : ''}` : 'Belum ada GPS perangkat'}</div>
